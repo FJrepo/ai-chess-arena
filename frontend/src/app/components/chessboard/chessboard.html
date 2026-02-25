@@ -1,0 +1,24 @@
+<div class="chessboard-container">
+  <div class="board">
+    @for (row of squares(); track $index; let ri = $index) {
+      <div class="rank-label">{{ rankLabels()[ri] }}</div>
+      @for (sq of row; track $index) {
+        <div class="square" [class.light]="sq.isLight" [class.dark]="!sq.isLight">
+          @if (sq.piece) {
+            <span
+              class="piece"
+              [class.white-piece]="sq.pieceColor === 'white'"
+              [class.black-piece]="sq.pieceColor === 'black'"
+            >
+              {{ sq.piece }}
+            </span>
+          }
+        </div>
+      }
+    }
+    <div class="file-labels-spacer"></div>
+    @for (f of fileLabels(); track $index) {
+      <div class="file-label">{{ f }}</div>
+    }
+  </div>
+</div>

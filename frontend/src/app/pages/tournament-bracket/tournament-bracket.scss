@@ -1,0 +1,283 @@
+.bracket-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.header-v2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-radius: 14px;
+  background:
+    radial-gradient(
+      130% 200% at 0% 0%,
+      color-mix(in srgb, var(--mat-sys-primary) 12%, transparent),
+      transparent 60%
+    ),
+    color-mix(in srgb, var(--mat-sys-surface-container-low) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 20%, transparent);
+  backdrop-filter: blur(10px);
+
+  .header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .tournament-icon {
+      font-size: 1.6rem;
+      width: 1.6rem;
+      height: 1.6rem;
+      color: var(--mat-sys-primary);
+    }
+
+    h2 {
+      margin: 0;
+      font-family: 'Roboto', sans-serif;
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+  }
+
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 60%, transparent);
+
+    .dot-separator {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--mat-sys-on-surface) 20%, transparent);
+    }
+
+    .status-badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: color-mix(in srgb, var(--mat-sys-on-surface) 10%, transparent);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+
+      &.active {
+        background: color-mix(in srgb, #4caf50 15%, transparent);
+        color: #4caf50;
+        animation: pulse-glow 2s infinite ease-in-out;
+      }
+    }
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+
+    .quick-cost {
+      text-align: right;
+      display: flex;
+      flex-direction: column;
+
+      .label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+      }
+
+      .value {
+        font-size: 1.4rem;
+        font-weight: 800;
+        font-family: 'Roboto', sans-serif;
+        color: var(--mat-sys-primary);
+      }
+    }
+  }
+}
+
+.cost-panel {
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 40%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 15%, transparent) !important;
+  box-shadow: none !important;
+
+  mat-expansion-panel-header {
+    height: 48px !important;
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    mat-icon {
+      margin-right: 8px;
+      color: var(--mat-sys-primary);
+    }
+  }
+
+  .cost-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    padding: 10px 0;
+  }
+
+  .cost-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+  }
+
+  .stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .highest-game-v2 {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    .match-link {
+      padding: 0;
+      justify-content: flex-start;
+      height: auto;
+      font-size: 0.9rem;
+      color: var(--mat-sys-primary);
+
+      mat-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+        margin-right: 4px;
+      }
+    }
+  }
+
+  .top-models-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid color-mix(in srgb, var(--mat-sys-outline) 10%, transparent);
+
+    .model-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .model-cost-tag {
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
+      display: flex;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+
+      .model-name {
+        color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+      }
+      .model-price {
+        color: var(--mat-sys-primary);
+      }
+    }
+  }
+}
+
+.generate-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--mat-sys-surface-container-low) 80%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--mat-sys-outline) 30%, transparent);
+  text-align: center;
+
+  .generate-icon {
+    font-size: 3rem;
+    width: 3rem;
+    height: 3rem;
+    color: color-mix(in srgb, var(--mat-sys-primary) 40%, transparent);
+  }
+
+  p {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+    max-width: 400px;
+  }
+
+  button {
+    height: 52px;
+    padding: 0 32px;
+    border-radius: 14px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0px rgba(76, 175, 80, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(76, 175, 80, 0.4);
+  }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 800px) {
+  .header-v2 {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+
+    .header-right {
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid color-mix(in srgb, var(--mat-sys-outline) 10%, transparent);
+    }
+  }
+
+  .highest-game-v2 {
+    grid-column: span 1;
+  }
+}

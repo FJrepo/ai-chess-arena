@@ -1,0 +1,36 @@
+<mat-card class="game-info-bar">
+  <div class="players">
+    <div class="player white-player">
+      <span class="color-dot white-dot"></span>
+      <app-provider-logo [modelId]="game.whiteModelId" [size]="20" />
+      <div class="player-meta">
+        <span class="name">{{ game.whitePlayerName }}</span>
+        <span class="model">{{ game.whiteModelId }}</span>
+      </div>
+    </div>
+    <span class="vs-label">VS</span>
+    <div class="player black-player">
+      <span class="color-dot black-dot"></span>
+      <app-provider-logo [modelId]="game.blackModelId" [size]="20" />
+      <div class="player-meta">
+        <span class="name">{{ game.blackPlayerName }}</span>
+        <span class="model">{{ game.blackModelId }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="info">
+    <mat-chip-set>
+      <mat-chip [highlighted]="game.status === 'IN_PROGRESS'">{{ game.status }}</mat-chip>
+    </mat-chip-set>
+    @if (game.result) {
+      <span class="result">{{ getResultText() }}</span>
+    }
+    <span class="cost">
+      <mat-icon class="cost-icon">payments</mat-icon>
+      {{ game.totalCostUsd | currency: 'USD' }}
+    </span>
+  </div>
+  @if (retryInfo) {
+    <div class="retry-alert"><mat-icon>warning</mat-icon> {{ retryInfo }}</div>
+  }
+</mat-card>

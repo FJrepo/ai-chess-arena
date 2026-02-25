@@ -1,0 +1,40 @@
+<mat-card class="move-list-card" [class.compact]="compact">
+  <mat-card-header>
+    <mat-card-title>Moves</mat-card-title>
+  </mat-card-header>
+  <mat-card-content>
+    <div class="move-list-scroll" #scrollContainer>
+      @for (pair of movePairs(); track pair.number) {
+        <div class="move-row">
+          <span class="move-number">{{ pair.number }}.</span>
+          @if (pair.white) {
+            <span
+              class="move white-move"
+              [class.active]="currentIndex === pair.whiteIdx"
+              (click)="onMoveClick(pair.whiteIdx)"
+            >
+              {{ pair.white.san }}
+              @if (pair.white.retryCount > 0) {
+                <span class="retry-badge" title="Retries">{{ pair.white.retryCount }}</span>
+              }
+            </span>
+          }
+          @if (pair.black) {
+            <span
+              class="move black-move"
+              [class.active]="currentIndex === pair.blackIdx"
+              (click)="onMoveClick(pair.blackIdx)"
+            >
+              {{ pair.black.san }}
+              @if (pair.black.retryCount > 0) {
+                <span class="retry-badge" title="Retries">{{ pair.black.retryCount }}</span>
+              }
+            </span>
+          }
+        </div>
+      } @empty {
+        <div class="empty-state">No moves yet</div>
+      }
+    </div>
+  </mat-card-content>
+</mat-card>

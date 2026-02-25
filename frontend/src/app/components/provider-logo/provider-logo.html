@@ -1,0 +1,19 @@
+<span
+  class="provider-logo"
+  [style.--logo-size.px]="size"
+  [style.--provider-bg]="brand.background"
+  [style.--provider-accent]="brand.accent"
+  [attr.title]="brand.name"
+  [attr.aria-label]="brand.name"
+>
+  @if (brand.logoPath) {
+    <img
+      class="provider-image"
+      [src]="brand.logoPath"
+      [alt]="brand.name + ' provider icon'"
+      loading="lazy"
+    />
+  } @else {
+    <mat-icon class="provider-fallback">domain</mat-icon>
+  }
+</span>

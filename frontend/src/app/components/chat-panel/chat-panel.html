@@ -1,0 +1,30 @@
+<mat-card class="chat-card">
+  <mat-card-header>
+    <mat-card-title>Chat (Latest First)</mat-card-title>
+  </mat-card-header>
+  <mat-card-content>
+    <div class="chat-scroll">
+      @for (msg of displayedMessages(); track $index) {
+        <div
+          class="chat-message"
+          [class.white-msg]="msg.senderColor === 'WHITE'"
+          [class.black-msg]="msg.senderColor === 'BLACK'"
+        >
+          <div class="msg-header">
+            <span
+              class="sender"
+              [class.white-sender]="msg.senderColor === 'WHITE'"
+              [class.black-sender]="msg.senderColor === 'BLACK'"
+            >
+              {{ getPlayerName(msg) }}
+            </span>
+            <span class="msg-time">move {{ msg.moveNumber }}</span>
+          </div>
+          <div class="msg-body">{{ msg.message }}</div>
+        </div>
+      } @empty {
+        <div class="empty-chat">No messages yet. The trash talk will appear here.</div>
+      }
+    </div>
+  </mat-card-content>
+</mat-card>

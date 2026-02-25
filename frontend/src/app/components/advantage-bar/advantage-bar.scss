@@ -1,0 +1,65 @@
+.advantage-container {
+  height: 100%;
+  width: 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 40%, transparent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.eval-bar {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  background: #111;
+}
+
+.white-bar {
+  background: #eee;
+  transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+}
+
+.black-bar {
+  background: #222;
+  transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+}
+
+.center-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.5);
+  z-index: 2;
+}
+
+.eval-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 800;
+  font-family: 'Roboto', sans-serif;
+  z-index: 3;
+  pointer-events: none;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+
+  &.white-text {
+    bottom: 8px;
+    color: #111;
+    text-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
+  }
+
+  &.black-text {
+    top: 8px;
+    color: #eee;
+  }
+}

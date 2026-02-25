@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Microsoft custom icon">
+  <circle cx="32" cy="32" r="31" fill="#1f2d44"/>
+  <rect x="19" y="19" width="10" height="10" rx="2" fill="#7db5ff"/>
+  <rect x="35" y="19" width="10" height="10" rx="2" fill="#c2d0f4"/>
+  <rect x="19" y="35" width="10" height="10" rx="2" fill="#c2d0f4"/>
+  <rect x="35" y="35" width="10" height="10" rx="2" fill="#7db5ff"/>
+</svg>

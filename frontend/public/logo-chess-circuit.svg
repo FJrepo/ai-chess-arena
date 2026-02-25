@@ -1,0 +1,24 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="14" y1="10" x2="114" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2F78FF"/>
+      <stop offset="1" stop-color="#11A4A1"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="31" y1="29" x2="97" y2="95" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D9EDFF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <rect x="30" y="28" width="68" height="68" rx="18" fill="url(#chip)"/>
+
+  <path d="M70 44C69 44 67.7 44.3 66.6 45.2L57.1 52.7C54.1 55.1 52.3 58.8 52.3 62.6V66H46V73.2H52.3V82H83V74.7H76.6V69.6C76.6 66.4 75.2 63.4 72.8 61.3L67.1 56.2L70.5 53.6C71.2 53 72.1 52.7 73 52.7H79V44H70ZM60.1 73.2V64.8C60.1 63.4 60.8 62.1 61.9 61.2L66.4 57.7L70.3 61.2C71.4 62.2 72 63.5 72 64.9V73.2H60.1Z" fill="#0F3A6E"/>
+
+  <circle cx="18" cy="40" r="4.2" fill="#D4EEFF"/>
+  <circle cx="18" cy="64" r="4.2" fill="#D4EEFF"/>
+  <circle cx="18" cy="88" r="4.2" fill="#D4EEFF"/>
+  <circle cx="110" cy="52" r="4.2" fill="#D4EEFF"/>
+  <circle cx="110" cy="76" r="4.2" fill="#D4EEFF"/>
+  <path d="M22.2 40H30M22.2 64H30M22.2 88H30M98 52H105.8M98 76H105.8" stroke="#D4EEFF" stroke-width="3.2" stroke-linecap="round"/>
+</svg>

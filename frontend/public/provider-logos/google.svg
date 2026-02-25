@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Google custom icon">
+  <circle cx="32" cy="32" r="31" fill="#14213d"/>
+  <circle cx="22" cy="24" r="5" fill="#fbbc04"/>
+  <circle cx="40" cy="22" r="5" fill="#34a853"/>
+  <circle cx="44" cy="40" r="5" fill="#4285f4"/>
+  <circle cx="24" cy="42" r="5" fill="#ea4335"/>
+  <path d="M24 42c2 3 5 5 8 5 5 0 9-3 10-8" fill="none" stroke="#9ec5ff" stroke-width="3" stroke-linecap="round"/>
+</svg>

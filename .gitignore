@@ -1,0 +1,47 @@
+# === Environment / Secrets ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# === Java / Maven ===
+backend/target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# === Node / Angular ===
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/cache/
+npm-debug.log*
+yarn-error.log*
+
+# === Docker ===
+docker-compose.override.yml
+
+# === IDE / Editor ===
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Local tooling ===
+.claude/
+
+# === Misc ===
+*.tmp
+*.bak

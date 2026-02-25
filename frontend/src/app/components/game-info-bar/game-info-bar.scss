@@ -1,0 +1,90 @@
+.game-info-bar {
+  padding: 16px;
+}
+
+.players {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.color-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--mat-sys-outline) 55%, transparent);
+}
+
+.white-dot {
+  background: #fff;
+}
+.black-dot {
+  background: #14181d;
+}
+
+.name {
+  font-weight: 600;
+  font-size: 1.05em;
+}
+
+.model {
+  font-size: 0.8em;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
+}
+
+.vs-label {
+  font-weight: 700;
+  font-size: 1.2em;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+}
+
+.info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.result {
+  font-weight: 600;
+}
+
+.cost {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
+}
+
+.cost-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.retry-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, #ff9800 18%, var(--mat-sys-surface-container));
+  border-radius: 4px;
+  color: color-mix(in srgb, #ff9800 72%, var(--mat-sys-on-surface));
+  font-size: 0.85em;
+}

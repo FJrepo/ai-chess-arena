@@ -1,0 +1,14 @@
+<div class="advantage-container">
+  <div class="eval-bar">
+    <div class="white-bar" [style.height.%]="barHeight()"></div>
+    <div class="black-bar" [style.height.%]="100 - barHeight()"></div>
+    <div class="center-line"></div>
+    <div
+      class="eval-text"
+      [class.white-text]="barHeight() > 50"
+      [class.black-text]="barHeight() <= 50"
+    >
+      {{ displayScore() }}
+    </div>
+  </div>
+</div>

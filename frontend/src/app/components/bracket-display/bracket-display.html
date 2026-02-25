@@ -1,0 +1,98 @@
+<div class="bracket-shell">
+  <div class="bracket-scroll">
+    <div class="bracket-content" #bracketContent>
+      <svg
+        class="connector-layer"
+        [attr.width]="connectorSvgWidth()"
+        [attr.height]="connectorSvgHeight()"
+        aria-hidden="true"
+      >
+        @for (line of connectorPaths(); track line.id) {
+          <path class="connector connector-glow" [attr.d]="line.d"></path>
+        }
+        @for (line of connectorPaths(); track line.id) {
+          <path class="connector connector-core" [attr.d]="line.d"></path>
+        }
+      </svg>
+
+      <div class="bracket">
+        @for (round of rounds(); track round.name) {
+          <div class="round">
+            <h3 class="round-title">{{ round.name }}</h3>
+            <div class="round-matches">
+              @for (game of round.games; track game.id) {
+                <mat-card
+                  #matchCard
+                  class="match-card"
+                  [attr.data-game-id]="game.id"
+                  [class.completed]="game.status === 'COMPLETED' || game.status === 'FORFEIT'"
+                  [class.forfeited]="game.status === 'FORFEIT'"
+                >
+                  <div
+                    class="player white"
+                    [class.winner]="game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT'"
+                    [class.loser]="
+                      (game.status === 'COMPLETED' || game.status === 'FORFEIT') &&
+                      (game.result === 'BLACK_WINS' || game.result === 'WHITE_FORFEIT')
+                    "
+                  >
+                    <span class="color-indicator white-indicator"></span>
+                    @if (game.whiteModelId) {
+                      <app-provider-logo [modelId]="game.whiteModelId" [size]="17" />
+                    }
+                    <span class="player-name">{{ game.whitePlayerName || 'TBD' }}</span>
+                    @if (
+                      round.name === 'Final' &&
+                      (game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT')
+                    ) {
+                      <mat-icon class="crown-icon">emoji_events</mat-icon>
+                    }
+                  </div>
+                  <div class="vs">vs</div>
+                  <div
+                    class="player black"
+                    [class.winner]="game.result === 'BLACK_WINS' || game.result === 'WHITE_FORFEIT'"
+                    [class.loser]="
+                      (game.status === 'COMPLETED' || game.status === 'FORFEIT') &&
+                      (game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT')
+                    "
+                  >
+                    <span class="color-indicator black-indicator"></span>
+                    @if (game.blackModelId) {
+                      <app-provider-logo [modelId]="game.blackModelId" [size]="17" />
+                    }
+                    <span class="player-name">{{ game.blackPlayerName || 'TBD' }}</span>
+                    @if (
+                      round.name === 'Final' &&
+                      (game.result === 'BLACK_WINS' || game.result === 'WHITE_FORFEIT')
+                    ) {
+                      <mat-icon class="crown-icon">emoji_events</mat-icon>
+                    }
+                  </div>
+                  <div class="match-actions">
+                    @if (canBattle(game)) {
+                      <button mat-raised-button color="warn" (click)="battle.emit(game)">
+                        <mat-icon>sports_mma</mat-icon> Battle!
+                      </button>
+                    } @else if (game.status === 'IN_PROGRESS') {
+                      <button mat-stroked-button (click)="view.emit(game)">
+                        <mat-icon>visibility</mat-icon> Watch Live
+                      </button>
+                    } @else if (game.status === 'COMPLETED' || game.status === 'FORFEIT') {
+                      <div class="result-text">{{ getResultText(game) }}</div>
+                      <button mat-stroked-button (click)="view.emit(game)">Review</button>
+                    } @else if (game.status === 'PAUSED') {
+                      <button mat-stroked-button color="accent" (click)="battle.emit(game)">
+                        <mat-icon>play_arrow</mat-icon> Resume
+                      </button>
+                    }
+                  </div>
+                </mat-card>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>

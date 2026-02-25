@@ -1,0 +1,5 @@
+ALTER TABLE moves
+    ADD COLUMN IF NOT EXISTS prompt_version VARCHAR(64);
+
+ALTER TABLE moves
+    ADD COLUMN IF NOT EXISTS prompt_hash VARCHAR(128);

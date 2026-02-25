@@ -1,0 +1,235 @@
+.view-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.move-timer {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 36%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 84%, transparent);
+  font-size: 0.82rem;
+}
+
+.timer-label {
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.timer-value {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-weight: 700;
+  color: var(--mat-sys-on-surface);
+}
+
+.move-timer.warning {
+  border-color: color-mix(in srgb, #ff8f00 60%, var(--mat-sys-outline));
+  background: color-mix(in srgb, #ff8f00 16%, var(--mat-sys-surface-container));
+}
+
+.move-timer.warning .timer-value {
+  color: color-mix(in srgb, #ffb74d 76%, white);
+}
+
+.game-layout {
+  --board-square-size: clamp(58px, 3.6vw, 72px);
+  --moves-col: 2fr;
+  --board-col: 5fr;
+  --chat-col: 3fr;
+
+  display: grid;
+  grid-template-columns:
+    minmax(180px, var(--moves-col))
+    minmax(calc(24px + (8 * var(--board-square-size))), var(--board-col))
+    minmax(280px, var(--chat-col));
+  gap: 18px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+.moves-column,
+.chat-column {
+  min-width: 0;
+}
+
+.moves-column app-move-list,
+.chat-column app-chat-panel {
+  display: block;
+  height: 100%;
+}
+
+.board-section {
+  width: min(100%, calc(56px + (8 * var(--board-square-size))));
+  justify-self: center;
+}
+
+.board-container {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+}
+
+app-chessboard {
+  flex: 1;
+  min-width: 0;
+}
+
+app-advantage-bar {
+  display: block;
+}
+
+.capture-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 36%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 86%, transparent);
+  width: 100%;
+  min-width: 0;
+
+  &.top {
+    margin-bottom: 8px;
+  }
+
+  &.bottom {
+    margin-top: 8px;
+  }
+}
+
+.capture-label {
+  min-width: 106px;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  font-weight: 700;
+}
+
+.capture-pieces {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  min-height: 24px;
+}
+
+.captured-piece {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.captured-piece.white-piece {
+  color: #f4f6fb;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.6),
+    1px -1px 0 rgba(0, 0, 0, 0.6),
+    -1px 1px 0 rgba(0, 0, 0, 0.6),
+    1px 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.captured-piece.black-piece {
+  color: #14181d;
+  text-shadow:
+    -1px -1px 0 rgba(255, 255, 255, 0.4),
+    1px -1px 0 rgba(255, 255, 255, 0.4),
+    -1px 1px 0 rgba(255, 255, 255, 0.4),
+    1px 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.capture-empty {
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 54%, transparent);
+}
+
+.material-edge {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: color-mix(in srgb, var(--mat-sys-primary) 76%, var(--mat-sys-on-surface));
+}
+
+.board-controls {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  gap: 4px;
+}
+
+.chat-column {
+  min-height: 540px;
+}
+
+.admin-panel {
+  margin-top: 24px;
+}
+
+.admin-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.override-section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 1380px) {
+  .game-layout {
+    --board-square-size: clamp(54px, 4.2vw, 66px);
+
+    grid-template-columns: auto minmax(340px, 1fr);
+    grid-template-areas:
+      'board chat'
+      'moves chat';
+  }
+
+  .board-section {
+    grid-area: board;
+  }
+  .moves-column {
+    grid-area: moves;
+  }
+  .chat-column {
+    grid-area: chat;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .game-layout {
+    --board-square-size: clamp(42px, 10.5vw, 56px);
+
+    display: flex;
+    flex-direction: column;
+  }
+
+  .board-section {
+    justify-self: start;
+  }
+
+  .move-timer {
+    margin-left: 0;
+  }
+
+  .capture-strip {
+    min-width: 0;
+    width: 100%;
+  }
+}

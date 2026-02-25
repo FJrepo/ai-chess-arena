@@ -1,0 +1,78 @@
+:host {
+  --board-square-size: 56px;
+  --board-label-size: 24px;
+}
+
+.chessboard-container {
+  display: inline-block;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: var(--board-label-size) repeat(8, var(--board-square-size));
+  grid-template-rows: repeat(8, var(--board-square-size)) var(--board-label-size);
+  user-select: none;
+}
+
+.rank-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75em;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 65%, transparent);
+  width: var(--board-label-size);
+}
+
+.file-labels-spacer {
+  width: var(--board-label-size);
+}
+
+.file-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75em;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 65%, transparent);
+  height: var(--board-label-size);
+}
+
+.square {
+  width: var(--board-square-size);
+  height: var(--board-square-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+
+  &.light {
+    background-color: #f0d9b5;
+  }
+
+  &.dark {
+    background-color: #b58863;
+  }
+}
+
+.piece {
+  font-size: calc(var(--board-square-size) * 0.72);
+  line-height: 1;
+  cursor: default;
+}
+
+.piece.white-piece {
+  color: #f4f6fb;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.58),
+    1px -1px 0 rgba(0, 0, 0, 0.58),
+    -1px 1px 0 rgba(0, 0, 0, 0.58),
+    1px 1px 0 rgba(0, 0, 0, 0.58);
+}
+
+.piece.black-piece {
+  color: #171b22;
+  text-shadow:
+    -1px -1px 0 rgba(255, 255, 255, 0.35),
+    1px -1px 0 rgba(255, 255, 255, 0.35),
+    -1px 1px 0 rgba(255, 255, 255, 0.35),
+    1px 1px 0 rgba(255, 255, 255, 0.35);
+}
