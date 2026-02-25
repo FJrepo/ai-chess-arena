@@ -1,0 +1,27 @@
+<mat-toolbar class="app-toolbar">
+  <a class="brand" routerLink="/tournaments">
+    <img src="/logo-chess-circuit.svg" alt="AI Chess Arena" class="brand-logo" />
+    <span class="toolbar-title">AI Chess Arena</span>
+  </a>
+  <span class="spacer"></span>
+  <button
+    mat-icon-button
+    class="theme-toggle"
+    (click)="toggleTheme()"
+    [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+  >
+    <mat-icon>{{ darkMode() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+  </button>
+  <button mat-button class="toolbar-link" routerLink="/analytics">
+    <mat-icon>insights</mat-icon>
+    <span>Analytics</span>
+  </button>
+  <button mat-stroked-button class="toolbar-cta" routerLink="/tournaments/new">
+    <mat-icon>add_circle</mat-icon>
+    <span>New Tournament</span>
+  </button>
+</mat-toolbar>
+
+<div class="app-content">
+  <router-outlet />
+</div>

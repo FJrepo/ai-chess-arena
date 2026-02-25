@@ -1,0 +1,103 @@
+@if (tournament(); as t) {
+  <div class="bracket-page">
+    <div class="header-v2">
+      <div class="header-left">
+        <div class="title-row">
+          <mat-icon class="tournament-icon">emoji_events</mat-icon>
+          <h2>{{ t.name }}</h2>
+        </div>
+        <div class="meta-row">
+          <span class="status-badge" [class.active]="t.status === 'IN_PROGRESS'">
+            {{ t.status }}
+          </span>
+          <span class="dot-separator"></span>
+          <span class="count-tag">{{ t.participants.length }} Players</span>
+          <span class="dot-separator"></span>
+          <span class="count-tag">{{ t.games.length }} Games</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        @if (costSummary(); as summary) {
+          <div class="quick-cost">
+            <span class="label">Total Spend</span>
+            <span class="value">{{ summary.totalCostUsd | currency: 'USD' }}</span>
+          </div>
+        }
+        <button mat-icon-button (click)="loadCostSummary()" [disabled]="costSummaryLoading()">
+          <mat-icon [class.spinning]="costSummaryLoading()">refresh</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <mat-expansion-panel class="cost-panel" [expanded]="false">
+      <mat-expansion-panel-header>
+        <mat-panel-title>
+          <mat-icon>payments</mat-icon>
+          Detailed Spend Summary
+        </mat-panel-title>
+      </mat-expansion-panel-header>
+
+      @if (costSummaryError()) {
+        <p class="summary-error">{{ costSummaryError() }}</p>
+      } @else if (costSummary(); as summary) {
+        <div class="cost-details-grid">
+          <div class="cost-stat">
+            <span class="stat-label">Avg / Game</span>
+            <span class="stat-value">{{ summary.averageCostPerGameUsd | currency: 'USD' }}</span>
+          </div>
+          <div class="cost-stat">
+            <span class="stat-label">Avg / Move</span>
+            <span class="stat-value">{{ summary.averageCostPerMoveUsd | currency: 'USD' }}</span>
+          </div>
+
+          @if (summary.highestCostGame; as highestCostGame) {
+            <div class="highest-game-v2">
+              <span class="stat-label">Most Expensive Match</span>
+              <button mat-button class="match-link" (click)="viewGameById(highestCostGame.gameId)">
+                <mat-icon>open_in_new</mat-icon>
+                {{ highestCostGame.whitePlayerName }} vs {{ highestCostGame.blackPlayerName }} ({{
+                  highestCostGame.costUsd | currency: 'USD'
+                }})
+              </button>
+            </div>
+          }
+        </div>
+
+        @if (summary.topModels.length > 0) {
+          <div class="top-models-section">
+            <span class="stat-label">Top Model Spend</span>
+            <div class="model-tags">
+              @for (model of summary.topModels; track model.modelId) {
+                <div class="model-cost-tag">
+                  <span class="model-name">{{ model.modelId }}</span>
+                  <span class="model-price">{{ model.totalCostUsd | currency: 'USD' }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      }
+    </mat-expansion-panel>
+
+    @if (t.status === 'CREATED' && t.participants.length >= 2) {
+      <div class="generate-section">
+        <mat-icon class="generate-icon">hub</mat-icon>
+        <p>{{ t.participants.length }} participants are ready to compete.</p>
+        <button mat-raised-button color="primary" (click)="generateBracket()">
+          <mat-icon>auto_awesome</mat-icon> Generate Tournament Bracket
+        </button>
+      </div>
+    }
+
+    @if (t.games.length > 0) {
+      <div class="bracket-container">
+        <app-bracket-display
+          [games]="t.games"
+          (battle)="startGame($event)"
+          (view)="viewGame($event)"
+        />
+      </div>
+    }
+  </div>
+}

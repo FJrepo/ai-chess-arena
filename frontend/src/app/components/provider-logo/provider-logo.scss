@@ -1,0 +1,31 @@
+.provider-logo {
+  --logo-size: 18px;
+  --provider-bg: #2b3343;
+  --provider-accent: #c8d1e3;
+
+  width: var(--logo-size);
+  height: var(--logo-size);
+  min-width: var(--logo-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--provider-accent) 38%, var(--mat-sys-outline));
+  background: color-mix(in srgb, var(--provider-bg) 78%, var(--mat-sys-surface-container-high));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+  overflow: hidden;
+}
+
+.provider-image {
+  width: 74%;
+  height: 74%;
+  object-fit: contain;
+  display: block;
+}
+
+.provider-fallback {
+  font-size: calc(var(--logo-size) * 0.56);
+  width: calc(var(--logo-size) * 0.56);
+  height: calc(var(--logo-size) * 0.56);
+  color: color-mix(in srgb, var(--provider-accent) 84%, var(--mat-sys-on-surface));
+}

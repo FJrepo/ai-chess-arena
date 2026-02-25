@@ -1,0 +1,152 @@
+.tournament-list {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+
+    h2 {
+      margin: 0;
+      font-family: 'Roboto', sans-serif;
+      font-size: 2.2rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    a[mat-raised-button] {
+      height: 48px;
+      padding: 0 24px;
+      border-radius: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  }
+
+  .tournament-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+  }
+
+  .tournament-card {
+    border-radius: 20px;
+    padding: 0;
+    cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 15%, transparent);
+    background: linear-gradient(
+      145deg,
+      var(--mat-sys-surface-container-low),
+      var(--mat-sys-surface-container-high)
+    );
+    transition:
+      transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.2s;
+    overflow: hidden;
+
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+      border-color: color-mix(in srgb, var(--mat-sys-primary) 30%, transparent);
+    }
+
+    mat-card-header {
+      padding: 24px 24px 16px;
+
+      ::ng-deep .mat-card-header-text {
+        margin: 0;
+      }
+
+      mat-card-title {
+        font-family: 'Roboto', sans-serif;
+        font-size: 1.45rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: var(--mat-sys-primary);
+        letter-spacing: 0.02em;
+      }
+
+      mat-card-subtitle {
+        margin: 0;
+      }
+    }
+
+    mat-card-content {
+      padding: 0 24px 16px;
+      font-size: 0.95rem;
+      color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      p {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        &::before {
+          content: '•';
+          color: var(--mat-sys-primary);
+          font-weight: 800;
+        }
+      }
+
+      .date {
+        margin-top: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: color-mix(in srgb, var(--mat-sys-on-surface) 40%, transparent);
+        &::before {
+          display: none;
+        }
+      }
+    }
+
+    mat-card-actions {
+      padding: 8px 16px;
+      margin: 0;
+      background: color-mix(in srgb, var(--mat-sys-on-surface) 4%, transparent);
+      border-top: 1px solid color-mix(in srgb, var(--mat-sys-outline) 8%, transparent);
+    }
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 64px 32px;
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--mat-sys-surface-container-low) 60%, transparent);
+    border: 2px dashed color-mix(in srgb, var(--mat-sys-outline) 20%, transparent);
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 60%, transparent);
+
+    p {
+      font-size: 1.2rem;
+      font-weight: 500;
+    }
+  }
+
+  .error-state {
+    margin-bottom: 24px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, #ff6d5b 42%, transparent);
+    background: color-mix(in srgb, #ff6d5b 10%, var(--mat-sys-surface-container-low));
+    color: #ff8a80;
+  }
+}
+
+mat-chip {
+  --mdc-chip-label-text-size: 0.72rem;
+  --mdc-chip-label-text-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  height: 24px;
+}

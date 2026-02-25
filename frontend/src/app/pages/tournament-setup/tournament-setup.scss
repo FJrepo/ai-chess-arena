@@ -1,0 +1,179 @@
+.tournament-setup {
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+
+  .setup-hero {
+    border-radius: 18px;
+    padding: 24px;
+    background:
+      radial-gradient(
+        110% 120% at 10% 0%,
+        color-mix(in srgb, var(--mat-sys-primary) 28%, transparent),
+        transparent 60%
+      ),
+      linear-gradient(
+        130deg,
+        color-mix(in srgb, var(--mat-sys-primary-container) 65%, white),
+        color-mix(in srgb, var(--mat-sys-surface) 88%, white)
+      );
+    border: 1px solid color-mix(in srgb, var(--mat-sys-primary) 14%, transparent);
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.9rem;
+      line-height: 1.2;
+    }
+
+    p {
+      margin: 0;
+      color: color-mix(in srgb, var(--mat-sys-on-surface) 75%, black);
+    }
+  }
+
+  .panel {
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 26%, transparent);
+    box-shadow: 0 6px 24px rgba(15, 32, 64, 0.08);
+  }
+
+  .full-width {
+    width: 100%;
+  }
+
+  .settings-grid {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
+  .prompt-meta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: -6px;
+    margin-bottom: 4px;
+  }
+
+  .prompt-version {
+    font-size: 0.8rem;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
+  }
+
+  .prompt-warning {
+    font-size: 0.8rem;
+    color: color-mix(in srgb, #ff8a80 78%, var(--mat-sys-on-surface));
+  }
+
+  .participants-card {
+    mat-card-subtitle {
+      margin-top: 6px;
+    }
+  }
+
+  .openrouter-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    background: color-mix(in srgb, var(--mat-sys-primary-container) 45%, transparent);
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 80%, black);
+
+    &.ok {
+      background: color-mix(in srgb, #22a06b 14%, transparent);
+    }
+
+    &.fail {
+      background: color-mix(in srgb, #d14343 14%, transparent);
+    }
+  }
+
+  .add-participant {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+
+    .model-select {
+      min-width: 0;
+    }
+
+    .model-option-title {
+      font-weight: 600;
+    }
+
+    .model-option-meta {
+      font-size: 0.78rem;
+      opacity: 0.75;
+    }
+  }
+
+  .model-option-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 2px 0;
+  }
+
+  .model-option-content {
+    min-width: 0;
+  }
+
+  .model-controls {
+    margin: 4px 0 12px;
+  }
+
+  .selected-model {
+    margin-bottom: 14px;
+    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--mat-sys-primary) 20%, transparent);
+    background: color-mix(in srgb, var(--mat-sys-surface) 82%, white);
+
+    .selected-model-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    .selected-model-meta {
+      margin-top: 6px;
+      font-size: 0.84rem;
+      opacity: 0.8;
+    }
+  }
+
+  .add-action {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 14px;
+  }
+
+  .provider-line {
+    font-size: 0.8rem;
+    opacity: 0.72;
+  }
+
+  .participant-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  @media (max-width: 900px) {
+    .add-participant {
+      grid-template-columns: 1fr;
+    }
+  }
+}

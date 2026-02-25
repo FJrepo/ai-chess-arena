@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  backend-tests:
+    name: Backend tests (Java 21)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Backend lint (compile)
+        run: mvn -B -DskipTests compile
+
+      - name: Backend style check (Checkstyle)
+        run: mvn -B -DskipTests checkstyle:check
+
+      - name: Backend format check
+        run: mvn -B -DskipTests spotless:check
+
+      - name: Run backend tests
+        run: mvn -B test -DskipITs
+
+  frontend-build:
+    name: Frontend build (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Frontend lint (ESLint)
+        run: npm run lint
+
+      - name: Frontend type check
+        run: npm run typecheck
+
+      - name: Frontend format check
+        run: npm run format:check
+
+      - name: Build frontend (development config)
+        run: npm run build -- --configuration development

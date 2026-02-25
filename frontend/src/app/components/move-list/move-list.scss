@@ -1,0 +1,86 @@
+.move-list-card {
+  height: 100%;
+}
+
+.move-list-scroll {
+  min-height: 220px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.move-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 4px;
+  align-items: center;
+}
+
+.move-number {
+  min-width: 32px;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+  font-size: 0.85em;
+  text-align: right;
+}
+
+.move {
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: monospace;
+  font-weight: 500;
+  min-width: 48px;
+  text-align: center;
+
+  &:hover {
+    background-color: color-mix(in srgb, var(--mat-sys-primary) 12%, transparent);
+  }
+
+  &.active {
+    background-color: color-mix(in srgb, var(--mat-sys-primary) 22%, transparent);
+    color: var(--mat-sys-primary);
+  }
+}
+
+.retry-badge {
+  display: inline-block;
+  background: #ff9800;
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 0.7em;
+  text-align: center;
+  line-height: 16px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+}
+
+.move-list-card.compact {
+  .move-list-scroll {
+    min-height: 460px;
+    max-height: 68vh;
+  }
+
+  .move-row {
+    gap: 6px;
+    padding: 1px 2px;
+  }
+
+  .move-number {
+    min-width: 24px;
+    font-size: 0.78em;
+  }
+
+  .move {
+    min-width: 44px;
+    padding: 1px 6px;
+    font-size: 0.86em;
+  }
+}

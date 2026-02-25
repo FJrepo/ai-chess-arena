@@ -1,0 +1,63 @@
+.chat-card {
+  height: 100%;
+}
+
+.chat-scroll {
+  min-height: 300px;
+  max-height: 48vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chat-message {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 88%, transparent);
+
+  &.white-msg {
+    border-left: 3px solid color-mix(in srgb, var(--mat-sys-outline) 55%, transparent);
+    background: color-mix(in srgb, var(--mat-sys-surface-container-low) 86%, transparent);
+  }
+
+  &.black-msg {
+    border-left: 3px solid color-mix(in srgb, var(--mat-sys-primary) 60%, transparent);
+    background: color-mix(in srgb, var(--mat-sys-surface-container-high) 84%, transparent);
+  }
+}
+
+.msg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.sender {
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.white-sender {
+  color: var(--mat-sys-on-surface);
+}
+.black-sender {
+  color: color-mix(in srgb, var(--mat-sys-primary) 72%, var(--mat-sys-on-surface));
+}
+
+.msg-time {
+  font-size: 0.75em;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+}
+
+.msg-body {
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.empty-chat {
+  text-align: center;
+  padding: 24px;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+  font-style: italic;
+}

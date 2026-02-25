@@ -1,0 +1,219 @@
+<div class="analytics-page">
+  <div class="filter-card">
+    <div class="filter-grid">
+      <mat-form-field appearance="outline">
+        <mat-label>Analysis Window</mat-label>
+        <mat-select [(ngModel)]="selectedDays" (ngModelChange)="onCommonFiltersChanged()">
+          @for (days of dayOptions; track days) {
+            <mat-option [value]="days">Last {{ days }} days</mat-option>
+          }
+        </mat-select>
+        <mat-icon matPrefix>calendar_today</mat-icon>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Filter by Tournament</mat-label>
+        <mat-select [(ngModel)]="selectedTournamentId" (ngModelChange)="onCommonFiltersChanged()">
+          <mat-option value="">All tournaments</mat-option>
+          @for (tournament of tournaments(); track tournament.id) {
+            <mat-option [value]="tournament.id">{{ tournament.name }}</mat-option>
+          }
+        </mat-select>
+        <mat-icon matPrefix>emoji_events</mat-icon>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Min Games</mat-label>
+        <input
+          matInput
+          type="number"
+          min="0"
+          [(ngModel)]="minGames"
+          (ngModelChange)="onReliabilityFiltersChanged()"
+        />
+        <mat-icon matPrefix>leaderboard</mat-icon>
+      </mat-form-field>
+
+      <button mat-flat-button color="primary" class="refresh-btn" (click)="manualRefresh()">
+        <mat-icon>refresh</mat-icon>
+        Sync Data
+      </button>
+    </div>
+
+    @if (lastUpdated(); as lastUpdatedAt) {
+      <div class="last-updated">System Synced at {{ lastUpdatedAt | date: 'mediumTime' }}</div>
+    }
+  </div>
+
+  <mat-tab-group animationDuration="200ms">
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">speed</mat-icon>
+        Engine Health
+      </ng-template>
+      <section class="tab-content">
+        @if (healthLoading()) {
+          <div class="loading-state">
+            <mat-spinner diameter="40"></mat-spinner>
+            <span>Analyzing engine performance...</span>
+          </div>
+        }
+
+        @if (healthError()) {
+          <div class="error-card">
+            <mat-icon>error_outline</mat-icon>
+            {{ healthError() }}
+          </div>
+        }
+
+        @if (health(); as h) {
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="label">Total Cost</div>
+              <div class="value">{{ h.costTotalUsd | currency: 'USD' }}</div>
+              <div class="sub">Across {{ h.gamesCount }} matches</div>
+            </div>
+            <div class="kpi-card">
+              <div class="label">Move Volume</div>
+              <div class="value">{{ h.movesCount | number }}</div>
+              <div class="sub">{{ h.retriesTotal }} retries required</div>
+            </div>
+            <div class="kpi-card">
+              <div class="label">Avg Latency</div>
+              <div class="value">{{ formatMs(h.averageResponseTimeMs) }}</div>
+              <div class="sub">P95: {{ formatMs(h.p95ResponseTimeMs) }}</div>
+            </div>
+            <div class="kpi-card">
+              <div class="label">Total Tokens</div>
+              <div class="value">{{ h.promptTokensTotal + h.completionTokensTotal | number }}</div>
+              <div class="sub">
+                In: {{ h.promptTokensTotal | number }} / Out: {{ h.completionTokensTotal | number }}
+              </div>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <h3>Per-Model Performance Metrics</h3>
+            <div class="table-wrap">
+              <table class="analytics-table">
+                <thead>
+                  <tr>
+                    <th>Model Identity</th>
+                    <th>Moves</th>
+                    <th>Retries</th>
+                    <th>Avg Retries</th>
+                    <th>Latency</th>
+                    <th>Total Cost</th>
+                    <th>Cost/Move</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of h.models; track row.modelId) {
+                    <tr>
+                      <td>
+                        <strong>{{ row.modelId }}</strong>
+                      </td>
+                      <td>{{ row.movesCount }}</td>
+                      <td>{{ row.retriesTotal }}</td>
+                      <td>{{ row.averageRetriesPerMove | number: '1.2-4' }}</td>
+                      <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td>{{ row.totalCostUsd | currency: 'USD' }}</td>
+                      <td>{{ row.averageCostPerMoveUsd | currency: 'USD' }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="7" class="empty">
+                        No performance data found for the selected period.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+      </section>
+    </mat-tab>
+
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">verified_user</mat-icon>
+        Model Reliability
+      </ng-template>
+      <section class="tab-content">
+        @if (reliabilityLoading()) {
+          <div class="loading-state">
+            <mat-spinner diameter="40"></mat-spinner>
+            <span>Calculating reliability scores...</span>
+          </div>
+        }
+
+        @if (reliabilityError()) {
+          <div class="error-card">
+            <mat-icon>error_outline</mat-icon>
+            {{ reliabilityError() }}
+          </div>
+        }
+
+        @if (reliability(); as r) {
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="label">Trust Index</div>
+              <div class="value">{{ reliabilityAverageScore() | number: '1.1-2' }}</div>
+              <div class="sub">Average across {{ r.models.length }} models</div>
+            </div>
+            <div class="kpi-card">
+              <div class="label">Low Confidence</div>
+              <div class="value">{{ reliabilityLowConfidenceCount() }}</div>
+              <div class="sub">Models with insufficient data</div>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <h3>Reliability Ranking & Stability</h3>
+            <div class="table-wrap">
+              <table class="analytics-table">
+                <thead>
+                  <tr>
+                    <th>Model Identity</th>
+                    <th>Score</th>
+                    <th>Stability</th>
+                    <th>Games</th>
+                    <th>Forfeit Rate</th>
+                    <th>Avg Retries</th>
+                    <th>Avg Latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of r.models; track row.modelId) {
+                    <tr>
+                      <td>
+                        <strong>{{ row.modelId }}</strong>
+                      </td>
+                      <td>{{ row.finalScore | number: '1.1-2' }}</td>
+                      <td>
+                        <mat-chip [class.low-confidence]="row.insufficientData">
+                          {{ row.band }}
+                        </mat-chip>
+                      </td>
+                      <td>{{ row.gamesPlayed }}</td>
+                      <td>{{ row.forfeitRate * 100 | number: '1.1-2' }}%</td>
+                      <td>{{ row.averageRetriesPerMove | number: '1.2-4' }}</td>
+                      <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="7" class="empty">
+                        No reliability data available for current criteria.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+      </section>
+    </mat-tab>
+  </mat-tab-group>
+</div>

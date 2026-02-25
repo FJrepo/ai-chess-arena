@@ -1,0 +1,62 @@
+<div class="tournament-list">
+  <div class="header">
+    <h2>Tournaments</h2>
+    <a mat-raised-button color="primary" routerLink="/tournaments/new">
+      <mat-icon>add</mat-icon> Create Tournament
+    </a>
+  </div>
+
+  @if (tournaments().length === 0) {
+    <mat-card class="empty-state">
+      <mat-card-content>
+        <p>No tournaments yet. Create one to get started!</p>
+      </mat-card-content>
+    </mat-card>
+  }
+
+  @if (deleteError()) {
+    <mat-card class="error-state">
+      <mat-card-content>{{ deleteError() }}</mat-card-content>
+    </mat-card>
+  }
+
+  <div class="tournament-grid">
+    @for (tournament of tournaments(); track tournament.id) {
+      <mat-card
+        class="tournament-card"
+        role="button"
+        tabindex="0"
+        (click)="openTournament(tournament.id)"
+        (keydown.enter)="openTournament(tournament.id)"
+        (keydown.space)="openTournament(tournament.id)"
+      >
+        <mat-card-header>
+          <mat-card-title>{{ tournament.name }}</mat-card-title>
+          <mat-card-subtitle>
+            <mat-chip-set>
+              <mat-chip [highlighted]="tournament.status === 'IN_PROGRESS'">
+                {{ tournament.status }}
+              </mat-chip>
+            </mat-chip-set>
+          </mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <p>{{ tournament.participants.length }} participants</p>
+          <p>{{ tournament.games.length }} games</p>
+          <p class="date">Created {{ tournament.createdAt | date }}</p>
+        </mat-card-content>
+        <mat-card-actions align="end">
+          <button
+            mat-icon-button
+            color="warn"
+            type="button"
+            [disabled]="deletingIds().has(tournament.id)"
+            (click)="deleteTournament(tournament.id, $event)"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </mat-card-actions>
+      </mat-card>
+    }
+  </div>
+</div>

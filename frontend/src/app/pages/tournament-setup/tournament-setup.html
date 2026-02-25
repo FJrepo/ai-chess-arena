@@ -1,0 +1,197 @@
+<div class="tournament-setup">
+  <section class="setup-hero">
+    <h1>Create Tournament</h1>
+    <p>Pick OpenRouter models, configure rules, and launch a bracket in minutes.</p>
+  </section>
+
+  <mat-card class="panel">
+    <mat-card-header>
+      <mat-card-title>Tournament Settings</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Tournament Name</mat-label>
+        <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
+      </mat-form-field>
+
+      <div class="settings-grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Move Timeout (seconds)</mat-label>
+          <input matInput type="number" [(ngModel)]="moveTimeout" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Max Retries</mat-label>
+          <input matInput type="number" [(ngModel)]="maxRetries" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Draw Policy</mat-label>
+          <mat-select [(ngModel)]="drawPolicy">
+            @for (option of drawPolicyOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-slide-toggle [(ngModel)]="trashTalkEnabled"> Trash Talk Enabled </mat-slide-toggle>
+      </div>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Default System Prompt</mat-label>
+        <textarea matInput [(ngModel)]="systemPrompt" rows="11"></textarea>
+      </mat-form-field>
+      <div class="prompt-meta-row">
+        @if (promptTemplateVersion()) {
+          <span class="prompt-version">Template version: {{ promptTemplateVersion() }}</span>
+        }
+        @if (promptTemplateLoadError()) {
+          <span class="prompt-warning">{{ promptTemplateLoadError() }}</span>
+        }
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="panel participants-card">
+    <mat-card-header>
+      <mat-card-title>Participants</mat-card-title>
+      <mat-card-subtitle
+        >Choose from OpenRouter models instead of typing model IDs manually.</mat-card-subtitle
+      >
+    </mat-card-header>
+    <mat-card-content>
+      <div
+        class="openrouter-status"
+        [class.ok]="openRouterReady() === true"
+        [class.fail]="openRouterReady() === false"
+      >
+        @if (modelsLoading()) {
+          <mat-spinner diameter="18"></mat-spinner>
+          <span>Loading models from OpenRouter...</span>
+        } @else if (openRouterReady() === false) {
+          <mat-icon>error</mat-icon>
+          <span>OpenRouter API key is invalid or unavailable.</span>
+        } @else if (modelsError()) {
+          <mat-icon>warning</mat-icon>
+          <span>{{ modelsError() }}</span>
+        } @else {
+          <mat-icon>check_circle</mat-icon>
+          <span
+            >{{ totalMatched() }} models matched ({{ featuredModelCount() }} featured total).</span
+          >
+        }
+      </div>
+
+      <div class="add-participant">
+        <mat-form-field appearance="outline">
+          <mat-label>Display Name</mat-label>
+          <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Search Models</mat-label>
+          <input
+            matInput
+            [(ngModel)]="modelSearch"
+            (ngModelChange)="onSearchChanged()"
+            placeholder="Search by provider or model name"
+          />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="model-select">
+          <mat-label>OpenRouter Model</mat-label>
+          <mat-select
+            [ngModel]="newModelId"
+            (ngModelChange)="onModelChanged($event)"
+            [disabled]="modelsLoading() || visibleModels().length === 0"
+          >
+            @for (model of visibleModels(); track model.id) {
+              <mat-option [value]="model.id">
+                <div class="model-option-row">
+                  <app-provider-logo [provider]="model.provider" [size]="20" />
+                  <div class="model-option-content">
+                    <div class="model-option-title">{{ model.name }}</div>
+                    <div class="model-option-meta">
+                      {{ model.id }} · {{ providerDisplayName(model.provider) }} ·
+                      {{ formatContextLength(model.contextLength) }} context ·
+                      {{ formatPrice(model.promptPricePerMillion) }} prompt
+                    </div>
+                  </div>
+                </div>
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <div class="model-controls">
+        <mat-slide-toggle [(ngModel)]="showAllModels" (ngModelChange)="onShowAllModelsChanged()">
+          Show all models (disable to keep only main models)
+        </mat-slide-toggle>
+      </div>
+
+      @if (selectedModel(); as model) {
+        <div class="selected-model">
+          <div class="selected-model-title">
+            <app-provider-logo [provider]="model.provider" [size]="22" />
+            <span>{{ model.name }}</span>
+          </div>
+          <div class="selected-model-meta">
+            {{ model.id }} · {{ providerDisplayName(model.provider) }} ·
+            {{ formatContextLength(model.contextLength) }} context ·
+            {{ formatPrice(model.promptPricePerMillion) }} prompt ·
+            {{ formatPrice(model.completionPricePerMillion) }} completion
+          </div>
+        </div>
+      }
+
+      <div class="add-action">
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="addParticipant()"
+          [disabled]="!canAddParticipant()"
+        >
+          <mat-icon>add</mat-icon>
+          <span>Add Participant</span>
+        </button>
+      </div>
+
+      <mat-divider></mat-divider>
+
+      <mat-list>
+        @for (p of participants(); track $index) {
+          <mat-list-item>
+            <span matListItemTitle class="participant-title">
+              <app-provider-logo [modelId]="p.modelId || null" [size]="18" />
+              <span>{{ p.playerName }}</span>
+            </span>
+            <span matListItemLine>{{ p.modelId }}</span>
+            <span matListItemLine class="provider-line">
+              Provider: {{ providerDisplayName(null, p.modelId || null) }}
+            </span>
+            <button matListItemMeta mat-icon-button (click)="removeParticipant($index)">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </mat-list-item>
+        } @empty {
+          <mat-list-item>
+            <span matListItemTitle>No participants added yet</span>
+          </mat-list-item>
+        }
+      </mat-list>
+    </mat-card-content>
+  </mat-card>
+
+  <div class="actions">
+    <button
+      mat-raised-button
+      color="primary"
+      (click)="create()"
+      [disabled]="!name || participants().length < 2"
+    >
+      <mat-icon>emoji_events</mat-icon>
+      <span>Create Tournament</span>
+    </button>
+  </div>
+</div>

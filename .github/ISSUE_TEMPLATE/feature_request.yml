@@ -1,0 +1,30 @@
+name: Feature Request
+description: Propose an enhancement
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other options you considered and why they were not chosen.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and impact
+      description: Affected backend/frontend areas, migrations, API changes, etc.
