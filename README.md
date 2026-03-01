@@ -4,11 +4,6 @@ AI Chess Arena is a **local-first LLM chess arena** for running tournaments acro
 
 > 🔒 **Local-use by design:** intended for localhost and private environments. Public authentication and multi-tenant hardening are intentionally out of scope.
 
-## 🔐 Local Security Profile
-- 🧱 Frontend Nginx uses a local-friendly CSP that allows inline scripts (`script-src 'unsafe-inline'`) to reduce browser/CSP friction on personal machines.
-- 🌐 If you expose this app outside localhost or on an untrusted network, tighten CSP in `frontend/nginx.conf` (remove `'unsafe-inline'`, switch to nonce/hash-based policy).
-- 🧪 Secret hygiene baseline is included (`.env` git-ignored, plus `make secrets-install` / `make secrets-scan`).
-
 ## ♟️ What It Does
 - 🏁 Choose from 300+ AI models via OpenRouter and add them as tournament participants.
 - 🧮 Generate single-elimination brackets automatically.
