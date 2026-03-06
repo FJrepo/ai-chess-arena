@@ -105,6 +105,21 @@ A feature is done when all of the following are true:
 - deploy status is explicitly reported
 - residual limitations or deferred follow-up work are explicitly listed
 
+## Release Policy
+- Release tags use `vX.Y.Z`.
+- `main` should remain releasable.
+- While the project is pre-1.0:
+  - feature additions -> minor bump
+  - fixes, docs, CI/release pipeline changes, and hardening -> patch bump
+- A release is only considered complete when all of the following exist and are verified:
+  - git tag
+  - GitHub Release
+  - GHCR backend image
+  - GHCR frontend image
+- Pinned version tags are the supported deployment target; `latest` is convenience only.
+- Release-affecting changes should update `CHANGELOG.md`.
+- Do not cut a release if tests/builds are failing, docs are materially misleading, or release artifacts are known broken/unverified.
+
 ## Final Response Requirements
 When finishing a feature task, include:
 - what changed

@@ -147,6 +147,20 @@ Recommended tagging policy:
 - use pinned tags such as `v0.2.0` for real deployments
 - keep `latest` as a convenience tag only
 
+## Release Policy
+- Release tags use `vX.Y.Z`.
+- `main` should stay in a releasable state.
+- While the project is pre-1.0:
+  - new features generally mean a minor bump
+  - fixes, docs, hardening, and release-pipeline changes generally mean a patch bump
+- A release is only considered complete when the following are all present and verified:
+  - the git tag
+  - the GitHub Release page
+  - the published GHCR backend image
+  - the published GHCR frontend image
+- Pinned tags are the recommended deployment target.
+- `latest` is published for convenience, not as the primary supported upgrade target.
+
 ## Troubleshooting
 
 ### GHCR pull fails
