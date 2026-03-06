@@ -7,6 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-06
+
+### Added
+- Backend image now includes explicit Stockfish notice/license artifacts for distribution compliance.
+- Game view now shows explicit evaluation engine status.
+- Tournament list now supports filtering and sorting in the UI.
+
+### Changed
+- Release/deployment policy is now documented explicitly for maintainers.
+- Stockfish evaluation is queued only after move persistence commits successfully.
+
+### Fixed
+- Backend now degrades gracefully when Stockfish is unavailable instead of leaving evaluation behavior ambiguous.
+- Advantage-bar updates no longer race move persistence and get dropped intermittently.
+- Frontend game view makes evaluation availability clearer when Stockfish is offline.
+
+## [0.2.0] - 2026-03-06
+
 ### Added
 - Best-of tournament matchup series with optional finals-specific override.
 - Release workflow for version tags that publishes frontend/backend images to GitHub Container Registry.
