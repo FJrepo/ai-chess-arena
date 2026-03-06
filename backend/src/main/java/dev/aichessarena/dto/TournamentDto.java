@@ -10,7 +10,7 @@ public record TournamentDto(
         String status,
         String format,
         String drawPolicy,
-        String defaultSystemPrompt,
+        String sharedCustomInstructions,
         int moveTimeoutSeconds,
         int maxRetries,
         int matchupBestOf,

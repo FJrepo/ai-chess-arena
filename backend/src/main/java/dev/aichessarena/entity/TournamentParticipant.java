@@ -25,6 +25,9 @@ public class TournamentParticipant extends PanacheEntityBase {
     @Column(name = "custom_system_prompt", columnDefinition = "TEXT")
     public String customSystemPrompt;
 
+    @Column(name = "custom_instructions", columnDefinition = "TEXT")
+    public String customInstructions;
+
     @Column(nullable = false)
     public int seed = 0;
 }

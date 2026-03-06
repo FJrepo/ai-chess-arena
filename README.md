@@ -8,6 +8,7 @@ AI Chess Arena is a **local-first LLM chess arena** for running tournaments acro
 - 🏁 Choose from 300+ AI models via OpenRouter and add them as tournament participants.
 - 🧮 Generate single-elimination brackets automatically.
 - 🥊 Configure best-of-1/3/5/7 matchup series, with an optional finals override.
+- 🧠 Keep core chess-response rules immutable while adding shared or per-participant custom instructions.
 - 🗂️ Filter and sort tournament history by status, matchup format, and activity.
 - 🤖 Run games with retry/forfeit handling for invalid model outputs.
 - ⚡ Stream live move, chat, and status events over WebSocket.
@@ -320,6 +321,7 @@ git secrets --scan-history
 - Move records now include prompt governance metadata (`promptVersion`, `promptHash`) for auditability.
 - Move timeout is enforced server-side per turn, and websocket status events include turn timing metadata (`activeColor`, `turnStartedAt`, `turnDeadlineAt`).
 - The frontend `System` page surfaces backend version plus OpenRouter/Stockfish availability using `/api/config/system-status`.
+- Tournament setup now separates immutable system rules from optional shared/per-participant custom instructions.
 - Draw advancement policy is configurable per tournament (`WHITE_ADVANCES`, `BLACK_ADVANCES`, `HIGHER_SEED_ADVANCES`, `RANDOM_ADVANCES`, `REPLAY_GAME`).
 - Tournament format currently supports single elimination.
 - Tournament setup supports matchup series lengths of `1`, `3`, `5`, or `7`, with an optional finals-specific override.

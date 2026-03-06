@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -59,19 +60,71 @@ class PromptServiceTest {
     @Test
     void resolvePromptVersionReturnsDefaultForDefaultTemplate() {
         String version = promptService.resolvePromptVersion(promptService.getDefaultSystemPromptTemplate());
-        assertTrue(version.equals(promptService.getDefaultSystemPromptVersion()));
+        assertEquals(promptService.getDefaultSystemPromptVersion(), version);
     }
 
     @Test
-    void resolvePromptVersionReturnsCustomForCustomTemplate() {
+    void resolvePromptVersionReturnsLegacyCustomForCustomTemplate() {
         String version = promptService.resolvePromptVersion("Play chess. Return JSON.");
-        assertTrue(version.equals("custom"));
+        assertEquals("legacy-custom-template", version);
     }
 
     @Test
     void resolvePromptVersionReturnsDefaultForBlankTemplate() {
         String version = promptService.resolvePromptVersion("   ");
-        assertTrue(version.equals(promptService.getDefaultSystemPromptVersion()));
+        assertEquals(promptService.getDefaultSystemPromptVersion(), version);
+    }
+
+    @Test
+    void resolvePromptVersionReturnsCustomInstructionsVariantWhenInstructionsPresent() {
+        String version = promptService.resolvePromptVersion(null, "Play sharp openings.");
+        assertEquals(promptService.getDefaultSystemPromptVersion() + "+custom-instructions", version);
+    }
+
+    @Test
+    void buildSystemPromptUsesImmutableRulesAndAppendsSharedInstructions() {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                null,
+                "Prefer open positions and avoid repeating moves.",
+                "WHITE",
+                "Opponent Bot",
+                "model/opponent"
+        );
+
+        assertTrue(prompt.prompt().contains("RULES:"));
+        assertTrue(prompt.prompt().contains("CUSTOM INSTRUCTIONS:"));
+        assertTrue(prompt.prompt().contains("Prefer open positions and avoid repeating moves."));
+        assertTrue(prompt.prompt().contains("You are playing as WHITE in this game."));
+        assertEquals(promptService.getDefaultSystemPromptVersion() + "+custom-instructions", prompt.version());
+    }
+
+    @Test
+    void buildSystemPromptIgnoresBlankInstructions() {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                null,
+                "   ",
+                "BLACK",
+                "Opponent Bot",
+                "model/opponent"
+        );
+
+        assertFalse(prompt.prompt().contains("CUSTOM INSTRUCTIONS:"));
+        assertEquals(promptService.getDefaultSystemPromptVersion(), prompt.version());
+    }
+
+    @Test
+    void buildSystemPromptKeepsLegacyCustomTemplateOverride() {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                "Play as %s against %s (%s). Return raw JSON only.",
+                "Ignore this instruction.",
+                "WHITE",
+                "Opponent Bot",
+                "model/opponent"
+        );
+
+        assertTrue(prompt.prompt().startsWith("Play as WHITE against Opponent Bot"));
+        assertFalse(prompt.prompt().contains("CUSTOM INSTRUCTIONS:"));
+        assertEquals("legacy-custom-template", prompt.version());
     }
 
     @Test

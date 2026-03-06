@@ -9,7 +9,7 @@ export interface Tournament {
     | 'HIGHER_SEED_ADVANCES'
     | 'RANDOM_ADVANCES'
     | 'REPLAY_GAME';
-  defaultSystemPrompt: string | null;
+  sharedCustomInstructions: string | null;
   moveTimeoutSeconds: number;
   maxRetries: number;
   matchupBestOf: 1 | 3 | 5 | 7;
@@ -25,7 +25,7 @@ export interface Participant {
   id: string;
   playerName: string;
   modelId: string;
-  customSystemPrompt: string | null;
+  customInstructions: string | null;
   seed: number;
 }
 
