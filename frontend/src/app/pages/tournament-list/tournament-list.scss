@@ -35,6 +35,57 @@
     gap: 24px;
   }
 
+  .toolbar-card {
+    margin-bottom: 24px;
+    border-radius: 20px;
+    border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 16%, transparent);
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--mat-sys-surface-container-low) 88%, transparent),
+      color-mix(in srgb, var(--mat-sys-surface-container-high) 92%, transparent)
+    );
+  }
+
+  .toolbar-content {
+    display: grid;
+    grid-template-columns: minmax(220px, 2.2fr) repeat(3, minmax(150px, 1fr)) auto;
+    gap: 12px;
+    align-items: center;
+    padding-bottom: 8px;
+  }
+
+  .search-field {
+    min-width: 0;
+  }
+
+  .reset-button {
+    height: 54px;
+    align-self: stretch;
+    border-radius: 14px;
+    font-weight: 700;
+  }
+
+  .toolbar-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px 16px;
+    gap: 12px;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
+    font-size: 0.84rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .results-label {
+    font-weight: 700;
+  }
+
+  .filter-note {
+    color: var(--mat-sys-primary);
+    font-weight: 700;
+  }
+
   .tournament-card {
     border-radius: 20px;
     padding: 0;
@@ -134,6 +185,13 @@
     }
   }
 
+  .filtered-empty mat-card-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+
   .error-state {
     margin-bottom: 24px;
     border-radius: 12px;
@@ -149,4 +207,37 @@ mat-chip {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   height: 24px;
+}
+
+@media (max-width: 1024px) {
+  .tournament-list {
+    .toolbar-content {
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+    }
+
+    .reset-button {
+      height: 48px;
+    }
+  }
+}
+
+@media (max-width: 680px) {
+  .tournament-list {
+    padding: 18px;
+
+    .header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .toolbar-content {
+      grid-template-columns: 1fr;
+    }
+
+    .toolbar-meta {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
 }

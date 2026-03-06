@@ -12,6 +12,7 @@ import dev.aichessarena.websocket.GameWebSocket;
 import com.github.bhlangonijr.chesslib.Board;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
+import jakarta.enterprise.event.Event;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -66,6 +67,9 @@ public class GameEngineService {
 
     @Inject
     GameWebSocket gameWebSocket;
+
+    @Inject
+    Event<MoveEvaluationRequested> moveEvaluationEvents;
 
     private final Map<UUID, Boolean> runningGames = new ConcurrentHashMap<>();
 
@@ -334,21 +338,9 @@ public class GameEngineService {
         move.responseTimeMs = llmResponse.responseTimeMs();
         move.retryCount = retryCount;
         move.rawResponse = llmResponse.rawResponse();
-        moveRepository.persist(move);
-
-        // Queue evaluation in background
-        UUID moveId = move.id;
-        LOG.infof("Queuing Stockfish evaluation for move %d in game %s", moveNumber, gameId);
-        stockfishService.evaluate(fen, 12).thenAccept(result -> {
-            try {
-                Arc.container().instance(GameEngineService.class).get().updateMoveEvaluation(moveId, result);
-            } catch (Exception e) {
-                LOG.errorf(e, "Failed to update move evaluation for move %s", moveId);
-            }
-        }).exceptionally(ex -> {
-            LOG.errorf(ex, "Stockfish evaluation failed for move %s", moveId);
-            return null;
-        });
+        // Flush so the move has an ID before scheduling the after-commit evaluation.
+        moveRepository.persistAndFlush(move);
+        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
     }
 
     @Transactional

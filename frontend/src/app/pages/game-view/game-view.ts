@@ -176,6 +176,15 @@ export class GameView implements OnInit, OnDestroy {
   evaluationStatusMessage = computed(() =>
     this.stockfishAvailable() ? null : 'Evaluation unavailable',
   );
+  evaluationStatusLabel = computed(() =>
+    this.stockfishAvailable() ? 'Eval online' : 'Eval unavailable',
+  );
+  evaluationStatusIcon = computed(() => (this.stockfishAvailable() ? 'monitoring' : 'warning'));
+  evaluationStatusTooltip = computed(() =>
+    this.stockfishAvailable()
+      ? 'Stockfish evaluation is online for this session.'
+      : this.stockfishReason() || 'Stockfish evaluation is currently unavailable.',
+  );
 
   whiteCapturedGlyphs = computed(() =>
     this.capturedMaterial().whiteCaptured.map((piece) => BLACK_PIECE_GLYPHS[piece]),

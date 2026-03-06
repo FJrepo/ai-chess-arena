@@ -9,5 +9,6 @@ describe('GameView', () => {
 
     expect(component.showEvaluationBar()).toBe(false);
     expect(component.evaluationStatusMessage()).toBe('Evaluation unavailable');
+    expect(component.evaluationStatusLabel()).toBe('Eval unavailable');
   });
 });

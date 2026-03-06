@@ -18,6 +18,38 @@
   font-size: 0.82rem;
 }
 
+.eval-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 36%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 84%, transparent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+
+  &.online {
+    color: color-mix(in srgb, #4db06f 80%, var(--mat-sys-on-surface));
+    border-color: color-mix(in srgb, #4db06f 38%, var(--mat-sys-outline));
+    background: color-mix(in srgb, #4db06f 12%, var(--mat-sys-surface-container));
+  }
+
+  &.offline {
+    color: color-mix(in srgb, #ff8a65 82%, var(--mat-sys-on-surface));
+    border-color: color-mix(in srgb, #ff8a65 38%, var(--mat-sys-outline));
+    background: color-mix(in srgb, #ff8a65 12%, var(--mat-sys-surface-container));
+  }
+}
+
 .timer-label {
   color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
   text-transform: uppercase;
@@ -98,10 +130,18 @@ app-advantage-bar {
   background: color-mix(in srgb, var(--mat-sys-surface-container) 82%, transparent);
   color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 4px;
+  gap: 10px;
+  padding: 10px 4px;
   text-align: center;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
 }
 
 .eval-unavailable-label {
@@ -248,6 +288,10 @@ app-advantage-bar {
 
   .move-timer {
     margin-left: 0;
+  }
+
+  .eval-status-chip {
+    order: 3;
   }
 
   .capture-strip {
