@@ -39,6 +39,12 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "max_retries", nullable = false)
     public int maxRetries = 3;
 
+    @Column(name = "matchup_best_of", nullable = false)
+    public int matchupBestOf = 1;
+
+    @Column(name = "finals_best_of")
+    public Integer finalsBestOf;
+
     @Column(name = "trash_talk_enabled", nullable = false)
     public boolean trashTalkEnabled = true;
 

@@ -21,9 +21,42 @@ describe('BracketDisplay', () => {
       'Final',
     ]);
   });
+
+  it('groups multiple games in the same series into one bracket card', () => {
+    const component = new BracketDisplay();
+
+    component.games = [
+      game('final-1', 'Final', 0, {
+        seriesId: 'series-final',
+        seriesBestOf: 3,
+        status: 'COMPLETED',
+        result: 'WHITE_WINS',
+      }),
+      game('final-2', 'Final', 0, {
+        seriesId: 'series-final',
+        seriesBestOf: 3,
+        seriesGameNumber: 2,
+        whitePlayerName: 'Black',
+        blackPlayerName: 'White',
+        whiteModelId: 'model-b',
+        blackModelId: 'model-a',
+      }),
+    ];
+
+    const card = component.rounds()[0].games[0] as any;
+    expect(component.rounds()[0].games).toHaveLength(1);
+    expect(card.whiteWins).toBe(1);
+    expect(card.blackWins).toBe(0);
+    expect(card.currentGame.seriesGameNumber).toBe(2);
+  });
 });
 
-function game(id: string, bracketRound: string, bracketPosition: number): Game {
+function game(
+  id: string,
+  bracketRound: string,
+  bracketPosition: number,
+  overrides: Partial<Game> = {},
+): Game {
   return {
     id,
     tournamentId: null,
@@ -38,11 +71,15 @@ function game(id: string, bracketRound: string, bracketPosition: number): Game {
     currentFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     bracketRound,
     bracketPosition,
+    seriesId: id,
+    seriesGameNumber: 1,
+    seriesBestOf: 1,
     totalCostUsd: 0,
     createdAt: new Date().toISOString(),
     startedAt: null,
     completedAt: null,
     moves: [],
     chatMessages: [],
+    ...overrides,
   };
 }

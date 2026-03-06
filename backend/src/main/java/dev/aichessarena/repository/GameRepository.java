@@ -21,4 +21,8 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
     public List<Game> findByTournamentIdAndCreatedAfter(UUID tournamentId, LocalDateTime cutoff) {
         return list("tournament.id = ?1 and createdAt >= ?2", tournamentId, cutoff);
     }
+
+    public List<Game> findBySeriesId(UUID seriesId) {
+        return list("seriesId = ?1 order by seriesGameNumber asc, createdAt asc", seriesId);
+    }
 }

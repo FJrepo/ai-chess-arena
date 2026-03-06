@@ -34,6 +34,25 @@
           </mat-select>
         </mat-form-field>
 
+        <mat-form-field appearance="outline">
+          <mat-label>Matchups</mat-label>
+          <mat-select [(ngModel)]="matchupBestOf">
+            @for (bestOf of bestOfOptions; track bestOf) {
+              <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Final</mat-label>
+          <mat-select [(ngModel)]="finalsBestOf">
+            <mat-option [value]="null">Same as matchups</mat-option>
+            @for (bestOf of bestOfOptions; track bestOf) {
+              <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
         <mat-slide-toggle [(ngModel)]="trashTalkEnabled"> Trash Talk Enabled </mat-slide-toggle>
       </div>
 

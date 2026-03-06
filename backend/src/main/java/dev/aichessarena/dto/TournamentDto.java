@@ -13,6 +13,8 @@ public record TournamentDto(
         String defaultSystemPrompt,
         int moveTimeoutSeconds,
         int maxRetries,
+        int matchupBestOf,
+        Integer finalsBestOf,
         boolean trashTalkEnabled,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,

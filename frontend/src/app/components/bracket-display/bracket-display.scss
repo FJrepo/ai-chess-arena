@@ -113,6 +113,33 @@
   }
 }
 
+.series-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.series-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-primary) 12%, transparent);
+}
+
+.series-score {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-weight: 900;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 86%, transparent);
+}
+
 .player {
   display: flex;
   align-items: center;

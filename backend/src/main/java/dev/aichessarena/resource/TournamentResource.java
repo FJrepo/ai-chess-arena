@@ -15,12 +15,14 @@ import jakarta.ws.rs.core.Response;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Path("/api/tournaments")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class TournamentResource {
+    private static final Set<Integer> ALLOWED_BEST_OF_VALUES = Set.of(1, 3, 5, 7);
 
     @Inject
     TournamentRepository tournamentRepository;
@@ -39,6 +41,8 @@ public class TournamentResource {
         t.defaultSystemPrompt = req.defaultSystemPrompt();
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = req.moveTimeoutSeconds();
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
+        if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
+        if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         tournamentService.create(t);
@@ -76,6 +80,8 @@ public class TournamentResource {
         if (req.defaultSystemPrompt() != null) t.defaultSystemPrompt = req.defaultSystemPrompt();
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = req.moveTimeoutSeconds();
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
+        if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
+        if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         t.updatedAt = LocalDateTime.now();
@@ -132,5 +138,12 @@ public class TournamentResource {
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid drawPolicy: " + value);
         }
+    }
+
+    private int parseBestOf(Integer value, String fieldName) {
+        if (value == null || !ALLOWED_BEST_OF_VALUES.contains(value)) {
+            throw new IllegalArgumentException(fieldName + " must be one of 1, 3, 5, or 7");
+        }
+        return value;
     }
 }

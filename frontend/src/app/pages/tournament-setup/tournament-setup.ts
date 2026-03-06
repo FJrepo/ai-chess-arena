@@ -54,6 +54,8 @@ Your opponent is %s (%s).`;
   maxRetries = 3;
   trashTalkEnabled = true;
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
+  matchupBestOf: Tournament['matchupBestOf'] = 1;
+  finalsBestOf: Tournament['finalsBestOf'] = null;
 
   newPlayerName = '';
   newModelId = '';
@@ -76,6 +78,7 @@ Your opponent is %s (%s).`;
     { value: 'RANDOM_ADVANCES', label: 'Random Advances' },
     { value: 'REPLAY_GAME', label: 'Replay Game' },
   ];
+  bestOfOptions: Tournament['matchupBestOf'][] = [1, 3, 5, 7];
 
   private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -256,6 +259,8 @@ Your opponent is %s (%s).`;
         defaultSystemPrompt: this.systemPrompt,
         moveTimeoutSeconds: this.moveTimeout,
         maxRetries: this.maxRetries,
+        matchupBestOf: this.matchupBestOf,
+        finalsBestOf: this.finalsBestOf,
         trashTalkEnabled: this.trashTalkEnabled,
         drawPolicy: this.drawPolicy,
       })

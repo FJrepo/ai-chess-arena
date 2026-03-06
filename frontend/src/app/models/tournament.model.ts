@@ -12,6 +12,8 @@ export interface Tournament {
   defaultSystemPrompt: string | null;
   moveTimeoutSeconds: number;
   maxRetries: number;
+  matchupBestOf: 1 | 3 | 5 | 7;
+  finalsBestOf: 1 | 3 | 5 | 7 | null;
   trashTalkEnabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +43,9 @@ export interface Game {
   currentFen: string;
   bracketRound: string | null;
   bracketPosition: number | null;
+  seriesId: string | null;
+  seriesGameNumber: number;
+  seriesBestOf: number;
   totalCostUsd: number;
   createdAt: string;
   startedAt: string | null;

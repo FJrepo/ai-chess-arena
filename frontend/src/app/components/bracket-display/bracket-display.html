@@ -20,30 +20,33 @@
           <div class="round">
             <h3 class="round-title">{{ round.name }}</h3>
             <div class="round-matches">
-              @for (game of round.games; track game.id) {
+              @for (series of round.games; track series.id) {
                 <mat-card
                   #matchCard
                   class="match-card"
-                  [attr.data-game-id]="game.id"
-                  [class.completed]="game.status === 'COMPLETED' || game.status === 'FORFEIT'"
-                  [class.forfeited]="game.status === 'FORFEIT'"
+                  [attr.data-game-id]="series.id"
+                  [class.completed]="series.isComplete"
+                  [class.forfeited]="series.latestGame.status === 'FORFEIT'"
                 >
+                  <div class="series-meta">
+                    <span class="series-chip">Best of {{ series.bestOf }}</span>
+                    <span class="series-chip">Game {{ series.currentGame.seriesGameNumber }}</span>
+                    <span class="series-score">{{ series.whiteWins }}-{{ series.blackWins }}</span>
+                  </div>
                   <div
                     class="player white"
-                    [class.winner]="game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT'"
-                    [class.loser]="
-                      (game.status === 'COMPLETED' || game.status === 'FORFEIT') &&
-                      (game.result === 'BLACK_WINS' || game.result === 'WHITE_FORFEIT')
-                    "
+                    [class.winner]="series.whiteWins > series.blackWins && series.isComplete"
+                    [class.loser]="series.blackWins > series.whiteWins && series.isComplete"
                   >
                     <span class="color-indicator white-indicator"></span>
-                    @if (game.whiteModelId) {
-                      <app-provider-logo [modelId]="game.whiteModelId" [size]="17" />
+                    @if (series.whiteModelId) {
+                      <app-provider-logo [modelId]="series.whiteModelId" [size]="17" />
                     }
-                    <span class="player-name">{{ game.whitePlayerName || 'TBD' }}</span>
+                    <span class="player-name">{{ series.whitePlayerName || 'TBD' }}</span>
                     @if (
                       round.name === 'Final' &&
-                      (game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT')
+                      series.whiteWins > series.blackWins &&
+                      series.isComplete
                     ) {
                       <mat-icon class="crown-icon">emoji_events</mat-icon>
                     }
@@ -51,40 +54,55 @@
                   <div class="vs">vs</div>
                   <div
                     class="player black"
-                    [class.winner]="game.result === 'BLACK_WINS' || game.result === 'WHITE_FORFEIT'"
-                    [class.loser]="
-                      (game.status === 'COMPLETED' || game.status === 'FORFEIT') &&
-                      (game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT')
-                    "
+                    [class.winner]="series.blackWins > series.whiteWins && series.isComplete"
+                    [class.loser]="series.whiteWins > series.blackWins && series.isComplete"
                   >
                     <span class="color-indicator black-indicator"></span>
-                    @if (game.blackModelId) {
-                      <app-provider-logo [modelId]="game.blackModelId" [size]="17" />
+                    @if (series.blackModelId) {
+                      <app-provider-logo [modelId]="series.blackModelId" [size]="17" />
                     }
-                    <span class="player-name">{{ game.blackPlayerName || 'TBD' }}</span>
+                    <span class="player-name">{{ series.blackPlayerName || 'TBD' }}</span>
                     @if (
                       round.name === 'Final' &&
-                      (game.result === 'BLACK_WINS' || game.result === 'WHITE_FORFEIT')
+                      series.blackWins > series.whiteWins &&
+                      series.isComplete
                     ) {
                       <mat-icon class="crown-icon">emoji_events</mat-icon>
                     }
                   </div>
                   <div class="match-actions">
-                    @if (canBattle(game)) {
-                      <button mat-raised-button color="warn" (click)="battle.emit(game)">
+                    @if (canBattle(series)) {
+                      <button
+                        mat-raised-button
+                        color="warn"
+                        (click)="battle.emit(series.currentGame)"
+                      >
                         <mat-icon>sports_mma</mat-icon> Battle!
                       </button>
-                    } @else if (game.status === 'IN_PROGRESS') {
-                      <button mat-stroked-button (click)="view.emit(game)">
+                    } @else if (series.currentGame.status === 'IN_PROGRESS') {
+                      <button mat-stroked-button (click)="view.emit(series.currentGame)">
                         <mat-icon>visibility</mat-icon> Watch Live
                       </button>
-                    } @else if (game.status === 'COMPLETED' || game.status === 'FORFEIT') {
-                      <div class="result-text">{{ getResultText(game) }}</div>
-                      <button mat-stroked-button (click)="view.emit(game)">Review</button>
-                    } @else if (game.status === 'PAUSED') {
-                      <button mat-stroked-button color="accent" (click)="battle.emit(game)">
+                    } @else if (
+                      series.currentGame.status === 'COMPLETED' ||
+                      series.currentGame.status === 'FORFEIT'
+                    ) {
+                      <div class="result-text">{{ getResultText(series) }}</div>
+                      <button mat-stroked-button (click)="view.emit(series.latestGame)">
+                        Review
+                      </button>
+                    } @else if (series.currentGame.status === 'PAUSED') {
+                      <button
+                        mat-stroked-button
+                        color="accent"
+                        (click)="battle.emit(series.currentGame)"
+                      >
                         <mat-icon>play_arrow</mat-icon> Resume
                       </button>
+                    } @else {
+                      <div class="result-text">
+                        Waiting for Game {{ series.currentGame.seriesGameNumber }}
+                      </div>
                     }
                   </div>
                 </mat-card>
