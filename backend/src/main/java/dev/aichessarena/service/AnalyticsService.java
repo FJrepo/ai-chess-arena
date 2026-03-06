@@ -2,6 +2,8 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.dto.AnalyticsHealthDto;
 import dev.aichessarena.dto.AnalyticsHealthModelRowDto;
+import dev.aichessarena.dto.AnalyticsModelComparisonDto;
+import dev.aichessarena.dto.AnalyticsModelComparisonRowDto;
 import dev.aichessarena.dto.HighestCostGameDto;
 import dev.aichessarena.dto.ModelCostBreakdownDto;
 import dev.aichessarena.dto.ModelReliabilityDetailDto;
@@ -44,6 +46,7 @@ public class AnalyticsService {
 
     private final Map<String, CacheEntry<AnalyticsHealthDto>> healthCache = new ConcurrentHashMap<>();
     private final Map<String, CacheEntry<ModelReliabilityResponseDto>> reliabilityCache = new ConcurrentHashMap<>();
+    private final Map<String, CacheEntry<AnalyticsModelComparisonDto>> comparisonCache = new ConcurrentHashMap<>();
 
     public TournamentCostSummaryDto getTournamentCostSummary(UUID tournamentId) {
         List<Game> games = gameRepository.findByTournamentId(tournamentId);
@@ -164,6 +167,13 @@ public class AnalyticsService {
                 decimal(rawScore, 2),
                 decimal(sampleWeight, 4)
         );
+    }
+
+    public AnalyticsModelComparisonDto getComparison(int requestedDays, UUID tournamentId, int requestedMinGames) {
+        int days = normalizeDays(requestedDays);
+        int minGames = normalizeMinGames(requestedMinGames);
+        String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
+        return getCached(comparisonCache, key, () -> buildComparison(days, tournamentId, minGames));
     }
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
@@ -369,6 +379,133 @@ public class AnalyticsService {
         return new ModelReliabilityResponseDto(days, tournamentId, minGames, rows);
     }
 
+    private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames) {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
+        List<Game> games = tournamentId == null
+                ? gameRepository.findCreatedAfter(cutoff)
+                : gameRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff);
+
+        List<Game> terminalGames = games.stream()
+                .filter(game -> isTerminal(game.status))
+                .toList();
+
+        Map<UUID, Game> terminalGamesById = terminalGames.stream()
+                .collect(java.util.stream.Collectors.toMap(game -> game.id, game -> game));
+
+        List<Move> moves = (tournamentId == null
+                ? moveRepository.findCreatedAfter(cutoff)
+                : moveRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff))
+                .stream()
+                .filter(move -> move.game != null && move.game.id != null && terminalGamesById.containsKey(move.game.id))
+                .toList();
+
+        Map<String, ComparisonAccumulator> byModel = new HashMap<>();
+        for (Game game : terminalGames) {
+            registerComparisonGame(byModel, game.whiteModelId, game, true);
+            registerComparisonGame(byModel, game.blackModelId, game, false);
+        }
+
+        for (Move move : moves) {
+            String modelId = normalizeModelId(move.modelId);
+            ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
+            accumulator.movesSampled++;
+            accumulator.retriesTotal += Math.max(move.retryCount, 0);
+            if (move.responseTimeMs != null) {
+                accumulator.responseTimeTotal += move.responseTimeMs;
+                accumulator.responseTimeCount++;
+            }
+            if (move.costUsd != null) {
+                accumulator.totalCostUsd = accumulator.totalCostUsd.add(move.costUsd);
+                accumulator.pricedMoves++;
+            }
+        }
+
+        List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
+        for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
+            ComparisonAccumulator accumulator = entry.getValue();
+            if (accumulator.gamesPlayed < minGames) {
+                continue;
+            }
+
+            long losses = Math.max(0, accumulator.gamesPlayed - accumulator.wins - accumulator.draws);
+            Long averageResponseTimeMs = accumulator.responseTimeCount == 0
+                    ? null
+                    : Math.round((double) accumulator.responseTimeTotal / (double) accumulator.responseTimeCount);
+            BigDecimal averageRetriesPerMove = divide(accumulator.retriesTotal, accumulator.movesSampled);
+            BigDecimal winRate = divide(accumulator.wins, accumulator.gamesPlayed);
+            BigDecimal drawRate = divide(accumulator.draws, accumulator.gamesPlayed);
+            BigDecimal lossRate = divide(losses, accumulator.gamesPlayed);
+            BigDecimal whiteWinRate = divide(accumulator.whiteWins, accumulator.whiteGames);
+            BigDecimal blackWinRate = divide(accumulator.blackWins, accumulator.blackGames);
+
+            BigDecimal forfeitRate = divide(accumulator.forfeits, accumulator.gamesPlayed);
+            BigDecimal timeoutForfeitRate = divide(accumulator.timeoutForfeits, accumulator.gamesPlayed);
+            BigDecimal averageCostPerMoveUsd = pricingAvailable(accumulator)
+                    ? divide(accumulator.totalCostUsd, accumulator.pricedMoves)
+                    : null;
+            BigDecimal totalCostUsd = pricingAvailable(accumulator)
+                    ? scale(accumulator.totalCostUsd, 6)
+                    : null;
+            BigDecimal costPerWinUsd = pricingAvailable(accumulator) && accumulator.wins > 0
+                    ? divide(accumulator.totalCostUsd, accumulator.wins)
+                    : null;
+
+            double completionRate = accumulator.gamesPlayed == 0
+                    ? 0
+                    : (double) accumulator.gamesCompleted / (double) accumulator.gamesPlayed;
+            double forfeitRateDouble = forfeitRate.doubleValue();
+            double avgRetries = averageRetriesPerMove.doubleValue();
+            double latencyInput = averageResponseTimeMs != null ? averageResponseTimeMs : 1500.0;
+            double completionScore = clamp(completionRate * 100.0, 0.0, 100.0);
+            double forfeitScore = clamp((1.0 - forfeitRateDouble) * 100.0, 0.0, 100.0);
+            double retryScore = clamp(100.0 - (avgRetries * 50.0), 0.0, 100.0);
+            double latencyScore = clamp(100.0 - ((latencyInput - 1500.0) / 100.0), 0.0, 100.0);
+            double raw = (completionScore * 0.40)
+                    + (forfeitScore * 0.30)
+                    + (retryScore * 0.20)
+                    + (latencyScore * 0.10);
+            double sampleWeight = Math.min(1.0, accumulator.gamesPlayed / 20.0);
+            double reliabilityScore = 60.0 + (raw - 60.0) * sampleWeight;
+
+            rows.add(new AnalyticsModelComparisonRowDto(
+                    entry.getKey(),
+                    accumulator.gamesPlayed,
+                    accumulator.wins,
+                    accumulator.draws,
+                    losses,
+                    accumulator.forfeits,
+                    accumulator.timeoutForfeits,
+                    winRate,
+                    drawRate,
+                    lossRate,
+                    accumulator.whiteGames,
+                    accumulator.whiteWins,
+                    whiteWinRate,
+                    accumulator.blackGames,
+                    accumulator.blackWins,
+                    blackWinRate,
+                    accumulator.movesSampled,
+                    averageResponseTimeMs,
+                    averageRetriesPerMove,
+                    totalCostUsd,
+                    averageCostPerMoveUsd,
+                    costPerWinUsd,
+                    pricingAvailable(accumulator),
+                    decimal(reliabilityScore, 2),
+                    toBand(reliabilityScore, accumulator.gamesPlayed),
+                    accumulator.gamesPlayed < 3
+            ));
+        }
+
+        rows.sort(
+                Comparator.comparing(AnalyticsModelComparisonRowDto::winRate).reversed()
+                        .thenComparing(Comparator.comparingLong(AnalyticsModelComparisonRowDto::wins).reversed())
+                        .thenComparing(Comparator.comparingLong(AnalyticsModelComparisonRowDto::gamesPlayed).reversed())
+        );
+
+        return new AnalyticsModelComparisonDto(days, tournamentId, minGames, terminalGames.size(), rows);
+    }
+
     private void registerGame(Map<String, ReliabilityAccumulator> byModel, String modelId, Game game, boolean isWhite) {
         if (modelId == null || modelId.isBlank()) {
             return;
@@ -385,6 +522,75 @@ public class AnalyticsService {
             accumulator.forfeitCount++;
             if (game.resultReason == Game.ResultReason.TIMEOUT) {
                 accumulator.timeoutForfeitCount++;
+            }
+        }
+    }
+
+    private void registerComparisonGame(
+            Map<String, ComparisonAccumulator> byModel,
+            String modelId,
+            Game game,
+            boolean isWhite
+    ) {
+        if (modelId == null || modelId.isBlank()) {
+            return;
+        }
+
+        ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
+        accumulator.gamesPlayed++;
+        accumulator.gamesCompleted++;
+
+        if (isWhite) {
+            accumulator.whiteGames++;
+        } else {
+            accumulator.blackGames++;
+        }
+
+        if (game.result == null) {
+            return;
+        }
+
+        switch (game.result) {
+            case WHITE_WINS -> {
+                if (isWhite) {
+                    accumulator.wins++;
+                    accumulator.whiteWins++;
+                } else {
+                    accumulator.losses++;
+                }
+            }
+            case BLACK_WINS -> {
+                if (isWhite) {
+                    accumulator.losses++;
+                } else {
+                    accumulator.wins++;
+                    accumulator.blackWins++;
+                }
+            }
+            case DRAW -> accumulator.draws++;
+            case WHITE_FORFEIT -> {
+                if (isWhite) {
+                    accumulator.losses++;
+                    accumulator.forfeits++;
+                    if (game.resultReason == Game.ResultReason.TIMEOUT) {
+                        accumulator.timeoutForfeits++;
+                    }
+                } else {
+                    accumulator.wins++;
+                    accumulator.blackWins++;
+                }
+            }
+            case BLACK_FORFEIT -> {
+                if (isWhite) {
+                    accumulator.wins++;
+                    accumulator.whiteWins++;
+                } else {
+                    accumulator.losses++;
+                    accumulator.forfeits++;
+                    if (game.resultReason == Game.ResultReason.TIMEOUT) {
+                        accumulator.timeoutForfeits++;
+                    }
+                }
             }
         }
     }
@@ -436,6 +642,10 @@ public class AnalyticsService {
 
     private BigDecimal nonNull(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private boolean pricingAvailable(ComparisonAccumulator accumulator) {
+        return accumulator.movesSampled > 0 && accumulator.pricedMoves == accumulator.movesSampled;
     }
 
     private BigDecimal divide(long numerator, long denominator) {
@@ -516,6 +726,26 @@ public class AnalyticsService {
         private long responseTimeTotal;
         private long promptTokensTotal;
         private long completionTokensTotal;
+        private BigDecimal totalCostUsd = BigDecimal.ZERO;
+        private long pricedMoves;
+    }
+
+    private static final class ComparisonAccumulator {
+        private long gamesPlayed;
+        private long gamesCompleted;
+        private long wins;
+        private long draws;
+        private long losses;
+        private long forfeits;
+        private long timeoutForfeits;
+        private long whiteGames;
+        private long whiteWins;
+        private long blackGames;
+        private long blackWins;
+        private long movesSampled;
+        private long retriesTotal;
+        private long responseTimeCount;
+        private long responseTimeTotal;
         private BigDecimal totalCostUsd = BigDecimal.ZERO;
         private long pricedMoves;
     }

@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { Tournament, Participant, Game } from '../models/tournament.model';
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import {
+  AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
   ModelReliabilityDetail,
   ModelReliabilityResponse,
@@ -145,6 +146,26 @@ export class ApiService {
       httpParams = httpParams.set('tournamentId', params.tournamentId);
     }
     return this.http.get<AnalyticsHealthResponse>(`${this.baseUrl}/analytics/health`, {
+      params: httpParams,
+    });
+  }
+
+  getAnalyticsComparison(params?: {
+    days?: number;
+    tournamentId?: string | null;
+    minGames?: number;
+  }): Observable<AnalyticsComparisonResponse> {
+    let httpParams = new HttpParams();
+    if (params?.days !== undefined) {
+      httpParams = httpParams.set('days', String(params.days));
+    }
+    if (params?.tournamentId) {
+      httpParams = httpParams.set('tournamentId', params.tournamentId);
+    }
+    if (params?.minGames !== undefined) {
+      httpParams = httpParams.set('minGames', String(params.minGames));
+    }
+    return this.http.get<AnalyticsComparisonResponse>(`${this.baseUrl}/analytics/comparison`, {
       params: httpParams,
     });
   }

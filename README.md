@@ -303,6 +303,7 @@ git secrets --scan-history
 - `GET /api/config/prompt-template`
 
 ### Analytics
+- `GET /api/analytics/comparison`
 - `GET /api/analytics/health`
 - `GET /api/analytics/reliability`
 - `GET /api/analytics/reliability/{modelId}`
@@ -336,6 +337,7 @@ git secrets --scan-history
 - Tournament setup now includes a confidence panel with projected game count, runtime, and pricing-based spend heuristics.
 - Bracket cards now show richer live series state, including whether a matchup is live, paused, ready, or auto-advanced by bye.
 - Game view now separates responsibilities more clearly: a game feed for operational events, a dedicated chat column for full conversation history, and a SAN move list beneath the board for chess navigation.
+- Analytics now includes a comparison-first view for strongest, most reliable, fastest, and best-value models, with clear handling for draws, forfeits, and missing pricing data.
 
 ## Branding and Logos
 - Provider visuals use custom in-house abstract icons (not official company logos).
