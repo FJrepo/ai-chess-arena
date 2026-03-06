@@ -1,4 +1,20 @@
-<div class="analytics-page">
+<div class="analytics-page desktop-page">
+  <section class="page-hero-surface page-hero analytics-hero">
+    <div class="page-title-block">
+      <span class="page-kicker">Arena Analytics</span>
+      <h1 class="page-title">Performance and Reliability</h1>
+      <p class="page-subtitle">
+        Inspect model cost, latency, retries, and stability across tournament history from one
+        operator-focused dashboard.
+      </p>
+    </div>
+    <div class="page-actions analytics-actions">
+      @if (lastUpdated(); as lastUpdatedAt) {
+        <div class="last-updated">System Synced at {{ lastUpdatedAt | date: 'mediumTime' }}</div>
+      }
+    </div>
+  </section>
+
   <div class="filter-card">
     <div class="filter-grid">
       <mat-form-field appearance="outline">
@@ -39,10 +55,6 @@
         Sync Data
       </button>
     </div>
-
-    @if (lastUpdated(); as lastUpdatedAt) {
-      <div class="last-updated">System Synced at {{ lastUpdatedAt | date: 'mediumTime' }}</div>
-    }
   </div>
 
   <mat-tab-group animationDuration="200ms">
