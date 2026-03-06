@@ -18,6 +18,10 @@ export const routes: Routes = [
       import('./pages/analytics-dashboard/analytics-dashboard').then((m) => m.AnalyticsDashboard),
   },
   {
+    path: 'system',
+    loadComponent: () => import('./pages/system-status/system-status').then((m) => m.SystemStatus),
+  },
+  {
     path: 'tournaments/:id',
     loadComponent: () =>
       import('./pages/tournament-bracket/tournament-bracket').then((m) => m.TournamentBracket),

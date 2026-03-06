@@ -1,0 +1,140 @@
+<div class="system-page">
+  <section class="hero-card">
+    <div class="hero-copy">
+      <span class="eyebrow">System Status</span>
+      <h1>Operator visibility for the running stack</h1>
+      <p>
+        Check whether the backend is reachable, whether OpenRouter is configured, and whether
+        Stockfish is available for live evaluation.
+      </p>
+    </div>
+
+    <div class="hero-actions">
+      <button mat-flat-button color="primary" (click)="refresh()" [disabled]="loading()">
+        <mat-icon>refresh</mat-icon>
+        Refresh
+      </button>
+
+      @if (lastCheckedAt(); as checkedAt) {
+        <div class="last-checked">Last checked {{ checkedAt | date: 'mediumTime' }}</div>
+      }
+    </div>
+  </section>
+
+  @if (loading() && !status()) {
+    <div class="loading-state">
+      <mat-spinner diameter="40"></mat-spinner>
+      <span>Loading system status...</span>
+    </div>
+  }
+
+  @if (error()) {
+    <div class="error-card">
+      <mat-icon>error_outline</mat-icon>
+      <span>{{ error() }}</span>
+    </div>
+  }
+
+  <section class="status-grid">
+    <mat-card class="status-card">
+      <mat-card-content>
+        <div class="card-header">
+          <div>
+            <span class="card-kicker">Backend API</span>
+            <h2>{{ statusLabel(backendReachable()) }}</h2>
+          </div>
+          <mat-chip [class.healthy]="backendReachable()" [class.degraded]="!backendReachable()">
+            {{ statusTone(backendReachable()) }}
+          </mat-chip>
+        </div>
+        <p>The frontend can reach the backend configuration endpoint.</p>
+        <div class="meta-list">
+          <div class="meta-row">
+            <span>Backend version</span>
+            <strong>{{ backendVersion() }}</strong>
+          </div>
+          @if (status(); as currentStatus) {
+            <div class="meta-row">
+              <span>Backend checked at</span>
+              <strong>{{ currentStatus.checkedAt | date: 'medium' }}</strong>
+            </div>
+          }
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="status-card">
+      <mat-card-content>
+        <div class="card-header">
+          <div>
+            <span class="card-kicker">OpenRouter</span>
+            <h2>
+              {{ statusLabel(status()?.openRouterValid ?? false, 'Configured', 'Needs attention') }}
+            </h2>
+          </div>
+          <mat-chip
+            [class.healthy]="status()?.openRouterValid"
+            [class.degraded]="!status()?.openRouterValid"
+          >
+            {{ statusTone(status()?.openRouterValid ?? false) }}
+          </mat-chip>
+        </div>
+        <p>{{ openRouterSummary() }}</p>
+        <div class="operator-note">
+          Tournament creation and live games depend on valid provider credentials.
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="status-card">
+      <mat-card-content>
+        <div class="card-header">
+          <div>
+            <span class="card-kicker">Stockfish</span>
+            <h2>
+              {{
+                statusLabel(
+                  status()?.stockfishAvailable ?? false,
+                  'Eval online',
+                  'Eval unavailable'
+                )
+              }}
+            </h2>
+          </div>
+          <mat-chip
+            [class.healthy]="status()?.stockfishAvailable"
+            [class.degraded]="!status()?.stockfishAvailable"
+          >
+            {{ statusTone(status()?.stockfishAvailable ?? false) }}
+          </mat-chip>
+        </div>
+        <p>{{ stockfishSummary() }}</p>
+        <div class="operator-note">
+          Live advantage-bar updates are only available when Stockfish is running.
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </section>
+
+  <section class="guidance-grid">
+    <mat-card class="guide-card">
+      <mat-card-content>
+        <h3>When OpenRouter is degraded</h3>
+        <p>
+          Check `OPENROUTER_API_KEY`, then confirm the backend was restarted with the expected
+          environment file.
+        </p>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="guide-card">
+      <mat-card-content>
+        <h3>When Stockfish is degraded</h3>
+        <p>
+          Docker deployments should bundle Stockfish automatically. Source-based runs need a local
+          `stockfish` binary on `PATH`.
+        </p>
+      </mat-card-content>
+    </mat-card>
+  </section>
+</div>
