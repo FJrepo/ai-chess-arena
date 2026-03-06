@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-06
+
+### Added
+- Dedicated `/system` dashboard for operator visibility into backend, OpenRouter, and Stockfish status.
+- Backend system-status payload now includes backend version and status check timestamp.
+
+### Changed
+- Runtime application metadata is aligned with the current release line so the system dashboard reflects shipped versions accurately.
+
 ## [0.2.1] - 2026-03-06
 
 ### Added
