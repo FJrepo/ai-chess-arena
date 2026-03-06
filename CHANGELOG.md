@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-07
+
+### Added
+- New comparison-first analytics endpoint at `GET /api/analytics/comparison`.
+- Analytics dashboard now identifies strongest, most reliable, fastest, and best-value models for the selected sample window.
+
+### Changed
+- Analytics now exposes win/draw/loss records, forfeit behavior, white-vs-black splits, spend, and cost-per-win in one sortable model comparison view.
+- Pricing-aware analytics now render incomplete price coverage explicitly instead of implying full cost comparability.
+
 ## [0.8.0] - 2026-03-07
 
 ### Added
