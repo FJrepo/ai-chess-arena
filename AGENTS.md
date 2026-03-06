@@ -45,6 +45,11 @@ Update `README.md` when a change affects:
 
 If a feature does not affect any of those, say so in the final summary.
 
+Also update related docs when applicable:
+- `docs/deployment.md` for deployment, release, or runtime-operability changes
+- `CHANGELOG.md` for release-facing changes
+- `THIRD_PARTY_NOTICES.md` when bundled/distributed third-party software changes
+
 ### 4. Tests are part of feature work
 When behavior changes, add or adjust tests.
 
@@ -73,6 +78,7 @@ If a command is not applicable or cannot be run, state that explicitly.
 - Do not include `analysis/`, `task-packages/`, or `CLAUDE.md` in commits unless the user explicitly asks for it.
 - Keep formatting-only follow-ups separate when practical.
 - If history must be rewritten, prefer `git push --force-with-lease`.
+- Repository docs must use repo-relative paths or normal markdown links, never chat-style absolute local filesystem paths.
 
 ### 7. Deployment must be explicit
 Do not imply a feature is live unless it has actually been rebuilt/redeployed.
@@ -82,6 +88,11 @@ When deployment is requested:
 - recreate the containers
 - verify service health or startup logs
 - state whether old persisted data remains unchanged
+
+When release/distribution behavior changes:
+- validate `docker-compose.prod.yml`
+- validate the relevant Docker image build path
+- do not assume a GitHub Release or registry publish succeeded until it is verified
 
 ## Definition of Done
 A feature is done when all of the following are true:

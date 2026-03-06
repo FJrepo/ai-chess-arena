@@ -26,8 +26,11 @@ public class StockfishService {
     private BufferedReader reader;
     private BufferedWriter writer;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private volatile boolean available;
+    private volatile String unavailableReason = "Stockfish not initialized";
 
     public record EvalResult(Integer cp, Integer mate) {}
+    public record Status(boolean available, String reason) {}
 
     @PostConstruct
     public void init() {
@@ -47,8 +50,11 @@ public class StockfishService {
             // Set some default options
             sendCommand("setoption name Threads value 1");
             sendCommand("setoption name Hash value 64");
+            available = true;
+            unavailableReason = null;
 
         } catch (IOException e) {
+            markUnavailable("Stockfish is unavailable: install it locally or use the Docker backend image.");
             LOG.error("Failed to start Stockfish. Ensure it is installed and in the PATH.", e);
         }
     }
@@ -69,10 +75,19 @@ public class StockfishService {
     }
 
     public CompletableFuture<EvalResult> evaluate(String fen, int depth) {
+        if (!isAvailable()) {
+            return CompletableFuture.completedFuture(new EvalResult(null, null));
+        }
+
         LOG.debugf("Queuing evaluation for FEN: %s at depth %d", fen, depth);
         return CompletableFuture.supplyAsync(() -> {
             synchronized (this) {
                 try {
+                    if (!isEngineReady()) {
+                        markUnavailable("Stockfish process is not running.");
+                        return new EvalResult(null, null);
+                    }
+
                     LOG.debugf("Starting Stockfish evaluation for FEN: %s", fen);
                     sendCommand("position fen " + fen);
                     sendCommand("go depth " + depth);
@@ -95,6 +110,7 @@ public class StockfishService {
                     LOG.debugf("Evaluation finished: cp=%d, mate=%d", result.cp(), result.mate());
                     return result;
                 } catch (IOException e) {
+                    markUnavailable("Stockfish process communication failed.");
                     LOG.error("Error communicating with Stockfish", e);
                     return new EvalResult(null, null);
                 }
@@ -103,8 +119,28 @@ public class StockfishService {
     }
 
     private void sendCommand(String cmd) throws IOException {
+        if (writer == null) {
+            throw new IOException("Stockfish writer is not initialized");
+        }
         writer.write(cmd + "\n");
         writer.flush();
+    }
+
+    public Status status() {
+        return new Status(isAvailable(), unavailableReason);
+    }
+
+    boolean isAvailable() {
+        return available && isEngineReady();
+    }
+
+    void markUnavailable(String reason) {
+        available = false;
+        unavailableReason = reason;
+    }
+
+    private boolean isEngineReady() {
+        return process != null && process.isAlive() && reader != null && writer != null;
     }
 
     static EvalResult parseScore(String line) {

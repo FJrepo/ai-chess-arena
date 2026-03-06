@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -65,5 +66,30 @@ class StockfishServiceTest {
     void detectsSideToMoveFromFen() {
         assertFalse(StockfishService.isBlackToMove("8/8/8/8/8/8/8/8 w - - 0 1"));
         assertTrue(StockfishService.isBlackToMove("8/8/8/8/8/8/8/8 b - - 0 1"));
+    }
+
+    @Test
+    void evaluateReturnsNoEvalImmediatelyWhenUnavailable() {
+        StockfishService service = new StockfishService();
+        service.markUnavailable("Stockfish missing");
+
+        StockfishService.EvalResult result = service.evaluate("8/8/8/8/8/8/8/8 w - - 0 1", 12).join();
+
+        assertNull(result.cp());
+        assertNull(result.mate());
+        assertFalse(service.status().available());
+        assertEquals("Stockfish missing", service.status().reason());
+    }
+
+    @Test
+    void statusIncludesReasonWhenUnavailable() {
+        StockfishService service = new StockfishService();
+        service.markUnavailable("Stockfish process is not running.");
+
+        StockfishService.Status status = service.status();
+
+        assertFalse(status.available());
+        assertNotNull(status.reason());
+        assertEquals("Stockfish process is not running.", status.reason());
     }
 }

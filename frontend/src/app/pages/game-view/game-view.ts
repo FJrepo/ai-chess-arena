@@ -72,6 +72,8 @@ export class GameView implements OnInit, OnDestroy {
   serverActiveColor = signal<'WHITE' | 'BLACK' | null>(null);
   serverTurnStartedAtMs = signal<number | null>(null);
   serverTurnDeadlineAtMs = signal<number | null>(null);
+  stockfishAvailable = signal(true);
+  stockfishReason = signal<string | null>(null);
 
   private gameId = '';
   private wsSub?: Subscription;
@@ -170,6 +172,10 @@ export class GameView implements OnInit, OnDestroy {
   });
 
   capturedMaterial = computed(() => deriveCapturedMaterial(this.moves(), this.currentMoveIndex()));
+  showEvaluationBar = computed(() => this.stockfishAvailable());
+  evaluationStatusMessage = computed(() =>
+    this.stockfishAvailable() ? null : 'Evaluation unavailable',
+  );
 
   whiteCapturedGlyphs = computed(() =>
     this.capturedMaterial().whiteCaptured.map((piece) => BLACK_PIECE_GLYPHS[piece]),
@@ -193,6 +199,7 @@ export class GameView implements OnInit, OnDestroy {
   ngOnInit() {
     this.gameId = this.route.snapshot.paramMap.get('id')!;
     this.loadGame();
+    this.loadSystemStatus();
     this.startTimerTicker();
 
     this.ws.connect();
@@ -231,6 +238,19 @@ export class GameView implements OnInit, OnDestroy {
       } else {
         this.moveTimeoutSeconds.set(60);
       }
+    });
+  }
+
+  loadSystemStatus() {
+    this.api.getSystemStatus().subscribe({
+      next: (status) => {
+        this.stockfishAvailable.set(status.stockfishAvailable);
+        this.stockfishReason.set(status.stockfishReason);
+      },
+      error: () => {
+        this.stockfishAvailable.set(false);
+        this.stockfishReason.set('System status unavailable');
+      },
     });
   }
 

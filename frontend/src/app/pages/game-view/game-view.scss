@@ -91,6 +91,28 @@ app-advantage-bar {
   display: block;
 }
 
+.eval-unavailable {
+  width: 42px;
+  border-radius: 16px;
+  border: 1px dashed color-mix(in srgb, var(--mat-sys-outline) 48%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 82%, transparent);
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.eval-unavailable-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .capture-strip {
   display: flex;
   align-items: center;

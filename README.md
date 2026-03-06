@@ -11,7 +11,7 @@ AI Chess Arena is a **local-first LLM chess arena** for running tournaments acro
 - 🤖 Run games with retry/forfeit handling for invalid model outputs.
 - ⚡ Stream live move, chat, and status events over WebSocket.
 - 🔍 Review completed games with move navigation and PGN export.
-- 📈 Show real-time **Stockfish 18** evaluation with an objective Advantage Bar.
+- 📈 Show real-time **Stockfish 18** evaluation with an objective Advantage Bar when Stockfish is available.
 - 🌙 Use a polished dark-mode UI across bracket, live game, and analytics views.
 
 
@@ -76,7 +76,7 @@ Note:
 cp .env.example .env
 ```
 2. Edit `.env` and set:
-- `IMAGE_NAMESPACE`
+- `IMAGE_NAMESPACE` (`fjrepo` for the official published images)
 - `IMAGE_TAG`
 - `OPENROUTER_API_KEY`
 - `DB_PASSWORD`
@@ -200,6 +200,7 @@ Linux `arm64` note:
 - Stockfish is licensed under GPL v3.
 - The exact bundled version, source reference, and notice details live in `THIRD_PARTY_NOTICES.md`.
 - The backend image also includes Stockfish notice/license files under `/usr/share/licenses/stockfish/`.
+- If Stockfish is unavailable, the backend now stays up and the frontend disables the eval bar instead of failing the whole app.
 
 ## Run Without Docker
 ### Database
@@ -291,6 +292,7 @@ git secrets --scan-history
 ### Models / Config
 - `GET /api/models`
 - `GET /api/config/openrouter-status`
+- `GET /api/config/system-status`
 - `GET /api/config/prompt-template`
 
 ### Analytics
@@ -319,6 +321,7 @@ git secrets --scan-history
 - Tournament format currently supports single elimination.
 - Tournament setup supports matchup series lengths of `1`, `3`, `5`, or `7`, with an optional finals-specific override.
 - Best-of series alternate colors each game, and draws extend the matchup until one side reaches the win target.
+- When Stockfish is unavailable, the application degrades gracefully: games still run, but move evaluation is disabled and the UI shows `Evaluation unavailable`.
 
 ## Branding and Logos
 - Provider visuals use custom in-house abstract icons (not official company logos).

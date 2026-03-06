@@ -29,10 +29,34 @@ jobs:
           echo "backend_image=ghcr.io/${owner_lc}/chess-backend" >> "$GITHUB_OUTPUT"
           echo "frontend_image=ghcr.io/${owner_lc}/chess-frontend" >> "$GITHUB_OUTPUT"
 
+  verify-backend-image-compliance:
+    name: Verify Backend Image Compliance
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend image locally
+        run: docker build -t chess-backend:release-check ./backend
+
+      - name: Verify Stockfish license files
+        run: |
+          docker run --rm --entrypoint sh chess-backend:release-check -c \
+            'test -f /usr/share/licenses/stockfish/COPYING.txt && test -f /usr/share/licenses/stockfish/NOTICE.txt'
+
+      - name: Verify Stockfish metadata labels
+        run: |
+          docker inspect chess-backend:release-check \
+            --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }} {{ index .Config.Labels "dev.aichessarena.stockfish.source" }} {{ index .Config.Labels "org.opencontainers.image.licenses" }}' \
+            | grep 'sf_18'
+
   publish-backend:
     name: Publish Backend Image
     runs-on: ubuntu-latest
-    needs: prepare
+    needs:
+      - prepare
+      - verify-backend-image-compliance
     steps:
       - name: Checkout
         uses: actions/checkout@v4

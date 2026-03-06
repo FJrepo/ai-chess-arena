@@ -22,6 +22,7 @@ For other users, `docker-compose.prod.yml` is the recommended path.
 - The bundled binary currently targets `amd64` / AVX2-class environments.
 - Stockfish source/license details are documented in `THIRD_PARTY_NOTICES.md`.
 - The backend image includes Stockfish notice/license files under `/usr/share/licenses/stockfish/`.
+- If Stockfish is unavailable at runtime, the backend now stays up and the frontend disables the eval bar rather than failing the full app.
 
 ## First-Time Setup
 1. Copy the environment template:

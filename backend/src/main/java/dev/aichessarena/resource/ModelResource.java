@@ -3,6 +3,7 @@ package dev.aichessarena.resource;
 import dev.aichessarena.dto.PromptTemplateDto;
 import dev.aichessarena.service.OpenRouterService;
 import dev.aichessarena.service.PromptService;
+import dev.aichessarena.service.StockfishService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
@@ -21,6 +22,9 @@ public class ModelResource {
 
     @Inject
     PromptService promptService;
+
+    @Inject
+    StockfishService stockfishService;
 
     @GET
     @Path("/models")
@@ -52,4 +56,22 @@ public class ModelResource {
         );
         return Response.ok(dto).build();
     }
+
+    @GET
+    @Path("/config/system-status")
+    public Response getSystemStatus() {
+        var stockfish = stockfishService.status();
+        SystemStatusResponse dto = new SystemStatusResponse(
+                openRouterService.checkApiKey(),
+                stockfish.available(),
+                stockfish.reason()
+        );
+        return Response.ok(dto).build();
+    }
+
+    public record SystemStatusResponse(
+            boolean openRouterValid,
+            boolean stockfishAvailable,
+            String stockfishReason
+    ) {}
 }
