@@ -76,16 +76,19 @@
 
 .game-layout {
   --board-square-size: clamp(58px, 3.6vw, 72px);
-  --moves-col: 2fr;
-  --board-col: 5fr;
-  --chat-col: 3fr;
+  --moves-col: 2.35fr;
+  --board-col: 4.45fr;
+  --chat-col: 3.35fr;
 
   display: grid;
   grid-template-columns:
     minmax(180px, var(--moves-col))
     minmax(calc(24px + (8 * var(--board-square-size))), var(--board-col))
     minmax(280px, var(--chat-col));
-  gap: 18px;
+  grid-template-areas:
+    'feed board chat'
+    'movelist movelist movelist';
+  gap: 14px;
   margin-top: 16px;
   align-items: start;
 }
@@ -96,23 +99,50 @@
 }
 
 .moves-column {
+  grid-area: feed;
   display: grid;
   gap: 14px;
 }
 
-.moves-column app-move-list,
 .chat-column app-chat-panel {
   display: block;
   height: 100%;
+  --chat-panel-min-height: 180px;
+  --chat-panel-max-height: calc((8 * var(--board-square-size)) + 72px);
 }
 
 .timeline-card {
   border-radius: 16px;
+
+  mat-card-header {
+    padding-bottom: 8px;
+  }
+
+  mat-card-title {
+    margin: 0;
+  }
+}
+
+.timeline-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.timeline-toggle {
+  font-size: 0.82rem;
+  justify-self: end;
+
+  ::ng-deep .mdc-form-field {
+    gap: 10px;
+  }
 }
 
 .timeline-scroll {
   min-height: 180px;
-  max-height: 34vh;
+  max-height: calc((8 * var(--board-square-size)) + 72px);
   overflow-y: auto;
   display: grid;
   gap: 10px;
@@ -143,6 +173,20 @@
 
   &.move-event .timeline-icon {
     color: color-mix(in srgb, var(--mat-sys-primary) 84%, white);
+    background: color-mix(in srgb, var(--mat-sys-primary) 18%, transparent);
+  }
+
+  &.move-event {
+    border-color: color-mix(in srgb, var(--mat-sys-primary) 28%, transparent);
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--mat-sys-primary) 11%, transparent) 0%,
+      color-mix(in srgb, var(--mat-sys-surface-container) 88%, transparent) 18%
+    );
+  }
+
+  &.move-event .timeline-label {
+    color: color-mix(in srgb, var(--mat-sys-primary) 78%, white);
   }
 
   &.chat-event .timeline-icon {
@@ -206,8 +250,18 @@
 }
 
 .board-section {
+  grid-area: board;
+  width: 100%;
+  justify-self: stretch;
+  display: grid;
+  gap: 12px;
+}
+
+.board-frame {
   width: min(100%, calc(56px + (8 * var(--board-square-size))));
   justify-self: center;
+  display: grid;
+  gap: 12px;
 }
 
 .board-container {
@@ -331,11 +385,22 @@ app-advantage-bar {
 .board-controls {
   display: flex;
   justify-content: center;
-  margin-top: 8px;
   gap: 4px;
+  margin-top: -2px;
+}
+
+.move-list-row {
+  grid-area: movelist;
+  width: 100%;
+}
+
+.move-list-row app-move-list {
+  display: block;
+  width: 100%;
 }
 
 .chat-column {
+  grid-area: chat;
   min-height: 540px;
 }
 
@@ -363,14 +428,12 @@ app-advantage-bar {
     grid-template-columns: auto minmax(340px, 1fr);
     grid-template-areas:
       'board chat'
-      'moves chat';
+      'feed chat'
+      'movelist movelist';
   }
 
   .board-section {
     grid-area: board;
-  }
-  .moves-column {
-    grid-area: moves;
   }
   .chat-column {
     grid-area: chat;
@@ -401,5 +464,16 @@ app-advantage-bar {
   .capture-strip {
     min-width: 0;
     width: 100%;
+  }
+}
+
+@media (max-width: 1360px) {
+  .timeline-header {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .timeline-toggle {
+    justify-self: start;
   }
 }

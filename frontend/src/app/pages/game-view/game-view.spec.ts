@@ -12,7 +12,7 @@ describe('GameView', () => {
     expect(component.evaluationStatusLabel()).toBe('Eval unavailable');
   });
 
-  it('builds a unified timeline from moves, chat, and result state', () => {
+  it('keeps chat out of the feed by default and can opt it back in', () => {
     const component = new GameView({} as any, {} as any, {} as any, {} as any, {} as any);
     component.game.set({
       id: 'g-1',
@@ -70,11 +70,24 @@ describe('GameView', () => {
       },
     ]);
 
-    const events = component.timelineEvents();
+    const timelineEvents = component.timelineEvents();
+    const defaultFeedEvents = component.feedEvents();
 
-    expect(events.map((event) => event.type)).toEqual(['result', 'chat', 'move', 'start']);
-    expect(events[1].detail).toContain('Alpha: Good luck.');
-    expect(events[2].detail).toContain('after 1 retry');
-    expect(events[3].label).toBe('Game Started');
+    expect(timelineEvents.map((event) => event.type)).toEqual(['result', 'chat', 'move', 'start']);
+    expect(defaultFeedEvents.map((event) => event.type)).toEqual(['result', 'move', 'start']);
+    expect(defaultFeedEvents[1].detail).toContain('after 1 retry');
+    expect(defaultFeedEvents[2].label).toBe('Game Started');
+
+    component.includeChatInFeed.set(true);
+
+    const chatEnabledFeedEvents = component.feedEvents();
+
+    expect(chatEnabledFeedEvents.map((event) => event.type)).toEqual([
+      'result',
+      'chat',
+      'move',
+      'start',
+    ]);
+    expect(chatEnabledFeedEvents[1].detail).toContain('Alpha: Good luck.');
   });
 });

@@ -3,8 +3,8 @@
 }
 
 .chat-scroll {
-  min-height: 300px;
-  max-height: 48vh;
+  min-height: var(--chat-panel-min-height, 300px);
+  max-height: var(--chat-panel-max-height, 48vh);
   overflow-y: auto;
   padding-right: 4px;
 }

@@ -10,6 +10,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
 import { Game, Move, ChatMessage, WsMessage } from '../../models/tournament.model';
@@ -62,6 +63,7 @@ const BLACK_PIECE_GLYPHS: Record<CapturablePiece, string> = {
     MatInputModule,
     MatExpansionModule,
     MatSnackBarModule,
+    MatSlideToggleModule,
     DatePipe,
     RouterLink,
     ChessboardComponent,
@@ -88,6 +90,7 @@ export class GameView implements OnInit, OnDestroy {
   serverTurnDeadlineAtMs = signal<number | null>(null);
   stockfishAvailable = signal(true);
   stockfishReason = signal<string | null>(null);
+  includeChatInFeed = signal(false);
 
   private gameId = '';
   private wsSub?: Subscription;
@@ -286,6 +289,9 @@ export class GameView implements OnInit, OnDestroy {
       .filter((event) => !Number.isNaN(event.createdAtMs))
       .sort((left, right) => right.createdAtMs - left.createdAtMs);
   });
+  feedEvents = computed(() =>
+    this.timelineEvents().filter((event) => this.includeChatInFeed() || event.type !== 'chat'),
+  );
 
   constructor(
     private route: ActivatedRoute,
