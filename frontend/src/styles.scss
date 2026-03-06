@@ -21,6 +21,18 @@ html {
       density: 0,
     )
   );
+
+  --app-page-max-width: 1400px;
+  --app-page-gap: 22px;
+  --app-surface-radius-lg: 24px;
+  --app-surface-radius-md: 20px;
+  --app-surface-border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 18%, transparent);
+  --app-surface-bg: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--mat-sys-surface-container-low) 92%, transparent),
+    color-mix(in srgb, var(--mat-sys-surface-container-high) 96%, transparent)
+  );
+  --app-surface-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
 }
 
 :root[data-theme='dark'],
@@ -73,3 +85,87 @@ body.dark-theme {
   box-sizing: border-box;
 }
 /* You can add global styles to this file, and also import other style files */
+
+.desktop-page {
+  display: grid;
+  gap: var(--app-page-gap);
+  max-width: var(--app-page-max-width);
+  margin: 0 auto;
+}
+
+.page-hero-surface {
+  border-radius: var(--app-surface-radius-lg);
+  border: var(--app-surface-border);
+  background:
+    radial-gradient(
+      130% 180% at 0% 0%,
+      color-mix(in srgb, var(--mat-sys-primary) 16%, transparent),
+      transparent 56%
+    ),
+    var(--app-surface-bg);
+  box-shadow: var(--app-surface-shadow);
+}
+
+.page-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 26px 28px;
+}
+
+.page-title-block {
+  display: grid;
+  gap: 10px;
+}
+
+.page-kicker {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mat-sys-primary) 80%, white);
+}
+
+.page-title {
+  margin: 0;
+  font-size: clamp(1.85rem, 3.4vw, 2.6rem);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+}
+
+.page-subtitle {
+  margin: 0;
+  max-width: 62ch;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+mat-chip {
+  --mdc-chip-label-text-size: 0.72rem;
+  --mdc-chip-label-text-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  height: 24px;
+}
+
+@media (max-width: 800px) {
+  .page-hero {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 22px;
+  }
+
+  .page-actions {
+    justify-content: flex-start;
+  }
+}

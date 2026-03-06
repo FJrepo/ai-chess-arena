@@ -1,10 +1,19 @@
-<div class="tournament-list">
-  <div class="header">
-    <h2>Tournaments</h2>
-    <a mat-raised-button color="primary" routerLink="/tournaments/new">
-      <mat-icon>add</mat-icon> Create Tournament
-    </a>
-  </div>
+<div class="tournament-list desktop-page">
+  <section class="page-hero-surface page-hero tournament-hero">
+    <div class="page-title-block">
+      <span class="page-kicker">Tournament Control</span>
+      <h1 class="page-title">Tournaments</h1>
+      <p class="page-subtitle">
+        Create new brackets, revisit prior runs, and sort the arena history by status, format, and
+        activity.
+      </p>
+    </div>
+    <div class="page-actions">
+      <a mat-raised-button color="primary" routerLink="/tournaments/new">
+        <mat-icon>add</mat-icon> Create Tournament
+      </a>
+    </div>
+  </section>
 
   @if (deleteError()) {
     <mat-card class="error-state">

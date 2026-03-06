@@ -1,32 +1,12 @@
 .tournament-list {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-
-  .header {
+  .tournament-hero a[mat-raised-button] {
+    height: 48px;
+    padding: 0 24px;
+    border-radius: 12px;
+    font-weight: 700;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 32px;
-
-    h2 {
-      margin: 0;
-      font-family: 'Roboto', sans-serif;
-      font-size: 2.2rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    a[mat-raised-button] {
-      height: 48px;
-      padding: 0 24px;
-      border-radius: 12px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+    gap: 8px;
   }
 
   .tournament-grid {
@@ -316,14 +296,6 @@
   }
 }
 
-mat-chip {
-  --mdc-chip-label-text-size: 0.72rem;
-  --mdc-chip-label-text-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  height: 24px;
-}
-
 @media (max-width: 1024px) {
   .tournament-list {
     .onboarding-steps,
@@ -343,14 +315,6 @@ mat-chip {
 
 @media (max-width: 680px) {
   .tournament-list {
-    padding: 18px;
-
-    .header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 16px;
-    }
-
     .toolbar-content {
       grid-template-columns: 1fr;
     }

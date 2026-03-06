@@ -7,44 +7,13 @@
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  padding: 28px 30px;
-  border-radius: 28px;
-  background:
-    radial-gradient(
-      120% 180% at 0% 0%,
-      color-mix(in srgb, var(--mat-sys-primary) 18%, transparent),
-      transparent 55%
-    ),
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--mat-sys-surface-container-highest) 92%, white),
-      color-mix(in srgb, var(--mat-sys-surface) 88%, black)
-    );
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 22%, transparent);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
 }
 
 .hero-copy {
   max-width: 720px;
-
-  h1 {
-    margin: 8px 0 12px;
-    font-size: clamp(1.8rem, 4vw, 2.6rem);
-    line-height: 1.02;
-  }
-
-  p {
-    margin: 0;
-    max-width: 58ch;
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-  }
 }
 
 .eyebrow {
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: color-mix(in srgb, var(--mat-sys-primary) 78%, white);
 }
 
