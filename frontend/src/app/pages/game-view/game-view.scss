@@ -95,10 +95,114 @@
   min-width: 0;
 }
 
+.moves-column {
+  display: grid;
+  gap: 14px;
+}
+
 .moves-column app-move-list,
 .chat-column app-chat-panel {
   display: block;
   height: 100%;
+}
+
+.timeline-card {
+  border-radius: 16px;
+}
+
+.timeline-scroll {
+  min-height: 180px;
+  max-height: 34vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.timeline-event {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 26%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 86%, transparent);
+  color: inherit;
+
+  &.clickable {
+    cursor: pointer;
+  }
+
+  &.clickable:hover {
+    border-color: color-mix(in srgb, var(--mat-sys-primary) 34%, transparent);
+    background: color-mix(in srgb, var(--mat-sys-primary-container) 22%, transparent);
+  }
+
+  &.move-event .timeline-icon {
+    color: color-mix(in srgb, var(--mat-sys-primary) 84%, white);
+  }
+
+  &.chat-event .timeline-icon {
+    color: color-mix(in srgb, #5bb6ff 78%, white);
+  }
+
+  &.warning-event .timeline-icon {
+    color: color-mix(in srgb, #ff8a65 84%, white);
+  }
+
+  &.success-event .timeline-icon {
+    color: color-mix(in srgb, #4db06f 84%, white);
+  }
+}
+
+.timeline-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
+
+  mat-icon {
+    font-size: 17px;
+    width: 17px;
+    height: 17px;
+  }
+}
+
+.timeline-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.timeline-label {
+  font-weight: 700;
+  color: var(--mat-sys-on-surface);
+}
+
+.timeline-detail {
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 66%, transparent);
+  font-size: 0.84rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.timeline-time {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 54%, transparent);
+  white-space: nowrap;
+}
+
+.timeline-empty {
+  text-align: center;
+  padding: 20px 12px;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 56%, transparent);
 }
 
 .board-section {
