@@ -1,0 +1,197 @@
+.system-page {
+  display: grid;
+  gap: 22px;
+}
+
+.hero-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 30px;
+  border-radius: 28px;
+  background:
+    radial-gradient(
+      120% 180% at 0% 0%,
+      color-mix(in srgb, var(--mat-sys-primary) 18%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--mat-sys-surface-container-highest) 92%, white),
+      color-mix(in srgb, var(--mat-sys-surface) 88%, black)
+    );
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 22%, transparent);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
+}
+
+.hero-copy {
+  max-width: 720px;
+
+  h1 {
+    margin: 8px 0 12px;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    line-height: 1.02;
+  }
+
+  p {
+    margin: 0;
+    max-width: 58ch;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  }
+}
+
+.eyebrow {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mat-sys-primary) 78%, white);
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 180px;
+}
+
+.last-checked {
+  font-size: 0.88rem;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 65%, transparent);
+}
+
+.loading-state,
+.error-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--mat-sys-surface-container) 88%, transparent);
+}
+
+.error-card {
+  color: var(--mat-sys-error);
+  border: 1px solid color-mix(in srgb, var(--mat-sys-error) 35%, transparent);
+}
+
+.status-grid,
+.guidance-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.status-card,
+.guide-card {
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 18%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-surface-container-high) 84%, transparent);
+}
+
+.status-card mat-card-content,
+.guide-card mat-card-content {
+  padding: 22px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 4px 0 0;
+    font-size: 1.35rem;
+  }
+}
+
+.card-kicker {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 56%, transparent);
+}
+
+mat-chip {
+  text-transform: capitalize;
+
+  &.healthy {
+    background: color-mix(in srgb, #22c55e 22%, transparent);
+    color: color-mix(in srgb, #22c55e 88%, white);
+  }
+
+  &.degraded {
+    background: color-mix(in srgb, #f59e0b 22%, transparent);
+    color: color-mix(in srgb, #f59e0b 92%, white);
+  }
+}
+
+.meta-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.95rem;
+
+  span {
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
+  }
+
+  strong {
+    text-align: right;
+  }
+}
+
+.operator-note {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--mat-sys-outline) 16%, transparent);
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 68%, transparent);
+}
+
+.guide-card h3 {
+  margin: 0 0 10px;
+}
+
+.guide-card p {
+  margin: 0;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+}
+
+@media (max-width: 1100px) {
+  .status-grid,
+  .guidance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .hero-card {
+    flex-direction: column;
+    padding: 22px;
+  }
+
+  .hero-actions {
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  .meta-row {
+    flex-direction: column;
+    gap: 4px;
+
+    strong {
+      text-align: left;
+    }
+  }
+}

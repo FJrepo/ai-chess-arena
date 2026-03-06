@@ -119,6 +119,7 @@ A feature is done when all of the following are true:
 - Pinned version tags are the supported deployment target; `latest` is convenience only.
 - Release-affecting changes should update `CHANGELOG.md`.
 - Do not cut a release if tests/builds are failing, docs are materially misleading, or release artifacts are known broken/unverified.
+- After feature, fix, or release-pipeline work, explicitly assess whether a new release is now appropriate and tell the user when it is.
 
 ## Final Response Requirements
 When finishing a feature task, include:
@@ -126,5 +127,6 @@ When finishing a feature task, include:
 - what was validated
 - whether deployment happened
 - any residual limits, risks, or deferred work
+- whether the current state suggests cutting a new release
 
 Do not assume “implemented” means “deployed”.

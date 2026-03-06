@@ -13,6 +13,7 @@ AI Chess Arena is a **local-first LLM chess arena** for running tournaments acro
 - ⚡ Stream live move, chat, and status events over WebSocket.
 - 🔍 Review completed games with move navigation and PGN export.
 - 📈 Show real-time **Stockfish 18** evaluation with an objective Advantage Bar when Stockfish is available.
+- 🛠️ Inspect backend, OpenRouter, and Stockfish health from a dedicated system status page.
 - 🌙 Use a polished dark-mode UI across bracket, live game, and analytics views.
 
 
@@ -318,6 +319,7 @@ git secrets --scan-history
 - Final retry prompt includes a `LAST CHANCE` warning before forfeit.
 - Move records now include prompt governance metadata (`promptVersion`, `promptHash`) for auditability.
 - Move timeout is enforced server-side per turn, and websocket status events include turn timing metadata (`activeColor`, `turnStartedAt`, `turnDeadlineAt`).
+- The frontend `System` page surfaces backend version plus OpenRouter/Stockfish availability using `/api/config/system-status`.
 - Draw advancement policy is configurable per tournament (`WHITE_ADVANCES`, `BLACK_ADVANCES`, `HIGHER_SEED_ADVANCES`, `RANDOM_ADVANCES`, `REPLAY_GAME`).
 - Tournament format currently supports single elimination.
 - Tournament setup supports matchup series lengths of `1`, `3`, `5`, or `7`, with an optional finals-specific override.

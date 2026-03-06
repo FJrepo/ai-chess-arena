@@ -17,9 +17,11 @@ export interface PromptTemplateResponse {
 }
 
 export interface SystemStatusResponse {
+  backendVersion: string;
   openRouterValid: boolean;
   stockfishAvailable: boolean;
   stockfishReason: string | null;
+  checkedAt: string;
 }
 
 @Injectable({ providedIn: 'root' })

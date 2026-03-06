@@ -5,6 +5,7 @@ import dev.aichessarena.service.OpenRouterService;
 import dev.aichessarena.service.PromptService;
 import dev.aichessarena.service.StockfishService;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -25,6 +26,9 @@ public class ModelResource {
 
     @Inject
     StockfishService stockfishService;
+
+    @ConfigProperty(name = "quarkus.application.version", defaultValue = "unknown")
+    String applicationVersion;
 
     @GET
     @Path("/models")
@@ -62,16 +66,20 @@ public class ModelResource {
     public Response getSystemStatus() {
         var stockfish = stockfishService.status();
         SystemStatusResponse dto = new SystemStatusResponse(
+                applicationVersion,
                 openRouterService.checkApiKey(),
                 stockfish.available(),
-                stockfish.reason()
+                stockfish.reason(),
+                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
         );
         return Response.ok(dto).build();
     }
 
     public record SystemStatusResponse(
+            String backendVersion,
             boolean openRouterValid,
             boolean stockfishAvailable,
-            String stockfishReason
+            String stockfishReason,
+            String checkedAt
     ) {}
 }

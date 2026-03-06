@@ -16,15 +16,18 @@ class ModelResourceTest {
         resource.openRouterService = new AlwaysValidOpenRouterService();
         resource.promptService = new PromptService();
         resource.stockfishService = new UnavailableStockfishService();
+        resource.applicationVersion = "0.2.1";
 
         Response response = resource.getSystemStatus();
         ModelResource.SystemStatusResponse body =
                 (ModelResource.SystemStatusResponse) response.getEntity();
 
         assertEquals(200, response.getStatus());
+        assertEquals("0.2.1", body.backendVersion());
         assertEquals(true, body.openRouterValid());
         assertEquals(false, body.stockfishAvailable());
         assertEquals("Stockfish missing", body.stockfishReason());
+        assertEquals(true, body.checkedAt() != null && !body.checkedAt().isBlank());
     }
 
     private static final class AlwaysValidOpenRouterService extends OpenRouterService {
