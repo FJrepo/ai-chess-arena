@@ -30,6 +30,39 @@
 
   <div class="game-layout">
     <div class="moves-column">
+      <mat-card class="timeline-card">
+        <mat-card-header>
+          <mat-card-title>Game Timeline</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="timeline-scroll">
+            @for (event of timelineEvents(); track event.id) {
+              <button
+                type="button"
+                class="timeline-event"
+                [class.clickable]="event.moveIndex !== null"
+                [class.move-event]="event.tone === 'move'"
+                [class.chat-event]="event.tone === 'chat'"
+                [class.warning-event]="event.tone === 'warning'"
+                [class.success-event]="event.tone === 'success'"
+                (click)="goToTimelineEvent(event)"
+              >
+                <span class="timeline-icon">
+                  <mat-icon>{{ event.icon }}</mat-icon>
+                </span>
+                <span class="timeline-copy">
+                  <span class="timeline-label">{{ event.label }}</span>
+                  <span class="timeline-detail">{{ event.detail }}</span>
+                </span>
+                <span class="timeline-time">{{ event.createdAtLabel | date: 'shortTime' }}</span>
+              </button>
+            } @empty {
+              <div class="timeline-empty">No events yet</div>
+            }
+          </div>
+        </mat-card-content>
+      </mat-card>
+
       <app-move-list
         [moves]="moves()"
         [currentIndex]="currentMoveIndex()"

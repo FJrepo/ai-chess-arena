@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -19,6 +20,18 @@ import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
 import { Subscription } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
+
+type TimelineEvent = {
+  id: string;
+  type: 'start' | 'move' | 'chat' | 'result';
+  label: string;
+  detail: string;
+  tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
+  icon: string;
+  createdAtMs: number;
+  createdAtLabel: string;
+  moveIndex: number | null;
+};
 
 const WHITE_PIECE_GLYPHS: Record<CapturablePiece, string> = {
   Q: '\u2655',
@@ -49,6 +62,7 @@ const BLACK_PIECE_GLYPHS: Record<CapturablePiece, string> = {
     MatInputModule,
     MatExpansionModule,
     MatSnackBarModule,
+    DatePipe,
     RouterLink,
     ChessboardComponent,
     MoveListComponent,
@@ -196,6 +210,82 @@ export class GameView implements OnInit, OnDestroy {
 
   whiteMaterialEdge = computed(() => Math.max(0, this.capturedMaterial().materialDelta));
   blackMaterialEdge = computed(() => Math.max(0, -this.capturedMaterial().materialDelta));
+  timelineEvents = computed<TimelineEvent[]>(() => {
+    const events: TimelineEvent[] = [];
+    const moves = this.moves();
+    const chats = this.chatMessages();
+    const game = this.game();
+
+    if (game?.startedAt) {
+      events.push({
+        id: `start-${game.id}`,
+        type: 'start',
+        label: 'Game Started',
+        detail: `${game.whitePlayerName || 'White'} vs ${game.blackPlayerName || 'Black'}`,
+        tone: 'neutral',
+        icon: 'flag',
+        createdAtMs: Date.parse(game.startedAt),
+        createdAtLabel: game.startedAt,
+        moveIndex: moves.length > 0 ? 0 : null,
+      });
+    }
+
+    moves.forEach((move, index) => {
+      const retrySuffix =
+        move.retryCount > 0
+          ? ` after ${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
+          : '';
+      const overrideSuffix = move.isOverride ? ' (override)' : '';
+      events.push({
+        id: `move-${move.id || `${move.moveNumber}-${move.color}`}`,
+        type: 'move',
+        label: `${move.color === 'WHITE' ? 'White' : 'Black'} played ${move.san}`,
+        detail: `${move.modelId || 'Unknown model'}${retrySuffix}${overrideSuffix}`,
+        tone: move.isOverride ? 'warning' : 'move',
+        icon: move.isOverride ? 'edit' : 'arrow_right_alt',
+        createdAtMs: Date.parse(move.createdAt),
+        createdAtLabel: move.createdAt,
+        moveIndex: index,
+      });
+    });
+
+    chats.forEach((message) => {
+      const relatedMoveIndex = this.findTimelineMoveIndex(message.moveNumber, message.senderColor);
+      events.push({
+        id: `chat-${message.id || `${message.moveNumber}-${message.senderColor}-${message.createdAt}`}`,
+        type: 'chat',
+        label: `${message.senderColor === 'WHITE' ? 'White' : 'Black'} chat`,
+        detail: `${this.timelinePlayerName(message.senderColor, message.senderModel)}: ${message.message}`,
+        tone: 'chat',
+        icon: 'chat',
+        createdAtMs: Date.parse(message.createdAt),
+        createdAtLabel: message.createdAt,
+        moveIndex: relatedMoveIndex,
+      });
+    });
+
+    if (game && (game.status === 'COMPLETED' || game.status === 'FORFEIT')) {
+      const resultLabel =
+        game.resultReason ||
+        game.result?.replaceAll('_', ' ').toLowerCase() ||
+        game.status.toLowerCase();
+      events.push({
+        id: `result-${game.id}`,
+        type: 'result',
+        label: game.status === 'FORFEIT' ? 'Game Forfeit' : 'Game Complete',
+        detail: resultLabel.charAt(0).toUpperCase() + resultLabel.slice(1),
+        tone: game.status === 'FORFEIT' ? 'warning' : 'success',
+        icon: game.status === 'FORFEIT' ? 'gpp_bad' : 'emoji_events',
+        createdAtMs: game.completedAt ? Date.parse(game.completedAt) : Date.now(),
+        createdAtLabel: game.completedAt || new Date().toISOString(),
+        moveIndex: moves.length > 0 ? moves.length - 1 : null,
+      });
+    }
+
+    return events
+      .filter((event) => !Number.isNaN(event.createdAtMs))
+      .sort((left, right) => right.createdAtMs - left.createdAtMs);
+  });
 
   constructor(
     private route: ActivatedRoute,
@@ -371,6 +461,12 @@ export class GameView implements OnInit, OnDestroy {
     this.currentMoveIndex.set(index);
   }
 
+  goToTimelineEvent(event: TimelineEvent) {
+    if (event.moveIndex != null) {
+      this.currentMoveIndex.set(event.moveIndex);
+    }
+  }
+
   goFirst() {
     this.currentMoveIndex.set(-1);
   }
@@ -450,5 +546,26 @@ export class GameView implements OnInit, OnDestroy {
     }
     const parsed = Date.parse(value);
     return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  private findTimelineMoveIndex(
+    moveNumber: number,
+    color: 'WHITE' | 'BLACK' | string,
+  ): number | null {
+    const normalizedColor = color === 'WHITE' || color === 'BLACK' ? color : null;
+    const moves = this.moves();
+    const index = moves.findIndex(
+      (move) =>
+        move.moveNumber === moveNumber && (!normalizedColor || move.color === normalizedColor),
+    );
+    return index >= 0 ? index : null;
+  }
+
+  private timelinePlayerName(color: 'WHITE' | 'BLACK', fallbackModel: string): string {
+    const game = this.game();
+    if (color === 'WHITE') {
+      return game?.whitePlayerName || fallbackModel;
+    }
+    return game?.blackPlayerName || fallbackModel;
   }
 }
