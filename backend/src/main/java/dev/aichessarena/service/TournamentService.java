@@ -12,6 +12,8 @@ import dev.aichessarena.repository.TournamentRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
@@ -85,11 +87,23 @@ public class TournamentService {
     }
 
     @Transactional
-    public void removeParticipant(UUID tournamentId, UUID participantId) {
+    public boolean removeParticipant(UUID tournamentId, UUID participantId) {
         TournamentParticipant p = participantRepository.findById(participantId);
-        if (p != null && p.tournament.id.equals(tournamentId)) {
-            participantRepository.delete(p);
+        if (p == null || !p.tournament.id.equals(tournamentId)) {
+            return false;
         }
+
+        long referencedGames = gameRepository.count("(whiteParticipant.id = ?1) or (blackParticipant.id = ?1)",
+                participantId);
+        if (p.tournament.status != Tournament.TournamentStatus.CREATED || referencedGames > 0) {
+            throw new WebApplicationException(
+                    "Cannot remove participants after bracket generation has started",
+                    Response.Status.CONFLICT
+            );
+        }
+
+        participantRepository.delete(p);
+        return true;
     }
 
     @Transactional
@@ -104,26 +118,21 @@ public class TournamentService {
             throw new IllegalArgumentException("Need at least 2 participants");
         }
 
-        // Pad to next power of 2 for byes
         int size = nextPowerOf2(participants.size());
-        List<TournamentParticipant> seeded = new ArrayList<>(participants);
-        while (seeded.size() < size) {
-            seeded.add(null); // bye
-        }
+        List<FirstRoundMatch> firstRoundMatches = buildFirstRoundMatches(participants, size);
 
         List<Game> games = new ArrayList<>();
-        int round = 1;
         String[] roundNames = getRoundNames(size);
 
         // Generate first round games
-        for (int i = 0; i < seeded.size(); i += 2) {
-            TournamentParticipant white = seeded.get(i);
-            TournamentParticipant black = seeded.get(i + 1);
+        for (int i = 0; i < firstRoundMatches.size(); i++) {
+            TournamentParticipant white = firstRoundMatches.get(i).white();
+            TournamentParticipant black = firstRoundMatches.get(i).black();
 
             Game game = new Game();
             game.tournament = tournament;
             game.bracketRound = roundNames[0];
-            game.bracketPosition = i / 2;
+            game.bracketPosition = i;
 
             if (white != null) {
                 game.whiteParticipant = white;
@@ -153,7 +162,7 @@ public class TournamentService {
         }
 
         // Generate placeholder games for subsequent rounds
-        int gamesInRound = size / 2;
+        int gamesInRound = firstRoundMatches.size();
         for (int r = 1; r < roundNames.length; r++) {
             gamesInRound /= 2;
             for (int pos = 0; pos < gamesInRound; pos++) {
@@ -169,6 +178,12 @@ public class TournamentService {
 
         tournament.status = Tournament.TournamentStatus.IN_PROGRESS;
         tournamentRepository.persist(tournament);
+
+        for (Game game : games) {
+            if (game.status == Game.GameStatus.COMPLETED && game.result != null) {
+                advanceWinner(game.id);
+            }
+        }
 
         return games;
     }
@@ -271,14 +286,12 @@ public class TournamentService {
         gameRepository.persist(game);
     }
 
-    private String getNextRound(String currentRound) {
-        return switch (currentRound) {
-            case "Round of 16" -> "Quarterfinal";
-            case "Quarterfinal" -> "Semifinal";
-            case "Semifinal" -> "Final";
-            case "Round 1" -> "Semifinal";
-            default -> null;
-        };
+    static String getNextRound(String currentRound) {
+        int currentRoundSize = roundSizeForName(currentRound);
+        if (currentRoundSize <= 2) {
+            return null;
+        }
+        return roundNameForSize(currentRoundSize / 2);
     }
 
     private int nextPowerOf2(int n) {
@@ -287,15 +300,59 @@ public class TournamentService {
         return power;
     }
 
-    private String[] getRoundNames(int bracketSize) {
-        return switch (bracketSize) {
-            case 2 -> new String[]{"Final"};
-            case 4 -> new String[]{"Semifinal", "Final"};
-            case 8 -> new String[]{"Quarterfinal", "Semifinal", "Final"};
-            case 16 -> new String[]{"Round of 16", "Quarterfinal", "Semifinal", "Final"};
-            default -> new String[]{"Round 1", "Semifinal", "Final"};
+    static String[] getRoundNames(int bracketSize) {
+        List<String> roundNames = new ArrayList<>();
+        for (int roundSize = bracketSize; roundSize >= 2; roundSize /= 2) {
+            roundNames.add(roundNameForSize(roundSize));
+        }
+        return roundNames.toArray(String[]::new);
+    }
+
+    static List<FirstRoundMatch> buildFirstRoundMatches(List<TournamentParticipant> participants, int bracketSize) {
+        int byes = bracketSize - participants.size();
+        List<FirstRoundMatch> matches = new ArrayList<>(bracketSize / 2);
+        int index = 0;
+
+        for (int i = 0; i < byes; i++) {
+            matches.add(new FirstRoundMatch(participants.get(index++), null));
+        }
+
+        while (index < participants.size()) {
+            TournamentParticipant white = participants.get(index++);
+            TournamentParticipant black = index < participants.size() ? participants.get(index++) : null;
+            matches.add(new FirstRoundMatch(white, black));
+        }
+
+        return matches;
+    }
+
+    static String roundNameForSize(int roundSize) {
+        return switch (roundSize) {
+            case 2 -> "Final";
+            case 4 -> "Semifinal";
+            case 8 -> "Quarterfinal";
+            default -> "Round of " + roundSize;
         };
     }
+
+    static int roundSizeForName(String roundName) {
+        if (roundName == null || roundName.isBlank()) {
+            return -1;
+        }
+        return switch (roundName) {
+            case "Final" -> 2;
+            case "Semifinal" -> 4;
+            case "Quarterfinal" -> 8;
+            default -> {
+                if (roundName.startsWith("Round of ")) {
+                    yield Integer.parseInt(roundName.substring("Round of ".length()));
+                }
+                yield -1;
+            }
+        };
+    }
+
+    record FirstRoundMatch(TournamentParticipant white, TournamentParticipant black) {}
 
     @Transactional
     public boolean deleteTournament(UUID tournamentId) {

@@ -110,6 +110,14 @@
               "src/**/*.html"
             ]
           }
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "tsconfig.spec.json",
+            "buildTarget": "ai-chess-arena:build:development",
+            "runner": "vitest"
+          }
         }
       }
     }

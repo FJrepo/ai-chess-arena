@@ -109,7 +109,10 @@ public class TournamentResource {
     @DELETE
     @Path("/{id}/participants/{pid}")
     public Response removeParticipant(@PathParam("id") UUID id, @PathParam("pid") UUID pid) {
-        tournamentService.removeParticipant(id, pid);
+        boolean removed = tournamentService.removeParticipant(id, pid);
+        if (!removed) {
+            return Response.status(404).build();
+        }
         return Response.noContent().build();
     }
 

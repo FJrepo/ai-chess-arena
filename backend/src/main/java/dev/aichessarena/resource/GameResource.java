@@ -56,6 +56,10 @@ public class GameResource {
     @POST
     @Path("/{id}/override-move")
     public Response overrideMove(@PathParam("id") UUID id, OverrideMoveRequest req) {
+        Game game = gameRepository.findById(id);
+        if (game == null) {
+            return Response.status(404).build();
+        }
         gameEngineService.overrideMove(id, req.move());
         return Response.ok().build();
     }

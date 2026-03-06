@@ -102,6 +102,26 @@ function scoreCapturedPieces(counter: Record<CapturablePiece, number>): number {
   return PIECE_ORDER.reduce((sum, piece) => sum + counter[piece] * PIECE_VALUES[piece], 0);
 }
 
+function countPromotions(moves: MoveLike[], upToMoveIndex: number): { white: number; black: number } {
+  let white = 0;
+  let black = 0;
+  const promotionPattern = /=[QRBN]/;
+
+  for (let i = 0; i <= upToMoveIndex; i++) {
+    if (!promotionPattern.test(moves[i]?.san ?? '')) {
+      continue;
+    }
+
+    if (moves[i].color === 'WHITE') {
+      white += 1;
+    } else {
+      black += 1;
+    }
+  }
+
+  return { white, black };
+}
+
 function emptyCapturedMaterial(): CapturedMaterial {
   return {
     whiteCaptured: [],
@@ -140,6 +160,11 @@ export function deriveCapturedMaterial(
   // Basic diff from starting position
   const whiteRemoved = removedPieces(startCounts.white, currentCounts.white);
   const blackRemoved = removedPieces(startCounts.black, currentCounts.black);
+  const promotions = countPromotions(moves, maxIndex);
+
+  // Promotions consume a pawn from the promoting side, but that pawn was not captured.
+  whiteRemoved.P = Math.max(0, whiteRemoved.P - promotions.white);
+  blackRemoved.P = Math.max(0, blackRemoved.P - promotions.black);
 
   // Promotions can create "extra" pieces, which would show as negative removal.
   // We only count pieces that are actually MISSING compared to the start.
