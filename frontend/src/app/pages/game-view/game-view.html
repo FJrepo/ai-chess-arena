@@ -32,11 +32,21 @@
     <div class="moves-column">
       <mat-card class="timeline-card">
         <mat-card-header>
-          <mat-card-title>Game Timeline</mat-card-title>
+          <div class="timeline-header">
+            <mat-card-title>Game Feed</mat-card-title>
+            <mat-slide-toggle
+              class="timeline-toggle"
+              labelPosition="before"
+              [ngModel]="includeChatInFeed()"
+              (ngModelChange)="includeChatInFeed.set($event)"
+            >
+              Include chat
+            </mat-slide-toggle>
+          </div>
         </mat-card-header>
         <mat-card-content>
           <div class="timeline-scroll">
-            @for (event of timelineEvents(); track event.id) {
+            @for (event of feedEvents(); track event.id) {
               <button
                 type="button"
                 class="timeline-event"
@@ -62,79 +72,83 @@
           </div>
         </mat-card-content>
       </mat-card>
-
-      <app-move-list
-        [moves]="moves()"
-        [currentIndex]="currentMoveIndex()"
-        [compact]="true"
-        (moveSelected)="goToMove($event)"
-      />
     </div>
 
     <div class="board-section">
-      <div class="capture-strip top">
-        <span class="capture-label">White Captures</span>
-        <div class="capture-pieces">
-          @for (piece of whiteCapturedGlyphs(); track $index) {
-            <span class="captured-piece black-piece">{{ piece }}</span>
-          } @empty {
-            <span class="capture-empty">None</span>
-          }
-        </div>
-        @if (whiteMaterialEdge() > 0) {
-          <span class="material-edge">+{{ whiteMaterialEdge() }}</span>
-        }
-      </div>
-
-      <div class="board-container">
-        @if (showEvaluationBar()) {
-          <app-advantage-bar [cp]="currentEvaluation().cp" [mate]="currentEvaluation().mate" />
-        } @else {
-          <div
-            class="eval-unavailable"
-            [attr.title]="stockfishReason() || evaluationStatusMessage()"
-          >
-            <mat-icon>disabled_visible</mat-icon>
-            <span class="eval-unavailable-label">{{ evaluationStatusMessage() }}</span>
+      <div class="board-frame">
+        <div class="capture-strip top">
+          <span class="capture-label">White Captures</span>
+          <div class="capture-pieces">
+            @for (piece of whiteCapturedGlyphs(); track $index) {
+              <span class="captured-piece black-piece">{{ piece }}</span>
+            } @empty {
+              <span class="capture-empty">None</span>
+            }
           </div>
-        }
-        <app-chessboard [fen]="currentFen()" [flipped]="flipped()" />
-      </div>
-
-      <div class="board-controls">
-        <button mat-icon-button (click)="goFirst()" matTooltip="First move">
-          <mat-icon>first_page</mat-icon>
-        </button>
-        <button mat-icon-button (click)="goPrev()" matTooltip="Previous move">
-          <mat-icon>chevron_left</mat-icon>
-        </button>
-        <button mat-icon-button (click)="goNext()" matTooltip="Next move">
-          <mat-icon>chevron_right</mat-icon>
-        </button>
-        <button mat-icon-button (click)="goLast()" matTooltip="Last move">
-          <mat-icon>last_page</mat-icon>
-        </button>
-        <button mat-icon-button (click)="flipBoard()" matTooltip="Flip board">
-          <mat-icon>swap_vert</mat-icon>
-        </button>
-        <button mat-icon-button (click)="exportPgn()" matTooltip="Export PGN">
-          <mat-icon>download</mat-icon>
-        </button>
-      </div>
-
-      <div class="capture-strip bottom">
-        <span class="capture-label">Black Captures</span>
-        <div class="capture-pieces">
-          @for (piece of blackCapturedGlyphs(); track $index) {
-            <span class="captured-piece white-piece">{{ piece }}</span>
-          } @empty {
-            <span class="capture-empty">None</span>
+          @if (whiteMaterialEdge() > 0) {
+            <span class="material-edge">+{{ whiteMaterialEdge() }}</span>
           }
         </div>
-        @if (blackMaterialEdge() > 0) {
-          <span class="material-edge">+{{ blackMaterialEdge() }}</span>
-        }
+
+        <div class="board-container">
+          @if (showEvaluationBar()) {
+            <app-advantage-bar [cp]="currentEvaluation().cp" [mate]="currentEvaluation().mate" />
+          } @else {
+            <div
+              class="eval-unavailable"
+              [attr.title]="stockfishReason() || evaluationStatusMessage()"
+            >
+              <mat-icon>disabled_visible</mat-icon>
+              <span class="eval-unavailable-label">{{ evaluationStatusMessage() }}</span>
+            </div>
+          }
+          <app-chessboard [fen]="currentFen()" [flipped]="flipped()" />
+        </div>
+
+        <div class="board-controls">
+          <button mat-icon-button (click)="goFirst()" matTooltip="First move">
+            <mat-icon>first_page</mat-icon>
+          </button>
+          <button mat-icon-button (click)="goPrev()" matTooltip="Previous move">
+            <mat-icon>chevron_left</mat-icon>
+          </button>
+          <button mat-icon-button (click)="goNext()" matTooltip="Next move">
+            <mat-icon>chevron_right</mat-icon>
+          </button>
+          <button mat-icon-button (click)="goLast()" matTooltip="Last move">
+            <mat-icon>last_page</mat-icon>
+          </button>
+          <button mat-icon-button (click)="flipBoard()" matTooltip="Flip board">
+            <mat-icon>swap_vert</mat-icon>
+          </button>
+          <button mat-icon-button (click)="exportPgn()" matTooltip="Export PGN">
+            <mat-icon>download</mat-icon>
+          </button>
+        </div>
+
+        <div class="capture-strip bottom">
+          <span class="capture-label">Black Captures</span>
+          <div class="capture-pieces">
+            @for (piece of blackCapturedGlyphs(); track $index) {
+              <span class="captured-piece white-piece">{{ piece }}</span>
+            } @empty {
+              <span class="capture-empty">None</span>
+            }
+          </div>
+          @if (blackMaterialEdge() > 0) {
+            <span class="material-edge">+{{ blackMaterialEdge() }}</span>
+          }
+        </div>
       </div>
+    </div>
+
+    <div class="move-list-row">
+      <app-move-list
+        [moves]="moves()"
+        [currentIndex]="currentMoveIndex()"
+        [compact]="false"
+        (moveSelected)="goToMove($event)"
+      />
     </div>
 
     <div class="chat-column">
