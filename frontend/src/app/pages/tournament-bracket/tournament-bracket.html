@@ -14,6 +14,12 @@
           <span class="count-tag">{{ t.participants.length }} Players</span>
           <span class="dot-separator"></span>
           <span class="count-tag">{{ t.games.length }} Games</span>
+          <span class="dot-separator"></span>
+          <span class="count-tag">Matchups: Bo{{ t.matchupBestOf }}</span>
+          @if (t.finalsBestOf) {
+            <span class="dot-separator"></span>
+            <span class="count-tag">Final: Bo{{ t.finalsBestOf }}</span>
+          }
         </div>
       </div>
 

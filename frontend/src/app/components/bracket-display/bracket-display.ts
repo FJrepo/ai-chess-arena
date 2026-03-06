@@ -23,6 +23,22 @@ interface ConnectorPath {
   d: string;
 }
 
+interface SeriesCard {
+  id: string;
+  roundName: string;
+  bracketPosition: number;
+  bestOf: number;
+  currentGame: Game;
+  latestGame: Game;
+  whitePlayerName: string | null;
+  whiteModelId: string | null;
+  blackPlayerName: string | null;
+  blackModelId: string | null;
+  whiteWins: number;
+  blackWins: number;
+  isComplete: boolean;
+}
+
 @Component({
   selector: 'app-bracket-display',
   imports: [MatCardModule, MatButtonModule, MatIconModule, ProviderLogoComponent],
@@ -46,18 +62,31 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
 
   rounds = computed(() => {
     const games = this._games();
-    const roundMap = new Map<string, Game[]>();
+    const roundMap = new Map<string, SeriesCard[]>();
+    const seriesMap = new Map<string, Game[]>();
+
     for (const game of games) {
-      const round = game.bracketRound || 'Unknown';
-      if (!roundMap.has(round)) roundMap.set(round, []);
-      roundMap.get(round)!.push(game);
+      const seriesKey = game.seriesId || game.id;
+      if (!seriesMap.has(seriesKey)) {
+        seriesMap.set(seriesKey, []);
+      }
+      seriesMap.get(seriesKey)!.push(game);
     }
+
+    for (const seriesGames of seriesMap.values()) {
+      const card = this.toSeriesCard(seriesGames);
+      if (!roundMap.has(card.roundName)) {
+        roundMap.set(card.roundName, []);
+      }
+      roundMap.get(card.roundName)!.push(card);
+    }
+
     const sorted = [...roundMap.entries()].sort((a, b) => {
       return this.roundSortValue(b[0]) - this.roundSortValue(a[0]);
     });
     return sorted.map(([name, games]) => ({
       name,
-      games: games.sort((a, b) => (a.bracketPosition ?? 0) - (b.bracketPosition ?? 0)),
+      games: games.sort((a, b) => a.bracketPosition - b.bracketPosition),
     }));
   });
   connectorPaths = signal<ConnectorPath[]>([]);
@@ -83,7 +112,8 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     window.removeEventListener('resize', this.onWindowResize);
   }
 
-  canBattle(game: Game): boolean {
+  canBattle(card: SeriesCard): boolean {
+    const game = card.currentGame;
     return (
       game.status === 'WAITING' &&
       !!game.whitePlayerName &&
@@ -93,13 +123,14 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     );
   }
 
-  getResultText(game: Game): string {
+  getResultText(card: SeriesCard): string {
+    const game = card.latestGame;
     if (!game.result) return '';
     switch (game.result) {
       case 'WHITE_WINS':
-        return `${game.whitePlayerName} wins`;
+        return `${game.whitePlayerName} wins ${card.whiteWins}-${card.blackWins}`;
       case 'BLACK_WINS':
-        return `${game.blackPlayerName} wins`;
+        return `${game.blackPlayerName} wins ${card.blackWins}-${card.whiteWins}`;
       case 'WHITE_FORFEIT':
         return `${game.whitePlayerName} forfeits`;
       case 'BLACK_FORFEIT':
@@ -149,16 +180,16 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     for (let roundIndex = 0; roundIndex < rounds.length - 1; roundIndex++) {
       const currentRound = rounds[roundIndex].games;
       const nextRound = rounds[roundIndex + 1].games;
-      const nextByPosition = new Map<number, Game>();
+      const nextByPosition = new Map<number, SeriesCard>();
 
       for (let i = 0; i < nextRound.length; i++) {
         const nextGame = nextRound[i];
-        nextByPosition.set(nextGame.bracketPosition ?? i, nextGame);
+        nextByPosition.set(nextGame.bracketPosition, nextGame);
       }
 
       for (let i = 0; i < currentRound.length; i++) {
         const game = currentRound[i];
-        const currentPos = game.bracketPosition ?? i;
+        const currentPos = game.bracketPosition;
         const targetGame = nextByPosition.get(Math.floor(currentPos / 2));
         if (!targetGame) continue;
 
@@ -199,5 +230,66 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
         return -1;
       }
     }
+  }
+
+  private toSeriesCard(seriesGames: Game[]): SeriesCard {
+    const orderedGames = [...seriesGames].sort((left, right) => {
+      if (left.seriesGameNumber !== right.seriesGameNumber) {
+        return left.seriesGameNumber - right.seriesGameNumber;
+      }
+      return left.createdAt.localeCompare(right.createdAt);
+    });
+    const firstGame = orderedGames[0];
+    const currentGame =
+      orderedGames.find(
+        (game) =>
+          game.status === 'WAITING' || game.status === 'IN_PROGRESS' || game.status === 'PAUSED',
+      ) ?? orderedGames[orderedGames.length - 1];
+    const latestGame = orderedGames[orderedGames.length - 1];
+
+    let whiteWins = 0;
+    let blackWins = 0;
+    for (const game of orderedGames) {
+      if (!firstGame.whitePlayerName || !firstGame.blackPlayerName) {
+        break;
+      }
+      if (
+        game.result === 'WHITE_WINS' ||
+        game.result === 'BLACK_FORFEIT' ||
+        game.result === 'BLACK_WINS' ||
+        game.result === 'WHITE_FORFEIT'
+      ) {
+        const winnerName =
+          game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT'
+            ? game.whitePlayerName
+            : game.blackPlayerName;
+
+        if (winnerName === firstGame.whitePlayerName) {
+          whiteWins += 1;
+        } else if (winnerName === firstGame.blackPlayerName) {
+          blackWins += 1;
+        }
+      }
+    }
+
+    const isComplete =
+      currentGame === latestGame &&
+      (currentGame.status === 'COMPLETED' || currentGame.status === 'FORFEIT');
+
+    return {
+      id: firstGame.seriesId || firstGame.id,
+      roundName: firstGame.bracketRound || 'Unknown',
+      bracketPosition: firstGame.bracketPosition ?? 0,
+      bestOf: firstGame.seriesBestOf,
+      currentGame,
+      latestGame,
+      whitePlayerName: firstGame.whitePlayerName,
+      whiteModelId: firstGame.whiteModelId,
+      blackPlayerName: firstGame.blackPlayerName,
+      blackModelId: firstGame.blackModelId,
+      whiteWins,
+      blackWins,
+      isComplete,
+    };
   }
 }

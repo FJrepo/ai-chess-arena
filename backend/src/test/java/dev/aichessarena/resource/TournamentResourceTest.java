@@ -1,7 +1,9 @@
 package dev.aichessarena.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.aichessarena.dto.CreateTournamentRequest;
 import dev.aichessarena.repository.TournamentRepository;
 import dev.aichessarena.service.AnalyticsService;
 import dev.aichessarena.service.TournamentService;
@@ -10,6 +12,18 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class TournamentResourceTest {
+
+    @Test
+    void createRejectsUnsupportedBestOfValues() {
+        TournamentResource resource = new TournamentResource();
+        resource.tournamentRepository = new TournamentRepository();
+        resource.tournamentService = new TournamentService();
+        resource.analyticsService = new AnalyticsService();
+
+        assertThrows(IllegalArgumentException.class, () -> resource.create(
+                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null)
+        ));
+    }
 
     @Test
     void removeParticipantReturnsNotFoundWhenServiceReportsMissingParticipant() {

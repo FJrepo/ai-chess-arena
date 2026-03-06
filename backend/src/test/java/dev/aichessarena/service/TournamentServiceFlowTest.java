@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.aichessarena.entity.Game;
@@ -54,6 +55,118 @@ class TournamentServiceFlowTest {
         assertEquals("Seed 2", semifinalA.blackPlayerName);
         assertEquals("Seed 3", semifinalB.whitePlayerName);
         assertEquals(null, semifinalB.blackPlayerName);
+    }
+
+    @Test
+    void generateBracketUsesFinalsOverrideForFinalSeries() {
+        UUID tournamentId = UUID.randomUUID();
+        Tournament tournament = new Tournament();
+        tournament.id = tournamentId;
+        tournament.status = Tournament.TournamentStatus.CREATED;
+        tournament.matchupBestOf = 3;
+        tournament.finalsBestOf = 5;
+
+        List<TournamentParticipant> participants = List.of(
+                participant(tournament, "Seed 1", "m1", 0),
+                participant(tournament, "Seed 2", "m2", 1),
+                participant(tournament, "Seed 3", "m3", 2),
+                participant(tournament, "Seed 4", "m4", 3)
+        );
+
+        InMemoryGameRepository gameRepository = new InMemoryGameRepository();
+        TournamentService service = new TournamentService();
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
+        service.participantRepository = new FakeParticipantRepository(participants);
+        service.gameRepository = gameRepository;
+        service.moveRepository = new MoveRepository();
+        service.chatMessageRepository = new ChatMessageRepository();
+
+        service.generateBracket(tournamentId);
+
+        assertEquals(3, gameRepository.findByRoundAndPosition("Semifinal", 0).seriesBestOf);
+        assertEquals(3, gameRepository.findByRoundAndPosition("Semifinal", 1).seriesBestOf);
+        assertEquals(5, gameRepository.findByRoundAndPosition("Final", 0).seriesBestOf);
+    }
+
+    @Test
+    void advanceWinnerCreatesNextSeriesGameAfterDraw() {
+        UUID tournamentId = UUID.randomUUID();
+        Tournament tournament = new Tournament();
+        tournament.id = tournamentId;
+        tournament.status = Tournament.TournamentStatus.CREATED;
+        tournament.matchupBestOf = 3;
+
+        List<TournamentParticipant> participants = List.of(
+                participant(tournament, "Seed 1", "m1", 0),
+                participant(tournament, "Seed 2", "m2", 1)
+        );
+
+        InMemoryGameRepository gameRepository = new InMemoryGameRepository();
+        TournamentService service = new TournamentService();
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
+        service.participantRepository = new FakeParticipantRepository(participants);
+        service.gameRepository = gameRepository;
+        service.moveRepository = new MoveRepository();
+        service.chatMessageRepository = new ChatMessageRepository();
+
+        List<Game> games = service.generateBracket(tournamentId);
+        Game firstGame = games.getFirst();
+        firstGame.status = Game.GameStatus.COMPLETED;
+        firstGame.result = Game.GameResult.DRAW;
+
+        service.advanceWinner(firstGame.id);
+
+        List<Game> seriesGames = gameRepository.findBySeriesId(firstGame.seriesId);
+        assertEquals(2, seriesGames.size());
+        Game secondGame = seriesGames.get(1);
+        assertEquals(2, secondGame.seriesGameNumber);
+        assertEquals("Seed 2", secondGame.whitePlayerName);
+        assertEquals("Seed 1", secondGame.blackPlayerName);
+        assertEquals(Tournament.TournamentStatus.IN_PROGRESS, tournament.status);
+    }
+
+    @Test
+    void advanceWinnerAlternatesColorsAndCompletesSeriesBeforeAdvancing() {
+        UUID tournamentId = UUID.randomUUID();
+        Tournament tournament = new Tournament();
+        tournament.id = tournamentId;
+        tournament.status = Tournament.TournamentStatus.CREATED;
+        tournament.matchupBestOf = 3;
+
+        List<TournamentParticipant> participants = List.of(
+                participant(tournament, "Seed 1", "m1", 0),
+                participant(tournament, "Seed 2", "m2", 1)
+        );
+
+        InMemoryGameRepository gameRepository = new InMemoryGameRepository();
+        TournamentService service = new TournamentService();
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
+        service.participantRepository = new FakeParticipantRepository(participants);
+        service.gameRepository = gameRepository;
+        service.moveRepository = new MoveRepository();
+        service.chatMessageRepository = new ChatMessageRepository();
+
+        List<Game> games = service.generateBracket(tournamentId);
+        Game firstGame = games.getFirst();
+        firstGame.status = Game.GameStatus.COMPLETED;
+        firstGame.result = Game.GameResult.WHITE_WINS;
+
+        service.advanceWinner(firstGame.id);
+
+        List<Game> seriesGames = gameRepository.findBySeriesId(firstGame.seriesId);
+        assertEquals(2, seriesGames.size());
+        Game secondGame = seriesGames.get(1);
+        assertEquals("Seed 2", secondGame.whitePlayerName);
+        assertEquals("Seed 1", secondGame.blackPlayerName);
+
+        secondGame.status = Game.GameStatus.COMPLETED;
+        secondGame.result = Game.GameResult.BLACK_WINS;
+
+        service.advanceWinner(secondGame.id);
+
+        assertEquals(Tournament.TournamentStatus.COMPLETED, tournament.status);
+        assertNotNull(gameRepository.findById(firstGame.id));
+        assertEquals(2, gameRepository.findBySeriesId(firstGame.seriesId).size());
     }
 
     @Test
@@ -158,6 +271,14 @@ class TournamentServiceFlowTest {
         public List<Game> findByTournamentId(UUID tournamentId) {
             return games.values().stream()
                     .filter(game -> game.tournament != null && tournamentId.equals(game.tournament.id))
+                    .toList();
+        }
+
+        @Override
+        public List<Game> findBySeriesId(UUID seriesId) {
+            return games.values().stream()
+                    .filter(game -> seriesId.equals(game.seriesId))
+                    .sorted((left, right) -> Integer.compare(left.seriesGameNumber, right.seriesGameNumber))
                     .toList();
         }
 

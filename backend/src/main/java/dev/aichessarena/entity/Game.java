@@ -63,6 +63,15 @@ public class Game extends PanacheEntityBase {
     @Column(name = "bracket_position")
     public Integer bracketPosition;
 
+    @Column(name = "series_id")
+    public UUID seriesId;
+
+    @Column(name = "series_game_number", nullable = false)
+    public int seriesGameNumber = 1;
+
+    @Column(name = "series_best_of", nullable = false)
+    public int seriesBestOf = 1;
+
     @Column(name = "total_cost_usd", nullable = false)
     public BigDecimal totalCostUsd = BigDecimal.ZERO;
 

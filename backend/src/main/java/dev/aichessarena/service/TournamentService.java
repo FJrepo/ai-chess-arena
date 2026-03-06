@@ -19,6 +19,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -129,10 +130,7 @@ public class TournamentService {
             TournamentParticipant white = firstRoundMatches.get(i).white();
             TournamentParticipant black = firstRoundMatches.get(i).black();
 
-            Game game = new Game();
-            game.tournament = tournament;
-            game.bracketRound = roundNames[0];
-            game.bracketPosition = i;
+            Game game = createBracketGame(tournament, roundNames[0], i, bestOfForRound(tournament, roundNames[0]));
 
             if (white != null) {
                 game.whiteParticipant = white;
@@ -166,11 +164,7 @@ public class TournamentService {
         for (int r = 1; r < roundNames.length; r++) {
             gamesInRound /= 2;
             for (int pos = 0; pos < gamesInRound; pos++) {
-                Game game = new Game();
-                game.tournament = tournament;
-                game.bracketRound = roundNames[r];
-                game.bracketPosition = pos;
-                game.status = Game.GameStatus.WAITING;
+                Game game = createBracketGame(tournament, roundNames[r], pos, bestOfForRound(tournament, roundNames[r]));
                 gameRepository.persist(game);
                 games.add(game);
             }
@@ -194,23 +188,18 @@ public class TournamentService {
         if (completedGame == null || completedGame.tournament == null) return;
 
         if (completedGame.result == GameResult.DRAW
+                && completedGame.seriesBestOf <= 1
                 && completedGame.tournament.drawPolicy == Tournament.DrawPolicy.REPLAY_GAME) {
             resetGameForReplay(completedGame);
             return;
         }
 
-        TournamentParticipant winner;
-        if (completedGame.result == GameResult.WHITE_WINS || completedGame.result == GameResult.BLACK_FORFEIT) {
-            winner = completedGame.whiteParticipant;
-        } else if (completedGame.result == GameResult.BLACK_WINS || completedGame.result == GameResult.WHITE_FORFEIT) {
-            winner = completedGame.blackParticipant;
-        } else if (completedGame.result == GameResult.DRAW) {
-            winner = resolveDrawWinner(completedGame);
-        } else {
+        List<Game> seriesGames = seriesGamesFor(completedGame);
+        TournamentParticipant winner = resolveSeriesWinner(completedGame, seriesGames);
+        if (winner == null) {
+            ensureNextSeriesGameExists(completedGame, seriesGames);
             return;
         }
-
-        if (winner == null) return;
 
         List<Game> tournamentGames = gameRepository.findByTournamentId(completedGame.tournament.id);
         int nextPosition = completedGame.bracketPosition / 2;
@@ -225,7 +214,8 @@ public class TournamentService {
 
         for (Game nextGame : tournamentGames) {
             if (nextRound.equals(nextGame.bracketRound) && nextGame.bracketPosition != null
-                    && nextGame.bracketPosition == nextPosition) {
+                    && nextGame.bracketPosition == nextPosition
+                    && nextGame.seriesGameNumber == 1) {
                 if (completedGame.bracketPosition % 2 == 0) {
                     nextGame.whiteParticipant = winner;
                     nextGame.whitePlayerName = winner.playerName;
@@ -257,6 +247,127 @@ public class TournamentService {
         };
     }
 
+    private Game createBracketGame(Tournament tournament, String roundName, int position, int seriesBestOf) {
+        Game game = new Game();
+        game.tournament = tournament;
+        game.bracketRound = roundName;
+        game.bracketPosition = position;
+        game.seriesId = UUID.randomUUID();
+        game.seriesGameNumber = 1;
+        game.seriesBestOf = seriesBestOf;
+        game.status = Game.GameStatus.WAITING;
+        return game;
+    }
+
+    private List<Game> seriesGamesFor(Game game) {
+        UUID seriesId = game.seriesId != null ? game.seriesId : game.id;
+        List<Game> games = gameRepository.findBySeriesId(seriesId);
+        return games.isEmpty() ? List.of(game) : games;
+    }
+
+    private TournamentParticipant resolveSeriesWinner(Game completedGame, List<Game> seriesGames) {
+        if (completedGame.whiteParticipant == null || completedGame.blackParticipant == null) {
+            return completedGame.whiteParticipant != null ? completedGame.whiteParticipant : completedGame.blackParticipant;
+        }
+
+        if (completedGame.seriesBestOf <= 1) {
+            return switch (completedGame.result) {
+                case WHITE_WINS, BLACK_FORFEIT -> completedGame.whiteParticipant;
+                case BLACK_WINS, WHITE_FORFEIT -> completedGame.blackParticipant;
+                case DRAW -> resolveDrawWinner(completedGame);
+                default -> null;
+            };
+        }
+
+        Game firstGame = seriesGames.isEmpty() ? completedGame : seriesGames.getFirst();
+        TournamentParticipant bracketWhite = firstGame.whiteParticipant;
+        TournamentParticipant bracketBlack = firstGame.blackParticipant;
+        if (bracketWhite == null || bracketBlack == null) {
+            return bracketWhite != null ? bracketWhite : bracketBlack;
+        }
+
+        int whiteWins = 0;
+        int blackWins = 0;
+        for (Game game : seriesGames) {
+            TournamentParticipant gameWinner = winnerOfGame(game);
+            if (gameWinner == null) {
+                continue;
+            }
+            if (Objects.equals(gameWinner.id, bracketWhite.id)) {
+                whiteWins++;
+            } else if (Objects.equals(gameWinner.id, bracketBlack.id)) {
+                blackWins++;
+            }
+        }
+
+        int winsRequired = winsRequired(completedGame.seriesBestOf);
+        if (whiteWins >= winsRequired) {
+            return bracketWhite;
+        }
+        if (blackWins >= winsRequired) {
+            return bracketBlack;
+        }
+        return null;
+    }
+
+    private TournamentParticipant winnerOfGame(Game game) {
+        if (game == null || game.result == null) {
+            return null;
+        }
+
+        return switch (game.result) {
+            case WHITE_WINS, BLACK_FORFEIT -> game.whiteParticipant;
+            case BLACK_WINS, WHITE_FORFEIT -> game.blackParticipant;
+            case DRAW -> null;
+        };
+    }
+
+    private void ensureNextSeriesGameExists(Game completedGame, List<Game> seriesGames) {
+        if (completedGame.seriesBestOf <= 1) {
+            return;
+        }
+        if (completedGame.whiteParticipant == null || completedGame.blackParticipant == null) {
+            return;
+        }
+        boolean hasPendingGame = seriesGames.stream().anyMatch(game ->
+                game.status == Game.GameStatus.WAITING
+                        || game.status == Game.GameStatus.IN_PROGRESS
+                        || game.status == Game.GameStatus.PAUSED
+        );
+        if (hasPendingGame) {
+            return;
+        }
+
+        Game firstGame = seriesGames.isEmpty() ? completedGame : seriesGames.getFirst();
+        int nextGameNumber = seriesGames.stream().mapToInt(game -> game.seriesGameNumber).max().orElse(1) + 1;
+
+        Game nextGame = new Game();
+        nextGame.tournament = completedGame.tournament;
+        nextGame.bracketRound = completedGame.bracketRound;
+        nextGame.bracketPosition = completedGame.bracketPosition;
+        nextGame.seriesId = completedGame.seriesId != null ? completedGame.seriesId : completedGame.id;
+        nextGame.seriesGameNumber = nextGameNumber;
+        nextGame.seriesBestOf = completedGame.seriesBestOf;
+        nextGame.status = Game.GameStatus.WAITING;
+
+        boolean sameOrientationAsFirst = nextGameNumber % 2 == 1;
+        TournamentParticipant white = sameOrientationAsFirst ? firstGame.whiteParticipant : firstGame.blackParticipant;
+        TournamentParticipant black = sameOrientationAsFirst ? firstGame.blackParticipant : firstGame.whiteParticipant;
+
+        if (white != null) {
+            nextGame.whiteParticipant = white;
+            nextGame.whitePlayerName = white.playerName;
+            nextGame.whiteModelId = white.modelId;
+        }
+        if (black != null) {
+            nextGame.blackParticipant = black;
+            nextGame.blackPlayerName = black.playerName;
+            nextGame.blackModelId = black.modelId;
+        }
+
+        gameRepository.persist(nextGame);
+    }
+
     private TournamentParticipant chooseHigherSeed(TournamentParticipant white, TournamentParticipant black) {
         if (white == null) return black;
         if (black == null) return white;
@@ -284,6 +395,17 @@ public class TournamentService {
         game.startedAt = null;
         game.completedAt = null;
         gameRepository.persist(game);
+    }
+
+    private int bestOfForRound(Tournament tournament, String roundName) {
+        if ("Final".equals(roundName) && tournament.finalsBestOf != null) {
+            return tournament.finalsBestOf;
+        }
+        return tournament.matchupBestOf;
+    }
+
+    private int winsRequired(int bestOf) {
+        return (bestOf / 2) + 1;
     }
 
     static String getNextRound(String currentRound) {
