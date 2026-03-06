@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-06
+
+### Added
+- Tournament history now shows a first-run onboarding flow with starter presets for the first launch.
+- Tournament setup now includes a confidence panel with projected games, runtime, and rough spend heuristics.
+
+### Changed
+- Tournament setup presets can prefill starter configurations through onboarding links.
+- The frontend component-style warning budget was raised to reflect the richer onboarding layout.
+
 ## [0.4.0] - 2026-03-06
 
 ### Added
