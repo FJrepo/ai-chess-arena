@@ -12,6 +12,11 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM eclipse-temurin:21-jre@sha256:34a58218d838035428163eb35abb629944c5906d1bedcfef8bc8864cce11dfe5
 WORKDIR /app
 
+LABEL org.opencontainers.image.licenses="MIT, GPL-3.0-only" \
+      dev.aichessarena.stockfish.version="sf_18" \
+      dev.aichessarena.stockfish.source="https://github.com/official-stockfish/Stockfish/tree/sf_18" \
+      dev.aichessarena.stockfish.asset="stockfish-ubuntu-x86-64-avx2.tar"
+
 # Install dependencies for downloading and running Stockfish
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
@@ -36,6 +41,8 @@ RUN set -eux; \
 RUN groupadd --gid 10001 app && \
     useradd --uid 10001 --gid 10001 --create-home --home-dir /home/app --shell /usr/sbin/nologin app
 
+RUN mkdir -p /usr/share/licenses/stockfish
+COPY licenses/stockfish/ /usr/share/licenses/stockfish/
 COPY --from=build --chown=app:app /app/target/quarkus-app/ ./quarkus-app/
 USER app
 EXPOSE 8080
