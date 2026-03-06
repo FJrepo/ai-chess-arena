@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-06
+
+### Added
+- Bracket cards now present richer live matchup state with cleaner hierarchy, including live, paused, ready, pending, complete, forfeit, and bye states.
+
+### Changed
+- Bracket cards now prioritize state, score, and current series context over duplicated result badges.
+- In-progress series can expose a direct `Review Previous` action for the prior game in the series.
+
 ## [0.5.0] - 2026-03-06
 
 ### Added
