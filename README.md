@@ -53,29 +53,69 @@ flowchart LR
 - `backend/` Quarkus API, game engine, OpenRouter integration, DB migrations
 - `frontend/` Angular app
 - `docker-compose.yml` local stack (db + backend + frontend)
+- `docker-compose.prod.yml` released-image deployment stack
+- `docs/deployment.md` deployment and upgrade guide
 - `task-packages/` backlog task packages
 
-## Quick Start (Docker)
+## Quick Start (Released Images)
+This is the recommended path for users who want to run the project without building it locally.
+
 ### Prerequisites
 - Docker + Docker Compose
 - OpenRouter API key
+
+### Setup
+1. Create your runtime env file from the template:
+```bash
+cp .env.example .env
+```
+2. Edit `.env` and set:
+- `IMAGE_NAMESPACE`
+- `IMAGE_TAG`
+- `OPENROUTER_API_KEY`
+- `DB_PASSWORD`
+3. Pull the released images:
+```bash
+docker compose -f docker-compose.prod.yml pull
+```
+4. Start the stack:
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Useful follow-up commands:
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f backend frontend
+docker compose -f docker-compose.prod.yml down
+```
+
+### URLs
+- Frontend: `http://localhost:4200`
+- Backend API: `http://localhost:8081`
+
+See `docs/deployment.md` for:
+- first-time deployment
+- upgrades to new image tags
+- persistence details
+- troubleshooting
+
+## Local Development (Docker Build)
+Use this path if you want to build and run from source on your own machine.
 
 ### Setup
 1. Create your local env file from the template:
 ```bash
 cp .env.example .env
 ```
-Then set your OpenRouter key in `.env`:
-```env
-OPENROUTER_API_KEY=your_key_here
-```
+Then set your OpenRouter key in `.env`.
 2. Start the stack:
 ```bash
 docker compose up --build
 ```
 
 ### Headless CLI Run (Detached)
-Run the full stack in background (no attached terminal output):
+Run the full stack in background:
 ```bash
 docker compose up --build -d
 ```
@@ -87,7 +127,7 @@ docker compose logs -f backend frontend
 docker compose down
 ```
 
-### URLs
+### Local Dev Ports
 - Frontend: `http://localhost:4200`
 - Backend API: `http://localhost:8081`
 - PostgreSQL: `localhost:5433` (`chess/chess`, db `chess_tournament`)
@@ -188,6 +228,14 @@ cd frontend
 npm test
 npx ng build --configuration=development
 ```
+
+## Releases
+- Versioned releases are cut from git tags such as `v0.2.0`.
+- Tagged releases publish:
+  - `ghcr.io/<owner>/chess-backend:<tag>`
+  - `ghcr.io/<owner>/chess-frontend:<tag>`
+- `latest` is also published for convenience, but pinned tags are the recommended deployment target.
+- Release notes live in GitHub Releases, and human-curated project history lives in `CHANGELOG.md`.
 
 ## Git Secrets Setup
 Run after clone on your local machine:

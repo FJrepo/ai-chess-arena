@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Best-of tournament matchup series with optional finals-specific override.
+- Release workflow for version tags that publishes frontend/backend images to GitHub Container Registry.
+- Production deployment assets:
+  - `docker-compose.prod.yml`
+  - `docs/deployment.md`
+  - expanded `.env.example`
+- Repo workflow policy in `AGENTS.md`.
+
+### Changed
+- README now distinguishes released-image deployment from local source-build development.
+- Tournament brackets and setup now document released behavior for best-of series.
+
+### Fixed
+- Stockfish evaluation scores are normalized to White's perspective before persistence/rendering.
+- Bound-only Stockfish scores are ignored so the advantage bar does not treat them as exact evaluations.
+
 ## [0.1.0] - 2026-02-25
 
 ### Added
