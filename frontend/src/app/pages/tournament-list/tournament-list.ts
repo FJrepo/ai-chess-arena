@@ -8,8 +8,9 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { DatePipe } from '@angular/common';
-import { ApiService } from '../../services/api.service';
+import { ApiService, SystemStatusResponse } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import { finalize } from 'rxjs';
 
@@ -25,19 +26,52 @@ import { finalize } from 'rxjs';
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
+    MatProgressSpinnerModule,
     DatePipe,
   ],
   templateUrl: './tournament-list.html',
   styleUrl: './tournament-list.scss',
 })
 export class TournamentList implements OnInit {
+  private readonly starterPresets = [
+    {
+      key: 'quickstart',
+      eyebrow: 'Fastest Path',
+      title: 'Quick Start Arena',
+      description: 'Best-of-1 matchups, lower timeout, and minimal setup for the first tournament.',
+      detail: 'Fastest way to validate your stack end to end.',
+    },
+    {
+      key: 'balanced',
+      eyebrow: 'Recommended',
+      title: 'Balanced Ladder',
+      description:
+        'Best-of-3 matchups with safer progression defaults for a more representative first run.',
+      detail: 'Good default once provider access is working.',
+    },
+    {
+      key: 'showcase',
+      eyebrow: 'Series Demo',
+      title: 'Series Showcase',
+      description: 'Best-of-3 rounds with a best-of-5 final to exercise the richer bracket flow.',
+      detail: 'Use this once you want a more visible demo.',
+    },
+  ] as const;
+
   tournaments = signal<Tournament[]>([]);
   deletingIds = signal<Set<string>>(new Set());
   deleteError = signal<string | null>(null);
+  systemStatus = signal<SystemStatusResponse | null>(null);
+  systemStatusLoading = signal(false);
+  systemStatusError = signal<string | null>(null);
   searchTerm = signal('');
   statusFilter = signal<'ALL' | Tournament['status']>('ALL');
   bestOfFilter = signal<'ALL' | Tournament['matchupBestOf']>('ALL');
   sortBy = signal<'newest' | 'oldest' | 'participants' | 'games' | 'name'>('newest');
+  onboardingReady = computed(
+    () => this.systemStatus()?.openRouterValid === true && this.systemStatusError() === null,
+  );
+  onboardingCards = computed(() => this.starterPresets);
 
   filteredTournaments = computed(() => {
     const query = this.searchTerm().trim().toLowerCase();
@@ -88,6 +122,7 @@ export class TournamentList implements OnInit {
 
   ngOnInit() {
     this.api.getTournaments().subscribe((t) => this.tournaments.set(t));
+    this.loadSystemStatus();
   }
 
   openTournament(id: string): void {
@@ -165,5 +200,31 @@ export class TournamentList implements OnInit {
     }
 
     return `${visible} of ${total} tournaments`;
+  }
+
+  onboardingSummary(): string {
+    if (this.systemStatusLoading()) {
+      return 'Checking provider and evaluation readiness...';
+    }
+    if (this.systemStatusError()) {
+      return 'System readiness could not be verified yet. Open the System page before launching a tournament.';
+    }
+    if (this.onboardingReady()) {
+      return 'OpenRouter is configured and the stack is ready for a first tournament.';
+    }
+    return 'The stack is up, but provider access still needs attention before a tournament can start.';
+  }
+
+  private loadSystemStatus(): void {
+    this.systemStatusLoading.set(true);
+    this.systemStatusError.set(null);
+    this.api.getSystemStatus().subscribe({
+      next: (status) => this.systemStatus.set(status),
+      error: () => {
+        this.systemStatus.set(null);
+        this.systemStatusError.set('System status is unavailable.');
+      },
+      complete: () => this.systemStatusLoading.set(false),
+    });
   }
 }

@@ -68,6 +68,118 @@
     color: color-mix(in srgb, #ff8a80 78%, var(--mat-sys-on-surface));
   }
 
+  .confidence-panel {
+    .confidence-band-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .confidence-band {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 92px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+
+      &.safe {
+        background: color-mix(in srgb, #22a06b 18%, transparent);
+        color: #0e8b58;
+      }
+
+      &.moderate {
+        background: color-mix(in srgb, #f0a202 18%, transparent);
+        color: #c07d00;
+      }
+
+      &.expensive {
+        background: color-mix(in srgb, #d14343 18%, transparent);
+        color: #c34a4a;
+      }
+    }
+
+    .confidence-note {
+      color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+    }
+
+    .confidence-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .confidence-metric {
+      display: grid;
+      gap: 4px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--mat-sys-primary-container) 24%, transparent);
+      border: 1px solid color-mix(in srgb, var(--mat-sys-primary) 12%, transparent);
+
+      strong {
+        font-size: 1.2rem;
+      }
+
+      span:not(.metric-label) {
+        color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+        font-size: 0.84rem;
+      }
+    }
+
+    .metric-label {
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--mat-sys-primary);
+    }
+
+    .confidence-footnotes {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+
+      p {
+        margin: 0;
+        color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+      }
+    }
+
+    .confidence-warning {
+      color: color-mix(in srgb, #ff8a80 78%, var(--mat-sys-on-surface));
+    }
+
+    .confidence-empty {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 8px 0;
+
+      mat-icon {
+        transform: scale(1.2);
+        color: var(--mat-sys-primary);
+      }
+
+      strong,
+      p {
+        display: block;
+        margin: 0;
+      }
+
+      p {
+        margin-top: 4px;
+        color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+      }
+    }
+  }
+
   .participants-card {
     mat-card-subtitle {
       margin-top: 6px;
@@ -172,6 +284,10 @@
   }
 
   @media (max-width: 900px) {
+    .confidence-panel .confidence-grid {
+      grid-template-columns: 1fr;
+    }
+
     .add-participant {
       grid-template-columns: 1fr;
     }

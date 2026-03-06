@@ -84,11 +84,117 @@
   </mat-card>
 
   @if (tournaments().length === 0) {
-    <mat-card class="empty-state">
-      <mat-card-content>
-        <p>No tournaments yet. Create one to get started!</p>
-      </mat-card-content>
-    </mat-card>
+    <section class="onboarding-shell">
+      <mat-card class="empty-state onboarding-intro">
+        <mat-card-content>
+          <span class="onboarding-kicker">First Run</span>
+          <h3>Launch your first tournament without guessing the setup order</h3>
+          <p>{{ onboardingSummary() }}</p>
+
+          <div class="onboarding-chip-row">
+            <mat-chip [highlighted]="systemStatus()?.openRouterValid === true">
+              OpenRouter
+              @if (systemStatus()?.openRouterValid === true) {
+                ready
+              } @else {
+                check required
+              }
+            </mat-chip>
+            <mat-chip [highlighted]="systemStatus()?.stockfishAvailable === true">
+              Stockfish
+              @if (systemStatus()?.stockfishAvailable === true) {
+                ready
+              } @else {
+                optional for live eval
+              }
+            </mat-chip>
+            @if (systemStatusLoading()) {
+              <span class="status-loading">
+                <mat-spinner diameter="18"></mat-spinner>
+                Checking stack
+              </span>
+            }
+          </div>
+
+          <div class="onboarding-actions">
+            <a
+              mat-flat-button
+              color="primary"
+              routerLink="/tournaments/new"
+              [queryParams]="{ preset: 'quickstart' }"
+            >
+              <mat-icon>rocket_launch</mat-icon>
+              Start with Quick Start
+            </a>
+            <a mat-stroked-button routerLink="/system">
+              <mat-icon>monitor_heart</mat-icon>
+              Review System Status
+            </a>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <div class="onboarding-steps">
+        <mat-card class="step-card">
+          <mat-card-content>
+            <span class="step-index">1</span>
+            <h4>Verify provider access</h4>
+            <p>
+              Make sure OpenRouter is configured. Stockfish is optional, but needed for live eval.
+            </p>
+            <a mat-button routerLink="/system">
+              <mat-icon>arrow_forward</mat-icon>
+              Open system page
+            </a>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="step-card">
+          <mat-card-content>
+            <span class="step-index">2</span>
+            <h4>Add at least two participants</h4>
+            <p>
+              Choose models, give them display names, and optionally add shared or per-player
+              instructions.
+            </p>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="step-card">
+          <mat-card-content>
+            <span class="step-index">3</span>
+            <h4>Create and launch</h4>
+            <p>
+              Start with a small bracket first, then move to longer series once the stack looks
+              stable.
+            </p>
+          </mat-card-content>
+        </mat-card>
+      </div>
+
+      <div class="starter-grid">
+        @for (preset of onboardingCards(); track preset.key) {
+          <mat-card class="starter-card">
+            <mat-card-content>
+              <span class="starter-kicker">{{ preset.eyebrow }}</span>
+              <h4>{{ preset.title }}</h4>
+              <p>{{ preset.description }}</p>
+              <div class="starter-detail">{{ preset.detail }}</div>
+            </mat-card-content>
+            <mat-card-actions>
+              <a
+                mat-stroked-button
+                color="primary"
+                routerLink="/tournaments/new"
+                [queryParams]="{ preset: preset.key }"
+              >
+                Use preset
+              </a>
+            </mat-card-actions>
+          </mat-card>
+        }
+      </div>
+    </section>
   } @else if (filteredTournaments().length === 0) {
     <mat-card class="empty-state filtered-empty">
       <mat-card-content>

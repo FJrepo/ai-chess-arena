@@ -35,6 +35,121 @@
     gap: 24px;
   }
 
+  .onboarding-shell {
+    display: grid;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  .onboarding-intro {
+    text-align: left;
+    padding: 0;
+    background:
+      radial-gradient(
+        140% 140% at 0% 0%,
+        color-mix(in srgb, var(--mat-sys-primary) 18%, transparent),
+        transparent 58%
+      ),
+      linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--mat-sys-surface-container) 92%, white),
+        color-mix(in srgb, var(--mat-sys-surface-container-high) 94%, white)
+      );
+
+    mat-card-content {
+      display: grid;
+      gap: 16px;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1.8rem;
+      line-height: 1.1;
+    }
+  }
+
+  .onboarding-kicker,
+  .starter-kicker {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mat-sys-primary);
+  }
+
+  .onboarding-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .status-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 68%, transparent);
+  }
+
+  .onboarding-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .onboarding-steps,
+  .starter-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .step-card,
+  .starter-card {
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 14%, transparent);
+    background: linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--mat-sys-surface-container-low) 95%, transparent),
+      color-mix(in srgb, var(--mat-sys-surface-container-high) 98%, transparent)
+    );
+  }
+
+  .step-card mat-card-content,
+  .starter-card mat-card-content {
+    display: grid;
+    gap: 10px;
+  }
+
+  .step-card h4,
+  .starter-card h4 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .step-card p,
+  .starter-card p,
+  .starter-detail {
+    margin: 0;
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  }
+
+  .step-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--mat-sys-primary) 16%, transparent);
+    color: var(--mat-sys-primary);
+    font-weight: 800;
+  }
+
   .toolbar-card {
     margin-bottom: 24px;
     border-radius: 20px;
@@ -211,6 +326,11 @@ mat-chip {
 
 @media (max-width: 1024px) {
   .tournament-list {
+    .onboarding-steps,
+    .starter-grid {
+      grid-template-columns: 1fr;
+    }
+
     .toolbar-content {
       grid-template-columns: repeat(2, minmax(180px, 1fr));
     }
@@ -238,6 +358,11 @@ mat-chip {
     .toolbar-meta {
       flex-direction: column;
       align-items: flex-start;
+    }
+
+    .onboarding-actions {
+      flex-direction: column;
+      align-items: stretch;
     }
   }
 }

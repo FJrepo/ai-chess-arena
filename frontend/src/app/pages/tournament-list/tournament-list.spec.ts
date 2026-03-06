@@ -33,6 +33,21 @@ describe('TournamentList', () => {
       'Alpha Cup',
     ]);
   });
+
+  it('describes onboarding as ready when system status is healthy', () => {
+    const component = new TournamentList({} as any, {} as any);
+    component.systemStatus.set({
+      backendVersion: '0.4.0',
+      openRouterValid: true,
+      stockfishAvailable: true,
+      stockfishReason: null,
+      checkedAt: '2026-03-06T21:30:00Z',
+    });
+
+    expect(component.onboardingReady()).toBe(true);
+    expect(component.onboardingSummary()).toContain('ready for a first tournament');
+    expect(component.onboardingCards()).toHaveLength(3);
+  });
 });
 
 function tournament(
