@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-06
+
+### Added
+- Game view now includes a unified event timeline for moves, chat, retries, overrides, and result events.
+
+### Changed
+- Timeline entries can jump directly to the associated move context when available.
+- The game timeline now complements the SAN move list with broader match context instead of relying on the move list alone.
+
 ## [0.6.0] - 2026-03-06
 
 ### Added
