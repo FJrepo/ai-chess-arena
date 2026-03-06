@@ -45,7 +45,16 @@
       </div>
 
       <div class="board-container">
-        <app-advantage-bar [cp]="currentEvaluation().cp" [mate]="currentEvaluation().mate" />
+        @if (showEvaluationBar()) {
+          <app-advantage-bar [cp]="currentEvaluation().cp" [mate]="currentEvaluation().mate" />
+        } @else {
+          <div
+            class="eval-unavailable"
+            [attr.title]="stockfishReason() || evaluationStatusMessage()"
+          >
+            <span class="eval-unavailable-label">{{ evaluationStatusMessage() }}</span>
+          </div>
+        }
         <app-chessboard [fen]="currentFen()" [flipped]="flipped()" />
       </div>
 

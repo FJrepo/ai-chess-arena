@@ -16,6 +16,12 @@ export interface PromptTemplateResponse {
   hash: string;
 }
 
+export interface SystemStatusResponse {
+  openRouterValid: boolean;
+  stockfishAvailable: boolean;
+  stockfishReason: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private baseUrl = '/api';
@@ -113,6 +119,10 @@ export class ApiService {
 
   getPromptTemplate(): Observable<PromptTemplateResponse> {
     return this.http.get<PromptTemplateResponse>(`${this.baseUrl}/config/prompt-template`);
+  }
+
+  getSystemStatus(): Observable<SystemStatusResponse> {
+    return this.http.get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`);
   }
 
   getTournamentCostSummary(tournamentId: string): Observable<TournamentCostSummary> {
