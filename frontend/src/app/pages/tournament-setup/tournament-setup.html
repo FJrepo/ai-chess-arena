@@ -87,6 +87,96 @@
     </mat-card-content>
   </mat-card>
 
+  <mat-card class="panel confidence-panel">
+    <mat-card-header>
+      <mat-card-title>Tournament Confidence</mat-card-title>
+      <mat-card-subtitle>Heuristic runtime and cost preview before launch.</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      @if (confidenceSummary(); as summary) {
+        <div class="confidence-band-row">
+          <span
+            class="confidence-band"
+            [class.safe]="summary.riskBand === 'Safe'"
+            [class.moderate]="summary.riskBand === 'Moderate'"
+            [class.expensive]="summary.riskBand === 'Expensive'"
+          >
+            {{ summary.riskBand }}
+          </span>
+          <span class="confidence-note">{{ summary.riskReason }}</span>
+        </div>
+
+        <div class="confidence-grid">
+          <div class="confidence-metric">
+            <span class="metric-label">Series</span>
+            <strong>{{ summary.totalSeries }}</strong>
+            <span>{{ summary.participantCount }} participants</span>
+          </div>
+          <div class="confidence-metric">
+            <span class="metric-label">Projected Games</span>
+            <strong>{{ summary.likelyGames }}</strong>
+            <span>{{ summary.minGames }} min · {{ summary.maxGames }} max</span>
+          </div>
+          <div class="confidence-metric">
+            <span class="metric-label">Estimated Runtime</span>
+            <strong>{{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
+            <span>up to {{ formatDuration(summary.maxRuntimeMinutes) }}</span>
+          </div>
+          <div class="confidence-metric">
+            <span class="metric-label">Move Pace</span>
+            <strong>{{ summary.paceLabel }}</strong>
+            <span>{{ moveTimeout }}s timeout</span>
+          </div>
+          <div class="confidence-metric">
+            <span class="metric-label">Estimated Spend</span>
+            <strong>
+              @if (summary.likelyCostUsd !== null) {
+                {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+              } @else {
+                n/a
+              }
+            </strong>
+            <span>
+              @if (summary.maxCostUsd !== null) {
+                up to {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+              } @else {
+                add priced models for an estimate
+              }
+            </span>
+          </div>
+          <div class="confidence-metric">
+            <span class="metric-label">Pricing Coverage</span>
+            <strong>{{ pricingCoverageLabel(summary) }}</strong>
+            <span>based on OpenRouter list prices</span>
+          </div>
+        </div>
+
+        <div class="confidence-footnotes">
+          <p>
+            Estimates assume roughly 70 moves per game and current OpenRouter list pricing. Actual
+            usage depends on model behavior and retries.
+          </p>
+          @if (summary.drawCanExtendSeries) {
+            <p class="confidence-warning">
+              `Replay Game` draw policy can push runtime and cost beyond the range shown here.
+            </p>
+          }
+        </div>
+      } @else {
+        <div class="confidence-empty">
+          <mat-icon>insights</mat-icon>
+          <div>
+            <strong>Add at least two participants</strong>
+            <p>
+              Once the bracket is viable, this panel will estimate series count, runtime, and rough
+              spend.
+            </p>
+          </div>
+        </div>
+      }
+    </mat-card-content>
+  </mat-card>
+
   <mat-card class="panel participants-card">
     <mat-card-header>
       <mat-card-title>Participants</mat-card-title>

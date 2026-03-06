@@ -1,5 +1,6 @@
+import { CurrencyPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -17,6 +18,28 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { providerDisplayName as resolveProviderDisplayName } from '../../utils/provider-brand';
 
+type SetupParticipant = Partial<Participant> & {
+  promptPricePerMillion?: number | null;
+  completionPricePerMillion?: number | null;
+};
+
+type TournamentConfidence = {
+  participantCount: number;
+  totalSeries: number;
+  minGames: number;
+  likelyGames: number;
+  maxGames: number;
+  pricingCoverage: number;
+  likelyCostUsd: number | null;
+  maxCostUsd: number | null;
+  likelyRuntimeMinutes: number;
+  maxRuntimeMinutes: number;
+  paceLabel: string;
+  riskBand: 'Safe' | 'Moderate' | 'Expensive';
+  riskReason: string;
+  drawCanExtendSeries: boolean;
+};
+
 @Component({
   selector: 'app-tournament-setup',
   imports: [
@@ -31,6 +54,7 @@ import { providerDisplayName as resolveProviderDisplayName } from '../../utils/p
     MatDividerModule,
     MatSelectModule,
     MatProgressSpinnerModule,
+    CurrencyPipe,
     ProviderLogoComponent,
   ],
   templateUrl: './tournament-setup.html',
@@ -64,7 +88,7 @@ Your opponent is %s (%s).`;
   modelSearch = '';
   showAllModels = false;
 
-  participants = signal<Partial<Participant>[]>([]);
+  participants = signal<SetupParticipant[]>([]);
   models = signal<OpenRouterModelOption[]>([]);
   modelsLoading = signal(false);
   modelsError = signal<string | null>(null);
@@ -83,13 +107,61 @@ Your opponent is %s (%s).`;
   bestOfOptions: Tournament['matchupBestOf'][] = [1, 3, 5, 7];
 
   private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly presets: Record<
+    string,
+    {
+      name: string;
+      moveTimeout: number;
+      maxRetries: number;
+      drawPolicy: Tournament['drawPolicy'];
+      matchupBestOf: Tournament['matchupBestOf'];
+      finalsBestOf: Tournament['finalsBestOf'];
+      trashTalkEnabled: boolean;
+      sharedCustomInstructions: string;
+    }
+  > = {
+    quickstart: {
+      name: 'Quick Start Arena',
+      moveTimeout: 30,
+      maxRetries: 2,
+      drawPolicy: 'WHITE_ADVANCES',
+      matchupBestOf: 1,
+      finalsBestOf: null,
+      trashTalkEnabled: true,
+      sharedCustomInstructions: '',
+    },
+    balanced: {
+      name: 'Balanced Ladder',
+      moveTimeout: 45,
+      maxRetries: 3,
+      drawPolicy: 'HIGHER_SEED_ADVANCES',
+      matchupBestOf: 3,
+      finalsBestOf: null,
+      trashTalkEnabled: true,
+      sharedCustomInstructions: 'Stay practical. Avoid unnecessary risks when ahead.',
+    },
+    showcase: {
+      name: 'Series Showcase',
+      moveTimeout: 60,
+      maxRetries: 3,
+      drawPolicy: 'REPLAY_GAME',
+      matchupBestOf: 3,
+      finalsBestOf: 5,
+      trashTalkEnabled: true,
+      sharedCustomInstructions: 'Play your strongest chess and keep messages concise.',
+    },
+  };
 
   constructor(
     private api: ApiService,
     private router: Router,
+    private route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    this.route.queryParamMap.subscribe((params) => {
+      this.applyPreset(params.get('preset'));
+    });
     this.loadPromptTemplate();
     this.loadOpenRouterStatus();
     this.loadModels();
@@ -242,6 +314,8 @@ Your opponent is %s (%s).`;
         playerName: this.newPlayerName.trim(),
         modelId: this.newModelId,
         customInstructions: this.normalizeInstructions(this.newCustomInstructions),
+        promptPricePerMillion: this.selectedModel()?.promptPricePerMillion ?? null,
+        completionPricePerMillion: this.selectedModel()?.completionPricePerMillion ?? null,
         seed: list.length,
       },
     ]);
@@ -277,12 +351,19 @@ Your opponent is %s (%s).`;
 
         let added = 0;
         for (const p of participants) {
-          this.api.addParticipant(tournament.id, p).subscribe(() => {
-            added++;
-            if (added === participants.length) {
-              this.router.navigate(['/tournaments', tournament.id]);
-            }
-          });
+          this.api
+            .addParticipant(tournament.id, {
+              playerName: p.playerName,
+              modelId: p.modelId,
+              customInstructions: p.customInstructions ?? null,
+              seed: p.seed,
+            })
+            .subscribe(() => {
+              added++;
+              if (added === participants.length) {
+                this.router.navigate(['/tournaments', tournament.id]);
+              }
+            });
         }
       });
   }
@@ -305,5 +386,126 @@ Your opponent is %s (%s).`;
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  confidenceSummary(): TournamentConfidence | null {
+    const participantCount = this.participants().length;
+    if (participantCount < 2) {
+      return null;
+    }
+
+    const totalSeries = participantCount - 1;
+    const usesFinalsOverride = this.finalsBestOf !== null;
+    const openingSeries = Math.max(0, totalSeries - (usesFinalsOverride ? 1 : 0));
+    const finalBestOf = this.finalsBestOf ?? this.matchupBestOf;
+    const minGames =
+      openingSeries * this.winsRequired(this.matchupBestOf) + this.winsRequired(finalBestOf);
+    const maxGames = openingSeries * this.matchupBestOf + finalBestOf;
+    const likelyGames = Math.max(minGames, Math.round(minGames + (maxGames - minGames) * 0.4));
+
+    const fastMinutesPerGame = Math.max(6, Math.round(this.moveTimeout * 0.22));
+    const slowMinutesPerGame = Math.max(10, Math.round(this.moveTimeout * 0.42));
+    const likelyRuntimeMinutes =
+      likelyGames * Math.round((fastMinutesPerGame + slowMinutesPerGame) / 2);
+    const maxRuntimeMinutes = maxGames * slowMinutesPerGame;
+
+    const participantsWithPricing = this.participants().filter(
+      (participant) =>
+        participant.promptPricePerMillion != null && participant.completionPricePerMillion != null,
+    );
+    const pricingCoverage = participantsWithPricing.length;
+
+    let averageMoveCostUsd: number | null = null;
+    if (participantsWithPricing.length > 0) {
+      const totalMoveCost = participantsWithPricing.reduce((sum, participant) => {
+        const promptCost = ((participant.promptPricePerMillion ?? 0) * 900) / 1_000_000;
+        const completionCost = ((participant.completionPricePerMillion ?? 0) * 140) / 1_000_000;
+        return sum + promptCost + completionCost;
+      }, 0);
+      averageMoveCostUsd = totalMoveCost / participantsWithPricing.length;
+    }
+
+    const estimatedMovesPerGame = 70;
+    const drawCanExtendSeries = this.drawPolicy === 'REPLAY_GAME';
+    const likelyCostUsd =
+      averageMoveCostUsd == null ? null : likelyGames * estimatedMovesPerGame * averageMoveCostUsd;
+    const maxCostUsd =
+      averageMoveCostUsd == null
+        ? null
+        : maxGames * estimatedMovesPerGame * averageMoveCostUsd * (drawCanExtendSeries ? 1.2 : 1);
+
+    const riskScore =
+      (participantCount >= 16 ? 3 : participantCount >= 8 ? 2 : 1) +
+      (this.matchupBestOf >= 5 ? 2 : this.matchupBestOf >= 3 ? 1 : 0) +
+      (this.finalsBestOf != null && this.finalsBestOf > this.matchupBestOf ? 1 : 0) +
+      (this.moveTimeout >= 90 ? 3 : this.moveTimeout >= 60 ? 2 : this.moveTimeout >= 45 ? 1 : 0) +
+      (drawCanExtendSeries ? 1 : 0) +
+      (likelyRuntimeMinutes >= 360 ? 2 : likelyRuntimeMinutes >= 120 ? 1 : 0) +
+      (likelyCostUsd != null ? (likelyCostUsd >= 5 ? 2 : likelyCostUsd >= 1 ? 1 : 0) : 0);
+
+    const riskBand = riskScore >= 8 ? 'Expensive' : riskScore >= 5 ? 'Moderate' : 'Safe';
+    const riskReason =
+      riskBand === 'Expensive'
+        ? 'High timeout, longer series, or pricier models make this a heavier run.'
+        : riskBand === 'Moderate'
+          ? 'This should be manageable, but it is no longer a quick smoke test.'
+          : 'Good fit for a first pass or low-risk validation run.';
+
+    return {
+      participantCount,
+      totalSeries,
+      minGames,
+      likelyGames,
+      maxGames,
+      pricingCoverage,
+      likelyCostUsd,
+      maxCostUsd,
+      likelyRuntimeMinutes,
+      maxRuntimeMinutes,
+      paceLabel: this.moveTimeout <= 30 ? 'Fast' : this.moveTimeout <= 60 ? 'Balanced' : 'Slow',
+      riskBand,
+      riskReason,
+      drawCanExtendSeries,
+    };
+  }
+
+  formatDuration(minutes: number): string {
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    if (hours === 0) {
+      return `${remainder}m`;
+    }
+    if (remainder === 0) {
+      return `${hours}h`;
+    }
+    return `${hours}h ${remainder}m`;
+  }
+
+  pricingCoverageLabel(summary: TournamentConfidence): string {
+    return `${summary.pricingCoverage}/${summary.participantCount} models priced`;
+  }
+
+  private winsRequired(bestOf: number): number {
+    return Math.floor(bestOf / 2) + 1;
+  }
+
+  private applyPreset(presetKey: string | null): void {
+    if (!presetKey) {
+      return;
+    }
+
+    const preset = this.presets[presetKey];
+    if (!preset) {
+      return;
+    }
+
+    this.name = preset.name;
+    this.moveTimeout = preset.moveTimeout;
+    this.maxRetries = preset.maxRetries;
+    this.drawPolicy = preset.drawPolicy;
+    this.matchupBestOf = preset.matchupBestOf;
+    this.finalsBestOf = preset.finalsBestOf;
+    this.trashTalkEnabled = preset.trashTalkEnabled;
+    this.sharedCustomInstructions = preset.sharedCustomInstructions;
   }
 }
