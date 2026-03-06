@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-07
+
+### Added
+- New toolbar brand mark with a cleaner chess-and-arena visual identity.
+
+### Changed
+- Desktop pages now share a more consistent shell, hero treatment, and card language across tournament list, analytics, system status, and bracket views.
+- Tournament, analytics, and system headers now use a unified desktop title hierarchy instead of separate page-specific patterns.
+
 ## [0.7.0] - 2026-03-06
 
 ### Added
