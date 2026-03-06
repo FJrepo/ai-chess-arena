@@ -20,6 +20,7 @@ public class StockfishService {
     private static final Logger LOG = Logger.getLogger(StockfishService.class);
     private static final Pattern SCORE_CP_PATTERN = Pattern.compile("score cp (-?\\d+)");
     private static final Pattern SCORE_MATE_PATTERN = Pattern.compile("score mate (-?\\d+)");
+    private static final Pattern SIDE_TO_MOVE_PATTERN = Pattern.compile("^[^\\s]+\\s+([wb])\\b");
 
     private Process process;
     private BufferedReader reader;
@@ -81,12 +82,16 @@ public class StockfishService {
                     while ((line = reader.readLine()) != null) {
                         LOG.tracef("Stockfish output: %s", line);
                         if (line.startsWith("info") && line.contains("score")) {
-                            result = parseScore(line);
+                            EvalResult parsed = parseScore(line);
+                            if (parsed != null) {
+                                result = parsed;
+                            }
                         }
                         if (line.startsWith("bestmove")) {
                             break;
                         }
                     }
+                    result = normalizeToWhitePerspective(result, fen);
                     LOG.debugf("Evaluation finished: cp=%d, mate=%d", result.cp(), result.mate());
                     return result;
                 } catch (IOException e) {
@@ -102,7 +107,11 @@ public class StockfishService {
         writer.flush();
     }
 
-    private EvalResult parseScore(String line) {
+    static EvalResult parseScore(String line) {
+        if (line.contains("lowerbound") || line.contains("upperbound")) {
+            return null;
+        }
+
         Integer cp = null;
         Integer mate = null;
 
@@ -117,5 +126,28 @@ public class StockfishService {
         }
 
         return new EvalResult(cp, mate);
+    }
+
+    static EvalResult normalizeToWhitePerspective(EvalResult result, String fen) {
+        if (result == null) {
+            return new EvalResult(null, null);
+        }
+
+        return isBlackToMove(fen)
+                ? new EvalResult(negate(result.cp()), negate(result.mate()))
+                : result;
+    }
+
+    static boolean isBlackToMove(String fen) {
+        if (fen == null) {
+            return false;
+        }
+
+        Matcher sideMatcher = SIDE_TO_MOVE_PATTERN.matcher(fen.trim());
+        return sideMatcher.find() && "b".equals(sideMatcher.group(1));
+    }
+
+    private static Integer negate(Integer value) {
+        return value == null ? null : -value;
     }
 }
