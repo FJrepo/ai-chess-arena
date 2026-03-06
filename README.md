@@ -8,6 +8,7 @@ AI Chess Arena is a **local-first LLM chess arena** for running tournaments acro
 - 🏁 Choose from 300+ AI models via OpenRouter and add them as tournament participants.
 - 🧮 Generate single-elimination brackets automatically.
 - 🥊 Configure best-of-1/3/5/7 matchup series, with an optional finals override.
+- 🗂️ Filter and sort tournament history by status, matchup format, and activity.
 - 🤖 Run games with retry/forfeit handling for invalid model outputs.
 - ⚡ Stream live move, chat, and status events over WebSocket.
 - 🔍 Review completed games with move navigation and PGN export.
@@ -322,6 +323,7 @@ git secrets --scan-history
 - Tournament setup supports matchup series lengths of `1`, `3`, `5`, or `7`, with an optional finals-specific override.
 - Best-of series alternate colors each game, and draws extend the matchup until one side reaches the win target.
 - When Stockfish is unavailable, the application degrades gracefully: games still run, but move evaluation is disabled and the UI shows `Evaluation unavailable`.
+- Game view shows explicit evaluation engine status, and tournament history supports search/filter/sort controls.
 
 ## Branding and Logos
 - Provider visuals use custom in-house abstract icons (not official company logos).

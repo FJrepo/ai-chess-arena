@@ -10,6 +10,15 @@
       <mat-icon>format_list_bulleted</mat-icon>
       All Tournaments
     </button>
+    <div
+      class="eval-status-chip"
+      [class.online]="stockfishAvailable()"
+      [class.offline]="!stockfishAvailable()"
+      [attr.title]="evaluationStatusTooltip()"
+    >
+      <mat-icon>{{ evaluationStatusIcon() }}</mat-icon>
+      <span>{{ evaluationStatusLabel() }}</span>
+    </div>
     @if (moveTimerSeconds() !== null) {
       <div class="move-timer" [class.warning]="moveTimerWarning()">
         <mat-icon>timer</mat-icon>
@@ -52,6 +61,7 @@
             class="eval-unavailable"
             [attr.title]="stockfishReason() || evaluationStatusMessage()"
           >
+            <mat-icon>disabled_visible</mat-icon>
             <span class="eval-unavailable-label">{{ evaluationStatusMessage() }}</span>
           </div>
         }

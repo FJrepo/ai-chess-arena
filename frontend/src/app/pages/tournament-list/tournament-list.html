@@ -6,22 +6,103 @@
     </a>
   </div>
 
-  @if (tournaments().length === 0) {
-    <mat-card class="empty-state">
-      <mat-card-content>
-        <p>No tournaments yet. Create one to get started!</p>
-      </mat-card-content>
-    </mat-card>
-  }
-
   @if (deleteError()) {
     <mat-card class="error-state">
       <mat-card-content>{{ deleteError() }}</mat-card-content>
     </mat-card>
   }
 
+  <mat-card class="toolbar-card">
+    <mat-card-content class="toolbar-content">
+      <mat-form-field appearance="outline" class="search-field">
+        <mat-label>Search tournaments</mat-label>
+        <input
+          matInput
+          [ngModel]="searchTerm()"
+          (ngModelChange)="searchTerm.set($event)"
+          placeholder="Name or status"
+        />
+        @if (searchTerm()) {
+          <button matSuffix mat-icon-button type="button" (click)="searchTerm.set('')">
+            <mat-icon>close</mat-icon>
+          </button>
+        } @else {
+          <mat-icon matSuffix>search</mat-icon>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Status</mat-label>
+        <mat-select [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+          <mat-option value="ALL">All statuses</mat-option>
+          <mat-option value="CREATED">Created</mat-option>
+          <mat-option value="IN_PROGRESS">In Progress</mat-option>
+          <mat-option value="COMPLETED">Completed</mat-option>
+          <mat-option value="CANCELLED">Cancelled</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Best Of</mat-label>
+        <mat-select [ngModel]="bestOfFilter()" (ngModelChange)="bestOfFilter.set($event)">
+          <mat-option value="ALL">All matchups</mat-option>
+          <mat-option [value]="1">Best of 1</mat-option>
+          <mat-option [value]="3">Best of 3</mat-option>
+          <mat-option [value]="5">Best of 5</mat-option>
+          <mat-option [value]="7">Best of 7</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Sort By</mat-label>
+        <mat-select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)">
+          <mat-option value="newest">Newest</mat-option>
+          <mat-option value="oldest">Oldest</mat-option>
+          <mat-option value="participants">Most participants</mat-option>
+          <mat-option value="games">Most games</mat-option>
+          <mat-option value="name">Name</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <button
+        mat-stroked-button
+        type="button"
+        class="reset-button"
+        [disabled]="!hasActiveFilters()"
+        (click)="resetFilters()"
+      >
+        <mat-icon>restart_alt</mat-icon>
+        Reset
+      </button>
+    </mat-card-content>
+    <div class="toolbar-meta">
+      <span class="results-label">{{ resultCountLabel() }}</span>
+      @if (hasActiveFilters()) {
+        <span class="filter-note">Filtered view</span>
+      }
+    </div>
+  </mat-card>
+
+  @if (tournaments().length === 0) {
+    <mat-card class="empty-state">
+      <mat-card-content>
+        <p>No tournaments yet. Create one to get started!</p>
+      </mat-card-content>
+    </mat-card>
+  } @else if (filteredTournaments().length === 0) {
+    <mat-card class="empty-state filtered-empty">
+      <mat-card-content>
+        <p>No tournaments match the current filters.</p>
+        <button mat-stroked-button type="button" (click)="resetFilters()">
+          <mat-icon>restart_alt</mat-icon>
+          Clear Filters
+        </button>
+      </mat-card-content>
+    </mat-card>
+  }
+
   <div class="tournament-grid">
-    @for (tournament of tournaments(); track tournament.id) {
+    @for (tournament of filteredTournaments(); track tournament.id) {
       <mat-card
         class="tournament-card"
         role="button"
@@ -43,6 +124,10 @@
         <mat-card-content>
           <p>{{ tournament.participants.length }} participants</p>
           <p>{{ tournament.games.length }} games</p>
+          <p>Best of {{ tournament.matchupBestOf }} matchups</p>
+          @if (tournament.finalsBestOf) {
+            <p>Finals best of {{ tournament.finalsBestOf }}</p>
+          }
           <p class="date">Created {{ tournament.createdAt | date }}</p>
         </mat-card-content>
         <mat-card-actions align="end">
