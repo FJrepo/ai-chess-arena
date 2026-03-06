@@ -12,6 +12,7 @@ AI Chess Arena is a **local-first LLM chess arena** for running tournaments acro
 - 🗂️ Filter and sort tournament history by status, matchup format, and activity.
 - 🚀 Guide first-time users from an onboarding empty state into preset tournament setups.
 - 📊 Preview projected game count, runtime, and rough spend before launching a tournament.
+- 🧭 See richer live bracket state, including series readiness, live/paused status, and previous-game review links.
 - 🤖 Run games with retry/forfeit handling for invalid model outputs.
 - ⚡ Stream live move, chat, and status events over WebSocket.
 - 🔍 Review completed games with move navigation and PGN export.
@@ -332,6 +333,7 @@ git secrets --scan-history
 - Game view shows explicit evaluation engine status, and tournament history supports search/filter/sort controls.
 - The tournament list includes a first-run onboarding path with starter presets that jump directly into tournament setup.
 - Tournament setup now includes a confidence panel with projected game count, runtime, and pricing-based spend heuristics.
+- Bracket cards now show richer live series state, including whether a matchup is live, paused, ready, or auto-advanced by bye.
 
 ## Branding and Logos
 - Provider visuals use custom in-house abstract icons (not official company logos).

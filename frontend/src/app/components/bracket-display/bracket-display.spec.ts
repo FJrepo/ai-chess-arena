@@ -49,6 +49,24 @@ describe('BracketDisplay', () => {
     expect(card.blackWins).toBe(0);
     expect(card.currentGame.seriesGameNumber).toBe(2);
   });
+
+  it('derives live series state from the current game status and fen', () => {
+    const component = new BracketDisplay();
+
+    component.games = [
+      game('semi-1', 'Semifinal', 0, {
+        seriesId: 'series-semi',
+        seriesBestOf: 3,
+        status: 'IN_PROGRESS',
+        currentFen: 'rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1',
+      }),
+    ];
+
+    const card = component.rounds()[0].games[0] as any;
+    expect(card.stateLabel).toBe('Live');
+    expect(card.stateTone).toBe('live');
+    expect(card.detailLabel).toContain('Black to move');
+  });
 });
 
 function game(

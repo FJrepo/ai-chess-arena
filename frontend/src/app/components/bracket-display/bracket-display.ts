@@ -37,6 +37,9 @@ interface SeriesCard {
   whiteWins: number;
   blackWins: number;
   isComplete: boolean;
+  stateLabel: string;
+  stateTone: 'live' | 'paused' | 'ready' | 'pending' | 'complete' | 'forfeit' | 'bye';
+  detailLabel: string;
 }
 
 @Component({
@@ -140,6 +143,10 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       default:
         return game.result;
     }
+  }
+
+  hasReviewableGame(card: SeriesCard): boolean {
+    return card.latestGame.status === 'COMPLETED' || card.latestGame.status === 'FORFEIT';
   }
 
   private onWindowResize = (): void => {
@@ -275,6 +282,16 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     const isComplete =
       currentGame === latestGame &&
       (currentGame.status === 'COMPLETED' || currentGame.status === 'FORFEIT');
+    const sideToMove = this.sideToMoveLabel(currentGame.currentFen);
+    const hasBye = firstGame.whitePlayerName === 'BYE' || firstGame.blackPlayerName === 'BYE';
+    const { stateLabel, stateTone, detailLabel } = this.describeSeriesState(
+      currentGame,
+      latestGame,
+      hasBye,
+      sideToMove,
+      whiteWins,
+      blackWins,
+    );
 
     return {
       id: firstGame.seriesId || firstGame.id,
@@ -290,6 +307,108 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       whiteWins,
       blackWins,
       isComplete,
+      stateLabel,
+      stateTone,
+      detailLabel,
     };
+  }
+
+  private describeSeriesState(
+    currentGame: Game,
+    latestGame: Game,
+    hasBye: boolean,
+    sideToMove: string | null,
+    whiteWins: number,
+    blackWins: number,
+  ): Pick<SeriesCard, 'stateLabel' | 'stateTone' | 'detailLabel'> {
+    if (hasBye) {
+      return {
+        stateLabel: 'Bye',
+        stateTone: 'bye',
+        detailLabel: 'Auto-advanced without a played game.',
+      };
+    }
+
+    switch (currentGame.status) {
+      case 'IN_PROGRESS':
+        return {
+          stateLabel: 'Live',
+          stateTone: 'live',
+          detailLabel: sideToMove
+            ? `${sideToMove} to move in Game ${currentGame.seriesGameNumber}.`
+            : `Game ${currentGame.seriesGameNumber} is live.`,
+        };
+      case 'PAUSED':
+        return {
+          stateLabel: 'Paused',
+          stateTone: 'paused',
+          detailLabel: sideToMove
+            ? `${sideToMove} to move when resumed.`
+            : `Game ${currentGame.seriesGameNumber} is paused.`,
+        };
+      case 'WAITING':
+        return {
+          stateLabel:
+            currentGame.whitePlayerName && currentGame.blackPlayerName ? 'Ready' : 'Pending',
+          stateTone:
+            currentGame.whitePlayerName && currentGame.blackPlayerName ? 'ready' : 'pending',
+          detailLabel:
+            latestGame !== currentGame &&
+            (latestGame.status === 'COMPLETED' || latestGame.status === 'FORFEIT')
+              ? `Game ${currentGame.seriesGameNumber} is next. Review the previous result below.`
+              : `Game ${currentGame.seriesGameNumber} can start when you're ready.`,
+        };
+      case 'FORFEIT':
+        return {
+          stateLabel: 'Forfeit',
+          stateTone: 'forfeit',
+          detailLabel: currentGame.resultReason || 'Series ended by forfeit.',
+        };
+      case 'COMPLETED':
+      default:
+        return {
+          stateLabel: 'Complete',
+          stateTone: 'complete',
+          detailLabel:
+            this.completedDetailLabel(currentGame, latestGame, whiteWins, blackWins) ||
+            'Series complete.',
+        };
+    }
+  }
+
+  private sideToMoveLabel(fen: string | null | undefined): string | null {
+    if (!fen) {
+      return null;
+    }
+    const side = fen.split(' ')[1];
+    if (side === 'w') {
+      return 'White';
+    }
+    if (side === 'b') {
+      return 'Black';
+    }
+    return null;
+  }
+
+  private completedDetailLabel(
+    currentGame: Game,
+    latestGame: Game,
+    whiteWins: number,
+    blackWins: number,
+  ): string {
+    switch (latestGame.result) {
+      case 'WHITE_WINS':
+        return `${currentGame.whitePlayerName} wins ${whiteWins}-${blackWins}`;
+      case 'BLACK_WINS':
+        return `${currentGame.blackPlayerName} wins ${blackWins}-${whiteWins}`;
+      case 'WHITE_FORFEIT':
+        return `${currentGame.whitePlayerName} forfeits`;
+      case 'BLACK_FORFEIT':
+        return `${currentGame.blackPlayerName} forfeits`;
+      case 'DRAW':
+        return 'Draw';
+      default:
+        return latestGame.resultReason || '';
+    }
   }
 }

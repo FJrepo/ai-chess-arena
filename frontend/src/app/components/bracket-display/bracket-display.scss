@@ -93,66 +93,120 @@
 }
 
 .match-card {
-  padding: 12px;
+  padding: 14px;
   background: linear-gradient(
     140deg,
     color-mix(in srgb, var(--mat-sys-surface-container-high) 92%, transparent),
     color-mix(in srgb, var(--mat-sys-surface-container) 90%, transparent)
   );
   border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 40%, transparent);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
-    0 10px 20px color-mix(in srgb, black 26%, transparent);
+    0 8px 18px color-mix(in srgb, black 22%, transparent);
+  display: grid;
+  gap: 10px;
 
   &.completed {
     border-color: color-mix(in srgb, var(--mat-sys-primary) 32%, var(--mat-sys-outline));
     box-shadow:
       inset 0 1px 0 color-mix(in srgb, white 9%, transparent),
-      0 12px 26px color-mix(in srgb, black 30%, transparent);
+      0 10px 22px color-mix(in srgb, black 24%, transparent);
   }
 }
 
-.series-meta {
+.card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.series-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 0.68rem;
-  font-weight: 800;
+.series-meta-line {
+  font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-primary) 12%, transparent);
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 58%, transparent);
 }
 
 .series-score {
-  margin-left: auto;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
   font-weight: 900;
   color: color-mix(in srgb, var(--mat-sys-on-surface) 86%, transparent);
+  letter-spacing: 0.04em;
+}
+
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+
+  &.live {
+    background: color-mix(in srgb, #22a06b 18%, transparent);
+    color: #16945d;
+  }
+
+  &.paused {
+    background: color-mix(in srgb, #f0a202 18%, transparent);
+    color: #d58b00;
+  }
+
+  &.ready {
+    background: color-mix(in srgb, var(--mat-sys-primary) 18%, transparent);
+    color: color-mix(in srgb, var(--mat-sys-primary) 84%, white);
+  }
+
+  &.pending,
+  &.bye,
+  &.complete {
+    background: color-mix(in srgb, var(--mat-sys-on-surface) 10%, transparent);
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  }
+
+  &.forfeit {
+    background: color-mix(in srgb, #ef5350 18%, transparent);
+    color: #ef5350;
+  }
+}
+
+.players-block {
+  display: grid;
+  gap: 6px;
+}
+
+.players-divider {
+  height: 1px;
+  margin: 0 6px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--mat-sys-outline) 22%, transparent),
+    transparent
+  );
 }
 
 .player {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  margin: 0 -8px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mat-sys-on-surface) 3%, transparent);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &.winner {
     font-weight: 800;
     color: #4caf50;
-    background: color-mix(in srgb, #4caf50 8%, transparent);
+    background: color-mix(in srgb, #4caf50 10%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, #4caf50 15%, transparent);
 
     .player-name {
@@ -172,9 +226,7 @@
 
 .player-name {
   color: var(--mat-sys-on-surface);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
   flex: 1;
 }
 
@@ -213,77 +265,44 @@
   background: #0f141c;
 }
 
-.vs {
+.series-context {
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 68%, transparent);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  min-height: 2.2em;
+}
+
+.card-footer {
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--mat-sys-outline) 14%, transparent);
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 4px 0;
-  padding: 0 10px;
-  font-size: 0.6rem;
-  font-weight: 900;
-  font-family: 'Roboto', sans-serif;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  button[mat-flat-button] {
+    min-width: 124px;
+    border-radius: 999px;
+    font-weight: 800;
+  }
+
+  button[mat-button] {
+    font-size: 0.76rem;
+    font-weight: 700;
+  }
+}
+
+.footer-note {
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 56%, transparent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  letter-spacing: 0.25em;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 35%, transparent);
-
-  &::before,
-  &::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(
-      to right,
-      transparent,
-      color-mix(in srgb, var(--mat-sys-outline) 20%, transparent),
-      transparent
-    );
-  }
 }
 
-.match-actions {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.result-text {
-  font-size: 0.8rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 6px 16px;
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 60%, transparent);
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-
-  &::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    display: inline-block;
-  }
-}
-
-.match-card.completed {
-  .result-text {
-    background: color-mix(in srgb, #4caf50 12%, transparent);
-    color: #4caf50;
-    filter: drop-shadow(0 2px 6px rgba(76, 175, 80, 0.25));
-  }
-
-  &.forfeited .result-text {
-    background: color-mix(in srgb, #ef5350 12%, transparent);
-    color: #ef5350;
-    filter: drop-shadow(0 2px 6px rgba(239, 83, 80, 0.25));
-  }
+.secondary-action {
+  margin-left: auto;
 }
 
 @media (max-width: 980px) {
@@ -294,5 +313,19 @@
   .round {
     min-width: 228px;
     min-height: 420px;
+  }
+}
+
+@media (max-width: 680px) {
+  .card-footer {
+    align-items: stretch;
+
+    button[mat-flat-button] {
+      width: 100%;
+    }
+  }
+
+  .secondary-action {
+    margin-left: 0;
   }
 }
