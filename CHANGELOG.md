@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-06
+
+### Added
+- Immutable system rules are now separated from optional prompt customization.
+- Tournament setup now supports shared custom instructions for all participants.
+- Tournament setup now supports participant-specific instruction overrides.
+
+### Changed
+- New tournaments no longer edit the full system prompt directly.
+- Prompt resolution now applies a stable precedence model: legacy full-template override, participant instructions, shared instructions, then base rules only.
+
 ## [0.3.0] - 2026-03-06
 
 ### Added
