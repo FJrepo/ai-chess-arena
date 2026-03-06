@@ -30,6 +30,16 @@ public class AnalyticsResource {
     }
 
     @GET
+    @Path("/comparison")
+    public Response getComparison(
+            @QueryParam("days") @DefaultValue("30") int days,
+            @QueryParam("tournamentId") UUID tournamentId,
+            @QueryParam("minGames") @DefaultValue("0") int minGames
+    ) {
+        return Response.ok(analyticsService.getComparison(days, tournamentId, minGames)).build();
+    }
+
+    @GET
     @Path("/reliability")
     public Response getReliability(
             @QueryParam("days") @DefaultValue("30") int days,

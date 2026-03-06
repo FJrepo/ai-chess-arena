@@ -33,6 +33,43 @@ export interface AnalyticsHealthModelRow {
   averageCostPerMoveUsd: number;
 }
 
+export interface AnalyticsComparisonModel {
+  modelId: string;
+  gamesPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  forfeits: number;
+  timeoutForfeits: number;
+  winRate: number;
+  drawRate: number;
+  lossRate: number;
+  whiteGames: number;
+  whiteWins: number;
+  whiteWinRate: number;
+  blackGames: number;
+  blackWins: number;
+  blackWinRate: number;
+  movesSampled: number;
+  averageResponseTimeMs: number | null;
+  averageRetriesPerMove: number;
+  totalCostUsd: number | null;
+  averageCostPerMoveUsd: number | null;
+  costPerWinUsd: number | null;
+  pricingAvailable: boolean;
+  reliabilityScore: number;
+  reliabilityBand: string;
+  insufficientData: boolean;
+}
+
+export interface AnalyticsComparisonResponse {
+  windowDays: number;
+  tournamentId: string | null;
+  minGames: number;
+  gamesCount: number;
+  models: AnalyticsComparisonModel[];
+}
+
 export interface AnalyticsHealthResponse {
   windowDays: number;
   tournamentId: string | null;

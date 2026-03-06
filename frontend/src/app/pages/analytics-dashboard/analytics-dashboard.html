@@ -2,10 +2,10 @@
   <section class="page-hero-surface page-hero analytics-hero">
     <div class="page-title-block">
       <span class="page-kicker">Arena Analytics</span>
-      <h1 class="page-title">Performance and Reliability</h1>
+      <h1 class="page-title">Model Comparison and Reliability</h1>
       <p class="page-subtitle">
-        Inspect model cost, latency, retries, and stability across tournament history from one
-        operator-focused dashboard.
+        Compare who wins, who fails, who responds fastest, and who delivers the best value across
+        tournament history.
       </p>
     </div>
     <div class="page-actions analytics-actions">
@@ -45,7 +45,7 @@
           type="number"
           min="0"
           [(ngModel)]="minGames"
-          (ngModelChange)="onReliabilityFiltersChanged()"
+          (ngModelChange)="onCommonFiltersChanged()"
         />
         <mat-icon matPrefix>leaderboard</mat-icon>
       </mat-form-field>
@@ -58,6 +58,177 @@
   </div>
 
   <mat-tab-group animationDuration="200ms">
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">insights</mat-icon>
+        Model Comparison
+      </ng-template>
+      <section class="tab-content">
+        @if (comparisonLoading()) {
+          <div class="loading-state">
+            <mat-spinner diameter="40"></mat-spinner>
+            <span>Comparing model results...</span>
+          </div>
+        }
+
+        @if (comparisonError()) {
+          <div class="error-card">
+            <mat-icon>error_outline</mat-icon>
+            {{ comparisonError() }}
+          </div>
+        }
+
+        @if (comparison(); as c) {
+          <div class="kpi-grid leader-grid">
+            @for (card of leaderCards(); track card.label) {
+              <div class="leader-card">
+                <div class="leader-header">
+                  <span class="leader-label">{{ card.label }}</span>
+                  @if (card.row) {
+                    <mat-chip>{{ card.row.reliabilityBand }}</mat-chip>
+                  }
+                </div>
+                @if (card.row) {
+                  <div class="leader-model">{{ card.row.modelId }}</div>
+                  <div class="leader-value">{{ card.value(card.row) }}</div>
+                  <div class="leader-sub">{{ card.detail(card.row) }}</div>
+                } @else {
+                  <div class="leader-model">No qualifying model</div>
+                  <div class="leader-value">N/A</div>
+                  <div class="leader-sub">Adjust filters or reduce the min games threshold.</div>
+                }
+                <p class="leader-description">{{ card.description }}</p>
+              </div>
+            }
+          </div>
+
+          <div class="table-card comparison-table-card">
+            <div class="section-header">
+              <div>
+                <h3>Model Comparison Table</h3>
+                <p>{{ c.gamesCount }} terminal games in scope.</p>
+              </div>
+              <mat-form-field appearance="outline" class="sort-field">
+                <mat-label>Sort by</mat-label>
+                <mat-select
+                  [ngModel]="comparisonSortBy()"
+                  (ngModelChange)="comparisonSortBy.set($event)"
+                >
+                  @for (option of comparisonSortOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            </div>
+
+            <div class="table-wrap">
+              <table class="analytics-table comparison-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Record</th>
+                    <th>Win Rate</th>
+                    <th>Reliability</th>
+                    <th>Latency</th>
+                    <th>Forfeits</th>
+                    <th>White</th>
+                    <th>Black</th>
+                    <th>Total Spend</th>
+                    <th>Cost / Win</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of comparisonRows(); track row.modelId) {
+                    <tr>
+                      <td>
+                        <strong>{{ row.modelId }}</strong>
+                        @if (row.insufficientData) {
+                          <div class="table-note">Low sample</div>
+                        }
+                      </td>
+                      <td>{{ row.wins }}-{{ row.draws }}-{{ row.losses }}</td>
+                      <td>{{ percent(row.winRate) }}</td>
+                      <td>
+                        {{ row.reliabilityScore | number: '1.1-2' }}
+                        <div class="table-note">{{ row.reliabilityBand }}</div>
+                      </td>
+                      <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td>
+                        {{ row.forfeits }}
+                        @if (row.timeoutForfeits > 0) {
+                          <div class="table-note">{{ row.timeoutForfeits }} timeout</div>
+                        }
+                      </td>
+                      <td>{{ percent(row.whiteWinRate) }}</td>
+                      <td>{{ percent(row.blackWinRate) }}</td>
+                      <td>{{ currency(row.totalCostUsd) }}</td>
+                      <td>{{ currency(row.costPerWinUsd) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="10" class="empty">
+                        No comparison data found for the selected period.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="breakdown-grid">
+            <div class="breakdown-card">
+              <h3>Color Split</h3>
+              <p>Largest gap between white-side and black-side win rate.</p>
+              <ul>
+                @for (row of colorSplitHighlights(); track row.modelId) {
+                  <li>
+                    <strong>{{ row.modelId }}</strong>
+                    <span
+                      >White {{ percent(row.whiteWinRate) }} / Black
+                      {{ percent(row.blackWinRate) }}</span
+                    >
+                  </li>
+                } @empty {
+                  <li>No color-split data yet.</li>
+                }
+              </ul>
+            </div>
+
+            <div class="breakdown-card">
+              <h3>Failure Profile</h3>
+              <p>Models with the cleanest terminal-game completion profile.</p>
+              <ul>
+                @for (row of failureWatch(); track row.modelId) {
+                  <li>
+                    <strong>{{ row.modelId }}</strong>
+                    <span>{{ row.forfeits }} forfeits across {{ row.gamesPlayed }} games</span>
+                  </li>
+                } @empty {
+                  <li>No failure data yet.</li>
+                }
+              </ul>
+            </div>
+
+            <div class="breakdown-card">
+              <h3>Cost Efficiency</h3>
+              <p>Lowest spend per win among models with complete pricing data.</p>
+              <ul>
+                @for (row of costEfficiencyHighlights(); track row.modelId) {
+                  <li>
+                    <strong>{{ row.modelId }}</strong>
+                    <span>{{ currency(row.costPerWinUsd) }} per win</span>
+                  </li>
+                } @empty {
+                  <li>Pricing data is incomplete for the selected sample.</li>
+                }
+              </ul>
+            </div>
+          </div>
+        }
+      </section>
+    </mat-tab>
+
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="tab-icon">speed</mat-icon>
