@@ -1,0 +1,16 @@
+Stockfish notice for AI Chess Arena backend image
+
+This image bundles the official unmodified Stockfish chess engine release asset:
+
+- Name: Stockfish 18
+- Release tag: sf_18
+- Source repository: https://github.com/official-stockfish/Stockfish
+- Source tree: https://github.com/official-stockfish/Stockfish/tree/sf_18
+- Release page: https://github.com/official-stockfish/Stockfish/releases/tag/sf_18
+- Bundled binary asset: stockfish-ubuntu-x86-64-avx2.tar
+- Asset SHA256: 536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964
+- License: GNU General Public License v3.0
+
+The GPL v3 license text is provided in COPYING.txt in the same directory.
+
+This project executes Stockfish as a separate external process.

@@ -17,6 +17,12 @@ For other users, `docker-compose.prod.yml` is the recommended path.
 - An OpenRouter API key
 - Access to public GHCR images for this repository
 
+## Bundled Engine Note
+- The released backend image bundles Stockfish 18 for move evaluation.
+- The bundled binary currently targets `amd64` / AVX2-class environments.
+- Stockfish source/license details are documented in `THIRD_PARTY_NOTICES.md`.
+- The backend image includes Stockfish notice/license files under `/usr/share/licenses/stockfish/`.
+
 ## First-Time Setup
 1. Copy the environment template:
 

@@ -55,10 +55,16 @@ flowchart LR
 - `docker-compose.yml` local stack (db + backend + frontend)
 - `docker-compose.prod.yml` released-image deployment stack
 - `docs/deployment.md` deployment and upgrade guide
+- `THIRD_PARTY_NOTICES.md` bundled third-party software notices
 - `task-packages/` backlog task packages
 
 ## Quick Start (Released Images)
 This is the recommended path for users who want to run the project without building it locally.
+
+Note:
+- The released backend image bundles Stockfish 18 for live evaluation features.
+- The current bundled Stockfish binary targets `amd64` / AVX2-class environments.
+- For licensing/source details, see `THIRD_PARTY_NOTICES.md`.
 
 ### Prerequisites
 - Docker + Docker Compose
@@ -160,6 +166,10 @@ make test
 - Stockfish 18 (required for local engine evaluation features)
 - OpenRouter API key
 
+Note:
+- Source/backend runs require `stockfish` on `PATH`.
+- Docker backend runs do not require a local Stockfish install because the image bundles it.
+
 ### Install Stockfish (Local, Auto-Detected)
 Use the installer script via Make:
 ```bash
@@ -184,6 +194,12 @@ Supported by this installer:
 Linux `arm64` note:
 - Stockfish 18 currently has no official Linux ARM64 release asset.
 - On Linux ARM64, the script exits with guidance (build from source, emulation, or custom asset override).
+
+## Third-Party Engine Distribution
+- The backend Docker image bundles the official unmodified Stockfish 18 release asset for move evaluation.
+- Stockfish is licensed under GPL v3.
+- The exact bundled version, source reference, and notice details live in `THIRD_PARTY_NOTICES.md`.
+- The backend image also includes Stockfish notice/license files under `/usr/share/licenses/stockfish/`.
 
 ## Run Without Docker
 ### Database
