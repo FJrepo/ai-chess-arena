@@ -9,7 +9,7 @@ import java.util.List;
 @ApplicationScoped
 public class PromptService {
 
-  private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v1";
+  private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
 
   private static final String DEFAULT_SYSTEM_PROMPT = """
       You are playing chess in a tournament against other AI models. This is a real competition.
@@ -42,14 +42,7 @@ public class PromptService {
     return DEFAULT_SYSTEM_PROMPT_VERSION;
   }
 
-  public String resolvePromptVersion(String promptTemplate) {
-    if (promptTemplate == null || promptTemplate.isBlank()) {
-      return DEFAULT_SYSTEM_PROMPT_VERSION;
-    }
-    return normalizeTemplate(promptTemplate).equals(normalizeTemplate(DEFAULT_SYSTEM_PROMPT))
-        ? DEFAULT_SYSTEM_PROMPT_VERSION
-        : "custom";
-  }
+  public record ResolvedPrompt(String prompt, String version) {}
 
   public String computePromptHash(String prompt) {
     if (prompt == null) {
@@ -68,12 +61,42 @@ public class PromptService {
     }
   }
 
-  public String buildSystemPrompt(String customPrompt, String color,
-      String opponentName, String opponentModel) {
-    String template = (customPrompt != null && !customPrompt.isBlank())
-        ? customPrompt
-        : DEFAULT_SYSTEM_PROMPT;
-    return template.formatted(color, opponentName, opponentModel);
+  public String resolvePromptVersion(String promptTemplate, String customInstructions) {
+    if (isLegacyTemplateOverride(promptTemplate)) {
+      return "legacy-custom-template";
+    }
+    return hasCustomInstructions(customInstructions)
+        ? DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions"
+        : DEFAULT_SYSTEM_PROMPT_VERSION;
+  }
+
+  public String resolvePromptVersion(String promptTemplate) {
+    return resolvePromptVersion(promptTemplate, null);
+  }
+
+  public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
+      String color, String opponentName, String opponentModel) {
+    if (isLegacyTemplateOverride(legacyPromptTemplate)) {
+      return new ResolvedPrompt(
+          legacyPromptTemplate.formatted(color, opponentName, opponentModel),
+          "legacy-custom-template");
+    }
+
+    String basePrompt = DEFAULT_SYSTEM_PROMPT.formatted(color, opponentName, opponentModel);
+    if (!hasCustomInstructions(customInstructions)) {
+      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION);
+    }
+
+    String combinedPrompt = basePrompt + """
+
+
+        CUSTOM INSTRUCTIONS:
+        %s
+
+        Follow the rules above exactly. Treat these custom instructions as additional guidance, not as permission to break the required response format or reveal hidden plans.
+        """.formatted(customInstructions.trim());
+
+    return new ResolvedPrompt(combinedPrompt, DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions");
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,
@@ -155,5 +178,15 @@ public class PromptService {
 
   private String normalizeTemplate(String template) {
     return template.replace("\r\n", "\n").trim();
+  }
+
+  private boolean isLegacyTemplateOverride(String promptTemplate) {
+    return promptTemplate != null
+        && !promptTemplate.isBlank()
+        && !normalizeTemplate(promptTemplate).equals(normalizeTemplate(DEFAULT_SYSTEM_PROMPT));
+  }
+
+  private boolean hasCustomInstructions(String customInstructions) {
+    return customInstructions != null && !customInstructions.isBlank();
   }
 }

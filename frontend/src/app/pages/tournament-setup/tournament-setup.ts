@@ -49,7 +49,8 @@ You are playing as %s.
 Your opponent is %s (%s).`;
 
   name = '';
-  systemPrompt = '';
+  systemRulesTemplate = '';
+  sharedCustomInstructions = '';
   moveTimeout = 60;
   maxRetries = 3;
   trashTalkEnabled = true;
@@ -59,6 +60,7 @@ Your opponent is %s (%s).`;
 
   newPlayerName = '';
   newModelId = '';
+  newCustomInstructions = '';
   modelSearch = '';
   showAllModels = false;
 
@@ -111,11 +113,11 @@ Your opponent is %s (%s).`;
     this.promptTemplateLoadError.set(null);
     this.api.getPromptTemplate().subscribe({
       next: (response: PromptTemplateResponse) => {
-        this.systemPrompt = response.template;
+        this.systemRulesTemplate = response.template;
         this.promptTemplateVersion.set(response.version);
       },
       error: () => {
-        this.systemPrompt = TournamentSetup.PROMPT_FALLBACK;
+        this.systemRulesTemplate = TournamentSetup.PROMPT_FALLBACK;
         this.promptTemplateVersion.set('fallback');
         this.promptTemplateLoadError.set(
           'Failed to load prompt template from backend. Using local fallback.',
@@ -239,12 +241,14 @@ Your opponent is %s (%s).`;
       {
         playerName: this.newPlayerName.trim(),
         modelId: this.newModelId,
+        customInstructions: this.normalizeInstructions(this.newCustomInstructions),
         seed: list.length,
       },
     ]);
 
     this.newPlayerName = '';
     this.newModelId = '';
+    this.newCustomInstructions = '';
     this.modelSearch = '';
   }
 
@@ -256,7 +260,7 @@ Your opponent is %s (%s).`;
     this.api
       .createTournament({
         name: this.name,
-        defaultSystemPrompt: this.systemPrompt,
+        sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
         moveTimeoutSeconds: this.moveTimeout,
         maxRetries: this.maxRetries,
         matchupBestOf: this.matchupBestOf,
@@ -281,5 +285,25 @@ Your opponent is %s (%s).`;
           });
         }
       });
+  }
+
+  hasSharedInstructions(): boolean {
+    return this.normalizeInstructions(this.sharedCustomInstructions) !== null;
+  }
+
+  participantInstructionLabel(participant: Partial<Participant>): string {
+    return participant.customInstructions
+      ? 'Uses participant-specific instructions'
+      : this.hasSharedInstructions()
+        ? 'Uses shared tournament instructions'
+        : 'Uses default instructions only';
+  }
+
+  private normalizeInstructions(value: string | null | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 }

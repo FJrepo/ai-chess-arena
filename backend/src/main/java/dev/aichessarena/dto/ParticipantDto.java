@@ -6,6 +6,6 @@ public record ParticipantDto(
         UUID id,
         String playerName,
         String modelId,
-        String customSystemPrompt,
+        String customInstructions,
         int seed
 ) {}

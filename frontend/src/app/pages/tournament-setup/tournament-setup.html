@@ -57,8 +57,8 @@
       </div>
 
       <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Default System Prompt</mat-label>
-        <textarea matInput [(ngModel)]="systemPrompt" rows="11"></textarea>
+        <mat-label>System Rules</mat-label>
+        <textarea matInput [ngModel]="systemRulesTemplate" rows="11" readonly></textarea>
       </mat-form-field>
       <div class="prompt-meta-row">
         @if (promptTemplateVersion()) {
@@ -67,6 +67,22 @@
         @if (promptTemplateLoadError()) {
           <span class="prompt-warning">{{ promptTemplateLoadError() }}</span>
         }
+      </div>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Shared Custom Instructions</mat-label>
+        <textarea
+          matInput
+          [(ngModel)]="sharedCustomInstructions"
+          rows="5"
+          placeholder="Optional guidance for all participants, e.g. prefer tactical play or avoid draws."
+        ></textarea>
+      </mat-form-field>
+      <div class="prompt-meta-row">
+        <span class="prompt-version">
+          These instructions are appended after the fixed system rules. They cannot override the
+          required JSON/SAN format.
+        </span>
       </div>
     </mat-card-content>
   </mat-card>
@@ -143,6 +159,16 @@
         </mat-form-field>
       </div>
 
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Participant Custom Instructions</mat-label>
+        <textarea
+          matInput
+          [(ngModel)]="newCustomInstructions"
+          rows="4"
+          placeholder="Optional override for this participant only. Leave blank to use shared tournament instructions."
+        ></textarea>
+      </mat-form-field>
+
       <div class="model-controls">
         <mat-slide-toggle [(ngModel)]="showAllModels" (ngModelChange)="onShowAllModelsChanged()">
           Show all models (disable to keep only main models)
@@ -188,6 +214,9 @@
             <span matListItemLine>{{ p.modelId }}</span>
             <span matListItemLine class="provider-line">
               Provider: {{ providerDisplayName(null, p.modelId || null) }}
+            </span>
+            <span matListItemLine class="provider-line">
+              {{ participantInstructionLabel(p) }}
             </span>
             <button matListItemMeta mat-icon-button (click)="removeParticipant($index)">
               <mat-icon>delete</mat-icon>

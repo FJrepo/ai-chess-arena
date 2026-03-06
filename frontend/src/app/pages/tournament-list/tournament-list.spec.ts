@@ -49,7 +49,7 @@ function tournament(
     status,
     format: 'SINGLE_ELIMINATION',
     drawPolicy: 'WHITE_ADVANCES',
-    defaultSystemPrompt: null,
+    sharedCustomInstructions: null,
     moveTimeoutSeconds: 60,
     maxRetries: 3,
     matchupBestOf,
@@ -61,7 +61,7 @@ function tournament(
       id: `${name}-participant-${index}`,
       playerName: `Player ${index + 1}`,
       modelId: `model-${index + 1}`,
-      customSystemPrompt: null,
+      customInstructions: null,
       seed: index + 1,
     })),
     games: Array.from({ length: gameCount }, (_, index) => ({

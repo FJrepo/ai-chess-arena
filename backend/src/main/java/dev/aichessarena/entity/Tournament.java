@@ -33,6 +33,9 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "default_system_prompt", columnDefinition = "TEXT")
     public String defaultSystemPrompt;
 
+    @Column(name = "shared_custom_instructions", columnDefinition = "TEXT")
+    public String sharedCustomInstructions;
+
     @Column(name = "move_timeout_seconds", nullable = false)
     public int moveTimeoutSeconds = 60;
 

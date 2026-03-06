@@ -12,7 +12,7 @@ public final class DtoMapper {
         return new TournamentDto(
                 t.id, t.name, t.status.name(), t.format.name(),
                 t.drawPolicy.name(),
-                t.defaultSystemPrompt, t.moveTimeoutSeconds,
+                t.sharedCustomInstructions, t.moveTimeoutSeconds,
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.trashTalkEnabled,
                 t.createdAt, t.updatedAt,
                 t.participants.stream().map(DtoMapper::toDto).toList(),
@@ -21,7 +21,7 @@ public final class DtoMapper {
     }
 
     public static ParticipantDto toDto(TournamentParticipant p) {
-        return new ParticipantDto(p.id, p.playerName, p.modelId, p.customSystemPrompt, p.seed);
+        return new ParticipantDto(p.id, p.playerName, p.modelId, p.customInstructions, p.seed);
     }
 
     public static GameDto toDto(Game g, boolean includeMoves) {

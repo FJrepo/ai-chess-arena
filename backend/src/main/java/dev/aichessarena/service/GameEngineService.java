@@ -117,16 +117,12 @@ public class GameEngineService {
 
         // Initialize system prompts
         Game game = gameRepository.findById(gameId);
-        String whitePromptTemplate = getCustomPrompt(game, "WHITE");
-        String blackPromptTemplate = getCustomPrompt(game, "BLACK");
-        String whiteSystemPrompt = promptService.buildSystemPrompt(
-                whitePromptTemplate, "WHITE",
-                game.blackPlayerName, game.blackModelId);
-        String blackSystemPrompt = promptService.buildSystemPrompt(
-                blackPromptTemplate, "BLACK",
-                game.whitePlayerName, game.whiteModelId);
-        String whitePromptVersion = promptService.resolvePromptVersion(whitePromptTemplate);
-        String blackPromptVersion = promptService.resolvePromptVersion(blackPromptTemplate);
+        PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE");
+        PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK");
+        String whiteSystemPrompt = whitePrompt.prompt();
+        String blackSystemPrompt = blackPrompt.prompt();
+        String whitePromptVersion = whitePrompt.version();
+        String blackPromptVersion = blackPrompt.version();
         String whitePromptHash = promptService.computePromptHash(whiteSystemPrompt);
         String blackPromptHash = promptService.computePromptHash(blackSystemPrompt);
 
@@ -483,13 +479,43 @@ public class GameEngineService {
         broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), "admin-override", 0, 0);
     }
 
-    private String getCustomPrompt(Game game, String color) {
-        if (game.tournament == null) return null;
-        var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
-        if (participant != null && participant.customSystemPrompt != null) {
-            return participant.customSystemPrompt;
+    private PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color) {
+        if (game.tournament == null) {
+            return promptService.buildSystemPrompt(
+                    null,
+                    null,
+                    color,
+                    "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName,
+                    "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
+            );
         }
-        return game.tournament.defaultSystemPrompt;
+
+        var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
+        String opponentName = "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName;
+        String opponentModel = "WHITE".equals(color) ? game.blackModelId : game.whiteModelId;
+
+        String legacyTemplate = null;
+        if (participant != null && participant.customSystemPrompt != null && !participant.customSystemPrompt.isBlank()) {
+            legacyTemplate = participant.customSystemPrompt;
+        } else if (game.tournament.defaultSystemPrompt != null && !game.tournament.defaultSystemPrompt.isBlank()) {
+            legacyTemplate = game.tournament.defaultSystemPrompt;
+        }
+
+        String customInstructions = null;
+        if (participant != null && participant.customInstructions != null && !participant.customInstructions.isBlank()) {
+            customInstructions = participant.customInstructions;
+        } else if (game.tournament.sharedCustomInstructions != null
+                && !game.tournament.sharedCustomInstructions.isBlank()) {
+            customInstructions = game.tournament.sharedCustomInstructions;
+        }
+
+        return promptService.buildSystemPrompt(
+                legacyTemplate,
+                customInstructions,
+                color,
+                opponentName,
+                opponentModel
+        );
     }
 
     private void broadcastMove(UUID gameId, int moveNumber, String color, String san,

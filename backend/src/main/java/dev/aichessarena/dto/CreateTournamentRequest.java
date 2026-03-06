@@ -2,7 +2,7 @@ package dev.aichessarena.dto;
 
 public record CreateTournamentRequest(
         String name,
-        String defaultSystemPrompt,
+        String sharedCustomInstructions,
         Integer moveTimeoutSeconds,
         Integer maxRetries,
         Integer matchupBestOf,

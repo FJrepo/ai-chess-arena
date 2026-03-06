@@ -38,7 +38,7 @@ public class TournamentResource {
     public Response create(CreateTournamentRequest req) {
         Tournament t = new Tournament();
         t.name = req.name();
-        t.defaultSystemPrompt = req.defaultSystemPrompt();
+        t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = req.moveTimeoutSeconds();
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
@@ -77,7 +77,9 @@ public class TournamentResource {
         Tournament t = tournamentRepository.findById(id);
         if (t == null) return Response.status(404).build();
         if (req.name() != null) t.name = req.name();
-        if (req.defaultSystemPrompt() != null) t.defaultSystemPrompt = req.defaultSystemPrompt();
+        if (req.sharedCustomInstructions() != null) {
+            t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
+        }
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = req.moveTimeoutSeconds();
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
@@ -106,7 +108,7 @@ public class TournamentResource {
         TournamentParticipant p = new TournamentParticipant();
         p.playerName = req.playerName();
         p.modelId = req.modelId();
-        p.customSystemPrompt = req.customSystemPrompt();
+        p.customInstructions = normalizeInstructions(req.customInstructions());
         if (req.seed() != null) p.seed = req.seed();
         TournamentParticipant saved = tournamentService.addParticipant(id, p);
         return Response.status(Response.Status.CREATED).entity(DtoMapper.toDto(saved)).build();
@@ -145,5 +147,13 @@ public class TournamentResource {
             throw new IllegalArgumentException(fieldName + " must be one of 1, 3, 5, or 7");
         }
         return value;
+    }
+
+    private String normalizeInstructions(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

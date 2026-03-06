@@ -82,6 +82,7 @@ public class TournamentService {
 
         participant.playerName = playerName;
         participant.modelId = modelId;
+        participant.customInstructions = normalizeInstructions(participant.customInstructions);
         participant.tournament = tournament;
         participantRepository.persist(participant);
         return participant;
@@ -475,6 +476,14 @@ public class TournamentService {
     }
 
     record FirstRoundMatch(TournamentParticipant white, TournamentParticipant black) {}
+
+    private String normalizeInstructions(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
 
     @Transactional
     public boolean deleteTournament(UUID tournamentId) {
