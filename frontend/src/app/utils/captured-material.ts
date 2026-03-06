@@ -102,7 +102,10 @@ function scoreCapturedPieces(counter: Record<CapturablePiece, number>): number {
   return PIECE_ORDER.reduce((sum, piece) => sum + counter[piece] * PIECE_VALUES[piece], 0);
 }
 
-function countPromotions(moves: MoveLike[], upToMoveIndex: number): { white: number; black: number } {
+function countPromotions(
+  moves: MoveLike[],
+  upToMoveIndex: number,
+): { white: number; black: number } {
   let white = 0;
   let black = 0;
   const promotionPattern = /=[QRBN]/;
