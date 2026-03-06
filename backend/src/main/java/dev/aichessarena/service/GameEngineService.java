@@ -15,6 +15,8 @@ import io.quarkus.arc.ManagedContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
@@ -453,11 +455,22 @@ public class GameEngineService {
     @Transactional
     public void overrideMove(UUID gameId, String san) {
         Game game = gameRepository.findById(gameId);
+        if (game == null) {
+            throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
+        }
+        if (game.status != GameStatus.PAUSED || Boolean.TRUE.equals(runningGames.get(gameId))) {
+            throw new WebApplicationException("Pause the game before overriding moves", Response.Status.CONFLICT);
+        }
+        if (san == null || san.isBlank()) {
+            throw new IllegalArgumentException("Move is required");
+        }
+
         Board board = chessService.boardFromFen(game.currentFen);
         String sideToMove = chessService.getSideToMove(board);
         int moveNumber = chessService.getMoveNumber(board);
 
-        ChessService.ValidMoveResult result = chessService.validateAndApply(board, san);
+        String normalizedSan = san.trim();
+        ChessService.ValidMoveResult result = chessService.validateAndApply(board, normalizedSan);
         if (!result.valid()) {
             throw new IllegalArgumentException("Invalid move: " + result.error());
         }
@@ -466,16 +479,16 @@ public class GameEngineService {
         move.game = game;
         move.moveNumber = moveNumber;
         move.color = sideToMove;
-        move.san = san;
+        move.san = normalizedSan;
         move.fen = result.fen();
         move.promptVersion = "admin-override";
         move.promptHash = null;
         move.isOverride = true;
         moveRepository.persist(move);
 
-        updateGameState(gameId, result.fen(), san, moveNumber, sideToMove);
+        updateGameState(gameId, result.fen(), normalizedSan, moveNumber, sideToMove);
 
-        broadcastMove(gameId, moveNumber, sideToMove, san, result.fen(), "admin-override", 0, 0);
+        broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), "admin-override", 0, 0);
     }
 
     private String getCustomPrompt(Game game, String color) {

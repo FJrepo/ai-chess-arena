@@ -1,8 +1,13 @@
+# syntax=docker/dockerfile:1.7
+
 FROM maven:3.9-eclipse-temurin-21@sha256:c3c9d3ac4ce8431a3995c0318b8d390f448e693dd4fabc16e9b68d2e1f3d7b46 AS build
 WORKDIR /app
 COPY pom.xml .
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn dependency:go-offline -B -Dmaven.wagon.http.retryHandler.count=3
 COPY src ./src
-RUN mvn package -DskipTests -B
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn package -DskipTests -B -Dmaven.wagon.http.retryHandler.count=3
 
 FROM eclipse-temurin:21-jre@sha256:34a58218d838035428163eb35abb629944c5906d1bedcfef8bc8864cce11dfe5
 WORKDIR /app

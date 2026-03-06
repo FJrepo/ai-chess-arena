@@ -108,6 +108,8 @@ export class GameView implements OnInit, OnDestroy {
     return g?.status === 'IN_PROGRESS';
   });
 
+  overrideAllowed = computed(() => this.game()?.status === 'PAUSED');
+
   activeColor = computed<'WHITE' | 'BLACK' | null>(() => {
     if (!this.isLive()) return null;
     const serverColor = this.serverActiveColor();
@@ -368,6 +370,14 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   submitOverride() {
+    if (!this.overrideAllowed()) {
+      this.snackbar.open('Pause the game before submitting an override move.', 'Dismiss', {
+        duration: 4000,
+        horizontalPosition: 'right',
+        verticalPosition: 'top',
+      });
+      return;
+    }
     if (!this.overrideMove) return;
     this.api.overrideMove(this.gameId, this.overrideMove).subscribe({
       next: () => {

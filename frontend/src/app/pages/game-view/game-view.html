@@ -109,9 +109,21 @@
       <div class="override-section">
         <mat-form-field appearance="outline">
           <mat-label>Override Move (SAN)</mat-label>
-          <input matInput [(ngModel)]="overrideMove" placeholder="e.g. e4" />
+          <input
+            matInput
+            [(ngModel)]="overrideMove"
+            placeholder="Pause game first, then enter SAN"
+            [disabled]="!overrideAllowed()"
+          />
         </mat-form-field>
-        <button mat-raised-button color="accent" (click)="submitOverride()">Submit</button>
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="submitOverride()"
+          [disabled]="!overrideAllowed()"
+        >
+          Submit
+        </button>
       </div>
     </div>
   </mat-expansion-panel>

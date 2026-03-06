@@ -4,6 +4,7 @@ import {
   ElementRef,
   EventEmitter,
   Input,
+  OnDestroy,
   Output,
   QueryList,
   ViewChild,
@@ -28,7 +29,7 @@ interface ConnectorPath {
   templateUrl: './bracket-display.html',
   styleUrl: './bracket-display.scss',
 })
-export class BracketDisplay implements AfterViewInit {
+export class BracketDisplay implements AfterViewInit, OnDestroy {
   @Input() set games(value: Game[]) {
     this._games.set(value);
     this.scheduleConnectorLayout();
@@ -51,12 +52,8 @@ export class BracketDisplay implements AfterViewInit {
       if (!roundMap.has(round)) roundMap.set(round, []);
       roundMap.get(round)!.push(game);
     }
-    // Sort rounds by bracket position
-    const roundOrder = ['Round 1', 'Round of 16', 'Quarterfinal', 'Semifinal', 'Final'];
     const sorted = [...roundMap.entries()].sort((a, b) => {
-      const ai = roundOrder.indexOf(a[0]);
-      const bi = roundOrder.indexOf(b[0]);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      return this.roundSortValue(b[0]) - this.roundSortValue(a[0]);
     });
     return sorted.map(([name, games]) => ({
       name,
@@ -184,5 +181,23 @@ export class BracketDisplay implements AfterViewInit {
     this.connectorSvgWidth.set(Math.ceil(content.scrollWidth));
     this.connectorSvgHeight.set(Math.ceil(content.scrollHeight));
     this.connectorPaths.set(paths);
+  }
+
+  private roundSortValue(roundName: string): number {
+    switch (roundName) {
+      case 'Final':
+        return 2;
+      case 'Semifinal':
+        return 4;
+      case 'Quarterfinal':
+        return 8;
+      default: {
+        if (roundName.startsWith('Round of ')) {
+          const parsed = Number.parseInt(roundName.slice('Round of '.length), 10);
+          return Number.isNaN(parsed) ? -1 : parsed;
+        }
+        return -1;
+      }
+    }
   }
 }
