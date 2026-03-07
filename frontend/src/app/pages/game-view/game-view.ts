@@ -21,6 +21,7 @@ import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
 import { Subscription } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
+import { GameTurnStateService } from '../../services/game-turn-state.service';
 
 type TimelineEvent = {
   id: string;
@@ -53,6 +54,7 @@ const BLACK_PIECE_GLYPHS: Record<CapturablePiece, string> = {
 @Component({
   selector: 'app-game-view',
   standalone: true,
+  providers: [GameTurnStateService],
   imports: [
     FormsModule,
     MatCardModule,
@@ -83,18 +85,12 @@ export class GameView implements OnInit, OnDestroy {
   flipped = signal(false);
   overrideMove = '';
   retryInfo = signal<string | null>(null);
-  moveTimeoutSeconds = signal(60);
-  timerNowMs = signal(Date.now());
-  serverActiveColor = signal<'WHITE' | 'BLACK' | null>(null);
-  serverTurnStartedAtMs = signal<number | null>(null);
-  serverTurnDeadlineAtMs = signal<number | null>(null);
   stockfishAvailable = signal(true);
   stockfishReason = signal<string | null>(null);
   includeChatInFeed = signal(false);
 
   private gameId = '';
   private wsSub?: Subscription;
-  private timerHandle?: ReturnType<typeof setInterval>;
 
   currentFen = computed(() => {
     const idx = this.currentMoveIndex();
@@ -122,71 +118,12 @@ export class GameView implements OnInit, OnDestroy {
     };
   });
 
-  isLive = computed(() => {
-    const g = this.game();
-    return g?.status === 'IN_PROGRESS';
-  });
-
+  isLive!: () => boolean;
   overrideAllowed = computed(() => this.game()?.status === 'PAUSED');
-
-  activeColor = computed<'WHITE' | 'BLACK' | null>(() => {
-    if (!this.isLive()) return null;
-    const serverColor = this.serverActiveColor();
-    if (serverColor) return serverColor;
-    const fen = this.currentFen();
-    const sideToken = fen.split(' ')[1];
-    if (sideToken === 'w') return 'WHITE';
-    if (sideToken === 'b') return 'BLACK';
-    return null;
-  });
-
-  turnStartedAtMs = computed<number | null>(() => {
-    if (!this.isLive()) return null;
-    const serverStartedAt = this.serverTurnStartedAtMs();
-    if (serverStartedAt != null) return serverStartedAt;
-
-    const moveList = this.moves();
-    if (moveList.length > 0) {
-      const ts = Date.parse(moveList[moveList.length - 1].createdAt);
-      return Number.isNaN(ts) ? null : ts;
-    }
-
-    const startedAt = this.game()?.startedAt;
-    if (!startedAt) return null;
-    const ts = Date.parse(startedAt);
-    return Number.isNaN(ts) ? null : ts;
-  });
-
-  moveTimerSeconds = computed<number | null>(() => {
-    if (!this.isLive()) return null;
-    const serverDeadline = this.serverTurnDeadlineAtMs();
-    if (serverDeadline != null) {
-      const remaining = Math.ceil((serverDeadline - this.timerNowMs()) / 1000);
-      return Math.max(0, remaining);
-    }
-    const timeout = Math.max(1, this.moveTimeoutSeconds());
-    const startedAtMs = this.turnStartedAtMs();
-    if (!startedAtMs) return timeout;
-
-    const elapsedMs = this.timerNowMs() - startedAtMs;
-    const remaining = Math.ceil((timeout * 1000 - elapsedMs) / 1000);
-    return Math.max(0, remaining);
-  });
-
-  moveTimerDisplay = computed(() => {
-    const remaining = this.moveTimerSeconds();
-    if (remaining == null) return '--:--';
-    const mins = Math.floor(remaining / 60)
-      .toString()
-      .padStart(2, '0');
-    const secs = (remaining % 60).toString().padStart(2, '0');
-    return `${mins}:${secs}`;
-  });
-
-  moveTimerWarning = computed(() => {
-    const remaining = this.moveTimerSeconds();
-    return remaining != null && remaining <= 10 && this.isLive();
-  });
+  activeColor!: () => 'WHITE' | 'BLACK' | null;
+  moveTimerSeconds!: () => number | null;
+  moveTimerDisplay!: () => string;
+  moveTimerWarning!: () => boolean;
 
   capturedMaterial = computed(() => deriveCapturedMaterial(this.moves(), this.currentMoveIndex()));
   showEvaluationBar = computed(() => this.stockfishAvailable());
@@ -299,13 +236,25 @@ export class GameView implements OnInit, OnDestroy {
     private ws: WebSocketService,
     private router: Router,
     private snackbar: MatSnackBar,
-  ) {}
+    private turnState: GameTurnStateService,
+  ) {
+    this.isLive = this.turnState.isLive;
+    this.activeColor = this.turnState.activeColor;
+    this.moveTimerSeconds = this.turnState.moveTimerSeconds;
+    this.moveTimerDisplay = this.turnState.moveTimerDisplay;
+    this.moveTimerWarning = this.turnState.moveTimerWarning;
+    this.turnState.bind(
+      () => this.game(),
+      () => this.moves(),
+      () => this.currentFen(),
+    );
+  }
 
   ngOnInit() {
     this.gameId = this.route.snapshot.paramMap.get('id')!;
     this.loadGame();
     this.loadSystemStatus();
-    this.startTimerTicker();
+    this.turnState.startTicker();
 
     this.ws.connect();
     this.ws.subscribeToGame(this.gameId);
@@ -316,33 +265,37 @@ export class GameView implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.ws.unsubscribeFromGame(this.gameId);
     this.wsSub?.unsubscribe();
-    if (this.timerHandle) {
-      clearInterval(this.timerHandle);
-      this.timerHandle = undefined;
-    }
+    this.turnState.stopTicker();
   }
 
   loadGame() {
-    this.api.getGame(this.gameId).subscribe((game) => {
-      this.game.set(game);
-      this.moves.set(game.moves || []);
-      this.chatMessages.set(game.chatMessages || []);
-      this.serverActiveColor.set(null);
-      this.serverTurnStartedAtMs.set(null);
-      this.serverTurnDeadlineAtMs.set(null);
-      if (game.moves?.length) {
-        this.currentMoveIndex.set(game.moves.length - 1);
-      }
+    this.api.getGame(this.gameId).subscribe({
+      next: (game) => {
+        this.game.set(game);
+        this.moves.set(game.moves || []);
+        this.chatMessages.set(game.chatMessages || []);
+        if (game.moves?.length) {
+          this.currentMoveIndex.set(game.moves.length - 1);
+        }
 
-      if (game.tournamentId) {
-        this.api.getTournament(game.tournamentId).subscribe({
-          next: (tournament) =>
-            this.moveTimeoutSeconds.set(Math.max(1, tournament.moveTimeoutSeconds || 60)),
-          error: () => this.moveTimeoutSeconds.set(60),
+        if (game.tournamentId) {
+          this.api.getTournament(game.tournamentId).subscribe({
+            next: (tournament) =>
+              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds || 60),
+            error: () => this.turnState.setMoveTimeoutSeconds(60),
+          });
+        } else {
+          this.turnState.setMoveTimeoutSeconds(60);
+        }
+      },
+      error: () => {
+        this.snackbar.open('Failed to load the game.', 'Dismiss', {
+          duration: 4000,
+          horizontalPosition: 'right',
+          verticalPosition: 'top',
         });
-      } else {
-        this.moveTimeoutSeconds.set(60);
-      }
+        void this.router.navigate(['/tournaments']);
+      },
     });
   }
 
@@ -429,24 +382,12 @@ export class GameView implements OnInit, OnDestroy {
               }
             : g,
         );
-        if (status === 'IN_PROGRESS') {
-          const activeColor = msg.activeColor;
-          if (activeColor === 'WHITE' || activeColor === 'BLACK') {
-            this.serverActiveColor.set(activeColor);
-          }
-          const startedAtMs = this.parseWsDate(msg.turnStartedAt);
-          if (startedAtMs != null) {
-            this.serverTurnStartedAtMs.set(startedAtMs);
-          }
-          const deadlineAtMs = this.parseWsDate(msg.turnDeadlineAt);
-          if (deadlineAtMs != null) {
-            this.serverTurnDeadlineAtMs.set(deadlineAtMs);
-          }
-        } else {
-          this.serverActiveColor.set(null);
-          this.serverTurnStartedAtMs.set(null);
-          this.serverTurnDeadlineAtMs.set(null);
-        }
+        this.turnState.applyStatusUpdate(
+          status,
+          msg.activeColor,
+          msg.turnStartedAt,
+          msg.turnDeadlineAt,
+        );
         break;
 
       case 'retry':
@@ -454,6 +395,7 @@ export class GameView implements OnInit, OnDestroy {
         break;
 
       case 'forfeit':
+        this.turnState.clearServerTurnState();
         this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
         break;
     }
@@ -487,11 +429,27 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   pauseGame() {
-    this.api.pauseGame(this.gameId).subscribe();
+    this.api.pauseGame(this.gameId).subscribe({
+      error: () => {
+        this.snackbar.open('Failed to pause the game.', 'Dismiss', {
+          duration: 4000,
+          horizontalPosition: 'right',
+          verticalPosition: 'top',
+        });
+      },
+    });
   }
 
   resumeGame() {
-    this.api.startGame(this.gameId).subscribe();
+    this.api.startGame(this.gameId).subscribe({
+      error: () => {
+        this.snackbar.open('Failed to resume the game.', 'Dismiss', {
+          duration: 4000,
+          horizontalPosition: 'right',
+          verticalPosition: 'top',
+        });
+      },
+    });
   }
 
   goToTournament() {
@@ -537,21 +495,6 @@ export class GameView implements OnInit, OnDestroy {
       a.click();
       URL.revokeObjectURL(url);
     });
-  }
-
-  private startTimerTicker() {
-    this.timerNowMs.set(Date.now());
-    this.timerHandle = setInterval(() => {
-      this.timerNowMs.set(Date.now());
-    }, 1000);
-  }
-
-  private parseWsDate(value: unknown): number | null {
-    if (typeof value !== 'string' || value.length === 0) {
-      return null;
-    }
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? null : parsed;
   }
 
   private findTimelineMoveIndex(
