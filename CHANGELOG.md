@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-03-07
+
+### Changed
+- Default backend runtime configuration now requires explicit database credentials instead of shipping committed fallback values.
+- Quarkus `dev` profile keeps the previous local `chess/chess` database defaults for local development convenience.
+
 ## [0.9.0] - 2026-03-07
 
 ### Added
