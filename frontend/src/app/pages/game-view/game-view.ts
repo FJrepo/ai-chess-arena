@@ -364,21 +364,21 @@ export class GameView implements OnInit, OnDestroy {
       case 'move':
         const newMove: Move = {
           id: '',
-          moveNumber: msg['moveNumber']!,
-          color: msg['color']!,
-          san: msg['san']!,
-          fen: msg['fen']!,
-          modelId: msg['modelId']!,
+          moveNumber: msg.moveNumber,
+          color: msg.color,
+          san: msg.san,
+          fen: msg.fen,
+          modelId: msg.modelId,
           promptVersion: null,
           promptHash: null,
           promptTokens: null,
           completionTokens: null,
           costUsd: null,
-          responseTimeMs: msg['responseTimeMs'] || 0,
-          retryCount: msg['retryCount'] || 0,
+          responseTimeMs: msg.responseTimeMs || 0,
+          retryCount: msg.retryCount || 0,
           isOverride: false,
-          evaluationCp: msg['evaluationCp'],
-          evaluationMate: msg['evaluationMate'],
+          evaluationCp: msg.evaluationCp,
+          evaluationMate: msg.evaluationMate,
           createdAt: new Date().toISOString(),
         };
         const wasAtLatest = this.currentMoveIndex() === this.moves().length - 1;
@@ -386,15 +386,15 @@ export class GameView implements OnInit, OnDestroy {
         if (wasAtLatest) {
           this.currentMoveIndex.set(this.moves().length - 1);
         }
-        this.game.update((g) => (g ? { ...g, currentFen: msg['fen'], pgn: msg['pgn'] } : g));
+        this.game.update((g) => (g ? { ...g, currentFen: msg.fen, pgn: msg.pgn ?? g.pgn } : g));
         this.retryInfo.set(null);
         break;
 
       case 'evaluationUpdate':
         this.moves.update((list) =>
           list.map((m) =>
-            m.moveNumber === msg['moveNumber'] && m.color === msg['color']
-              ? { ...m, evaluationCp: msg['evaluationCp'], evaluationMate: msg['evaluationMate'] }
+            m.moveNumber === msg.moveNumber && m.color === msg.color
+              ? { ...m, evaluationCp: msg.evaluationCp, evaluationMate: msg.evaluationMate }
               : m,
           ),
         );
@@ -403,25 +403,25 @@ export class GameView implements OnInit, OnDestroy {
       case 'chat':
         const newChat: ChatMessage = {
           id: '',
-          moveNumber: msg['moveNumber']!,
-          senderModel: msg['senderModel']!,
-          senderColor: msg['senderColor'] as 'WHITE' | 'BLACK',
-          message: msg['message'] || '',
+          moveNumber: msg.moveNumber,
+          senderModel: msg.senderModel,
+          senderColor: msg.senderColor,
+          message: msg.message || '',
           createdAt: new Date().toISOString(),
         };
         this.chatMessages.update((list) => [...list, newChat]);
         break;
 
       case 'gameStatus':
-        const status = msg['status'];
+        const status = msg.status;
         this.game.update((g) =>
           g
             ? {
                 ...g,
                 status: status || g.status,
-                result: msg['result'] || g.result,
-                resultReason: msg['resultReason'] || g.resultReason,
-                totalCostUsd: msg['totalCostUsd'] ?? g.totalCostUsd,
+                result: msg.result || g.result,
+                resultReason: msg.resultReason || g.resultReason,
+                totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
                 startedAt:
                   status === 'IN_PROGRESS'
                     ? (g.startedAt ?? new Date().toISOString())
@@ -430,15 +430,15 @@ export class GameView implements OnInit, OnDestroy {
             : g,
         );
         if (status === 'IN_PROGRESS') {
-          const activeColor = msg['activeColor'];
+          const activeColor = msg.activeColor;
           if (activeColor === 'WHITE' || activeColor === 'BLACK') {
             this.serverActiveColor.set(activeColor);
           }
-          const startedAtMs = this.parseWsDate(msg['turnStartedAt']);
+          const startedAtMs = this.parseWsDate(msg.turnStartedAt);
           if (startedAtMs != null) {
             this.serverTurnStartedAtMs.set(startedAtMs);
           }
-          const deadlineAtMs = this.parseWsDate(msg['turnDeadlineAt']);
+          const deadlineAtMs = this.parseWsDate(msg.turnDeadlineAt);
           if (deadlineAtMs != null) {
             this.serverTurnDeadlineAtMs.set(deadlineAtMs);
           }
@@ -450,7 +450,7 @@ export class GameView implements OnInit, OnDestroy {
         break;
 
       case 'retry':
-        this.retryInfo.set(`${msg['color']} attempt ${msg['attemptNumber']}: ${msg['reason']}`);
+        this.retryInfo.set(`${msg.color} attempt ${msg.attemptNumber}: ${msg.reason}`);
         break;
 
       case 'forfeit':

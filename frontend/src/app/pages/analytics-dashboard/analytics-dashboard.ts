@@ -173,7 +173,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return (this.reliability()?.models ?? []).filter((m) => m.insufficientData).length;
   });
 
-  private refreshTimer: any = null;
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private api: ApiService) {}
 
