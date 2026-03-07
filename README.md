@@ -230,6 +230,8 @@ mvn quarkus:dev
 ```
 
 Default backend port is `8081` (configurable via `HTTP_PORT`).
+Quarkus `dev` profile keeps the local `chess/chess` DB defaults; non-dev runtime now expects
+`DB_USER` and `DB_PASSWORD` to be provided explicitly.
 
 ### Frontend
 ```bash
