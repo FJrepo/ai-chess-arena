@@ -15,11 +15,14 @@ public class MoveEvaluationCoordinator {
     @Inject
     StockfishService stockfishService;
 
+    @Inject
+    GameMoveService gameMoveService;
+
     void queueEvaluation(@Observes(during = TransactionPhase.AFTER_SUCCESS) MoveEvaluationRequested request) {
         LOG.infof("Queuing Stockfish evaluation for move %d in game %s", request.moveNumber(), request.gameId());
         stockfishService.evaluate(request.fen(), 12).thenAccept(result -> {
             try {
-                Arc.container().instance(GameEngineService.class).get().updateMoveEvaluation(request.moveId(), result);
+                Arc.container().instance(GameMoveService.class).get().updateMoveEvaluation(request.moveId(), result);
             } catch (Exception e) {
                 LOG.errorf(e, "Failed to update move evaluation for move %s", request.moveId());
             }
