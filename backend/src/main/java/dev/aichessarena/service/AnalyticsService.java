@@ -11,7 +11,6 @@ import dev.aichessarena.dto.ModelReliabilityDto;
 import dev.aichessarena.dto.ModelReliabilityResponseDto;
 import dev.aichessarena.dto.TournamentCostSummaryDto;
 import dev.aichessarena.entity.Game;
-import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.repository.GameRepository;
@@ -20,7 +19,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -43,6 +41,12 @@ public class AnalyticsService {
 
     @Inject
     MoveRepository moveRepository;
+
+    @Inject
+    AnalyticsWindowLoader windowLoader;
+
+    @Inject
+    AnalyticsGameOutcomeClassifier outcomeClassifier;
 
     private final AnalyticsReliabilityScorer reliabilityScorer = new AnalyticsReliabilityScorer();
 
@@ -175,15 +179,11 @@ public class AnalyticsService {
     }
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
-        List<Game> games = tournamentId == null
-                ? gameRepository.findCreatedAfter(cutoff)
-                : gameRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff);
-        List<Move> moves = tournamentId == null
-                ? moveRepository.findCreatedAfter(cutoff)
-                : moveRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff);
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId);
+        List<Game> games = scope.games();
+        List<Move> moves = scope.moves();
 
-        long activeGamesCount = games.stream().filter(this::isActiveGame).count();
+        long activeGamesCount = games.stream().filter(outcomeClassifier::isActive).count();
         long completedGamesCount = games.stream().filter(game -> game.status == GameStatus.COMPLETED).count();
         long forfeitGamesCount = games.stream().filter(game -> game.status == GameStatus.FORFEIT).count();
 
@@ -281,13 +281,9 @@ public class AnalyticsService {
     }
 
     private ModelReliabilityResponseDto buildReliability(int days, UUID tournamentId, int minGames) {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
-        List<Game> games = tournamentId == null
-                ? gameRepository.findCreatedAfter(cutoff)
-                : gameRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff);
-        List<Move> moves = tournamentId == null
-                ? moveRepository.findCreatedAfter(cutoff)
-                : moveRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff);
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId);
+        List<Game> games = scope.games();
+        List<Move> moves = scope.moves();
 
         Map<String, ReliabilityAccumulator> byModel = new HashMap<>();
 
@@ -372,24 +368,9 @@ public class AnalyticsService {
     }
 
     private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames) {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
-        List<Game> games = tournamentId == null
-                ? gameRepository.findCreatedAfter(cutoff)
-                : gameRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff);
-
-        List<Game> terminalGames = games.stream()
-                .filter(game -> isTerminal(game.status))
-                .toList();
-
-        Map<UUID, Game> terminalGamesById = terminalGames.stream()
-                .collect(java.util.stream.Collectors.toMap(game -> game.id, game -> game));
-
-        List<Move> moves = (tournamentId == null
-                ? moveRepository.findCreatedAfter(cutoff)
-                : moveRepository.findByTournamentIdAndCreatedAfter(tournamentId, cutoff))
-                .stream()
-                .filter(move -> move.game != null && move.game.id != null && terminalGamesById.containsKey(move.game.id))
-                .toList();
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
+        List<Game> terminalGames = scope.games();
+        List<Move> moves = scope.moves();
 
         Map<String, ComparisonAccumulator> byModel = new HashMap<>();
         for (Game game : terminalGames) {
@@ -502,13 +483,14 @@ public class AnalyticsService {
         ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
         accumulator.gamesPlayed++;
 
-        if (isTerminal(game.status)) {
+        AnalyticsGameOutcomeClassifier.ReliabilityOutcome outcome = outcomeClassifier.classifyReliability(game, isWhite);
+        if (outcome.completed()) {
             accumulator.gamesCompleted++;
         }
 
-        if (isForfeitForSide(game, isWhite)) {
+        if (outcome.forfeited()) {
             accumulator.forfeitCount++;
-            if (game.resultReason == Game.ResultReason.TIMEOUT) {
+            if (outcome.timeoutForfeit()) {
                 accumulator.timeoutForfeitCount++;
             }
         }
@@ -526,79 +508,38 @@ public class AnalyticsService {
 
         ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
         accumulator.gamesPlayed++;
-        accumulator.gamesCompleted++;
+        AnalyticsGameOutcomeClassifier.ComparisonOutcome outcome = outcomeClassifier.classifyComparison(game, isWhite);
 
-        if (isWhite) {
+        if (outcome.completed()) {
+            accumulator.gamesCompleted++;
+        }
+        if (outcome.whiteGame()) {
             accumulator.whiteGames++;
-        } else {
+        }
+        if (outcome.blackGame()) {
             accumulator.blackGames++;
         }
-
-        if (game.result == null) {
-            return;
+        if (outcome.win()) {
+            accumulator.wins++;
         }
-
-        switch (game.result) {
-            case WHITE_WINS -> {
-                if (isWhite) {
-                    accumulator.wins++;
-                    accumulator.whiteWins++;
-                } else {
-                    accumulator.losses++;
-                }
-            }
-            case BLACK_WINS -> {
-                if (isWhite) {
-                    accumulator.losses++;
-                } else {
-                    accumulator.wins++;
-                    accumulator.blackWins++;
-                }
-            }
-            case DRAW -> accumulator.draws++;
-            case WHITE_FORFEIT -> {
-                if (isWhite) {
-                    accumulator.losses++;
-                    accumulator.forfeits++;
-                    if (game.resultReason == Game.ResultReason.TIMEOUT) {
-                        accumulator.timeoutForfeits++;
-                    }
-                } else {
-                    accumulator.wins++;
-                    accumulator.blackWins++;
-                }
-            }
-            case BLACK_FORFEIT -> {
-                if (isWhite) {
-                    accumulator.wins++;
-                    accumulator.whiteWins++;
-                } else {
-                    accumulator.losses++;
-                    accumulator.forfeits++;
-                    if (game.resultReason == Game.ResultReason.TIMEOUT) {
-                        accumulator.timeoutForfeits++;
-                    }
-                }
-            }
+        if (outcome.draw()) {
+            accumulator.draws++;
         }
-    }
-
-    private boolean isForfeitForSide(Game game, boolean isWhite) {
-        if (game.result == null) {
-            return false;
+        if (outcome.loss()) {
+            accumulator.losses++;
         }
-        if (isWhite) {
-            return game.result == GameResult.WHITE_FORFEIT;
+        if (outcome.forfeit()) {
+            accumulator.forfeits++;
         }
-        return game.result == GameResult.BLACK_FORFEIT;
-    }
-
-    private boolean isTerminal(GameStatus status) {
-        return status == GameStatus.COMPLETED || status == GameStatus.FORFEIT;
-    }
-
-    private boolean isActiveGame(Game game) {
-        return game.status == GameStatus.IN_PROGRESS || game.status == GameStatus.PAUSED;
+        if (outcome.timeoutForfeit()) {
+            accumulator.timeoutForfeits++;
+        }
+        if (outcome.whiteWin()) {
+            accumulator.whiteWins++;
+        }
+        if (outcome.blackWin()) {
+            accumulator.blackWins++;
+        }
     }
 
     private Long percentile95(List<Long> sortedValues) {
