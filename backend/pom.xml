@@ -6,7 +6,7 @@
 
     <groupId>dev.aichessarena</groupId>
     <artifactId>ai-chess-arena</artifactId>
-    <version>0.9.4</version>
+    <version>0.9.5</version>
 
     <licenses>
         <license>
