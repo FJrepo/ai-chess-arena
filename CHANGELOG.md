@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-03-07
+
+### Changed
+- Game view live turn and timer state now lives in a dedicated frontend service instead of being embedded directly in `GameView`.
+- Game view now surfaces load, pause, and resume failures to the operator instead of failing silently.
+
 ## [0.9.2] - 2026-03-07
 
 ### Changed
