@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-03-07
+
+### Changed
+- Frontend live-update handling now uses concrete websocket message variants instead of broad catch-all typing.
+- Live-update and tournament-load failures now surface through the UI instead of relying on console-only diagnostics.
+
 ## [0.9.1] - 2026-03-07
 
 ### Changed
