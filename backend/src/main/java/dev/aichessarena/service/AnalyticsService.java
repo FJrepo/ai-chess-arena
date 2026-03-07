@@ -44,6 +44,8 @@ public class AnalyticsService {
     @Inject
     MoveRepository moveRepository;
 
+    private final AnalyticsReliabilityScorer reliabilityScorer = new AnalyticsReliabilityScorer();
+
     private final Map<String, CacheEntry<AnalyticsHealthDto>> healthCache = new ConcurrentHashMap<>();
     private final Map<String, CacheEntry<ModelReliabilityResponseDto>> reliabilityCache = new ConcurrentHashMap<>();
     private final Map<String, CacheEntry<AnalyticsModelComparisonDto>> comparisonCache = new ConcurrentHashMap<>();
@@ -144,28 +146,24 @@ public class AnalyticsService {
                 : (double) model.gamesCompleted() / (double) model.gamesPlayed();
         double forfeitRate = model.forfeitRate().doubleValue();
         double avgRetries = model.averageRetriesPerMove().doubleValue();
-        double latencyInput = model.averageResponseTimeMs() != null ? model.averageResponseTimeMs() : 1500;
-
-        double completionScore = clamp(completionRate * 100.0, 0.0, 100.0);
-        double forfeitScore = clamp((1.0 - forfeitRate) * 100.0, 0.0, 100.0);
-        double retryScore = clamp(100.0 - (avgRetries * 50.0), 0.0, 100.0);
-        double latencyScore = clamp(100.0 - ((latencyInput - 1500.0) / 100.0), 0.0, 100.0);
-        double rawScore = (completionScore * 0.40)
-                + (forfeitScore * 0.30)
-                + (retryScore * 0.20)
-                + (latencyScore * 0.10);
-        double sampleWeight = Math.min(1.0, model.gamesPlayed() / 20.0);
+        AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
+                model.gamesPlayed(),
+                completionRate,
+                forfeitRate,
+                avgRetries,
+                model.averageResponseTimeMs()
+        );
 
         return new ModelReliabilityDetailDto(
                 days,
                 tournamentId,
                 model,
-                decimal(completionScore, 2),
-                decimal(forfeitScore, 2),
-                decimal(retryScore, 2),
-                decimal(latencyScore, 2),
-                decimal(rawScore, 2),
-                decimal(sampleWeight, 4)
+                decimal(score.completionScore(), 2),
+                decimal(score.forfeitScore(), 2),
+                decimal(score.retryScore(), 2),
+                decimal(score.latencyScore(), 2),
+                decimal(score.rawScore(), 2),
+                decimal(score.sampleWeight(), 4)
         );
     }
 
@@ -338,19 +336,13 @@ public class AnalyticsService {
                     ? null
                     : Math.round((double) accumulator.responseTimeTotal / (double) accumulator.responseTimeCount);
             BigDecimal avgCostPerMove = divide(accumulator.costTotalUsd, accumulator.pricedMoves);
-
-            double completionScore = clamp(completionRate * 100.0, 0.0, 100.0);
-            double forfeitScore = clamp((1.0 - forfeitRate) * 100.0, 0.0, 100.0);
-            double retryScore = clamp(100.0 - (avgRetriesPerMove * 50.0), 0.0, 100.0);
-            double latencyInput = avgResponseTimeMs != null ? avgResponseTimeMs : 1500.0;
-            double latencyScore = clamp(100.0 - ((latencyInput - 1500.0) / 100.0), 0.0, 100.0);
-
-            double raw = (completionScore * 0.40)
-                    + (forfeitScore * 0.30)
-                    + (retryScore * 0.20)
-                    + (latencyScore * 0.10);
-            double sampleWeight = Math.min(1.0, accumulator.gamesPlayed / 20.0);
-            double finalScore = 60.0 + (raw - 60.0) * sampleWeight;
+            AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
+                    accumulator.gamesPlayed,
+                    completionRate,
+                    forfeitRate,
+                    avgRetriesPerMove,
+                    avgResponseTimeMs
+            );
 
             rows.add(new ModelReliabilityDto(
                     entry.getKey(),
@@ -363,9 +355,9 @@ public class AnalyticsService {
                     avgResponseTimeMs,
                     avgCostPerMove,
                     accumulator.movesSampled,
-                    decimal(finalScore, 2),
-                    toBand(finalScore, accumulator.gamesPlayed),
-                    accumulator.gamesPlayed < 3
+                    decimal(score.finalScore(), 2),
+                    score.band(),
+                    score.insufficientData()
             ));
         }
 
@@ -455,17 +447,13 @@ public class AnalyticsService {
                     : (double) accumulator.gamesCompleted / (double) accumulator.gamesPlayed;
             double forfeitRateDouble = forfeitRate.doubleValue();
             double avgRetries = averageRetriesPerMove.doubleValue();
-            double latencyInput = averageResponseTimeMs != null ? averageResponseTimeMs : 1500.0;
-            double completionScore = clamp(completionRate * 100.0, 0.0, 100.0);
-            double forfeitScore = clamp((1.0 - forfeitRateDouble) * 100.0, 0.0, 100.0);
-            double retryScore = clamp(100.0 - (avgRetries * 50.0), 0.0, 100.0);
-            double latencyScore = clamp(100.0 - ((latencyInput - 1500.0) / 100.0), 0.0, 100.0);
-            double raw = (completionScore * 0.40)
-                    + (forfeitScore * 0.30)
-                    + (retryScore * 0.20)
-                    + (latencyScore * 0.10);
-            double sampleWeight = Math.min(1.0, accumulator.gamesPlayed / 20.0);
-            double reliabilityScore = 60.0 + (raw - 60.0) * sampleWeight;
+            AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
+                    accumulator.gamesPlayed,
+                    completionRate,
+                    forfeitRateDouble,
+                    avgRetries,
+                    averageResponseTimeMs
+            );
 
             rows.add(new AnalyticsModelComparisonRowDto(
                     entry.getKey(),
@@ -491,9 +479,9 @@ public class AnalyticsService {
                     averageCostPerMoveUsd,
                     costPerWinUsd,
                     pricingAvailable(accumulator),
-                    decimal(reliabilityScore, 2),
-                    toBand(reliabilityScore, accumulator.gamesPlayed),
-                    accumulator.gamesPlayed < 3
+                    decimal(score.finalScore(), 2),
+                    score.band(),
+                    score.insufficientData()
             ));
         }
 
@@ -669,26 +657,6 @@ public class AnalyticsService {
 
     private BigDecimal decimal(double value, int scale) {
         return BigDecimal.valueOf(value).setScale(scale, RoundingMode.HALF_UP);
-    }
-
-    private double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private String toBand(double score, long gamesPlayed) {
-        if (gamesPlayed < 3) {
-            return "Insufficient data";
-        }
-        if (score >= 85) {
-            return "A";
-        }
-        if (score >= 70) {
-            return "B";
-        }
-        if (score >= 55) {
-            return "C";
-        }
-        return "D";
     }
 
     private <T> T getCached(Map<String, CacheEntry<T>> cache, String key, Supplier<T> supplier) {
