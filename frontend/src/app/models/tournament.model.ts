@@ -83,14 +83,73 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export interface WsMessage {
-  type: 'move' | 'chat' | 'gameStatus' | 'retry' | 'forfeit' | 'evaluationUpdate';
+export interface MoveWsMessage {
+  type: 'move';
   gameId: string;
+  moveNumber: number;
+  color: 'WHITE' | 'BLACK';
+  san: string;
+  fen: string;
+  modelId: string;
+  pgn?: string | null;
+  responseTimeMs?: number;
+  retryCount?: number;
+  evaluationCp?: number | null;
+  evaluationMate?: number | null;
+}
+
+export interface EvaluationUpdateWsMessage {
+  type: 'evaluationUpdate';
+  gameId: string;
+  moveNumber: number;
+  color: 'WHITE' | 'BLACK';
+  evaluationCp?: number | null;
+  evaluationMate?: number | null;
+}
+
+export interface ChatWsMessage {
+  type: 'chat';
+  gameId: string;
+  moveNumber: number;
+  senderModel: string;
+  senderColor: 'WHITE' | 'BLACK';
+  message?: string;
+}
+
+export interface GameStatusWsMessage {
+  type: 'gameStatus';
+  gameId: string;
+  status?: Game['status'];
+  result?: string | null;
+  resultReason?: string | null;
+  totalCostUsd?: number | null;
   activeColor?: 'WHITE' | 'BLACK';
   turnStartedAt?: string;
   turnDeadlineAt?: string;
-  evaluationCp?: number;
-  evaluationMate?: number;
-  moveNumber?: number;
-  [key: string]: any;
+}
+
+export interface RetryWsMessage {
+  type: 'retry';
+  gameId: string;
+  color: 'WHITE' | 'BLACK';
+  attemptNumber: number;
+  reason: string;
+}
+
+export interface ForfeitWsMessage {
+  type: 'forfeit';
+  gameId: string;
+}
+
+export type WsMessage =
+  | MoveWsMessage
+  | EvaluationUpdateWsMessage
+  | ChatWsMessage
+  | GameStatusWsMessage
+  | RetryWsMessage
+  | ForfeitWsMessage;
+
+export interface WsOutgoingMessage {
+  type: 'subscribe' | 'unsubscribe';
+  gameId: string;
 }

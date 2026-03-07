@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { CurrencyPipe } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { Tournament, Game } from '../../models/tournament.model';
@@ -37,6 +38,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
     private api: ApiService,
+    private snackBar: MatSnackBar,
   ) {}
 
   ngOnInit() {
@@ -57,7 +59,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.api.getTournament(this.tournamentId).subscribe({
       next: (t) => this.tournament.set(t),
       error: () => {
-        console.error('Failed to load tournament');
+        this.snackBar.open('Failed to load tournament.', 'Dismiss', { duration: 4000 });
         this.router.navigate(['/tournaments']);
       },
     });

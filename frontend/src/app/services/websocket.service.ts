@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Observable, Subject, filter } from 'rxjs';
-import { WsMessage } from '../models/tournament.model';
+import { WsMessage, WsOutgoingMessage } from '../models/tournament.model';
 
 @Injectable({ providedIn: 'root' })
 export class WebSocketService {
@@ -9,6 +10,9 @@ export class WebSocketService {
   private currentGameId: string | null = null;
   private shouldReconnect = true;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private connectionWarningVisible = false;
+
+  constructor(private snackBar: MatSnackBar) {}
 
   connect(): void {
     if (
@@ -23,6 +27,7 @@ export class WebSocketService {
     this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/games`);
 
     this.ws.onopen = () => {
+      this.connectionWarningVisible = false;
       if (this.currentGameId) {
         this.subscribeToGame(this.currentGameId);
       }
@@ -30,10 +35,18 @@ export class WebSocketService {
 
     this.ws.onmessage = (event) => {
       try {
-        const msg: WsMessage = JSON.parse(event.data);
-        this.messages$.next(msg);
-      } catch (e) {
-        console.error('Failed to parse WebSocket message', e);
+        const raw: unknown = JSON.parse(event.data);
+        if (isWsMessage(raw)) {
+          this.messages$.next(raw);
+        } else {
+          this.snackBar.open('Ignored an invalid live update payload.', 'Dismiss', {
+            duration: 4000,
+          });
+        }
+      } catch {
+        this.snackBar.open('Ignored an unreadable live update payload.', 'Dismiss', {
+          duration: 4000,
+        });
       }
     };
 
@@ -46,7 +59,13 @@ export class WebSocketService {
     };
 
     this.ws.onerror = (err) => {
-      console.error('WebSocket error', err);
+      void err;
+      if (!this.connectionWarningVisible) {
+        this.connectionWarningVisible = true;
+        this.snackBar.open('Live updates were interrupted. Reconnecting...', 'Dismiss', {
+          duration: 4000,
+        });
+      }
     };
   }
 
@@ -64,16 +83,9 @@ export class WebSocketService {
     return this.messages$.pipe(filter((msg) => msg.gameId === gameId || !msg.gameId));
   }
 
-  private send(data: unknown): void {
+  private send(data: WsOutgoingMessage): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
-    } else {
-      const messageType =
-        typeof data === 'object' && data !== null && 'type' in data
-          ? String((data as { type?: unknown }).type)
-          : 'unknown';
-      console.warn('WebSocket not open, message not sent:', messageType);
-      // We don't retry here to avoid loops, connect() will re-subscribe on open
     }
   }
 
@@ -89,4 +101,24 @@ export class WebSocketService {
     this.ws?.close();
     this.ws = null;
   }
+}
+
+function isWsMessage(message: unknown): message is WsMessage {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+
+  const candidate = message as { type?: unknown; gameId?: unknown };
+  if (typeof candidate.type !== 'string' || typeof candidate.gameId !== 'string') {
+    return false;
+  }
+
+  return (
+    candidate.type === 'move' ||
+    candidate.type === 'chat' ||
+    candidate.type === 'gameStatus' ||
+    candidate.type === 'retry' ||
+    candidate.type === 'forfeit' ||
+    candidate.type === 'evaluationUpdate'
+  );
 }
