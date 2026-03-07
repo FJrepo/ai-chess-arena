@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-03-07
+
+### Changed
+- Analytics reliability scoring now lives in a dedicated backend collaborator instead of being duplicated across analytics code paths.
+- Backend analytics scoring behavior now has focused unit coverage outside the broader analytics service tests.
+
 ## [0.9.3] - 2026-03-07
 
 ### Changed
