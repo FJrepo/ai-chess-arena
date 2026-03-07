@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-03-07
+
+### Changed
+- Analytics window loading and terminal-game filtering now live in a dedicated backend loader instead of being embedded directly in `AnalyticsService`.
+- Analytics game-outcome interpretation now lives in a dedicated backend classifier instead of being mixed into analytics aggregation logic.
+- Backend analytics refactor coverage now includes focused tests for outcome classification behavior.
+
 ## [0.9.4] - 2026-03-07
 
 ### Changed
