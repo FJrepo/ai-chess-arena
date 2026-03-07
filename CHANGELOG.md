@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-03-07
+
+### Changed
+- Game lifecycle state transitions now live in a dedicated backend service instead of being embedded directly in `GameEngineService`.
+- Move recording, override application, chat persistence, and evaluation-update handling now live in a dedicated backend service instead of being embedded directly in `GameEngineService`.
+- Backend refactor coverage now includes focused tests for game lifecycle and move-recording behavior.
+
 ## [0.9.5] - 2026-03-07
 
 ### Changed
