@@ -1,8 +1,35 @@
+import { of, throwError } from 'rxjs';
 import { GameView } from './game-view';
+import { GameTurnStateService } from '../../services/game-turn-state.service';
+
+function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<any> }) {
+  const api = {
+    pauseGame: () => of(void 0),
+    startGame: () => of(void 0),
+    ...overrides?.api,
+  };
+  const snackbar = {
+    open: vi.fn(),
+    ...overrides?.snackbar,
+  };
+
+  return {
+    component: new GameView(
+      {} as any,
+      api as any,
+      {} as any,
+      { navigate: vi.fn() } as any,
+      snackbar as any,
+      new GameTurnStateService(),
+    ),
+    api,
+    snackbar,
+  };
+}
 
 describe('GameView', () => {
   it('hides the evaluation bar when stockfish is unavailable', () => {
-    const component = new GameView({} as any, {} as any, {} as any, {} as any, {} as any);
+    const { component } = createComponent();
 
     component.stockfishAvailable.set(false);
     component.stockfishReason.set('Stockfish missing');
@@ -13,7 +40,7 @@ describe('GameView', () => {
   });
 
   it('keeps chat out of the feed by default and can opt it back in', () => {
-    const component = new GameView({} as any, {} as any, {} as any, {} as any, {} as any);
+    const { component } = createComponent();
     component.game.set({
       id: 'g-1',
       tournamentId: 't-1',
@@ -89,5 +116,21 @@ describe('GameView', () => {
       'start',
     ]);
     expect(chatEnabledFeedEvents[1].detail).toContain('Alpha: Good luck.');
+  });
+
+  it('shows a snackbar when pausing the game fails', () => {
+    const { component, snackbar } = createComponent({
+      api: {
+        pauseGame: () => throwError(() => new Error('pause failed')),
+      },
+    });
+
+    component.pauseGame();
+
+    expect(snackbar.open).toHaveBeenCalledWith('Failed to pause the game.', 'Dismiss', {
+      duration: 4000,
+      horizontalPosition: 'right',
+      verticalPosition: 'top',
+    });
   });
 });
