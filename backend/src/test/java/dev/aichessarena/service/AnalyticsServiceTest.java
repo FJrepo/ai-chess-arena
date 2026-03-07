@@ -60,6 +60,8 @@ class AnalyticsServiceTest {
                 betaMove3,
                 alphaMove3
         ));
+        service.windowLoader = loader(service.gameRepository, service.moveRepository);
+        service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
 
         AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
 
@@ -107,6 +109,8 @@ class AnalyticsServiceTest {
                 move(onlyGame, "model.alpha", 1000L, "0.010000"),
                 move(onlyGame, "model.beta", 1000L, "0.010000")
         ));
+        service.windowLoader = loader(service.gameRepository, service.moveRepository);
+        service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
 
         AnalyticsModelComparisonDto response = service.getComparison(30, null, 2);
 
@@ -149,6 +153,13 @@ class AnalyticsServiceTest {
         move.responseTimeMs = responseTimeMs;
         move.costUsd = costUsd == null ? null : new BigDecimal(costUsd);
         return move;
+    }
+
+    private AnalyticsWindowLoader loader(GameRepository gameRepository, MoveRepository moveRepository) {
+        AnalyticsWindowLoader loader = new AnalyticsWindowLoader();
+        loader.gameRepository = gameRepository;
+        loader.moveRepository = moveRepository;
+        return loader;
     }
 
     private static final class FakeGameRepository extends GameRepository {
