@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.MoveRepository;
 import jakarta.ws.rs.WebApplicationException;
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -24,8 +23,6 @@ class GameEngineServiceTest {
 
         GameEngineService service = new GameEngineService();
         service.gameRepository = new FakeGameRepository(Map.of(game.id, game));
-        service.moveRepository = new MoveRepository();
-        service.chessService = new ChessService();
 
         assertThrows(WebApplicationException.class, () -> service.overrideMove(game.id, "e4"));
     }
@@ -38,8 +35,6 @@ class GameEngineServiceTest {
 
         GameEngineService service = new GameEngineService();
         service.gameRepository = new FakeGameRepository(Map.of(game.id, game));
-        service.moveRepository = new MoveRepository();
-        service.chessService = new ChessService();
         markGameRunning(service, game.id);
 
         assertThrows(WebApplicationException.class, () -> service.overrideMove(game.id, "e4"));
