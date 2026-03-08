@@ -74,6 +74,11 @@
   color: color-mix(in srgb, #ffb74d 76%, white);
 }
 
+.move-timer.waiting-human {
+  border-color: color-mix(in srgb, #5bb6ff 46%, var(--mat-sys-outline));
+  background: color-mix(in srgb, #5bb6ff 14%, var(--mat-sys-surface-container));
+}
+
 .game-layout {
   --board-square-size: clamp(58px, 3.6vw, 72px);
   --moves-col: 2.35fr;
@@ -91,6 +96,26 @@
   gap: 14px;
   margin-top: 16px;
   align-items: start;
+}
+
+.human-move-card {
+  margin-top: 16px;
+  border-radius: 18px;
+
+  mat-card-subtitle {
+    color: color-mix(in srgb, var(--mat-sys-on-surface) 66%, transparent);
+  }
+}
+
+.human-move-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(240px, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.human-message-field {
+  min-width: 0;
 }
 
 .moves-column,
@@ -380,6 +405,41 @@ app-advantage-bar {
   font-weight: 700;
   font-size: 0.85rem;
   color: color-mix(in srgb, var(--mat-sys-primary) 76%, var(--mat-sys-on-surface));
+}
+
+.promotion-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, #ffd166 60%, var(--mat-sys-outline));
+  background: color-mix(in srgb, #ffd166 14%, var(--mat-sys-surface-container));
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.promotion-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 82%, transparent);
+  margin-right: 4px;
+}
+
+.promotion-btn {
+  min-width: 0;
+  font-size: 0.82rem;
+}
+
+.promotion-piece {
+  font-size: 1.3rem;
+  line-height: 1;
+  margin-right: 4px;
+}
+
+.promotion-cancel {
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--mat-sys-on-surface) 66%, transparent);
 }
 
 .board-controls {

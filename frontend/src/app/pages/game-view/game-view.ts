@@ -14,7 +14,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
 import { Game, Move, ChatMessage, WsMessage } from '../../models/tournament.model';
-import { ChessboardComponent } from '../../components/chessboard/chessboard';
+import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
 import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
@@ -84,10 +84,21 @@ export class GameView implements OnInit, OnDestroy {
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
+  humanMove = '';
+  humanMessage = '';
   retryInfo = signal<string | null>(null);
   stockfishAvailable = signal(true);
   stockfishReason = signal<string | null>(null);
   includeChatInFeed = signal(false);
+  humanMoveSubmitting = signal(false);
+  pendingPromotion = signal<{ from: string; to: string } | null>(null);
+
+  boardInteractiveColor = computed(() => {
+    if (!this.isAwaitingHumanMove()) return null;
+    const moveList = this.moves();
+    if (moveList.length > 0 && this.currentMoveIndex() !== moveList.length - 1) return null;
+    return this.activeColor();
+  });
 
   private gameId = '';
   private wsSub?: Subscription;
@@ -124,6 +135,26 @@ export class GameView implements OnInit, OnDestroy {
   moveTimerSeconds!: () => number | null;
   moveTimerDisplay!: () => string;
   moveTimerWarning!: () => boolean;
+  isAwaitingHumanMove = computed(() => {
+    const game = this.game();
+    const activeColor = this.activeColor();
+    if (!game || game.status !== 'IN_PROGRESS' || !activeColor) {
+      return false;
+    }
+    return activeColor === 'WHITE'
+      ? game.whiteControlType === 'HUMAN'
+      : game.blackControlType === 'HUMAN';
+  });
+  activeHumanPlayerLabel = computed(() => {
+    const game = this.game();
+    const activeColor = this.activeColor();
+    if (!game || !activeColor) {
+      return 'Human';
+    }
+    return activeColor === 'WHITE'
+      ? (game.whitePlayerName ?? 'White')
+      : (game.blackPlayerName ?? 'Black');
+  });
 
   capturedMaterial = computed(() => deriveCapturedMaterial(this.moves(), this.currentMoveIndex()));
   showEvaluationBar = computed(() => this.stockfishAvailable());
@@ -180,7 +211,7 @@ export class GameView implements OnInit, OnDestroy {
         id: `move-${move.id || `${move.moveNumber}-${move.color}`}`,
         type: 'move',
         label: `${move.color === 'WHITE' ? 'White' : 'Black'} played ${move.san}`,
-        detail: `${move.modelId || 'Unknown model'}${retrySuffix}${overrideSuffix}`,
+        detail: `${this.timelinePlayerName(move.color, move.modelId)}${retrySuffix}${overrideSuffix}`,
         tone: move.isOverride ? 'warning' : 'move',
         icon: move.isOverride ? 'edit' : 'arrow_right_alt',
         createdAtMs: Date.parse(move.createdAt),
@@ -452,6 +483,94 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
+  submitHumanMove() {
+    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) {
+      return;
+    }
+    const move = this.humanMove.trim();
+    if (!move) {
+      this.snackbar.open('Enter a SAN move before submitting.', 'Dismiss', {
+        duration: 4000,
+        horizontalPosition: 'right',
+        verticalPosition: 'top',
+      });
+      return;
+    }
+
+    this.humanMoveSubmitting.set(true);
+    this.api
+      .submitHumanMove(this.gameId, move, this.normalizeMessage(this.humanMessage))
+      .subscribe({
+        next: () => {
+          this.humanMove = '';
+          this.humanMessage = '';
+          this.humanMoveSubmitting.set(false);
+        },
+        error: (err) => {
+          const serverError = err?.error;
+          const message =
+            typeof serverError === 'string'
+              ? serverError
+              : (serverError?.error ?? 'Failed to submit the human move.');
+          this.snackbar.open(message, 'Dismiss', {
+            duration: 5000,
+            horizontalPosition: 'right',
+            verticalPosition: 'top',
+          });
+          this.humanMoveSubmitting.set(false);
+        },
+      });
+  }
+
+  onBoardMoveAttempt(attempt: BoardMoveAttempt) {
+    if (attempt.promotionRequired) {
+      this.pendingPromotion.set({ from: attempt.from, to: attempt.to });
+      return;
+    }
+    this.submitCoordinateMove(attempt.from, attempt.to, null);
+  }
+
+  selectPromotion(piece: string) {
+    const pending = this.pendingPromotion();
+    if (!pending) return;
+    this.pendingPromotion.set(null);
+    this.submitCoordinateMove(pending.from, pending.to, piece);
+  }
+
+  cancelPromotion() {
+    this.pendingPromotion.set(null);
+  }
+
+  private submitCoordinateMove(from: string, to: string, promotion: string | null) {
+    if (this.humanMoveSubmitting()) return;
+    this.humanMoveSubmitting.set(true);
+    this.api
+      .submitHumanMoveCoordinates(
+        this.gameId,
+        from,
+        to,
+        promotion,
+        this.normalizeMessage(this.humanMessage),
+      )
+      .subscribe({
+        next: () => {
+          this.humanMessage = '';
+          this.humanMoveSubmitting.set(false);
+        },
+        error: (err) => {
+          const serverError = err?.error;
+          const message =
+            typeof serverError === 'string' ? serverError : (serverError?.error ?? 'Invalid move.');
+          this.snackbar.open(message, 'Dismiss', {
+            duration: 5000,
+            horizontalPosition: 'right',
+            verticalPosition: 'top',
+          });
+          this.humanMoveSubmitting.set(false);
+        },
+      });
+  }
+
   goToTournament() {
     const tournamentId = this.game()?.tournamentId;
     if (!tournamentId) return;
@@ -510,11 +629,16 @@ export class GameView implements OnInit, OnDestroy {
     return index >= 0 ? index : null;
   }
 
-  private timelinePlayerName(color: 'WHITE' | 'BLACK', fallbackModel: string): string {
+  private timelinePlayerName(color: 'WHITE' | 'BLACK', fallbackModel: string | null): string {
     const game = this.game();
     if (color === 'WHITE') {
-      return game?.whitePlayerName || fallbackModel;
+      return game?.whitePlayerName || fallbackModel || 'White';
     }
-    return game?.blackPlayerName || fallbackModel;
+    return game?.blackPlayerName || fallbackModel || 'Black';
+  }
+
+  private normalizeMessage(value: string): string | null {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 }

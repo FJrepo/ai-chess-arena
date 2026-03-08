@@ -92,6 +92,7 @@ class PromptServiceTest {
         );
 
         assertTrue(prompt.prompt().contains("RULES:"));
+        assertTrue(prompt.prompt().contains("You are playing chess in a tournament match."));
         assertTrue(prompt.prompt().contains("CUSTOM INSTRUCTIONS:"));
         assertTrue(prompt.prompt().contains("Prefer open positions and avoid repeating moves."));
         assertTrue(prompt.prompt().contains("You are playing as WHITE in this game."));

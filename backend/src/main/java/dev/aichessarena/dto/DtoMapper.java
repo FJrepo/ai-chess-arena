@@ -21,15 +21,26 @@ public final class DtoMapper {
     }
 
     public static ParticipantDto toDto(TournamentParticipant p) {
-        return new ParticipantDto(p.id, p.playerName, p.modelId, p.customInstructions, p.seed);
+        return new ParticipantDto(
+                p.id,
+                p.playerName,
+                p.controlType.name(),
+                p.modelId,
+                p.customInstructions,
+                p.seed
+        );
     }
 
     public static GameDto toDto(Game g, boolean includeMoves) {
         return new GameDto(
                 g.id,
                 g.tournament != null ? g.tournament.id : null,
-                g.whitePlayerName, g.whiteModelId,
-                g.blackPlayerName, g.blackModelId,
+                g.whitePlayerName,
+                g.whiteParticipant != null ? g.whiteParticipant.controlType.name() : "AI",
+                g.whiteModelId,
+                g.blackPlayerName,
+                g.blackParticipant != null ? g.blackParticipant.controlType.name() : "AI",
+                g.blackModelId,
                 g.status.name(),
                 g.result != null ? g.result.name() : null,
                 g.resultReason != null ? g.resultReason.name() : null,

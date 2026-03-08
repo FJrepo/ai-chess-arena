@@ -12,7 +12,7 @@ public class PromptService {
   private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
 
   private static final String DEFAULT_SYSTEM_PROMPT = """
-      You are playing chess in a tournament against other AI models. This is a real competition.
+      You are playing chess in a tournament match. This is a real competition.
 
       RULES:
       1. You MUST respond with valid JSON only. No markdown, no code blocks, no extra text.

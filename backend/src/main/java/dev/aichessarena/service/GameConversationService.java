@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -68,13 +69,19 @@ public class GameConversationService {
                     null,
                     color,
                     "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName,
-                    "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
+                    opponentDescriptor(
+                            "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
+                            "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
+                    )
             );
         }
 
         var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
         String opponentName = "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName;
-        String opponentModel = "WHITE".equals(color) ? game.blackModelId : game.whiteModelId;
+        String opponentModel = opponentDescriptor(
+                "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
+                "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
+        );
 
         String legacyTemplate = null;
         if (participant != null && participant.customSystemPrompt != null && !participant.customSystemPrompt.isBlank()) {
@@ -98,6 +105,13 @@ public class GameConversationService {
                 opponentName,
                 opponentModel
         );
+    }
+
+    private String opponentDescriptor(TournamentParticipant participant, String modelId) {
+        if (participant != null && participant.controlType == TournamentParticipant.ControlType.HUMAN) {
+            return "human player";
+        }
+        return modelId != null && !modelId.isBlank() ? modelId : "unknown model";
     }
 
     public record ConversationState(

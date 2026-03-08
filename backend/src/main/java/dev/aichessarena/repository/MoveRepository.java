@@ -11,7 +11,7 @@ import java.util.UUID;
 public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
 
     public List<Move> findByGameId(UUID gameId) {
-        return list("game.id = ?1 order by moveNumber", gameId);
+        return list("game.id = ?1 order by moveNumber, createdAt", gameId);
     }
 
     public List<Move> findCreatedAfter(LocalDateTime cutoff) {

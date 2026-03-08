@@ -45,8 +45,10 @@ describe('GameView', () => {
       id: 'g-1',
       tournamentId: 't-1',
       whitePlayerName: 'Alpha',
+      whiteControlType: 'AI',
       whiteModelId: 'model-a',
       blackPlayerName: 'Beta',
+      blackControlType: 'AI',
       blackModelId: 'model-b',
       status: 'COMPLETED',
       result: 'WHITE_WINS',
@@ -132,5 +134,89 @@ describe('GameView', () => {
       horizontalPosition: 'right',
       verticalPosition: 'top',
     });
+  });
+
+  it('detects when the active side is human-controlled', () => {
+    const { component } = createComponent();
+    component.game.set({
+      id: 'g-1',
+      tournamentId: 't-1',
+      whitePlayerName: 'Human',
+      whiteControlType: 'HUMAN',
+      whiteModelId: null,
+      blackPlayerName: 'Beta',
+      blackControlType: 'AI',
+      blackModelId: 'model-b',
+      status: 'IN_PROGRESS',
+      result: null,
+      resultReason: null,
+      pgn: null,
+      currentFen: '8/8/8/8/8/8/8/8 w - - 0 1',
+      bracketRound: null,
+      bracketPosition: null,
+      seriesId: null,
+      seriesGameNumber: 1,
+      seriesBestOf: 1,
+      totalCostUsd: 0,
+      createdAt: '2026-03-06T10:00:00Z',
+      startedAt: '2026-03-06T10:01:00Z',
+      completedAt: null,
+      moves: [],
+      chatMessages: [],
+    });
+
+    expect(component.isAwaitingHumanMove()).toBe(true);
+    expect(component.activeHumanPlayerLabel()).toBe('Human');
+  });
+
+  it('submits a human SAN move through the API', () => {
+    const submitHumanMove = vi.fn(() => of(void 0));
+    const { component } = createComponent({
+      api: {
+        submitHumanMove,
+      },
+    });
+
+    component.game.set({
+      id: 'g-1',
+      tournamentId: 't-1',
+      whitePlayerName: 'Human',
+      whiteControlType: 'HUMAN',
+      whiteModelId: null,
+      blackPlayerName: 'Beta',
+      blackControlType: 'AI',
+      blackModelId: 'model-b',
+      status: 'IN_PROGRESS',
+      result: null,
+      resultReason: null,
+      pgn: null,
+      currentFen: '8/8/8/8/8/8/8/8 w - - 0 1',
+      bracketRound: null,
+      bracketPosition: null,
+      seriesId: null,
+      seriesGameNumber: 1,
+      seriesBestOf: 1,
+      totalCostUsd: 0,
+      createdAt: '2026-03-06T10:00:00Z',
+      startedAt: '2026-03-06T10:01:00Z',
+      completedAt: null,
+      moves: [],
+      chatMessages: [],
+    });
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      activeColor: 'WHITE',
+    });
+    (component as any).gameId = 'g-1';
+    component.humanMove = 'e4';
+    component.humanMessage = 'gl hf';
+
+    component.submitHumanMove();
+
+    expect(submitHumanMove).toHaveBeenCalledWith('g-1', 'e4', 'gl hf');
+    expect(component.humanMove).toBe('');
+    expect(component.humanMessage).toBe('');
   });
 });

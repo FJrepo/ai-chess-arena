@@ -20,7 +20,7 @@ public class ChatMessage extends PanacheEntityBase {
     @Column(name = "move_number", nullable = false)
     public int moveNumber;
 
-    @Column(name = "sender_model", nullable = false)
+    @Column(name = "sender_model")
     public String senderModel;
 
     @Column(name = "sender_color", nullable = false)

@@ -53,6 +53,38 @@ public class ChessService {
         }
     }
 
+    public ValidMoveResult validateAndApplyCoordinates(Board board, String from, String to, String promotion) {
+        try {
+            Square fromSquare = Square.valueOf(from.trim().toUpperCase());
+            Square toSquare = Square.valueOf(to.trim().toUpperCase());
+            Piece promotionPiece = resolvePromotionPiece(board.getSideToMove(), promotion);
+
+            Move requestedMove = promotionPiece != Piece.NONE
+                    ? new Move(fromSquare, toSquare, promotionPiece)
+                    : new Move(fromSquare, toSquare);
+
+            Move legalMove = MoveGenerator.generateLegalMoves(board).stream()
+                    .filter(candidate -> sameMove(candidate, requestedMove))
+                    .findFirst()
+                    .orElse(null);
+
+            if (legalMove == null) {
+                return new ValidMoveResult(false, null, null, "Illegal move in current position");
+            }
+
+            String san = encodeToSan(board, legalMove);
+            if (!board.doMove(legalMove, true)) {
+                return new ValidMoveResult(false, null, null, "Illegal move in current position");
+            }
+
+            return new ValidMoveResult(true, san, board.getFen(), null);
+        } catch (IllegalArgumentException e) {
+            return new ValidMoveResult(false, null, null, "Invalid board coordinates");
+        } catch (Exception e) {
+            return new ValidMoveResult(false, null, null, e.getMessage());
+        }
+    }
+
     public boolean isGameOver(Board board) {
         return board.isMated() || board.isStaleMate() || board.isRepetition()
                 || board.isInsufficientMaterial() || board.getHalfMoveCounter() >= 100;
@@ -107,6 +139,20 @@ public class ChessService {
         return a.getFrom() == b.getFrom()
                 && a.getTo() == b.getTo()
                 && a.getPromotion() == b.getPromotion();
+    }
+
+    private Piece resolvePromotionPiece(Side side, String promotion) {
+        if (promotion == null || promotion.isBlank()) {
+            return Piece.NONE;
+        }
+
+        return switch (promotion.trim().toUpperCase()) {
+            case "Q" -> side == Side.WHITE ? Piece.WHITE_QUEEN : Piece.BLACK_QUEEN;
+            case "R" -> side == Side.WHITE ? Piece.WHITE_ROOK : Piece.BLACK_ROOK;
+            case "B" -> side == Side.WHITE ? Piece.WHITE_BISHOP : Piece.BLACK_BISHOP;
+            case "N" -> side == Side.WHITE ? Piece.WHITE_KNIGHT : Piece.BLACK_KNIGHT;
+            default -> throw new IllegalArgumentException("Unsupported promotion piece");
+        };
     }
 
     private char pieceToChar(Piece piece) {

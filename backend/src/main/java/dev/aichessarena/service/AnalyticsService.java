@@ -86,6 +86,9 @@ public class AnalyticsService {
 
         Map<String, CostAccumulator> byModel = new HashMap<>();
         for (Move move : moves) {
+            if (!hasTrackedModelId(move.modelId)) {
+                continue;
+            }
             String modelId = normalizeModelId(move.modelId);
             CostAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new CostAccumulator());
             accumulator.moveCount++;
@@ -219,6 +222,9 @@ public class AnalyticsService {
 
         Map<String, HealthAccumulator> byModel = new HashMap<>();
         for (Move move : moves) {
+            if (!hasTrackedModelId(move.modelId)) {
+                continue;
+            }
             String modelId = normalizeModelId(move.modelId);
             HealthAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new HealthAccumulator());
             accumulator.movesCount++;
@@ -293,6 +299,9 @@ public class AnalyticsService {
         }
 
         for (Move move : moves) {
+            if (!hasTrackedModelId(move.modelId)) {
+                continue;
+            }
             String modelId = normalizeModelId(move.modelId);
             ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
             accumulator.movesSampled++;
@@ -379,6 +388,9 @@ public class AnalyticsService {
         }
 
         for (Move move : moves) {
+            if (!hasTrackedModelId(move.modelId)) {
+                continue;
+            }
             String modelId = normalizeModelId(move.modelId);
             ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
             accumulator.movesSampled++;
@@ -567,6 +579,10 @@ public class AnalyticsService {
             return "unknown";
         }
         return modelId.trim();
+    }
+
+    private boolean hasTrackedModelId(String modelId) {
+        return modelId != null && !modelId.isBlank();
     }
 
     private BigDecimal nonNull(BigDecimal value) {

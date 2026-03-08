@@ -39,7 +39,8 @@ public class GameResource {
     public Response startGame(@PathParam("id") UUID id) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
-        if (game.whiteModelId == null || game.blackModelId == null) {
+        if (!hasConfiguredPlayer(game.whiteParticipant, game.whitePlayerName, game.whiteModelId)
+                || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
             return Response.status(400).entity("Both players must be set").build();
         }
         gameEngineService.startGame(id);
@@ -61,6 +62,17 @@ public class GameResource {
             return Response.status(404).build();
         }
         gameEngineService.overrideMove(id, req.move());
+        return Response.ok().build();
+    }
+
+    @POST
+    @Path("/{id}/human-move")
+    public Response submitHumanMove(@PathParam("id") UUID id, HumanMoveRequest req) {
+        Game game = gameRepository.findById(id);
+        if (game == null) {
+            return Response.status(404).build();
+        }
+        gameEngineService.submitHumanMove(id, req.move(), req.from(), req.to(), req.promotion(), req.message());
         return Response.ok().build();
     }
 
@@ -95,5 +107,19 @@ public class GameResource {
             case BLACK_WINS, WHITE_FORFEIT -> "0-1";
             case DRAW -> "1/2-1/2";
         };
+    }
+
+    private boolean hasConfiguredPlayer(
+            dev.aichessarena.entity.TournamentParticipant participant,
+            String playerName,
+            String modelId
+    ) {
+        if (participant == null) {
+            return playerName != null && !playerName.isBlank() && modelId != null && !modelId.isBlank();
+        }
+        if (participant.controlType == dev.aichessarena.entity.TournamentParticipant.ControlType.HUMAN) {
+            return participant.playerName != null && !participant.playerName.isBlank();
+        }
+        return participant.modelId != null && !participant.modelId.isBlank();
     }
 }
