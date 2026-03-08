@@ -3,7 +3,6 @@ package dev.aichessarena.service;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.MoveRepository;
 import com.github.bhlangonijr.chesslib.Board;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
@@ -28,19 +27,7 @@ public class GameEngineService {
     ChessService chessService;
 
     @Inject
-    OpenRouterService openRouterService;
-
-    @Inject
-    PromptService promptService;
-
-    @Inject
-    ResponseParserService responseParserService;
-
-    @Inject
     GameRepository gameRepository;
-
-    @Inject
-    MoveRepository moveRepository;
 
     @Inject
     GameLifecycleService gameLifecycleService;
@@ -50,6 +37,9 @@ public class GameEngineService {
 
     @Inject
     GameTurnService gameTurnService;
+
+    @Inject
+    GameConversationService gameConversationService;
 
     private final Map<UUID, Boolean> runningGames = new ConcurrentHashMap<>();
 
@@ -87,30 +77,17 @@ public class GameEngineService {
     private void runGameLoop(UUID gameId) {
         gameLifecycleService.markGameStarted(gameId);
 
-        Board board = loadBoardState(gameId);
+        GameConversationService.ConversationState conversation = gameConversationService.initializeConversation(gameId);
+        Board board = conversation.board();
         String lastMoveSan = null;
         String lastMessage = null;
-
-        // Build conversation histories for each side
-        List<OpenRouterService.ChatMsg> whiteHistory = new ArrayList<>();
-        List<OpenRouterService.ChatMsg> blackHistory = new ArrayList<>();
-
-        // Initialize system prompts
+        List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
+        List<OpenRouterService.ChatMsg> blackHistory = conversation.blackHistory();
+        String whitePromptVersion = conversation.whitePrompt().version();
+        String blackPromptVersion = conversation.blackPrompt().version();
+        String whitePromptHash = conversation.whitePrompt().hash();
+        String blackPromptHash = conversation.blackPrompt().hash();
         Game game = gameRepository.findById(gameId);
-        PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE");
-        PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK");
-        String whiteSystemPrompt = whitePrompt.prompt();
-        String blackSystemPrompt = blackPrompt.prompt();
-        String whitePromptVersion = whitePrompt.version();
-        String blackPromptVersion = blackPrompt.version();
-        String whitePromptHash = promptService.computePromptHash(whiteSystemPrompt);
-        String blackPromptHash = promptService.computePromptHash(blackSystemPrompt);
-
-        whiteHistory.add(new OpenRouterService.ChatMsg("system", whiteSystemPrompt));
-        blackHistory.add(new OpenRouterService.ChatMsg("system", blackSystemPrompt));
-
-        // Rebuild history from existing moves if resuming
-        rebuildHistory(gameId, board, whiteHistory, blackHistory);
 
         while (Boolean.TRUE.equals(runningGames.get(gameId))) {
             if (chessService.isGameOver(board)) {
@@ -131,13 +108,6 @@ public class GameEngineService {
             List<OpenRouterService.ChatMsg> history = "WHITE".equals(sideToMove) ? whiteHistory : blackHistory;
 
             boolean isFirstMove = moveNumber == 1 && "WHITE".equals(sideToMove);
-
-            String turnPrompt = promptService.buildTurnPrompt(
-                    pgn, fen, chessService.toAsciiBoard(board),
-                    sideToMove, moveNumber, legalMoves,
-                    opponentName, lastMoveSan, lastMessage, isFirstMove);
-
-            history.add(new OpenRouterService.ChatMsg("user", turnPrompt));
 
             int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
             int moveTimeoutSeconds = game.tournament != null ? game.tournament.moveTimeoutSeconds : 60;
@@ -181,25 +151,6 @@ public class GameEngineService {
         gameLifecycleService.markGamePaused(gameId);
     }
 
-    private Board loadBoardState(UUID gameId) {
-        Game game = gameRepository.findById(gameId);
-        return chessService.boardFromFen(game.currentFen);
-    }
-
-    private void rebuildHistory(UUID gameId, Board board,
-                                 List<OpenRouterService.ChatMsg> whiteHistory,
-                                 List<OpenRouterService.ChatMsg> blackHistory) {
-        // For resume: reconstruct the board from stored moves
-        List<dev.aichessarena.entity.Move> moves = moveRepository.findByGameId(gameId);
-        if (moves.isEmpty()) return;
-
-        // Reset board and replay
-        board.loadFromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        for (dev.aichessarena.entity.Move move : moves) {
-            chessService.validateAndApply(board, move.san);
-        }
-    }
-
     public void updateMoveEvaluation(UUID moveId, StockfishService.EvalResult result) {
         gameMoveService.updateMoveEvaluation(moveId, result);
     }
@@ -218,45 +169,6 @@ public class GameEngineService {
             throw new WebApplicationException("Pause the game before overriding moves", Response.Status.CONFLICT);
         }
         gameMoveService.applyOverrideMove(gameId, san);
-    }
-
-    private PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color) {
-        if (game.tournament == null) {
-            return promptService.buildSystemPrompt(
-                    null,
-                    null,
-                    color,
-                    "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName,
-                    "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
-            );
-        }
-
-        var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
-        String opponentName = "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName;
-        String opponentModel = "WHITE".equals(color) ? game.blackModelId : game.whiteModelId;
-
-        String legacyTemplate = null;
-        if (participant != null && participant.customSystemPrompt != null && !participant.customSystemPrompt.isBlank()) {
-            legacyTemplate = participant.customSystemPrompt;
-        } else if (game.tournament.defaultSystemPrompt != null && !game.tournament.defaultSystemPrompt.isBlank()) {
-            legacyTemplate = game.tournament.defaultSystemPrompt;
-        }
-
-        String customInstructions = null;
-        if (participant != null && participant.customInstructions != null && !participant.customInstructions.isBlank()) {
-            customInstructions = participant.customInstructions;
-        } else if (game.tournament.sharedCustomInstructions != null
-                && !game.tournament.sharedCustomInstructions.isBlank()) {
-            customInstructions = game.tournament.sharedCustomInstructions;
-        }
-
-        return promptService.buildSystemPrompt(
-                legacyTemplate,
-                customInstructions,
-                color,
-                opponentName,
-                opponentModel
-        );
     }
 
 }
