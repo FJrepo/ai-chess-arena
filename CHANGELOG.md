@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-03-08
+
+### Changed
+- Single-turn retry execution, timeout handling, and invalid-move retry flow now live in a dedicated backend turn service instead of being embedded directly in `GameEngineService`.
+- Backend refactor coverage now includes focused tests for turn execution outcomes.
+
 ## [0.9.6] - 2026-03-07
 
 ### Changed
