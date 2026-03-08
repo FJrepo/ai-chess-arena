@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-03-08
+
+### Changed
+- Release image publishing now explicitly sets up a Buildx builder before backend and frontend publish jobs, so GitHub Actions can use the `gha` cache backend correctly.
+
 ## [0.9.9] - 2026-03-08
 
 ### Changed
