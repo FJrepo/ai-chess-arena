@@ -82,6 +82,8 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile
+          cache-from: type=gha,scope=release-backend
+          cache-to: type=gha,mode=max,scope=release-backend
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -115,6 +117,8 @@ jobs:
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
+          cache-from: type=gha,scope=release-frontend
+          cache-to: type=gha,mode=max,scope=release-frontend
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

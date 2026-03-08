@@ -4,10 +4,20 @@ FROM maven:3.9-eclipse-temurin-21@sha256:c3c9d3ac4ce8431a3995c0318b8d390f448e693
 WORKDIR /app
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn dependency:go-offline -B -Dmaven.wagon.http.retryHandler.count=3
+    sh -c 'for attempt in 1 2 3; do \
+      mvn dependency:go-offline -B -Dmaven.wagon.http.retryHandler.count=5 && exit 0; \
+      echo "go-offline failed on attempt ${attempt}, retrying..." >&2; \
+      sleep $((attempt * 5)); \
+    done; \
+    exit 1'
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn package -DskipTests -B -Dmaven.wagon.http.retryHandler.count=3
+    sh -c 'for attempt in 1 2 3; do \
+      mvn package -DskipTests -B -Dmaven.wagon.http.retryHandler.count=5 && exit 0; \
+      echo "package failed on attempt ${attempt}, retrying..." >&2; \
+      sleep $((attempt * 5)); \
+    done; \
+    exit 1'
 
 FROM eclipse-temurin:21-jre@sha256:34a58218d838035428163eb35abb629944c5906d1bedcfef8bc8864cce11dfe5
 WORKDIR /app
