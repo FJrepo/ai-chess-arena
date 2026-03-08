@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-03-08
+
+### Changed
+- Prompt resolution and conversation initialization now live in a dedicated backend conversation service instead of being embedded directly in `GameEngineService`.
+- Backend refactor coverage now includes focused tests for conversation prompt selection and board replay initialization.
+
 ## [0.9.7] - 2026-03-08
 
 ### Changed
