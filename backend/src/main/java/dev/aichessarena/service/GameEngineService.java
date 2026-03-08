@@ -1,11 +1,9 @@
 package dev.aichessarena.service;
 
-import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
-import dev.aichessarena.websocket.GameWebSocket;
 import com.github.bhlangonijr.chesslib.Board;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
@@ -15,9 +13,6 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
-import java.math.BigDecimal;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -51,10 +46,10 @@ public class GameEngineService {
     GameLifecycleService gameLifecycleService;
 
     @Inject
-    GameWebSocket gameWebSocket;
+    GameMoveService gameMoveService;
 
     @Inject
-    GameMoveService gameMoveService;
+    GameTurnService gameTurnService;
 
     private final Map<UUID, Boolean> runningGames = new ConcurrentHashMap<>();
 
@@ -127,10 +122,9 @@ public class GameEngineService {
             int moveNumber = chessService.getMoveNumber(board);
             List<String> legalMoves = chessService.getLegalMovesAsSan(board);
             String fen = board.getFen();
-            String pgn = game.pgn;
-
             // Get current player info
             game = gameRepository.findById(gameId);
+            String pgn = game.pgn;
             String modelId = "WHITE".equals(sideToMove) ? game.whiteModelId : game.blackModelId;
             String playerName = "WHITE".equals(sideToMove) ? game.whitePlayerName : game.blackPlayerName;
             String opponentName = "WHITE".equals(sideToMove) ? game.blackPlayerName : game.whitePlayerName;
@@ -145,109 +139,42 @@ public class GameEngineService {
 
             history.add(new OpenRouterService.ChatMsg("user", turnPrompt));
 
-            // Attempt loop with retries
             int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
             int moveTimeoutSeconds = game.tournament != null ? game.tournament.moveTimeoutSeconds : 60;
-            Instant turnStartedAt = Instant.now();
-            Instant turnDeadlineAt = turnStartedAt.plusSeconds(moveTimeoutSeconds);
-            long turnDeadlineAtMs = turnDeadlineAt.toEpochMilli();
-            boolean moveMade = false;
+            GameTurnService.TurnResult turnResult = gameTurnService.playTurn(new GameTurnService.TurnRequest(
+                    gameId,
+                    pgn,
+                    fen,
+                    board,
+                    sideToMove,
+                    moveNumber,
+                    legalMoves,
+                    modelId,
+                    playerName,
+                    opponentName,
+                    history,
+                    lastMoveSan,
+                    lastMessage,
+                    isFirstMove,
+                    maxRetries,
+                    moveTimeoutSeconds,
+                    "WHITE".equals(sideToMove) ? whitePromptVersion : blackPromptVersion,
+                    "WHITE".equals(sideToMove) ? whitePromptHash : blackPromptHash,
+                    game.totalCostUsd,
+                    () -> Boolean.TRUE.equals(runningGames.get(gameId))
+            ));
 
-            broadcastTurnTiming(gameId, game.totalCostUsd, sideToMove, turnStartedAt, turnDeadlineAt);
+            if (turnResult.isTerminal()) {
+                return;
+            }
 
-            for (int attempt = 1; attempt <= maxRetries; attempt++) {
-                if (!Boolean.TRUE.equals(runningGames.get(gameId))) return;
-                long remainingMs = turnDeadlineAtMs - System.currentTimeMillis();
-                if (remainingMs <= 0) {
-                    forfeitGameOnTimeout(gameId, sideToMove, moveTimeoutSeconds);
-                    return;
-                }
-
-                LOG.infof("Game %s: %s move %d, attempt %d", gameId, sideToMove, moveNumber, attempt);
-
-                OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
-                        modelId, history, Duration.ofMillis(Math.max(remainingMs, 100L))
-                );
-
-                if (llmResponse.timedOut()) {
-                    LOG.warnf("Game %s: %s timed out while generating move", gameId, modelId);
-                    gameLifecycleService.forfeitTimeout(gameId, sideToMove, moveTimeoutSeconds);
-                    return;
-                }
-
-                if (llmResponse.content() == null) {
-                    LOG.errorf("Game %s: null response from %s", gameId, modelId);
-                    broadcastRetry(gameId, sideToMove, attempt, "Model returned an empty response");
-                    if (attempt < maxRetries) {
-                        String retryPrompt = promptService.buildRetryPrompt(
-                                promptService.getJsonParseError(), fen, legalMoves, attempt + 1, maxRetries);
-                        history.add(new OpenRouterService.ChatMsg("user", retryPrompt));
-                    }
-                    continue;
-                }
-
-                ResponseParserService.ParseResult parseResult = responseParserService.parse(llmResponse.content());
-
-                if (parseResult.isFailure()) {
-                    LOG.warnf("Game %s: parse failure from %s: %s", gameId, modelId, parseResult.message());
-                    broadcastRetry(gameId, sideToMove, attempt, "Failed to parse response as JSON");
-                    if (attempt < maxRetries) {
-                        history.add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-                        String retryPrompt = promptService.buildRetryPrompt(
-                                promptService.getJsonParseError(), fen, legalMoves, attempt + 1, maxRetries);
-                        history.add(new OpenRouterService.ChatMsg("user", retryPrompt));
-                    }
-                    continue;
-                }
-
-                // Validate move
-                ChessService.ValidMoveResult moveResult = chessService.validateAndApply(board, parseResult.move());
-
-                if (!moveResult.valid()) {
-                    LOG.warnf("Game %s: illegal move '%s' from %s: %s",
-                            gameId, parseResult.move(), modelId, moveResult.error());
-                    broadcastRetry(gameId, sideToMove, attempt,
-                            "Illegal move attempted: " + parseResult.move());
-                    if (attempt < maxRetries) {
-                        history.add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-                        String retryPrompt = promptService.buildRetryPrompt(
-                                promptService.getIllegalMoveError(parseResult.move()),
-                                fen, legalMoves, attempt + 1, maxRetries);
-                        history.add(new OpenRouterService.ChatMsg("user", retryPrompt));
-                    }
-                    continue;
-                }
-
-                // Move is valid! Store it
-                history.add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-
-                gameMoveService.recordModelMove(
-                        gameId,
-                        moveNumber,
-                        sideToMove,
-                        parseResult.move(),
-                        moveResult.fen(),
-                        modelId,
-                        playerName,
-                        parseResult.message(),
-                        llmResponse,
-                        attempt - 1,
-                        "WHITE".equals(sideToMove) ? whitePromptVersion : blackPromptVersion,
-                        "WHITE".equals(sideToMove) ? whitePromptHash : blackPromptHash
-                );
-
-                game = gameRepository.findById(gameId);
-                lastMoveSan = parseResult.move();
-                lastMessage = parseResult.message();
-                moveMade = true;
+            if (!turnResult.moveRecorded()) {
                 break;
             }
 
-            if (!moveMade) {
-                // Forfeit due to invalid moves
-                forfeitGame(gameId, sideToMove, maxRetries);
-                return;
-            }
+            game = gameRepository.findById(gameId);
+            lastMoveSan = turnResult.moveSan();
+            lastMessage = turnResult.message();
         }
 
         // Game was paused
@@ -280,14 +207,6 @@ public class GameEngineService {
     void endGame(UUID gameId, Board board) {
         ChessService.GameEndInfo endInfo = chessService.getGameEndInfo(board);
         gameLifecycleService.completeGame(gameId, endInfo);
-    }
-
-    void forfeitGame(UUID gameId, String forfeitColor, int maxRetries) {
-        gameLifecycleService.forfeitInvalidMoves(gameId, forfeitColor, maxRetries);
-    }
-
-    void forfeitGameOnTimeout(UUID gameId, String forfeitColor, int moveTimeoutSeconds) {
-        gameLifecycleService.forfeitTimeout(gameId, forfeitColor, moveTimeoutSeconds);
     }
 
     public void overrideMove(UUID gameId, String san) {
@@ -340,23 +259,4 @@ public class GameEngineService {
         );
     }
 
-    private void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason) {
-        gameWebSocket.broadcastRetry(gameId, color, attemptNumber, reason);
-    }
-
-    private void broadcastTurnTiming(UUID gameId, BigDecimal totalCostUsd, String activeColor,
-                                     Instant turnStartedAt, Instant turnDeadlineAt) {
-        int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));
-        gameWebSocket.broadcastGameStatus(
-                gameId,
-                "IN_PROGRESS",
-                null,
-                null,
-                totalMoves,
-                totalCostUsd,
-                activeColor,
-                turnStartedAt,
-                turnDeadlineAt
-        );
-    }
 }
