@@ -102,6 +102,40 @@ public class GameMoveService {
     }
 
     @Transactional
+    public void recordHumanMove(
+            UUID gameId,
+            int moveNumber,
+            String color,
+            String san,
+            String fen,
+            String playerName,
+            String message
+    ) {
+        Game game = gameRepository.findById(gameId);
+
+        dev.aichessarena.entity.Move move = new dev.aichessarena.entity.Move();
+        move.game = game;
+        move.moveNumber = moveNumber;
+        move.color = color;
+        move.san = san;
+        move.fen = fen;
+        move.promptVersion = "human";
+        move.promptHash = null;
+        move.retryCount = 0;
+        moveRepository.persistAndFlush(move);
+
+        updateGameState(game, fen, san, moveNumber, color);
+        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
+
+        if (message != null && !message.isBlank()) {
+            persistChatMessage(game, moveNumber, null, color, message);
+            gameWebSocket.broadcastChat(gameId, moveNumber, color, null, playerName, message);
+        }
+
+        gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, game.pgn, null, 0, 0);
+    }
+
+    @Transactional
     public void updateMoveEvaluation(UUID moveId, StockfishService.EvalResult result) {
         LOG.debugf("Updating move %s with evaluation: cp=%d, mate=%d", moveId, result.cp(), result.mate());
         dev.aichessarena.entity.Move move = moveRepository.findById(moveId);

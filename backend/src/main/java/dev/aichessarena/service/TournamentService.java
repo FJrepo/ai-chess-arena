@@ -67,21 +67,39 @@ public class TournamentService {
             throw new IllegalArgumentException("Participant playerName is required");
         }
 
+        TournamentParticipant.ControlType controlType =
+                participant.controlType != null ? participant.controlType : TournamentParticipant.ControlType.AI;
+
         String modelId = participant.modelId == null ? "" : participant.modelId.trim();
-        if (modelId.isEmpty()) {
-            throw new IllegalArgumentException("Participant modelId is required");
+        if (controlType == TournamentParticipant.ControlType.AI && modelId.isEmpty()) {
+            throw new IllegalArgumentException("Participant modelId is required for AI participants");
+        }
+        if (controlType == TournamentParticipant.ControlType.HUMAN && !modelId.isEmpty()) {
+            throw new IllegalArgumentException("Human participants must not specify a modelId");
+        }
+
+        if (controlType == TournamentParticipant.ControlType.HUMAN) {
+            long humanCount = participantRepository.findByTournamentId(tournamentId).stream()
+                    .filter(existing -> existing.controlType == TournamentParticipant.ControlType.HUMAN)
+                    .count();
+            if (humanCount >= 1) {
+                throw new IllegalArgumentException("Only one human participant is supported per tournament");
+            }
         }
 
         if (participant.seed < 0) {
             throw new IllegalArgumentException("Participant seed must be >= 0");
         }
 
-        if (validateParticipantModels && !openRouterService.isModelAllowed(modelId)) {
+        if (controlType == TournamentParticipant.ControlType.AI
+                && validateParticipantModels
+                && !openRouterService.isModelAllowed(modelId)) {
             throw new IllegalArgumentException("Model is not allowed by backend policy: " + modelId);
         }
 
         participant.playerName = playerName;
-        participant.modelId = modelId;
+        participant.controlType = controlType;
+        participant.modelId = controlType == TournamentParticipant.ControlType.AI ? modelId : null;
         participant.customInstructions = normalizeInstructions(participant.customInstructions);
         participant.tournament = tournament;
         participantRepository.persist(participant);

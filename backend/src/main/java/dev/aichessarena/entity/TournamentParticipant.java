@@ -8,6 +8,11 @@ import java.util.UUID;
 @Table(name = "tournament_participants")
 public class TournamentParticipant extends PanacheEntityBase {
 
+    public enum ControlType {
+        AI,
+        HUMAN
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     public UUID id;
@@ -19,8 +24,12 @@ public class TournamentParticipant extends PanacheEntityBase {
     @Column(name = "player_name", nullable = false)
     public String playerName;
 
-    @Column(name = "model_id", nullable = false)
+    @Column(name = "model_id")
     public String modelId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "control_type", nullable = false)
+    public ControlType controlType = ControlType.AI;
 
     @Column(name = "custom_system_prompt", columnDefinition = "TEXT")
     public String customSystemPrompt;

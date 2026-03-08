@@ -10,7 +10,7 @@ This project supports two Docker-based run paths:
   - released deployment
   - pulls prebuilt frontend/backend images from GHCR
 
-For other users, `docker-compose.prod.yml` is the recommended path.
+For normal releases, `docker-compose.prod.yml` is the supported deployment path.
 
 ## Prerequisites
 - Docker Engine with Docker Compose support
@@ -35,7 +35,7 @@ cp .env.example .env
 - `IMAGE_NAMESPACE`
   - your GitHub user or org that owns the published GHCR images
 - `IMAGE_TAG`
-  - recommended: a pinned version such as `v0.2.0`
+  - recommended: a pinned version such as `v1.0.0`
 - `OPENROUTER_API_KEY`
 - `DB_PASSWORD`
 
@@ -126,8 +126,8 @@ Recommended release sequence:
 4. Create and push a version tag:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 5. Watch the `Release` GitHub Actions workflow until:
@@ -144,15 +144,16 @@ docker compose -f docker-compose.prod.yml up -d
 ```
 
 Recommended tagging policy:
-- use pinned tags such as `v0.2.0` for real deployments
+- use pinned tags such as `v1.0.0` for real deployments
 - keep `latest` as a convenience tag only
 
 ## Release Policy
 - Release tags use `vX.Y.Z`.
 - `main` should stay in a releasable state.
-- While the project is pre-1.0:
-  - new features generally mean a minor bump
-  - fixes, docs, hardening, and release-pipeline changes generally mean a patch bump
+- From `v1.0.0` onward:
+  - breaking changes require a major bump
+  - backward-compatible features require a minor bump
+  - fixes, docs, hardening, and release-pipeline changes generally require a patch bump
 - A release is only considered complete when the following are all present and verified:
   - the git tag
   - the GitHub Release page

@@ -7,6 +7,7 @@ describe('TournamentSetup', () => {
   it('adds participant-specific custom instructions when provided', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
     component.newPlayerName = 'Alpha';
+    component.newControlType = 'AI';
     component.newModelId = 'model-alpha';
     component.newCustomInstructions = 'Play aggressively.';
 
@@ -22,8 +23,20 @@ describe('TournamentSetup', () => {
     component.name = 'Prompt Arena';
     component.sharedCustomInstructions = 'Prefer tactical complications.';
     component.participants.set([
-      { playerName: 'Alpha', modelId: 'model-alpha', seed: 0, customInstructions: null },
-      { playerName: 'Beta', modelId: 'model-beta', seed: 1, customInstructions: 'Avoid trades.' },
+      {
+        playerName: 'Alpha',
+        controlType: 'AI',
+        modelId: 'model-alpha',
+        seed: 0,
+        customInstructions: null,
+      },
+      {
+        playerName: 'Beta',
+        controlType: 'AI',
+        modelId: 'model-beta',
+        seed: 1,
+        customInstructions: 'Avoid trades.',
+      },
     ]);
 
     component.create();
@@ -75,6 +88,17 @@ describe('TournamentSetup', () => {
     expect(summary?.pricingCoverage).toBe(4);
     expect(summary?.likelyCostUsd).not.toBeNull();
   });
+
+  it('allows a single human participant without a model id', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.newPlayerName = 'Human Challenger';
+    component.newControlType = 'HUMAN';
+
+    component.addParticipant();
+
+    expect(component.participants()[0].controlType).toBe('HUMAN');
+    expect(component.participants()[0].modelId).toBeNull();
+  });
 });
 
 type FakeTournamentSetupApi = ApiService & {
@@ -122,6 +146,7 @@ function pricedParticipant(
 ) {
   return {
     playerName,
+    controlType: 'AI' as const,
     modelId,
     seed: 0,
     customInstructions: null,

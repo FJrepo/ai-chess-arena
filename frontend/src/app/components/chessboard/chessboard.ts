@@ -1,4 +1,4 @@
-import { Component, Input, signal, OnChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output, signal } from '@angular/core';
 
 const PIECE_UNICODE: Record<string, string> = {
   K: '\u2654',
@@ -18,9 +18,17 @@ const PIECE_UNICODE: Record<string, string> = {
 interface Square {
   file: number;
   rank: number;
+  coord: string;
+  pieceCode: string | null;
   piece: string;
   pieceColor: 'white' | 'black' | null;
   isLight: boolean;
+}
+
+export interface BoardMoveAttempt {
+  from: string;
+  to: string;
+  promotionRequired: boolean;
 }
 
 @Component({
@@ -32,10 +40,15 @@ interface Square {
 export class ChessboardComponent implements OnChanges {
   @Input() fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   @Input() flipped = false;
+  @Input() interactiveColor: 'WHITE' | 'BLACK' | null = null;
+  @Output() moveAttempt = new EventEmitter<BoardMoveAttempt>();
 
   squares = signal<Square[][]>([]);
   fileLabels = signal<string[]>([]);
   rankLabels = signal<string[]>([]);
+  selectedSquare = signal<string | null>(null);
+  dragSource = signal<string | null>(null);
+  dropTarget = signal<string | null>(null);
 
   ngOnChanges() {
     this.updateBoard();
@@ -55,6 +68,8 @@ export class ChessboardComponent implements OnChanges {
             row.push({
               file,
               rank: 7 - rank,
+              coord: this.toCoord(file, 7 - rank),
+              pieceCode: null,
               piece: '',
               pieceColor: null,
               isLight: (file + (7 - rank)) % 2 !== 0,
@@ -66,6 +81,8 @@ export class ChessboardComponent implements OnChanges {
           row.push({
             file,
             rank: 7 - rank,
+            coord: this.toCoord(file, 7 - rank),
+            pieceCode: ch,
             piece: PIECE_UNICODE[ch] || '',
             pieceColor,
             isLight: (file + (7 - rank)) % 2 !== 0,
@@ -87,5 +104,122 @@ export class ChessboardComponent implements OnChanges {
     }
 
     this.squares.set(board);
+  }
+
+  canDrag(square: Square): boolean {
+    return this.isControllablePiece(square);
+  }
+
+  selectSquare(square: Square): void {
+    if (!this.isControllablePiece(square)) {
+      if (this.selectedSquare() && square.coord !== this.selectedSquare()) {
+        this.tryMove(this.selectedSquare()!, square);
+      }
+      return;
+    }
+
+    this.selectedSquare.set(this.selectedSquare() === square.coord ? null : square.coord);
+  }
+
+  onDragStart(event: DragEvent, square: Square): void {
+    if (!this.isControllablePiece(square)) {
+      event.preventDefault();
+      return;
+    }
+    this.dragSource.set(square.coord);
+    this.selectedSquare.set(square.coord);
+    event.dataTransfer?.setData('text/plain', square.coord);
+    event.dataTransfer?.setDragImage((event.target as HTMLElement) ?? new Image(), 20, 20);
+  }
+
+  onDragEnd(): void {
+    this.dragSource.set(null);
+    this.dropTarget.set(null);
+  }
+
+  onDragOver(event: DragEvent, square: Square): void {
+    if (!this.dragSource()) {
+      return;
+    }
+    event.preventDefault();
+    this.dropTarget.set(square.coord);
+  }
+
+  onDragLeave(square: Square): void {
+    if (this.dropTarget() === square.coord) {
+      this.dropTarget.set(null);
+    }
+  }
+
+  onDrop(event: DragEvent, square: Square): void {
+    event.preventDefault();
+    const from = event.dataTransfer?.getData('text/plain') || this.dragSource();
+    this.dragSource.set(null);
+    this.dropTarget.set(null);
+    if (!from) {
+      return;
+    }
+    this.tryMove(from, square);
+  }
+
+  isSelected(square: Square): boolean {
+    return this.selectedSquare() === square.coord;
+  }
+
+  isDropTarget(square: Square): boolean {
+    return this.dropTarget() === square.coord;
+  }
+
+  private tryMove(from: string, targetSquare: Square): void {
+    if (from === targetSquare.coord) {
+      this.selectedSquare.set(null);
+      return;
+    }
+
+    const sourceSquare = this.findSquare(from);
+    if (!sourceSquare) {
+      this.selectedSquare.set(null);
+      return;
+    }
+
+    this.selectedSquare.set(null);
+    this.moveAttempt.emit({
+      from,
+      to: targetSquare.coord,
+      promotionRequired: this.requiresPromotion(sourceSquare, targetSquare.coord),
+    });
+  }
+
+  private requiresPromotion(square: Square, destination: string): boolean {
+    const pieceCode = square.pieceCode;
+    if (pieceCode !== 'P' && pieceCode !== 'p') {
+      return false;
+    }
+    const targetRank = Number.parseInt(destination[1], 10);
+    return targetRank === 1 || targetRank === 8;
+  }
+
+  private isControllablePiece(square: Square): boolean {
+    if (!square.pieceCode || !this.interactiveColor) {
+      return false;
+    }
+    return (
+      (this.interactiveColor === 'WHITE' && square.pieceColor === 'white') ||
+      (this.interactiveColor === 'BLACK' && square.pieceColor === 'black')
+    );
+  }
+
+  private findSquare(coord: string): Square | null {
+    for (const row of this.squares()) {
+      const found = row.find((square) => square.coord === coord);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private toCoord(file: number, rank: number): string {
+    return `${String.fromCharCode(97 + file)}${rank + 1}`;
   }
 }

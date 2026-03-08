@@ -95,17 +95,13 @@ export class GameTurnStateService {
     turnDeadlineAt: string | undefined,
   ): void {
     if (status === 'IN_PROGRESS') {
-      if (activeColor === 'WHITE' || activeColor === 'BLACK') {
-        this.serverActiveColor.set(activeColor);
-      }
+      this.serverActiveColor.set(
+        activeColor === 'WHITE' || activeColor === 'BLACK' ? activeColor : null,
+      );
       const startedAtMs = this.parseWsDate(turnStartedAt);
-      if (startedAtMs != null) {
-        this.serverTurnStartedAtMs.set(startedAtMs);
-      }
+      this.serverTurnStartedAtMs.set(startedAtMs);
       const deadlineAtMs = this.parseWsDate(turnDeadlineAt);
-      if (deadlineAtMs != null) {
-        this.serverTurnDeadlineAtMs.set(deadlineAtMs);
-      }
+      this.serverTurnDeadlineAtMs.set(deadlineAtMs);
       return;
     }
 

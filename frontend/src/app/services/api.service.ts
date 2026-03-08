@@ -89,6 +89,28 @@ export class ApiService {
     return this.http.post<void>(`${this.baseUrl}/games/${gameId}/override-move`, { move });
   }
 
+  submitHumanMove(gameId: string, move: string, message: string | null): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/games/${gameId}/human-move`, {
+      move,
+      message,
+    });
+  }
+
+  submitHumanMoveCoordinates(
+    gameId: string,
+    from: string,
+    to: string,
+    promotion: string | null,
+    message: string | null,
+  ): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/games/${gameId}/human-move`, {
+      from,
+      to,
+      promotion,
+      message,
+    });
+  }
+
   getGamePgn(id: string): Observable<string> {
     return this.http.get(`${this.baseUrl}/games/${id}/pgn`, { responseType: 'text' });
   }

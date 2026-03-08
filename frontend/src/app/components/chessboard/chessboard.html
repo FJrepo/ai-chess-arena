@@ -3,12 +3,26 @@
     @for (row of squares(); track $index; let ri = $index) {
       <div class="rank-label">{{ rankLabels()[ri] }}</div>
       @for (sq of row; track $index) {
-        <div class="square" [class.light]="sq.isLight" [class.dark]="!sq.isLight">
+        <div
+          class="square"
+          [class.light]="sq.isLight"
+          [class.dark]="!sq.isLight"
+          [class.interactive]="canDrag(sq)"
+          [class.selected]="isSelected(sq)"
+          [class.drop-target]="isDropTarget(sq)"
+          (click)="selectSquare(sq)"
+          (dragover)="onDragOver($event, sq)"
+          (dragleave)="onDragLeave(sq)"
+          (drop)="onDrop($event, sq)"
+        >
           @if (sq.piece) {
             <span
               class="piece"
               [class.white-piece]="sq.pieceColor === 'white'"
               [class.black-piece]="sq.pieceColor === 'black'"
+              [attr.draggable]="canDrag(sq)"
+              (dragstart)="onDragStart($event, sq)"
+              (dragend)="onDragEnd()"
             >
               {{ sq.piece }}
             </span>

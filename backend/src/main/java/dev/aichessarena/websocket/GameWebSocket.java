@@ -82,7 +82,11 @@ public class GameWebSocket {
         msg.put("san", san);
         msg.put("fen", fen);
         msg.put("pgn", pgn);
-        msg.put("modelId", modelId);
+        if (modelId != null) {
+            msg.put("modelId", modelId);
+        } else {
+            msg.putNull("modelId");
+        }
         msg.put("responseTimeMs", responseTimeMs);
         msg.put("retryCount", retryCount);
         broadcast(gameId, msg.toString());
@@ -95,7 +99,11 @@ public class GameWebSocket {
         msg.put("gameId", gameId.toString());
         msg.put("moveNumber", moveNumber);
         msg.put("senderColor", senderColor);
-        msg.put("senderModel", senderModel);
+        if (senderModel != null) {
+            msg.put("senderModel", senderModel);
+        } else {
+            msg.putNull("senderModel");
+        }
         msg.put("senderName", senderName);
         msg.put("message", message);
         broadcast(gameId, msg.toString());

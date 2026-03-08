@@ -19,11 +19,17 @@
       <mat-icon>{{ evaluationStatusIcon() }}</mat-icon>
       <span>{{ evaluationStatusLabel() }}</span>
     </div>
-    @if (moveTimerSeconds() !== null) {
+    @if (moveTimerSeconds() !== null && !isAwaitingHumanMove()) {
       <div class="move-timer" [class.warning]="moveTimerWarning()">
         <mat-icon>timer</mat-icon>
         <span class="timer-label">{{ activeColor() }} to move</span>
         <span class="timer-value">{{ moveTimerDisplay() }}</span>
+      </div>
+    } @else if (isAwaitingHumanMove()) {
+      <div class="move-timer waiting-human">
+        <mat-icon>person</mat-icon>
+        <span class="timer-label">{{ activeHumanPlayerLabel() }} to move</span>
+        <span class="timer-value">Your turn</span>
       </div>
     }
   </div>
@@ -102,8 +108,44 @@
               <span class="eval-unavailable-label">{{ evaluationStatusMessage() }}</span>
             </div>
           }
-          <app-chessboard [fen]="currentFen()" [flipped]="flipped()" />
+          <app-chessboard
+            [fen]="currentFen()"
+            [flipped]="flipped()"
+            [interactiveColor]="boardInteractiveColor()"
+            (moveAttempt)="onBoardMoveAttempt($event)"
+          />
         </div>
+
+        @if (pendingPromotion()) {
+          <div class="promotion-picker">
+            <span class="promotion-label">Promote to:</span>
+            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('Q')">
+              <span class="promotion-piece">{{
+                activeColor() === 'WHITE' ? '\u2655' : '\u265B'
+              }}</span>
+              Queen
+            </button>
+            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('R')">
+              <span class="promotion-piece">{{
+                activeColor() === 'WHITE' ? '\u2656' : '\u265C'
+              }}</span>
+              Rook
+            </button>
+            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('B')">
+              <span class="promotion-piece">{{
+                activeColor() === 'WHITE' ? '\u2657' : '\u265D'
+              }}</span>
+              Bishop
+            </button>
+            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('N')">
+              <span class="promotion-piece">{{
+                activeColor() === 'WHITE' ? '\u2658' : '\u265E'
+              }}</span>
+              Knight
+            </button>
+            <button mat-button class="promotion-cancel" (click)="cancelPromotion()">Cancel</button>
+          </div>
+        }
 
         <div class="board-controls">
           <button mat-icon-button (click)="goFirst()" matTooltip="First move">
@@ -159,6 +201,45 @@
       />
     </div>
   </div>
+
+  @if (isAwaitingHumanMove()) {
+    <mat-card class="human-move-card">
+      <mat-card-header>
+        <mat-card-title>Human Move</mat-card-title>
+        <mat-card-subtitle>{{ activeHumanPlayerLabel() }} is on move</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="human-move-form">
+          <mat-form-field appearance="outline">
+            <mat-label>Move (SAN)</mat-label>
+            <input
+              matInput
+              [(ngModel)]="humanMove"
+              placeholder="e.g. Nf3, O-O, Qxe7+"
+              [disabled]="humanMoveSubmitting()"
+            />
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="human-message-field">
+            <mat-label>Optional Message</mat-label>
+            <input
+              matInput
+              [(ngModel)]="humanMessage"
+              placeholder="Optional message to your opponent"
+              [disabled]="humanMoveSubmitting()"
+            />
+          </mat-form-field>
+          <button
+            mat-raised-button
+            color="primary"
+            (click)="submitHumanMove()"
+            [disabled]="humanMoveSubmitting() || !humanMove.trim()"
+          >
+            Submit Human Move
+          </button>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  }
 
   <mat-expansion-panel class="admin-panel">
     <mat-expansion-panel-header>

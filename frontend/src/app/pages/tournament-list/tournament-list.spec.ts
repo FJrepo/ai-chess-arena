@@ -75,6 +75,7 @@ function tournament(
     participants: Array.from({ length: participantCount }, (_, index) => ({
       id: `${name}-participant-${index}`,
       playerName: `Player ${index + 1}`,
+      controlType: 'AI' as const,
       modelId: `model-${index + 1}`,
       customInstructions: null,
       seed: index + 1,
@@ -83,8 +84,10 @@ function tournament(
       id: `${name}-game-${index}`,
       tournamentId: name,
       whitePlayerName: 'White',
+      whiteControlType: 'AI',
       whiteModelId: 'model-w',
       blackPlayerName: 'Black',
+      blackControlType: 'AI',
       blackModelId: 'model-b',
       status: 'WAITING',
       result: null,

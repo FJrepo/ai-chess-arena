@@ -181,6 +181,21 @@ public class GameTurnService {
         gameWebSocket.broadcastRetry(gameId, color, attemptNumber, reason);
     }
 
+    public void broadcastHumanTurnReady(UUID gameId, BigDecimal totalCostUsd, String activeColor) {
+        int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));
+        gameWebSocket.broadcastGameStatus(
+                gameId,
+                "IN_PROGRESS",
+                null,
+                null,
+                totalMoves,
+                totalCostUsd,
+                activeColor,
+                null,
+                null
+        );
+    }
+
     private void broadcastTurnTiming(UUID gameId, BigDecimal totalCostUsd, String activeColor,
                                      Instant turnStartedAt, Instant turnDeadlineAt) {
         int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));

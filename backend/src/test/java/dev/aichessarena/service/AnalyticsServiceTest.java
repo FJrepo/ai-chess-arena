@@ -117,6 +117,31 @@ class AnalyticsServiceTest {
         assertTrue(response.models().isEmpty());
     }
 
+    @Test
+    void comparisonIgnoresHumanMovesWithoutModelIds() {
+        Game game = finishedGame(
+                null,
+                "model.beta",
+                Game.GameResult.BLACK_WINS,
+                null,
+                LocalDateTime.now().minusDays(1)
+        );
+
+        AnalyticsService service = new AnalyticsService();
+        service.gameRepository = new FakeGameRepository(List.of(game));
+        service.moveRepository = new FakeMoveRepository(List.of(
+                move(game, null, 0L, null),
+                move(game, "model.beta", 1000L, "0.010000")
+        ));
+        service.windowLoader = loader(service.gameRepository, service.moveRepository);
+        service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        assertEquals(1, response.models().size());
+        assertEquals("model.beta", response.models().getFirst().modelId());
+    }
+
     private AnalyticsModelComparisonRowDto row(AnalyticsModelComparisonDto response, String modelId) {
         return response.models().stream()
                 .filter(row -> row.modelId().equals(modelId))

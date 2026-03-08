@@ -24,7 +24,8 @@ export interface Tournament {
 export interface Participant {
   id: string;
   playerName: string;
-  modelId: string;
+  controlType: 'AI' | 'HUMAN';
+  modelId: string | null;
   customInstructions: string | null;
   seed: number;
 }
@@ -33,8 +34,10 @@ export interface Game {
   id: string;
   tournamentId: string | null;
   whitePlayerName: string | null;
+  whiteControlType: 'AI' | 'HUMAN';
   whiteModelId: string | null;
   blackPlayerName: string | null;
+  blackControlType: 'AI' | 'HUMAN';
   blackModelId: string | null;
   status: 'WAITING' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'FORFEIT';
   result: string | null;
@@ -60,7 +63,7 @@ export interface Move {
   color: 'WHITE' | 'BLACK';
   san: string;
   fen: string;
-  modelId: string;
+  modelId: string | null;
   promptVersion: string | null;
   promptHash: string | null;
   promptTokens: number | null;
@@ -77,7 +80,7 @@ export interface Move {
 export interface ChatMessage {
   id: string;
   moveNumber: number;
-  senderModel: string;
+  senderModel: string | null;
   senderColor: 'WHITE' | 'BLACK';
   message: string;
   createdAt: string;
@@ -90,7 +93,7 @@ export interface MoveWsMessage {
   color: 'WHITE' | 'BLACK';
   san: string;
   fen: string;
-  modelId: string;
+  modelId: string | null;
   pgn?: string | null;
   responseTimeMs?: number;
   retryCount?: number;
@@ -111,8 +114,9 @@ export interface ChatWsMessage {
   type: 'chat';
   gameId: string;
   moveNumber: number;
-  senderModel: string;
+  senderModel: string | null;
   senderColor: 'WHITE' | 'BLACK';
+  senderName?: string | null;
   message?: string;
 }
 

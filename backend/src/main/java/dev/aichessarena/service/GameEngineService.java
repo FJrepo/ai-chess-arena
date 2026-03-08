@@ -12,7 +12,6 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,17 +43,20 @@ public class GameEngineService {
     private final Map<UUID, Boolean> runningGames = new ConcurrentHashMap<>();
 
     public void startGame(UUID gameId) {
-        if (runningGames.containsKey(gameId)) {
+        startGame(gameId, null, null);
+    }
+
+    public void startGame(UUID gameId, String lastMoveSan, String lastMessage) {
+        if (!tryMarkGameRunning(gameId)) {
             LOG.warnf("Game %s is already running", gameId);
             return;
         }
-        runningGames.put(gameId, true);
 
         Thread.startVirtualThread(() -> {
             ManagedContext requestContext = Arc.container().requestContext();
             requestContext.activate();
             try {
-                runGameLoop(gameId);
+                runGameLoop(gameId, lastMoveSan, lastMessage);
             } catch (Exception e) {
                 LOG.errorf(e, "Game loop failed for game %s", gameId);
             } finally {
@@ -67,20 +69,30 @@ public class GameEngineService {
     }
 
     public void pauseGame(UUID gameId) {
-        runningGames.put(gameId, false);
+        if (Boolean.TRUE.equals(runningGames.get(gameId))) {
+            runningGames.put(gameId, false);
+            return;
+        }
+
+        runningGames.remove(gameId);
+        Game game = gameRepository.findById(gameId);
+        if (game != null && game.status == GameStatus.IN_PROGRESS) {
+            gameLifecycleService.markGamePaused(gameId);
+        }
     }
 
     public boolean isRunning(UUID gameId) {
         return runningGames.getOrDefault(gameId, false);
     }
 
-    private void runGameLoop(UUID gameId) {
-        gameLifecycleService.markGameStarted(gameId);
+    private void runGameLoop(UUID gameId, String lastMoveSan, String lastMessage) {
+        boolean resumingAfterHumanMove = lastMoveSan != null;
+        if (!resumingAfterHumanMove) {
+            gameLifecycleService.markGameStarted(gameId);
+        }
 
         GameConversationService.ConversationState conversation = gameConversationService.initializeConversation(gameId);
         Board board = conversation.board();
-        String lastMoveSan = null;
-        String lastMessage = null;
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
         List<OpenRouterService.ChatMsg> blackHistory = conversation.blackHistory();
         String whitePromptVersion = conversation.whitePrompt().version();
@@ -106,6 +118,11 @@ public class GameEngineService {
             String playerName = "WHITE".equals(sideToMove) ? game.whitePlayerName : game.blackPlayerName;
             String opponentName = "WHITE".equals(sideToMove) ? game.blackPlayerName : game.whitePlayerName;
             List<OpenRouterService.ChatMsg> history = "WHITE".equals(sideToMove) ? whiteHistory : blackHistory;
+
+            if (isHumanTurn(game, sideToMove)) {
+                gameTurnService.broadcastHumanTurnReady(gameId, game.totalCostUsd, sideToMove);
+                return;
+            }
 
             boolean isFirstMove = moveNumber == 1 && "WHITE".equals(sideToMove);
 
@@ -169,6 +186,65 @@ public class GameEngineService {
             throw new WebApplicationException("Pause the game before overriding moves", Response.Status.CONFLICT);
         }
         gameMoveService.applyOverrideMove(gameId, san);
+    }
+
+    public void submitHumanMove(UUID gameId, String san, String from, String to, String promotion, String message) {
+        Game game = gameRepository.findById(gameId);
+        if (game == null) {
+            throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
+        }
+        if (game.status != GameStatus.IN_PROGRESS) {
+            throw new WebApplicationException("Game is not awaiting a human move", Response.Status.CONFLICT);
+        }
+        if (Boolean.TRUE.equals(runningGames.get(gameId))) {
+            throw new WebApplicationException("Game is still processing a turn", Response.Status.CONFLICT);
+        }
+        boolean hasSan = san != null && !san.isBlank();
+        boolean hasCoordinates = from != null && !from.isBlank() && to != null && !to.isBlank();
+        if (!hasSan && !hasCoordinates) {
+            throw new IllegalArgumentException("Move is required");
+        }
+
+        Board board = chessService.boardFromFen(game.currentFen);
+        String sideToMove = chessService.getSideToMove(board);
+        if (!isHumanTurn(game, sideToMove)) {
+            throw new WebApplicationException("It is not a human-controlled turn", Response.Status.CONFLICT);
+        }
+
+        int moveNumber = chessService.getMoveNumber(board);
+        ChessService.ValidMoveResult result = hasCoordinates
+                ? chessService.validateAndApplyCoordinates(board, from, to, promotion)
+                : chessService.validateAndApply(board, san.trim());
+        if (!result.valid()) {
+            throw new IllegalArgumentException("Invalid move: " + result.error());
+        }
+
+        String playerName = "WHITE".equals(sideToMove) ? game.whitePlayerName : game.blackPlayerName;
+        gameMoveService.recordHumanMove(
+                gameId,
+                moveNumber,
+                sideToMove,
+                result.san(),
+                result.fen(),
+                playerName,
+                message
+        );
+
+        if (chessService.isGameOver(board)) {
+            endGame(gameId, board);
+            return;
+        }
+
+        startGame(gameId, result.san(), message);
+    }
+
+    private boolean isHumanTurn(Game game, String color) {
+        var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
+        return participant != null && participant.controlType == dev.aichessarena.entity.TournamentParticipant.ControlType.HUMAN;
+    }
+
+    boolean tryMarkGameRunning(UUID gameId) {
+        return runningGames.putIfAbsent(gameId, true) == null;
     }
 
 }

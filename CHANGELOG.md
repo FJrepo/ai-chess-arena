@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-08
+
+### Added
+- Local human participants can now be included in tournaments, with live move submission from the game view and normal bracket progression after human turns.
+
+### Changed
+- README and deployment docs now focus on the supported local-first product scope, streamlined setup, and `v1.0.0` release guidance.
+- Game prompts and UI labels now use neutral tournament wording so model-vs-model and human-participant matches read consistently.
+
+### Fixed
+- Pausing a game while it is waiting on a local human move now transitions the game to `PAUSED` immediately instead of leaving it live with a stale engine marker.
+- Model analytics now ignore human moves without a model ID instead of aggregating them under a fake `unknown` model row.
+
 ## [0.9.10] - 2026-03-08
 
 ### Changed

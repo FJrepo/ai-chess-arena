@@ -61,7 +61,7 @@ type TournamentConfidence = {
   styleUrl: './tournament-setup.scss',
 })
 export class TournamentSetup implements OnInit, OnDestroy {
-  private static readonly PROMPT_FALLBACK = `You are playing chess in a tournament.
+  private static readonly PROMPT_FALLBACK = `You are playing chess in a tournament match. This is a real competition.
 
 Respond with valid JSON only:
 {
@@ -83,6 +83,7 @@ Your opponent is %s (%s).`;
   finalsBestOf: Tournament['finalsBestOf'] = null;
 
   newPlayerName = '';
+  newControlType: Participant['controlType'] = 'AI';
   newModelId = '';
   newCustomInstructions = '';
   modelSearch = '';
@@ -300,7 +301,13 @@ Your opponent is %s (%s).`;
   }
 
   canAddParticipant(): boolean {
-    return this.newPlayerName.trim().length > 0 && this.newModelId.trim().length > 0;
+    if (this.newPlayerName.trim().length === 0) {
+      return false;
+    }
+    if (this.newControlType === 'HUMAN') {
+      return !this.hasHumanParticipant();
+    }
+    return this.newModelId.trim().length > 0;
   }
 
   addParticipant() {
@@ -312,15 +319,26 @@ Your opponent is %s (%s).`;
       ...list,
       {
         playerName: this.newPlayerName.trim(),
-        modelId: this.newModelId,
-        customInstructions: this.normalizeInstructions(this.newCustomInstructions),
-        promptPricePerMillion: this.selectedModel()?.promptPricePerMillion ?? null,
-        completionPricePerMillion: this.selectedModel()?.completionPricePerMillion ?? null,
+        controlType: this.newControlType,
+        modelId: this.newControlType === 'AI' ? this.newModelId : null,
+        customInstructions:
+          this.newControlType === 'AI'
+            ? this.normalizeInstructions(this.newCustomInstructions)
+            : null,
+        promptPricePerMillion:
+          this.newControlType === 'AI'
+            ? (this.selectedModel()?.promptPricePerMillion ?? null)
+            : null,
+        completionPricePerMillion:
+          this.newControlType === 'AI'
+            ? (this.selectedModel()?.completionPricePerMillion ?? null)
+            : null,
         seed: list.length,
       },
     ]);
 
     this.newPlayerName = '';
+    this.newControlType = 'AI';
     this.newModelId = '';
     this.newCustomInstructions = '';
     this.modelSearch = '';
@@ -354,6 +372,7 @@ Your opponent is %s (%s).`;
           this.api
             .addParticipant(tournament.id, {
               playerName: p.playerName,
+              controlType: p.controlType,
               modelId: p.modelId,
               customInstructions: p.customInstructions ?? null,
               seed: p.seed,
@@ -373,6 +392,9 @@ Your opponent is %s (%s).`;
   }
 
   participantInstructionLabel(participant: Partial<Participant>): string {
+    if (participant.controlType === 'HUMAN') {
+      return 'Human-controlled participant';
+    }
     return participant.customInstructions
       ? 'Uses participant-specific instructions'
       : this.hasSharedInstructions()
@@ -507,5 +529,9 @@ Your opponent is %s (%s).`;
     this.finalsBestOf = preset.finalsBestOf;
     this.trashTalkEnabled = preset.trashTalkEnabled;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
+  }
+
+  hasHumanParticipant(): boolean {
+    return this.participants().some((participant) => participant.controlType === 'HUMAN');
   }
 }

@@ -108,6 +108,7 @@ public class TournamentResource {
         TournamentParticipant p = new TournamentParticipant();
         p.playerName = req.playerName();
         p.modelId = req.modelId();
+        p.controlType = parseControlType(req.controlType());
         p.customInstructions = normalizeInstructions(req.customInstructions());
         if (req.seed() != null) p.seed = req.seed();
         TournamentParticipant saved = tournamentService.addParticipant(id, p);
@@ -155,5 +156,16 @@ public class TournamentResource {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private TournamentParticipant.ControlType parseControlType(String value) {
+        if (value == null || value.isBlank()) {
+            return TournamentParticipant.ControlType.AI;
+        }
+        try {
+            return TournamentParticipant.ControlType.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid controlType: " + value);
+        }
     }
 }
