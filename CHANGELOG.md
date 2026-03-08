@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-03-08
+
+### Changed
+- Backend release-image builds now retry whole Maven `go-offline` and package steps instead of failing on a single transient invocation error.
+- Release image publishing now uses GitHub Actions build cache for backend and frontend Docker builds to reduce repeated cold-start dependency work.
+
 ## [0.9.8] - 2026-03-08
 
 ### Changed
