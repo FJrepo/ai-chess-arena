@@ -41,6 +41,8 @@ desktop.ini
 
 # === Local tooling ===
 .claude/
+CLAUDE.md
+task-packages/
 
 # === Misc ===
 *.tmp
