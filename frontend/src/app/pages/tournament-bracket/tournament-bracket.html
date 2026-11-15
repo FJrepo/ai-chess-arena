@@ -11,6 +11,12 @@
           <span class="status-badge" [class.active]="t.status === 'IN_PROGRESS'">
             {{ t.status }}
           </span>
+          @if (t.winnerName) {
+            <span class="dot-separator"></span>
+            <span class="champion-tag"
+              ><mat-icon>emoji_events</mat-icon> Champion: {{ t.winnerName }}</span
+            >
+          }
           <span class="dot-separator"></span>
           <span class="count-tag">{{ t.participants.length }} Players</span>
           <span class="dot-separator"></span>
@@ -91,8 +97,14 @@
       <div class="generate-section">
         <mat-icon class="generate-icon">hub</mat-icon>
         <p>{{ t.participants.length }} participants are ready to compete.</p>
-        <button mat-raised-button color="primary" (click)="generateBracket()">
-          <mat-icon>auto_awesome</mat-icon> Generate Tournament Bracket
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="generateBracket()"
+          [disabled]="generating()"
+        >
+          <mat-icon>auto_awesome</mat-icon>
+          {{ generating() ? 'Generating…' : 'Generate Tournament Bracket' }}
         </button>
       </div>
     }

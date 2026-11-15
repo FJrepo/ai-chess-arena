@@ -78,6 +78,11 @@ class TournamentParticipantRulesTest {
     }
 
     private static final class FakeTournamentRepository extends TournamentRepository {
+
+        @Override
+        public Tournament findByIdForUpdate(UUID id) {
+            return findById(id);
+        }
         private final Map<UUID, Tournament> tournaments;
 
         private FakeTournamentRepository(Map<UUID, Tournament> tournaments) {

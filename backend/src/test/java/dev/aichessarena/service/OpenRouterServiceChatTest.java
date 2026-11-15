@@ -121,6 +121,21 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
+    void modelValidationHonoursFailOpenWhenTheCatalogIsUnavailable() throws IOException {
+        OpenRouterService service = serviceAnswering(503, "");
+        server.createContext("/models", exchange -> {
+            exchange.sendResponseHeaders(503, -1);
+            exchange.close();
+        });
+
+        service.modelValidationFailOpen = true;
+        assertTrue(service.isModelAllowed("openai/gpt-4o-mini"));
+
+        service.modelValidationFailOpen = false;
+        assertFalse(service.isModelAllowed("openai/gpt-4o-mini"));
+    }
+
+    @Test
     void httpStatusClassification() {
         assertEquals(ProviderOutcome.RETRYABLE, OpenRouterService.classifyHttpStatus(408));
         assertEquals(ProviderOutcome.RETRYABLE, OpenRouterService.classifyHttpStatus(429));

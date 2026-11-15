@@ -32,6 +32,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   costSummaryLoading = signal(false);
   costSummaryError = signal<string | null>(null);
   tournamentId = '';
+  generating = signal(false);
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -76,16 +77,41 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   generateBracket() {
-    this.api.generateBracket(this.tournamentId).subscribe(() => {
-      this.loadTournament();
-      this.loadCostSummary();
+    if (this.generating()) {
+      return;
+    }
+    this.generating.set(true);
+    this.api.generateBracket(this.tournamentId).subscribe({
+      next: () => {
+        this.generating.set(false);
+        this.loadTournament();
+        this.loadCostSummary();
+      },
+      error: (err) => {
+        this.generating.set(false);
+        this.showError(err, 'Failed to generate the bracket.');
+        this.loadTournament();
+      },
     });
   }
 
   startGame(game: Game) {
-    this.api.startGame(game.id).subscribe(() => {
-      this.router.navigate(['/games', game.id]);
+    this.api.startGame(game.id).subscribe({
+      next: () => this.router.navigate(['/games', game.id]),
+      error: (err) => {
+        this.showError(err, 'Failed to start the game.');
+        this.loadTournament();
+      },
     });
+  }
+
+  private showError(err: unknown, fallback: string): void {
+    const serverError = (err as { error?: unknown } | null)?.error;
+    const message =
+      typeof serverError === 'string'
+        ? serverError
+        : ((serverError as { error?: string } | undefined)?.error ?? fallback);
+    this.snackBar.open(message, 'Dismiss', { duration: 5000 });
   }
 
   viewGame(game: Game) {

@@ -276,7 +276,8 @@ public class OpenRouterService {
 
         JsonNode rawModels = fetchRawModels();
         JsonNode data = rawModels.get("data");
-        if (data == null || !data.isArray()) {
+        // The fallback for an unavailable catalog carries an empty "data" array plus an "error".
+        if (data == null || !data.isArray() || rawModels.hasNonNull("error")) {
             String reason = rawModels.path("error").asText("model catalog unavailable");
             LOG.warnf("Skipping strict model validation for '%s' (%s)", normalizedModelId, reason);
             return modelValidationFailOpen;

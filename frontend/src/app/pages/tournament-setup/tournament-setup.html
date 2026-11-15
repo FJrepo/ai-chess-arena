@@ -115,12 +115,18 @@
           <div class="confidence-metric">
             <span class="metric-label">Projected Games</span>
             <strong>{{ summary.likelyGames }}</strong>
-            <span>{{ summary.minGames }} min · {{ summary.maxGames }} max</span>
+            <span
+              >{{ summary.minGames }} min · {{ summary.maxGames
+              }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
+            >
           </div>
           <div class="confidence-metric">
             <span class="metric-label">Estimated Runtime</span>
             <strong>{{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
-            <span>up to {{ formatDuration(summary.maxRuntimeMinutes) }}</span>
+            <span
+              >{{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
+              {{ formatDuration(summary.maxRuntimeMinutes) }}</span
+            >
           </div>
           <div class="confidence-metric">
             <span class="metric-label">Move Pace</span>
@@ -138,7 +144,8 @@
             </strong>
             <span>
               @if (summary.maxCostUsd !== null) {
-                up to {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                {{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
+                {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
               } @else {
                 add priced models for an estimate
               }
@@ -158,7 +165,9 @@
           </p>
           @if (summary.drawCanExtendSeries) {
             <p class="confidence-warning">
-              `Replay Game` draw policy can push runtime and cost beyond the range shown here.
+              With `Replay Game`, a match that is still level after its regular games continues with
+              extra games until one is decisive, so there is no fixed maximum for games, runtime or
+              cost. Other draw policies end every match after at most its best-of games.
             </p>
           }
         </div>
@@ -344,10 +353,13 @@
       mat-raised-button
       color="primary"
       (click)="create()"
-      [disabled]="!name || participants().length < 2"
+      [disabled]="!name || participants().length < 2 || creating()"
     >
       <mat-icon>emoji_events</mat-icon>
-      <span>Create Tournament</span>
+      <span>{{ creating() ? 'Creating…' : 'Create Tournament' }}</span>
     </button>
+    @if (createError(); as error) {
+      <p class="create-error" role="alert">{{ error }}</p>
+    }
   </div>
 </div>

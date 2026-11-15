@@ -51,6 +51,10 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "trash_talk_enabled", nullable = false)
     public boolean trashTalkEnabled = true;
 
+    /** Client-generated id of the create request; makes retried creations return the same tournament. */
+    @Column(name = "client_request_id", unique = true)
+    public UUID clientRequestId;
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt = LocalDateTime.now();
 

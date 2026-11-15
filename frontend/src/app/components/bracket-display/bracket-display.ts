@@ -36,6 +36,8 @@ interface SeriesCard {
   blackModelId: string | null;
   whiteWins: number;
   blackWins: number;
+  /** Who advanced from this series, as recorded by the backend (covers draw-policy decisions). */
+  advancedName: string | null;
   isComplete: boolean;
   stateLabel: string;
   stateTone: 'live' | 'paused' | 'ready' | 'pending' | 'complete' | 'forfeit' | 'bye';
@@ -126,7 +128,30 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     );
   }
 
+  /** Whether this side won the series (uses the backend's advancement record when available). */
+  isSeriesWinner(card: SeriesCard, side: 'white' | 'black'): boolean {
+    if (!card.isComplete) return false;
+    const name = side === 'white' ? card.whitePlayerName : card.blackPlayerName;
+    if (card.advancedName) return card.advancedName === name;
+    return side === 'white' ? card.whiteWins > card.blackWins : card.blackWins > card.whiteWins;
+  }
+
+  isSeriesLoser(card: SeriesCard, side: 'white' | 'black'): boolean {
+    return card.isComplete && this.isSeriesWinner(card, side === 'white' ? 'black' : 'white');
+  }
+
+  private advancedText(name: string, whiteWins: number, blackWins: number): string {
+    const high = Math.max(whiteWins, blackWins);
+    const low = Math.min(whiteWins, blackWins);
+    return whiteWins === blackWins
+      ? `${name} advances on the draw policy (${high}-${low})`
+      : `${name} advances ${high}-${low}`;
+  }
+
   getResultText(card: SeriesCard): string {
+    if (card.advancedName && card.isComplete) {
+      return this.advancedText(card.advancedName, card.whiteWins, card.blackWins);
+    }
     const game = card.latestGame;
     if (!game.result) return '';
     switch (game.result) {
@@ -279,6 +304,8 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       }
     }
 
+    const advancedName =
+      orderedGames.map((game) => game.advancedPlayerName).find((name) => !!name) ?? null;
     const isComplete =
       currentGame === latestGame &&
       (currentGame.status === 'COMPLETED' || currentGame.status === 'FORFEIT');
@@ -291,6 +318,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       sideToMove,
       whiteWins,
       blackWins,
+      advancedName,
     );
 
     return {
@@ -306,6 +334,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       blackModelId: firstGame.blackModelId,
       whiteWins,
       blackWins,
+      advancedName,
       isComplete,
       stateLabel,
       stateTone,
@@ -320,6 +349,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     sideToMove: string | null,
     whiteWins: number,
     blackWins: number,
+    advancedName: string | null,
   ): Pick<SeriesCard, 'stateLabel' | 'stateTone' | 'detailLabel'> {
     if (hasBye) {
       return {
@@ -370,8 +400,13 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
           stateLabel: 'Complete',
           stateTone: 'complete',
           detailLabel:
-            this.completedDetailLabel(currentGame, latestGame, whiteWins, blackWins) ||
-            'Series complete.',
+            this.completedDetailLabel(
+              currentGame,
+              latestGame,
+              whiteWins,
+              blackWins,
+              advancedName,
+            ) || 'Series complete.',
         };
     }
   }
@@ -395,7 +430,11 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     latestGame: Game,
     whiteWins: number,
     blackWins: number,
+    advancedName: string | null,
   ): string {
+    if (advancedName) {
+      return this.advancedText(advancedName, whiteWins, blackWins);
+    }
     switch (latestGame.result) {
       case 'WHITE_WINS':
         return `${currentGame.whitePlayerName} wins ${whiteWins}-${blackWins}`;

@@ -348,42 +348,64 @@ Your opponent is %s (%s).`;
     this.participants.update((list) => list.filter((_, i) => i !== index));
   }
 
-  create() {
-    this.api
-      .createTournament({
-        name: this.name,
-        sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
-        moveTimeoutSeconds: this.moveTimeout,
-        maxRetries: this.maxRetries,
-        matchupBestOf: this.matchupBestOf,
-        finalsBestOf: this.finalsBestOf,
-        trashTalkEnabled: this.trashTalkEnabled,
-        drawPolicy: this.drawPolicy,
-      })
-      .subscribe((tournament) => {
-        const participants = this.participants();
-        if (participants.length === 0) {
-          this.router.navigate(['/tournaments', tournament.id]);
-          return;
-        }
+  creating = signal(false);
+  createError = signal<string | null>(null);
+  /**
+   * Request id bound to exactly the submitted details: retrying the same details reuses it (so a request that
+   * reached the server but lost its response creates nothing twice), while edited details get a new id.
+   */
+  private pendingSubmission: { key: string; requestId: string } | null = null;
 
-        let added = 0;
-        for (const p of participants) {
-          this.api
-            .addParticipant(tournament.id, {
-              playerName: p.playerName,
-              controlType: p.controlType,
-              modelId: p.modelId,
-              customInstructions: p.customInstructions ?? null,
-              seed: p.seed,
-            })
-            .subscribe(() => {
-              added++;
-              if (added === participants.length) {
-                this.router.navigate(['/tournaments', tournament.id]);
-              }
-            });
-        }
+  create() {
+    if (this.creating()) {
+      return;
+    }
+    this.creating.set(true);
+    this.createError.set(null);
+
+    const details = {
+      name: this.name,
+      sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
+      moveTimeoutSeconds: this.moveTimeout,
+      maxRetries: this.maxRetries,
+      matchupBestOf: this.matchupBestOf,
+      finalsBestOf: this.finalsBestOf,
+      trashTalkEnabled: this.trashTalkEnabled,
+      drawPolicy: this.drawPolicy,
+      participants: this.participants().map((p) => ({
+        playerName: p.playerName,
+        controlType: p.controlType,
+        modelId: p.modelId,
+        customInstructions: p.customInstructions ?? null,
+        seed: p.seed,
+      })),
+    };
+    const key = JSON.stringify(details);
+    if (this.pendingSubmission?.key !== key) {
+      this.pendingSubmission = { key, requestId: newRequestId() };
+    }
+
+    this.api
+      .createTournament({ ...details, clientRequestId: this.pendingSubmission.requestId })
+      .subscribe({
+        next: (tournament) => {
+          this.pendingSubmission = null;
+          this.creating.set(false);
+          this.router.navigate(['/tournaments', tournament.id]);
+        },
+        error: (err) => {
+          const serverError = err?.error;
+          const status = typeof err?.status === 'number' ? err.status : 0;
+          const message =
+            typeof serverError === 'string' ? serverError : (serverError?.error ?? null);
+          this.createError.set(
+            status === 0 || status >= 500 || !message
+              ? 'The server did not confirm the tournament. Retry with the same details: if it was ' +
+                  'saved after all, you will get that tournament instead of a duplicate.'
+              : message,
+          );
+          this.creating.set(false);
+        },
       });
   }
 
@@ -451,10 +473,9 @@ Your opponent is %s (%s).`;
     const drawCanExtendSeries = this.drawPolicy === 'REPLAY_GAME';
     const likelyCostUsd =
       averageMoveCostUsd == null ? null : likelyGames * estimatedMovesPerGame * averageMoveCostUsd;
+    // With REPLAY_GAME a level match continues until a decisive game, so the maximum is open-ended.
     const maxCostUsd =
-      averageMoveCostUsd == null
-        ? null
-        : maxGames * estimatedMovesPerGame * averageMoveCostUsd * (drawCanExtendSeries ? 1.2 : 1);
+      averageMoveCostUsd == null ? null : maxGames * estimatedMovesPerGame * averageMoveCostUsd;
 
     const riskScore =
       (participantCount >= 16 ? 3 : participantCount >= 8 ? 2 : 1) +
@@ -534,4 +555,14 @@ Your opponent is %s (%s).`;
   hasHumanParticipant(): boolean {
     return this.participants().some((participant) => participant.controlType === 'HUMAN');
   }
+}
+
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }

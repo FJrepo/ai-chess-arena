@@ -12,6 +12,18 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    # Angular majors move together via `ng update`, with matching TypeScript and ESLint versions.
+    ignore:
+      - dependency-name: "@angular/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@angular-devkit/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@angular-eslint/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
       angular:
         patterns: ["@angular/*", "@angular-devkit/*", "@angular-eslint/*"]
@@ -23,6 +35,10 @@ updates:
     directories: [/backend, /frontend]
     schedule:
       interval: weekly
+    # Refresh pinned digests only; Java/Node runtime upgrades are deliberate changes.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       base-images:
         patterns: ["*"]
