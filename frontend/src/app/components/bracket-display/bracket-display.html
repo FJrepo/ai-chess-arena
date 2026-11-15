@@ -44,8 +44,12 @@
                     <span class="series-score">{{ series.whiteWins }}-{{ series.blackWins }}</span>
                   </div>
                   <div class="series-meta-line">
-                    Best of {{ series.bestOf }} • Game {{ series.currentGame.seriesGameNumber }} of
-                    {{ series.bestOf }}
+                    Best of {{ series.bestOf }} •
+                    @if (series.currentGame.seriesGameNumber > series.bestOf) {
+                      Tiebreak game {{ series.currentGame.seriesGameNumber - series.bestOf }}
+                    } @else {
+                      Game {{ series.currentGame.seriesGameNumber }} of {{ series.bestOf }}
+                    }
                   </div>
                   <div class="players-block">
                     <div

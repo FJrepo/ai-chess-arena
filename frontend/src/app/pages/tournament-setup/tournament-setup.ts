@@ -348,7 +348,19 @@ Your opponent is %s (%s).`;
     this.participants.update((list) => list.filter((_, i) => i !== index));
   }
 
+  creating = signal(false);
+  createError = signal<string | null>(null);
+  /** Reused for retries so a request that reached the server but lost its response creates nothing twice. */
+  private clientRequestId: string | null = null;
+
   create() {
+    if (this.creating()) {
+      return;
+    }
+    this.creating.set(true);
+    this.createError.set(null);
+    this.clientRequestId ??= newRequestId();
+
     this.api
       .createTournament({
         name: this.name,
@@ -359,31 +371,31 @@ Your opponent is %s (%s).`;
         finalsBestOf: this.finalsBestOf,
         trashTalkEnabled: this.trashTalkEnabled,
         drawPolicy: this.drawPolicy,
+        participants: this.participants().map((p) => ({
+          playerName: p.playerName,
+          controlType: p.controlType,
+          modelId: p.modelId,
+          customInstructions: p.customInstructions ?? null,
+          seed: p.seed,
+        })),
+        clientRequestId: this.clientRequestId,
       })
-      .subscribe((tournament) => {
-        const participants = this.participants();
-        if (participants.length === 0) {
+      .subscribe({
+        next: (tournament) => {
+          this.clientRequestId = null;
+          this.creating.set(false);
           this.router.navigate(['/tournaments', tournament.id]);
-          return;
-        }
-
-        let added = 0;
-        for (const p of participants) {
-          this.api
-            .addParticipant(tournament.id, {
-              playerName: p.playerName,
-              controlType: p.controlType,
-              modelId: p.modelId,
-              customInstructions: p.customInstructions ?? null,
-              seed: p.seed,
-            })
-            .subscribe(() => {
-              added++;
-              if (added === participants.length) {
-                this.router.navigate(['/tournaments', tournament.id]);
-              }
-            });
-        }
+        },
+        error: (err) => {
+          const serverError = err?.error;
+          this.createError.set(
+            typeof serverError === 'string'
+              ? serverError
+              : (serverError?.error ??
+                  'Could not create the tournament. Nothing was saved; try again.'),
+          );
+          this.creating.set(false);
+        },
       });
   }
 
@@ -451,10 +463,9 @@ Your opponent is %s (%s).`;
     const drawCanExtendSeries = this.drawPolicy === 'REPLAY_GAME';
     const likelyCostUsd =
       averageMoveCostUsd == null ? null : likelyGames * estimatedMovesPerGame * averageMoveCostUsd;
+    // With REPLAY_GAME a level match continues until a decisive game, so the maximum is open-ended.
     const maxCostUsd =
-      averageMoveCostUsd == null
-        ? null
-        : maxGames * estimatedMovesPerGame * averageMoveCostUsd * (drawCanExtendSeries ? 1.2 : 1);
+      averageMoveCostUsd == null ? null : maxGames * estimatedMovesPerGame * averageMoveCostUsd;
 
     const riskScore =
       (participantCount >= 16 ? 3 : participantCount >= 8 ? 2 : 1) +
@@ -534,4 +545,14 @@ Your opponent is %s (%s).`;
   hasHumanParticipant(): boolean {
     return this.participants().some((participant) => participant.controlType === 'HUMAN');
   }
+}
+
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }

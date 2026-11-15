@@ -21,7 +21,7 @@ class TournamentResourceTest {
         resource.analyticsService = new AnalyticsService();
 
         assertThrows(IllegalArgumentException.class, () -> resource.create(
-                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null)
+                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null, null, null)
         ));
     }
 

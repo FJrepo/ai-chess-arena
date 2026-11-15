@@ -160,3 +160,10 @@ export interface WsOutgoingMessage {
   type: 'subscribe' | 'unsubscribe';
   gameId: string;
 }
+
+export interface CreateTournamentRequest extends Partial<
+  Omit<Tournament, 'participants' | 'games'>
+> {
+  participants?: Array<Partial<Participant>>;
+  clientRequestId?: string;
+}

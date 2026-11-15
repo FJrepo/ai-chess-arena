@@ -56,11 +56,48 @@ public class TournamentService {
         return tournament;
     }
 
+    /** Stores a new tournament and its participants together; participants must come from {@link #prepareParticipant}. */
+    @Transactional
+    public Tournament persistNewTournament(Tournament tournament, List<TournamentParticipant> participants) {
+        tournamentRepository.persist(tournament);
+        for (TournamentParticipant participant : participants) {
+            participant.tournament = tournament;
+            participantRepository.persist(participant);
+            tournament.participants.add(participant);
+        }
+        return tournament;
+    }
+
     @Transactional
     public TournamentParticipant addParticipant(UUID tournamentId, TournamentParticipant participant) {
-        Tournament tournament = tournamentRepository.findById(tournamentId);
-        if (tournament == null) throw new IllegalArgumentException("Tournament not found");
+        // Validate first: model validation may call OpenRouter, which must not happen while holding the lock.
+        TournamentParticipant prepared = prepareParticipant(participant);
 
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament == null) throw new IllegalArgumentException("Tournament not found");
+        if (tournament.status != Tournament.TournamentStatus.CREATED) {
+            throw new WebApplicationException(
+                    "Participants can only be added before the bracket is generated", Response.Status.CONFLICT);
+        }
+        if (prepared.controlType == TournamentParticipant.ControlType.HUMAN) {
+            long humanCount = participantRepository.findByTournamentId(tournamentId).stream()
+                    .filter(existing -> existing.controlType == TournamentParticipant.ControlType.HUMAN)
+                    .count();
+            if (humanCount >= 1) {
+                throw new IllegalArgumentException("Only one human participant is supported per tournament");
+            }
+        }
+
+        prepared.tournament = tournament;
+        participantRepository.persist(prepared);
+        return prepared;
+    }
+
+    /**
+     * Validates and normalizes a participant without storing it. For AI participants this may call
+     * OpenRouter to check the model, so callers should not hold database locks while calling it.
+     */
+    public TournamentParticipant prepareParticipant(TournamentParticipant participant) {
         if (participant == null) {
             throw new IllegalArgumentException("Participant payload is required");
         }
@@ -81,15 +118,6 @@ public class TournamentService {
             throw new IllegalArgumentException("Human participants must not specify a modelId");
         }
 
-        if (controlType == TournamentParticipant.ControlType.HUMAN) {
-            long humanCount = participantRepository.findByTournamentId(tournamentId).stream()
-                    .filter(existing -> existing.controlType == TournamentParticipant.ControlType.HUMAN)
-                    .count();
-            if (humanCount >= 1) {
-                throw new IllegalArgumentException("Only one human participant is supported per tournament");
-            }
-        }
-
         if (participant.seed < 0) {
             throw new IllegalArgumentException("Participant seed must be >= 0");
         }
@@ -104,8 +132,6 @@ public class TournamentService {
         participant.controlType = controlType;
         participant.modelId = controlType == TournamentParticipant.ControlType.AI ? modelId : null;
         participant.customInstructions = normalizeInstructions(participant.customInstructions);
-        participant.tournament = tournament;
-        participantRepository.persist(participant);
         return participant;
     }
 
@@ -131,8 +157,13 @@ public class TournamentService {
 
     @Transactional
     public List<Game> generateBracket(UUID tournamentId) {
-        Tournament tournament = tournamentRepository.findById(tournamentId);
+        // The row lock makes concurrent or repeated generation requests wait, then see the bracket.
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
         if (tournament == null) throw new IllegalArgumentException("Tournament not found");
+        if (tournament.status != Tournament.TournamentStatus.CREATED
+                || !gameRepository.findByTournamentId(tournamentId).isEmpty()) {
+            throw new WebApplicationException("The bracket has already been generated", Response.Status.CONFLICT);
+        }
 
         List<TournamentParticipant> participants = participantRepository.findByTournamentId(tournamentId);
         participants.sort(Comparator.comparingInt(p -> p.seed));
@@ -266,10 +297,17 @@ public class TournamentService {
     }
 
     private TournamentParticipant resolveDrawWinner(Game game) {
-        TournamentParticipant white = game.whiteParticipant;
-        TournamentParticipant black = game.blackParticipant;
-        Tournament.DrawPolicy drawPolicy = game.tournament != null
-                ? game.tournament.drawPolicy
+        return applyDrawPolicy(game.tournament, game.whiteParticipant, game.blackParticipant);
+    }
+
+    /**
+     * Who advances from a level match. {@code white}/{@code black} are the single game's colors, or for a
+     * series the colors of its first game. Returns null for REPLAY_GAME: another game must be played.
+     */
+    private TournamentParticipant applyDrawPolicy(Tournament tournament, TournamentParticipant white,
+                                                  TournamentParticipant black) {
+        Tournament.DrawPolicy drawPolicy = tournament != null
+                ? tournament.drawPolicy
                 : Tournament.DrawPolicy.WHITE_ADVANCES;
 
         return switch (drawPolicy) {
@@ -320,9 +358,20 @@ public class TournamentService {
             return bracketWhite != null ? bracketWhite : bracketBlack;
         }
 
+        // Best of N: at most N regular games. A draw is a game played without a winner. The series is
+        // decided once the lead can no longer be caught in the remaining regular games; if it is level
+        // after all N, the draw policy decides (REPLAY_GAME: sudden-death games until one is decisive).
+        int bestOf = completedGame.seriesBestOf;
         int whiteWins = 0;
         int blackWins = 0;
+        int regularGamesFinished = 0;
         for (Game game : seriesGames) {
+            if (game.result == null) {
+                continue;
+            }
+            if (game.seriesGameNumber <= bestOf) {
+                regularGamesFinished++;
+            }
             TournamentParticipant gameWinner = winnerOfGame(game);
             if (gameWinner == null) {
                 continue;
@@ -334,14 +383,14 @@ public class TournamentService {
             }
         }
 
-        int winsRequired = winsRequired(completedGame.seriesBestOf);
-        if (whiteWins >= winsRequired) {
-            return bracketWhite;
+        int remainingRegularGames = Math.max(0, bestOf - regularGamesFinished);
+        if (Math.abs(whiteWins - blackWins) > remainingRegularGames) {
+            return whiteWins > blackWins ? bracketWhite : bracketBlack;
         }
-        if (blackWins >= winsRequired) {
-            return bracketBlack;
+        if (remainingRegularGames > 0) {
+            return null;
         }
-        return null;
+        return applyDrawPolicy(completedGame.tournament, bracketWhite, bracketBlack);
     }
 
     private TournamentParticipant winnerOfGame(Game game) {
@@ -374,6 +423,13 @@ public class TournamentService {
 
         Game firstGame = seriesGames.isEmpty() ? completedGame : seriesGames.getFirst();
         int nextGameNumber = seriesGames.stream().mapToInt(game -> game.seriesGameNumber).max().orElse(1) + 1;
+        boolean suddenDeathAllowed = completedGame.tournament != null
+                && completedGame.tournament.drawPolicy == Tournament.DrawPolicy.REPLAY_GAME;
+        if (nextGameNumber > completedGame.seriesBestOf && !suddenDeathAllowed) {
+            LOG.errorf("Not creating game %d of a best-of-%d series %s", nextGameNumber,
+                    completedGame.seriesBestOf, completedGame.seriesId);
+            return;
+        }
 
         Game nextGame = new Game();
         nextGame.tournament = completedGame.tournament;
@@ -436,10 +492,6 @@ public class TournamentService {
             return tournament.finalsBestOf;
         }
         return tournament.matchupBestOf;
-    }
-
-    private int winsRequired(int bestOf) {
-        return (bestOf / 2) + 1;
     }
 
     static String getNextRound(String currentRound) {

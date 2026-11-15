@@ -6,6 +6,7 @@ import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.TournamentRepository;
 import dev.aichessarena.service.AnalyticsService;
+import dev.aichessarena.service.TournamentCreationService;
 import dev.aichessarena.service.TournamentService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -14,6 +15,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -31,11 +33,16 @@ public class TournamentResource {
     TournamentService tournamentService;
 
     @Inject
+    TournamentCreationService tournamentCreationService;
+
+    @Inject
     AnalyticsService analyticsService;
 
     @POST
-    @Transactional
     public Response create(CreateTournamentRequest req) {
+        if (req == null) {
+            throw new IllegalArgumentException("Request body is required");
+        }
         Tournament t = new Tournament();
         t.name = req.name();
         t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
@@ -45,8 +52,16 @@ public class TournamentResource {
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
-        tournamentService.create(t);
-        return Response.status(Response.Status.CREATED).entity(DtoMapper.toDto(t)).build();
+
+        List<TournamentParticipant> participants = new ArrayList<>();
+        if (req.participants() != null) {
+            for (AddParticipantRequest participant : req.participants()) {
+                participants.add(toParticipant(participant));
+            }
+        }
+        TournamentCreationService.Result result = tournamentCreationService.create(t, participants, req.clientRequestId());
+        Response.Status status = result.created() ? Response.Status.CREATED : Response.Status.OK;
+        return Response.status(status).entity(DtoMapper.toDto(result.tournament())).build();
     }
 
     @GET
@@ -105,13 +120,7 @@ public class TournamentResource {
     @POST
     @Path("/{id}/participants")
     public Response addParticipant(@PathParam("id") UUID id, AddParticipantRequest req) {
-        TournamentParticipant p = new TournamentParticipant();
-        p.playerName = req.playerName();
-        p.modelId = req.modelId();
-        p.controlType = parseControlType(req.controlType());
-        p.customInstructions = normalizeInstructions(req.customInstructions());
-        if (req.seed() != null) p.seed = req.seed();
-        TournamentParticipant saved = tournamentService.addParticipant(id, p);
+        TournamentParticipant saved = tournamentService.addParticipant(id, toParticipant(req));
         return Response.status(Response.Status.CREATED).entity(DtoMapper.toDto(saved)).build();
     }
 
@@ -130,6 +139,19 @@ public class TournamentResource {
     public Response generateBracket(@PathParam("id") UUID id) {
         List<Game> games = tournamentService.generateBracket(id);
         return Response.ok(games.stream().map(g -> DtoMapper.toDto(g, false)).toList()).build();
+    }
+
+    private TournamentParticipant toParticipant(AddParticipantRequest req) {
+        if (req == null) {
+            throw new IllegalArgumentException("Participant payload is required");
+        }
+        TournamentParticipant p = new TournamentParticipant();
+        p.playerName = req.playerName();
+        p.modelId = req.modelId();
+        p.controlType = parseControlType(req.controlType());
+        p.customInstructions = normalizeInstructions(req.customInstructions());
+        if (req.seed() != null) p.seed = req.seed();
+        return p;
     }
 
     private Tournament.DrawPolicy parseDrawPolicy(String value) {

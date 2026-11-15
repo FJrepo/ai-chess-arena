@@ -91,8 +91,14 @@
       <div class="generate-section">
         <mat-icon class="generate-icon">hub</mat-icon>
         <p>{{ t.participants.length }} participants are ready to compete.</p>
-        <button mat-raised-button color="primary" (click)="generateBracket()">
-          <mat-icon>auto_awesome</mat-icon> Generate Tournament Bracket
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="generateBracket()"
+          [disabled]="generating()"
+        >
+          <mat-icon>auto_awesome</mat-icon>
+          {{ generating() ? 'Generating…' : 'Generate Tournament Bracket' }}
         </button>
       </div>
     }

@@ -234,6 +234,11 @@ class TournamentServiceFlowTest {
     }
 
     private static final class FakeTournamentRepository extends TournamentRepository {
+
+        @Override
+        public Tournament findByIdForUpdate(UUID id) {
+            return findById(id);
+        }
         private final Tournament tournament;
 
         private FakeTournamentRepository(Tournament tournament) {

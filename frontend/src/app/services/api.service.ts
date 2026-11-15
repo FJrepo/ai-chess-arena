@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Tournament, Participant, Game } from '../models/tournament.model';
+import { Tournament, Participant, Game, CreateTournamentRequest } from '../models/tournament.model';
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import {
   AnalyticsComparisonResponse,
@@ -40,7 +40,11 @@ export class ApiService {
     return this.http.get<Tournament>(`${this.baseUrl}/tournaments/${id}`);
   }
 
-  createTournament(data: Partial<Tournament>): Observable<Tournament> {
+  /**
+   * Creates the tournament and its participants in one request (stored together or not at all).
+   * Reusing the same clientRequestId on a retry returns the tournament created by the first attempt.
+   */
+  createTournament(data: CreateTournamentRequest): Observable<Tournament> {
     return this.http.post<Tournament>(`${this.baseUrl}/tournaments`, data);
   }
 

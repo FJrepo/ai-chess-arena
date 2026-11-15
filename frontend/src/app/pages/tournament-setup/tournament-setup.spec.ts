@@ -1,5 +1,5 @@
 import { convertToParamMap } from '@angular/router';
-import { of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
 
@@ -44,9 +44,63 @@ describe('TournamentSetup', () => {
     expect(api.createTournamentPayload?.['sharedCustomInstructions']).toBe(
       'Prefer tactical complications.',
     );
-    expect(api.addedParticipants).toHaveLength(2);
-    expect(api.addedParticipants[0]['customInstructions']).toBeNull();
-    expect(api.addedParticipants[1]['customInstructions']).toBe('Avoid trades.');
+    const participants = api.createTournamentPayload?.['participants'] as Array<
+      Record<string, unknown>
+    >;
+    expect(participants).toHaveLength(2);
+    expect(participants[0]['customInstructions']).toBeNull();
+    expect(participants[1]['customInstructions']).toBe('Avoid trades.');
+    expect(api.addedParticipants).toHaveLength(0);
+    expect(typeof api.createTournamentPayload?.['clientRequestId']).toBe('string');
+  });
+
+  it('shows the server error, keeps the request id for a retry, and does not navigate', () => {
+    const api = createApiService();
+    const router = { navigate: vi.fn() } as any;
+    const component = new TournamentSetup(api, router, createRoute());
+    component.name = 'Failing Arena';
+    component.participants.set([
+      { playerName: 'Alpha', controlType: 'AI', modelId: 'm-a', seed: 0, customInstructions: null },
+      {
+        playerName: 'Beta',
+        controlType: 'AI',
+        modelId: 'bogus',
+        seed: 1,
+        customInstructions: null,
+      },
+    ]);
+    api.createTournament = ((payload: Record<string, unknown>) => {
+      api.createTournamentPayload = payload;
+      return throwError(() => ({
+        error: { error: 'Model is not allowed by backend policy: bogus' },
+      }));
+    }) as any;
+
+    component.create();
+    const firstRequestId = api.createTournamentPayload?.['clientRequestId'];
+    component.create();
+
+    expect(component.createError()).toBe('Model is not allowed by backend policy: bogus');
+    expect(component.creating()).toBe(false);
+    expect(api.createTournamentPayload?.['clientRequestId']).toBe(firstRequestId);
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second click while the tournament is being created', () => {
+    const api = createApiService();
+    let calls = 0;
+    api.createTournament = (() => {
+      calls++;
+      return new Subject();
+    }) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Busy Arena';
+
+    component.create();
+    component.create();
+
+    expect(calls).toBe(1);
+    expect(component.creating()).toBe(true);
   });
 
   it('applies onboarding presets from the query string', () => {
