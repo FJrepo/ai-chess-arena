@@ -183,8 +183,9 @@ public class GameLifecycleService {
 
     private Game markForfeit(UUID gameId, String forfeitColor, ResultReason reason) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (isTerminal(game)) {
-            LOG.warnf("Ignoring forfeit of game %s: already %s", gameId, game.status);
+        if (game.status != GameStatus.IN_PROGRESS) {
+            // Only a game that is actually being played can be forfeited (never a paused or finished one).
+            LOG.warnf("Ignoring forfeit of game %s: it is %s", gameId, game.status);
             return null;
         }
         game.status = GameStatus.FORFEIT;

@@ -25,7 +25,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Concurrent human or override moves can no longer write two moves for the same ply: move writes lock the game row and are rejected with `409` when the position changed, and the database enforces one move per ply (migration V8).
 - Bracket advancement no longer rewrites the pairing of a next-round game that has already started, and concurrent advancements into the same game are serialized.
 - Pausing, completing and forfeiting lock the game row, so they can no longer overwrite a concurrently recorded move; repeated pause requests can no longer let a resumed game run two loops at once.
-- Games left in progress by a backend restart, or by an unexpected game-loop failure, are now paused with a visible reason instead of being stuck; resume them from the game view.
+- Games left in progress by a backend restart, or by an unexpected game-loop failure, are now paused with a visible reason instead of being stuck; resume them from the game view. Open game views reload their state after the live connection reconnects.
+- A paused game can no longer be forfeited, and pause requests that coincide with a human move or a loop handing over to a human turn are no longer lost.
 - `POST /api/games/{id}/start` returns the game state after the start instead of the previous snapshot.
 - WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.
 

@@ -146,6 +146,23 @@ class GameLifecycleServiceTest {
         assertNull(tournamentService.advancedGameId);
     }
 
+    @Test
+    void aPausedGameCannotBeForfeited() {
+        Game game = new Game();
+        game.id = UUID.randomUUID();
+        game.status = GameStatus.PAUSED;
+        game.tournament = new Tournament();
+        RecordingTournamentService tournamentService = new RecordingTournamentService();
+        GameLifecycleService service = service(game, new RecordingGameWebSocket(), tournamentService);
+
+        service.forfeitTimeout(game.id, "BLACK", 60);
+        service.forfeitInvalidMoves(game.id, "BLACK", 3);
+
+        assertEquals(GameStatus.PAUSED, game.status);
+        assertNull(game.result);
+        assertNull(tournamentService.advancedGameId);
+    }
+
     private static GameLifecycleService service(Game game, RecordingGameWebSocket websocket,
                                                 TournamentService tournamentService) {
         GameLifecycleService service = new GameLifecycleService();

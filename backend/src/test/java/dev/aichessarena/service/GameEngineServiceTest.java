@@ -85,6 +85,31 @@ class GameEngineServiceTest {
     }
 
     @Test
+    void pauseAlsoStopsALoopClaimedWhileTheGameWasBeingPaused() {
+        Game game = new Game();
+        game.id = UUID.randomUUID();
+        game.status = GameStatus.IN_PROGRESS;
+        GameEngineService service = new GameEngineService();
+        GameEngineService.GameLoop[] lateLoop = new GameEngineService.GameLoop[1];
+        RecordingGameLifecycleService lifecycleService = new RecordingGameLifecycleService() {
+            @Override
+            public void markGamePaused(UUID gameId) {
+                super.markGamePaused(gameId);
+                // A concurrent human move continues the game right now.
+                lateLoop[0] = service.tryClaimLoop(gameId);
+            }
+        };
+        service.gameRepository = new FakeGameRepository(Map.of(game.id, game));
+        lifecycleService.gameRepository = service.gameRepository;
+        service.gameLifecycleService = lifecycleService;
+
+        service.pauseGame(game.id);
+
+        assertNotNull(lateLoop[0]);
+        assertFalse(lateLoop[0].shouldContinue());
+    }
+
+    @Test
     void aFinishedLoopCannotReleaseItsSuccessorsClaim() {
         GameEngineService service = new GameEngineService();
         UUID gameId = UUID.randomUUID();
@@ -112,7 +137,7 @@ class GameEngineServiceTest {
         }
     }
 
-    private static final class RecordingGameLifecycleService extends GameLifecycleService {
+    private static class RecordingGameLifecycleService extends GameLifecycleService {
         private UUID pausedGameId;
 
         @Override

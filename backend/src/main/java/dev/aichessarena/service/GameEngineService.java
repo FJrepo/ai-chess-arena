@@ -101,12 +101,25 @@ public class GameEngineService {
                 LOG.errorf(e, "Game loop failed for game %s", gameId);
                 pauseAfterLoopFailure(gameId, e);
             } finally {
+                runningGames.remove(gameId, loop);
+                // A pause may have flagged this loop just as it was finishing (e.g. returning for a human turn).
+                // Paired with the re-check in pauseGame, at least one side persists the pause.
+                if (!loop.shouldContinue()) {
+                    pauseQuietly(gameId);
+                }
                 if (requestContext.isActive()) {
                     requestContext.terminate();
                 }
-                runningGames.remove(gameId, loop);
             }
         });
+    }
+
+    private void pauseQuietly(UUID gameId) {
+        try {
+            gameLifecycleService.markGamePaused(gameId);
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Could not pause game %s", gameId);
+        }
     }
 
     private void pauseAfterLoopFailure(UUID gameId, Exception failure) {
@@ -126,12 +139,20 @@ public class GameEngineService {
         GameLoop loop = runningGames.get(gameId);
         if (loop != null) {
             loop.requestStop();
-            return;
+            if (runningGames.get(gameId) == loop) {
+                return; // the loop persists the pause when it exits
+            }
+            // The loop released the game while we flagged it; persist the pause ourselves below.
         }
 
         Game game = gameRepository.findById(gameId);
         if (game != null && game.status == GameStatus.IN_PROGRESS) {
             gameLifecycleService.markGamePaused(gameId);
+        }
+        // A loop may have been claimed meanwhile (e.g. right after a human move); make it stop too.
+        GameLoop late = runningGames.get(gameId);
+        if (late != null && late != loop) {
+            late.requestStop();
         }
     }
 

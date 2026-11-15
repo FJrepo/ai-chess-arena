@@ -103,6 +103,8 @@ export class GameView implements OnInit, OnDestroy {
   private gameId = '';
   private wsSub?: Subscription;
 
+  private reconnectSub?: Subscription;
+
   currentFen = computed(() => {
     const idx = this.currentMoveIndex();
     const moveList = this.moves();
@@ -291,11 +293,13 @@ export class GameView implements OnInit, OnDestroy {
     this.ws.subscribeToGame(this.gameId);
 
     this.wsSub = this.ws.getMessages(this.gameId).subscribe((msg) => this.handleWsMessage(msg));
+    this.reconnectSub = this.ws.reconnected().subscribe(() => this.loadGame());
   }
 
   ngOnDestroy() {
     this.ws.unsubscribeFromGame(this.gameId);
     this.wsSub?.unsubscribe();
+    this.reconnectSub?.unsubscribe();
     this.turnState.stopTicker();
   }
 
