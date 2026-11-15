@@ -23,7 +23,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - OpenRouter infrastructure failures no longer decide games. Rate limits, server errors and network failures are retried with backoff without using up the model's attempts; invalid keys, missing credits, unknown models, or retries that run out pause the game with a visible reason instead of recording a forfeit. Resume the game once the problem is fixed.
 - Finished or running games can no longer be started again: `POST /api/games/{id}/start` only accepts `WAITING` and `PAUSED` games (atomically) and returns `409` otherwise, and a finished game's result can no longer be recorded or advanced twice.
 - Concurrent human or override moves can no longer write two moves for the same ply: move writes lock the game row and are rejected with `409` when the position changed, and the database enforces one move per ply (migration V8).
-- Bracket advancement no longer rewrites the pairing of a next-round game that has already started.
+- Bracket advancement no longer rewrites the pairing of a next-round game that has already started, and concurrent advancements into the same game are serialized.
+- Pausing, completing and forfeiting lock the game row, so they can no longer overwrite a concurrently recorded move; repeated pause requests can no longer let a resumed game run two loops at once.
+- Games left in progress by a backend restart, or by an unexpected game-loop failure, are now paused with a visible reason instead of being stuck; resume them from the game view.
+- `POST /api/games/{id}/start` returns the game state after the start instead of the previous snapshot.
 - WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.
 
 ### Security

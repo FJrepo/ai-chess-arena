@@ -124,6 +124,11 @@ public class GameTurnService {
             }
 
             if (llmResponse.timedOut()) {
+                if (lastProviderFailure != null) {
+                    // Outages earlier in this turn ate part of the move time; don't score that as a model timeout.
+                    return pauseForProvider(request,
+                            "Move time ran out after OpenRouter problems earlier in this turn (" + lastProviderFailure + ")");
+                }
                 LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
                 gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), request.moveTimeoutSeconds());
                 return TurnResult.terminal();

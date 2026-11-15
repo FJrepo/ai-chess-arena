@@ -115,6 +115,20 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void timeoutAfterAnOutageInTheSameTurnPausesInsteadOfForfeiting() {
+        Fixture fixture = new Fixture(
+                failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
+                new LlmResponse(null, 0, 0, null, 0, null, true, "Request timed out")
+        );
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.pausedGame());
+        assertTrue(fixture.lifecycle.pauseDetail.contains("OpenRouter server error (HTTP 503)"));
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
+    @Test
     void pauseRequestDuringProviderBackoffStopsTheTurn() {
         Fixture fixture = new Fixture(failure(ProviderOutcome.RETRYABLE, 429, "OpenRouter rate limit reached (HTTP 429)"));
         boolean[] running = {true};

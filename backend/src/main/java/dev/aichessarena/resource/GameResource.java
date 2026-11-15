@@ -43,8 +43,7 @@ public class GameResource {
                 || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
             throw new IllegalArgumentException("Both players must be set");
         }
-        gameEngineService.startGame(id);
-        return Response.ok(DtoMapper.toDto(game, false)).build();
+        return Response.ok(gameEngineService.startGame(id)).build();
     }
 
     @POST

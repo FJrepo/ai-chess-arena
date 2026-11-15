@@ -119,8 +119,9 @@ class GameResourceTest {
         private String humanMoveMessage;
 
         @Override
-        public void startGame(UUID gameId) {
+        public dev.aichessarena.dto.GameDto startGame(UUID gameId) {
             startedGameId = gameId;
+            return null;
         }
 
         @Override

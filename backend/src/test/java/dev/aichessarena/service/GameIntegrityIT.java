@@ -105,6 +105,49 @@ class GameIntegrityIT {
     }
 
     @Test
+    void pauseWaitsForAConcurrentMoveInsteadOfOverwritingIt() throws Exception {
+        UUID id = newGame(GameStatus.IN_PROGRESS);
+        CountDownLatch locked = new CountDownLatch(1);
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> mover = pool.submit(() -> QuarkusTransaction.requiringNew().run(() -> {
+                Game game = games.findByIdForUpdate(id);
+                locked.countDown();
+                sleep(500);
+                game.currentFen = AFTER_E4;
+                game.pgn = "1. e4";
+            }));
+            locked.await(10, TimeUnit.SECONDS);
+
+            lifecycle.markGamePaused(id);
+            mover.get(30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        Game game = QuarkusTransaction.requiringNew().call(() -> games.findById(id));
+        assertEquals(GameStatus.PAUSED, game.status);
+        assertEquals(AFTER_E4, game.currentFen);
+        assertEquals("1. e4", game.pgn);
+    }
+
+    @Test
+    void gamesLeftInProgressByARestartArePausedWithAReason() {
+        UUID running = newGame(GameStatus.IN_PROGRESS);
+        UUID finished = newGame(GameStatus.COMPLETED);
+
+        lifecycle.pauseGamesOrphanedByRestart();
+
+        Game paused = QuarkusTransaction.requiringNew().call(() -> games.findById(running));
+        assertEquals(GameStatus.PAUSED, paused.status);
+        assertEquals(GameLifecycleService.RESTART_DETAIL, paused.statusDetail);
+        assertEquals(GameStatus.COMPLETED, statusOf(finished));
+        lifecycle.markGameStarted(running);
+        assertEquals(GameStatus.IN_PROGRESS, statusOf(running));
+    }
+
+    @Test
     void databaseRejectsADuplicatePly() {
         UUID id = newGame(GameStatus.IN_PROGRESS);
         insertMove(id, "e4", AFTER_E4);
@@ -168,6 +211,14 @@ class GameIntegrityIT {
             return outcomes;
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

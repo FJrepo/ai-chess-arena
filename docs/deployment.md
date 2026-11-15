@@ -196,6 +196,24 @@ Recommended tagging policy:
 
 ## Troubleshooting
 
+### Migration V8 reports "Skipping uq_moves_game_ply"
+Older versions could store two moves for the same ply when moves were submitted concurrently. Migration V8 then still succeeds but skips the unique index and logs a notice. Current versions prevent new duplicates with a row lock either way. To add the index afterwards, list the affected plies, delete the unwanted duplicate rows by `id` (usually the later `created_at`), then create the index:
+
+```bash
+docker compose -f docker-compose.prod.yml exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+```sql
+SELECT game_id, move_number, color, array_agg(id ORDER BY created_at) AS move_ids
+FROM moves GROUP BY game_id, move_number, color HAVING COUNT(*) > 1;
+-- after removing the unwanted rows:
+CREATE UNIQUE INDEX IF NOT EXISTS uq_moves_game_ply ON moves (game_id, move_number, color);
+```
+
+### Games show "Paused because the server restarted"
+Game loops do not survive a backend restart. Games that were in progress are paused at startup with this reason; resume them from the game view.
+
+
 ### GHCR pull fails
 Possible causes:
 - the package is still private

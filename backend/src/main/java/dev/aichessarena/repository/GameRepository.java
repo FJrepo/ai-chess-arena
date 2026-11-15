@@ -29,6 +29,11 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
         return findById(id, LockModeType.PESSIMISTIC_WRITE);
     }
 
+    /** Re-reads a managed game from the database and locks its row until the transaction ends. */
+    public void refreshForUpdate(Game game) {
+        getEntityManager().refresh(game, LockModeType.PESSIMISTIC_WRITE);
+    }
+
     /**
      * Atomically moves a WAITING or PAUSED game to IN_PROGRESS and clears any pause detail.
      *

@@ -293,6 +293,11 @@ class TournamentServiceFlowTest {
         private final Map<UUID, Game> games = new HashMap<>();
 
         @Override
+        public void refreshForUpdate(Game game) {
+            // In-memory games are always current.
+        }
+
+        @Override
         public void persist(Game entity) {
             if (entity.id == null) {
                 entity.id = UUID.randomUUID();

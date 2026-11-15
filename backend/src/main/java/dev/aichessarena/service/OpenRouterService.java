@@ -144,7 +144,13 @@ public class OpenRouterService {
                                 : "OpenRouter upstream error: " + abbreviate(providerMessage),
                         elapsed, response.body());
             }
-            String content = json.at("/choices/0/message/content").asText(null);
+            JsonNode message = json.path("choices").get(0).path("message");
+            if (!message.isObject()) {
+                LOG.warnf("OpenRouter returned a choice without a message object for model %s", modelId);
+                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                        "OpenRouter returned a malformed choice", elapsed, response.body());
+            }
+            String content = message.path("content").asText(null);
             int promptTokens = json.at("/usage/prompt_tokens").asInt(0);
             int completionTokens = json.at("/usage/completion_tokens").asInt(0);
 

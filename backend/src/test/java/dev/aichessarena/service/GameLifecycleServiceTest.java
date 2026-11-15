@@ -174,6 +174,11 @@ class GameLifecycleServiceTest {
         }
 
         @Override
+        public Game findByIdForUpdate(UUID id) {
+            return games.get(id);
+        }
+
+        @Override
         public boolean markStartedIfStartable(UUID id, LocalDateTime now) {
             Game game = games.get(id);
             if (game == null || (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED)) {

@@ -77,6 +77,7 @@ class OpenRouterServiceChatTest {
     void malformedOrChoicelessSuccessBodiesAreRetryable() throws IOException {
         assertFailure(200, "<html>gateway</html>", ProviderOutcome.RETRYABLE, "OpenRouter returned a malformed response");
         assertFailure(200, "{\"choices\":[]}", ProviderOutcome.RETRYABLE, "OpenRouter returned a response without choices");
+        assertFailure(200, "{\"choices\":[{}]}", ProviderOutcome.RETRYABLE, "OpenRouter returned a malformed choice");
         assertFailure(200, "{\"error\":{\"message\":\"Provider returned error\",\"code\":502}}", ProviderOutcome.RETRYABLE,
                 "OpenRouter upstream error: Provider returned error");
     }

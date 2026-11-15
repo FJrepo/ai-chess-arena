@@ -1,5 +1,7 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.DtoMapper;
+import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -21,6 +23,7 @@ public class GameLifecycleService {
 
     private static final Logger LOG = Logger.getLogger(GameLifecycleService.class);
     static final int STATUS_DETAIL_MAX_LENGTH = 500;
+    static final String RESTART_DETAIL = "Paused because the server restarted; resume to continue";
 
     @Inject
     GameRepository gameRepository;
@@ -37,10 +40,11 @@ public class GameLifecycleService {
     /**
      * Moves a WAITING or PAUSED game to IN_PROGRESS in one conditional update.
      *
+     * @return the game as it is after the transition
      * @throws WebApplicationException 404 if the game does not exist, 409 if it is in any other state
      */
     @Transactional
-    public void markGameStarted(UUID gameId) {
+    public GameDto markGameStarted(UUID gameId) {
         if (!gameRepository.markStartedIfStartable(gameId, LocalDateTime.now())) {
             Game game = gameRepository.findById(gameId);
             if (game == null) {
@@ -48,13 +52,29 @@ public class GameLifecycleService {
             }
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
-        Game game = gameRepository.findById(gameId);
+        Game game = gameRepository.findByIdForUpdate(gameId);
         gameWebSocket.broadcastGameStatus(gameId, "IN_PROGRESS", null, null, totalMoves(gameId), game.totalCostUsd);
+        return DtoMapper.toDto(game, false);
+    }
+
+    /**
+     * No game loop survives a restart, so games left IN_PROGRESS would be stuck (start returns 409).
+     * Pause them with a visible reason so they can be resumed. Called once at startup by {@link GameRecovery}.
+     */
+    @Transactional
+    public void pauseGamesOrphanedByRestart() {
+        int paused = gameRepository.update(
+                "status = ?1, statusDetail = ?2 where status = ?3",
+                GameStatus.PAUSED, RESTART_DETAIL, GameStatus.IN_PROGRESS
+        );
+        if (paused > 0) {
+            LOG.infof("Paused %d game(s) that were in progress before the restart", paused);
+        }
     }
 
     @Transactional
     public void markGamePaused(UUID gameId) {
-        Game game = gameRepository.findById(gameId);
+        Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != GameStatus.IN_PROGRESS) {
             return;
         }
@@ -70,7 +90,13 @@ public class GameLifecycleService {
      */
     @Transactional
     public void pauseForProviderFailure(UUID gameId, String detail) {
-        Game game = gameRepository.findById(gameId);
+        pauseWithReason(gameId, detail);
+    }
+
+    /** Pauses an IN_PROGRESS game and keeps {@code detail} visible until it is started again. */
+    @Transactional
+    public void pauseWithReason(UUID gameId, String detail) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != GameStatus.IN_PROGRESS) {
             return;
         }
@@ -87,7 +113,7 @@ public class GameLifecycleService {
 
     @Transactional
     public void completeGame(UUID gameId, ChessService.GameEndInfo endInfo) {
-        Game game = gameRepository.findById(gameId);
+        Game game = gameRepository.findByIdForUpdate(gameId);
         if (isTerminal(game)) {
             LOG.warnf("Ignoring completion of game %s: already %s", gameId, game.status);
             return;
@@ -156,7 +182,7 @@ public class GameLifecycleService {
     }
 
     private Game markForfeit(UUID gameId, String forfeitColor, ResultReason reason) {
-        Game game = gameRepository.findById(gameId);
+        Game game = gameRepository.findByIdForUpdate(gameId);
         if (isTerminal(game)) {
             LOG.warnf("Ignoring forfeit of game %s: already %s", gameId, game.status);
             return null;

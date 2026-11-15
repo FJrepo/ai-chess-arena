@@ -238,6 +238,8 @@ public class TournamentService {
             if (nextRound.equals(nextGame.bracketRound) && nextGame.bracketPosition != null
                     && nextGame.bracketPosition == nextPosition
                     && nextGame.seriesGameNumber == 1) {
+                // Serialize with concurrent advancements into the same game and with its start.
+                gameRepository.refreshForUpdate(nextGame);
                 if (nextGame.status != Game.GameStatus.WAITING) {
                     // Never rewrite the pairing of a game that has already started or finished.
                     TournamentParticipant seated = completedGame.bracketPosition % 2 == 0
