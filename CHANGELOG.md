@@ -7,7 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-16
+
+Runtime release: the images now run on the current LTS versions of Java and Node.js. No configuration changes are needed; existing `.env` files and databases work as they are.
+
 ### Changed
+- README rewritten: project motivation, features, a copy-paste quick start with the published images, how tournaments work, and condensed development notes.
 - Runtime upgrade to current LTS versions: the backend builds and runs on Java 25 (Eclipse Temurin 25 build and JRE images, bytecode level 25) and the frontend builds on Node.js 26; CI uses the same versions. Local development needs Java 25+ and Node.js 24.15+ (26 recommended).
 
 ## [1.1.0] - 2026-11-15
