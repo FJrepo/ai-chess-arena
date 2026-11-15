@@ -6,13 +6,14 @@ Thanks for contributing. This file defines the minimum workflow for changes.
 - Java 21+
 - Maven 3.9+
 - Node.js 22+ and npm
-- Docker + Docker Compose
+- Docker Engine 28.0+ with Docker Compose, or Docker Desktop with Engine 28.0+
+- Make
 - OpenRouter API key
 
 ## Local Setup
 ### Docker (recommended)
 ```bash
-cp .env.example .env
+make setup
 # set OPENROUTER_API_KEY in .env
 
 docker compose up --build

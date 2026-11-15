@@ -1,12 +1,15 @@
 package dev.aichessarena.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.aichessarena.repository.GameRepository;
 import io.quarkus.websockets.next.OnClose;
 import io.quarkus.websockets.next.OnOpen;
 import io.quarkus.websockets.next.OnTextMessage;
 import io.quarkus.websockets.next.WebSocket;
 import io.quarkus.websockets.next.WebSocketConnection;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -27,6 +30,9 @@ public class GameWebSocket {
     @Inject
     ObjectMapper objectMapper;
 
+    @Inject
+    GameRepository gameRepository;
+
     private final Map<UUID, Set<WebSocketConnection>> gameSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, UUID> connectionGameMap = new ConcurrentHashMap<>();
 
@@ -39,36 +45,93 @@ public class GameWebSocket {
     public void onClose(WebSocketConnection connection) {
         UUID gameId = connectionGameMap.remove(connection.id());
         if (gameId != null) {
-            Set<WebSocketConnection> subs = gameSubscriptions.get(gameId);
-            if (subs != null) {
-                subs.remove(connection);
-            }
+            removeSubscription(gameId, connection);
         }
     }
 
     @OnTextMessage
+    @ActivateRequestContext
     public void onMessage(WebSocketConnection connection, String message) {
+        JsonNode node;
         try {
-            var node = objectMapper.readTree(message);
-            String type = node.get("type").asText();
-
-            if ("subscribe".equals(type)) {
-                UUID gameId = UUID.fromString(node.get("gameId").asText());
-                gameSubscriptions.computeIfAbsent(gameId, ignored -> ConcurrentHashMap.newKeySet())
-                        .add(connection);
-                connectionGameMap.put(connection.id(), gameId);
-                LOG.debugf("Connection %s subscribed to game %s", connection.id(), gameId);
-            } else if ("unsubscribe".equals(type)) {
-                UUID gameId = UUID.fromString(node.get("gameId").asText());
-                Set<WebSocketConnection> subs = gameSubscriptions.get(gameId);
-                if (subs != null) {
-                    subs.remove(connection);
-                }
-                connectionGameMap.remove(connection.id());
-            }
+            node = objectMapper.readTree(message);
         } catch (Exception e) {
-            LOG.warn("Failed to parse WebSocket message", e);
+            LOG.debugf("Ignoring malformed WebSocket message from %s", connection.id());
+            return;
         }
+
+        String type = node.path("type").asText("");
+        if (!"subscribe".equals(type) && !"unsubscribe".equals(type)) {
+            LOG.debugf("Ignoring unsupported WebSocket message type from %s", connection.id());
+            return;
+        }
+
+        UUID gameId;
+        try {
+            gameId = UUID.fromString(node.path("gameId").asText(""));
+        } catch (IllegalArgumentException e) {
+            LOG.debugf("Ignoring WebSocket message with invalid game ID from %s", connection.id());
+            return;
+        }
+
+        if ("subscribe".equals(type)) {
+            subscribe(connection, gameId);
+        } else {
+            unsubscribe(connection, gameId);
+        }
+    }
+
+    private void subscribe(WebSocketConnection connection, UUID gameId) {
+        if (gameRepository.findById(gameId) == null) {
+            LOG.tracef("Ignoring subscription from %s for missing game %s", connection.id(), gameId);
+            return;
+        }
+
+        UUID previousGameId = connectionGameMap.put(connection.id(), gameId);
+        if (previousGameId != null && !previousGameId.equals(gameId)) {
+            removeSubscription(previousGameId, connection);
+        }
+
+        gameSubscriptions.compute(gameId, (ignored, subscribers) -> {
+            Set<WebSocketConnection> currentSubscribers = subscribers;
+            if (currentSubscribers == null) {
+                currentSubscribers = ConcurrentHashMap.newKeySet();
+            }
+            currentSubscribers.add(connection);
+            return currentSubscribers;
+        });
+        LOG.debugf("Connection %s subscribed to game %s", connection.id(), gameId);
+    }
+
+    private void unsubscribe(WebSocketConnection connection, UUID gameId) {
+        if (connectionGameMap.remove(connection.id(), gameId)) {
+            removeSubscription(gameId, connection);
+            LOG.debugf("Connection %s unsubscribed from game %s", connection.id(), gameId);
+        }
+    }
+
+    private void removeSubscription(UUID gameId, WebSocketConnection connection) {
+        gameSubscriptions.computeIfPresent(gameId, (ignored, subscribers) -> {
+            subscribers.remove(connection);
+            return subscribers.isEmpty() ? null : subscribers;
+        });
+    }
+
+    int trackedGameCount() {
+        return gameSubscriptions.size();
+    }
+
+    int trackedConnectionCount() {
+        return connectionGameMap.size();
+    }
+
+    int subscriberCount(UUID gameId) {
+        Set<WebSocketConnection> subscribers = gameSubscriptions.get(gameId);
+        return subscribers != null ? subscribers.size() : 0;
+    }
+
+    UUID subscribedGameId(String connectionId) {
+        return connectionGameMap.get(connectionId);
     }
 
     public void broadcastMove(UUID gameId, int moveNumber, String color, String san,

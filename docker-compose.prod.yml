@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-chess_tournament}
       POSTGRES_USER: ${DB_USER:-chess}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-chess}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
     healthcheck:
@@ -22,11 +22,11 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-chess_tournament}
       DB_USER: ${DB_USER:-chess}
-      DB_PASSWORD: ${DB_PASSWORD:-chess}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
       HTTP_PORT: 8080
     ports:
-      - "${BACKEND_PORT:-8081}:8080"
+      - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -41,7 +41,7 @@ services:
     image: ghcr.io/${IMAGE_NAMESPACE:?set IMAGE_NAMESPACE}/chess-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-4200}:8080"
+      - "127.0.0.1:${FRONTEND_PORT:-4200}:8080"
     depends_on:
       backend:
         condition: service_healthy

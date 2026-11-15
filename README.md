@@ -4,7 +4,7 @@ AI Chess Arena is a local-first chess tournament app for OpenRouter models.
 
 Run tournaments, include one local human participant, watch games live, and review which models perform well, stay reliable, and justify their cost.
 
-> Local-first by design: this project is intended for localhost and private environments. Public auth, multi-tenant isolation, and internet-facing hardening are out of scope for the supported product.
+> Local-first by design: the bundled Compose configurations expose services on localhost only. Public auth, multi-tenant isolation, and internet-facing hardening are out of scope for the supported product. Private-network access requires an operator-provided security boundary.
 
 ## What It Is For
 - Running model-vs-model chess tournaments from a local machine
@@ -24,7 +24,7 @@ Run tournaments, include one local human participant, watch games live, and revi
 - Human participants: one local human participant per tournament
 - Authentication: none
 - Multi-user ownership or permissions: none
-- Recommended runtime: localhost or private network
+- Recommended runtime: localhost; private-network access requires separate authentication, TLS, and firewall controls
 
 ## Stack
 - Backend: Quarkus 3.21.3, Java 21, REST, WebSocket, Panache, Flyway
@@ -53,11 +53,13 @@ Run tournaments, include one local human participant, watch games live, and revi
 ## Quick Start
 For most users, the released-image path is the fastest way to get to a working arena.
 
+The Docker paths require Docker Engine 28.0 or newer (or a Docker Desktop release that includes Engine 28.0+) and Make for the setup helper. Older engines do not reliably isolate ports published to `127.0.0.1` from other hosts on the same layer-2 network.
+
 ### Run Released Images
-1. Create an env file:
+1. Create an env file with owner-only permissions:
 
 ```bash
-cp .env.example .env
+make setup
 ```
 
 2. Edit `.env` and set:
@@ -65,6 +67,10 @@ cp .env.example .env
 - `IMAGE_TAG`
 - `OPENROUTER_API_KEY`
 - `DB_PASSWORD`
+
+Single-quote a value containing `$` in `.env` (for example, `DB_PASSWORD='literal$value'`) so Docker Compose treats it literally instead of interpolating another variable.
+
+If an existing production database volume was created before `DB_PASSWORD` became mandatory, rotate its database role password using the one-time procedure in [docs/deployment.md](docs/deployment.md) before selecting a new value.
 
 3. Pull and start the released stack:
 
@@ -85,6 +91,8 @@ Default URLs:
 - Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
 - Backend API: `http://localhost:${BACKEND_PORT:-8081}`
 
+On the supported Docker Engine 28.0+ baseline, both ports bind to `127.0.0.1` by default and are reachable only from the host running Docker. The development PostgreSQL port is loopback-only as well. Do not widen these bindings for private-network or public access without adding an authentication and network-security boundary.
+
 See [docs/deployment.md](docs/deployment.md) for upgrade, persistence, and troubleshooting details.
 
 ## Local Development
@@ -92,7 +100,7 @@ Use this path when you want the current source tree instead of published images.
 
 ### Docker Compose From Source
 ```bash
-cp .env.example .env
+make setup
 docker compose up --build -d
 docker compose ps
 docker compose logs -f backend frontend

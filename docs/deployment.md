@@ -13,9 +13,12 @@ This project supports two Docker-based run paths:
 For normal releases, `docker-compose.prod.yml` is the supported deployment path.
 
 ## Prerequisites
-- Docker Engine with Docker Compose support
+- Docker Engine 28.0+ with Docker Compose support, or a Docker Desktop release that includes Engine 28.0+
+- Make for the `make setup` helper
 - An OpenRouter API key
 - Access to public GHCR images for this repository
+
+Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 network to reach ports published to `127.0.0.1`. Upgrade the engine before relying on this project's localhost-only boundary; otherwise, enforce equivalent host-firewall isolation before starting the stack.
 
 ## Bundled Engine Note
 - The released backend image bundles Stockfish 18 for move evaluation.
@@ -25,11 +28,13 @@ For normal releases, `docker-compose.prod.yml` is the supported deployment path.
 - If Stockfish is unavailable at runtime, the backend now stays up and the frontend disables the eval bar rather than failing the full app.
 
 ## First-Time Setup
-1. Copy the environment template:
+1. Create the environment file with owner-only permissions:
 
 ```bash
-cp .env.example .env
+make setup
 ```
+
+`make setup` creates `.env` with mode `0600`. If the file already exists, it keeps the contents and tightens the permissions to `0600`.
 
 2. Edit `.env` and set:
 - `IMAGE_NAMESPACE`
@@ -38,6 +43,8 @@ cp .env.example .env
   - recommended: a pinned version such as `v1.0.0`
 - `OPENROUTER_API_KEY`
 - `DB_PASSWORD`
+  - required; production Compose does not provide a fallback password
+  - single-quote a value containing `$` (for example, `DB_PASSWORD='literal$value'`) so Compose treats it literally
 
 3. Pull the published images:
 
@@ -62,7 +69,28 @@ docker compose -f docker-compose.prod.yml logs --tail=120 backend frontend
 - Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
 - Backend API: `http://localhost:${BACKEND_PORT:-8081}`
 
-The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
+On the supported Docker Engine 28.0+ baseline, both published ports bind to `127.0.0.1` and are reachable only from the Docker host. The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
+
+The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default: widening a bind address requires an operator-provided authentication boundary, TLS, authorization for mutations, and appropriate firewall/rate-limit controls.
+
+## Upgrading Volumes Created Before `DB_PASSWORD` Was Required
+
+Older production volumes may have been initialized with the former fallback database password `chess`. PostgreSQL applies `POSTGRES_PASSWORD` only when it initializes an empty data directory, so changing `.env` alone does not change the password stored in an existing volume.
+
+Rotate the role password once before selecting a new `DB_PASSWORD`. If the new Compose file is already checked out, first set `DB_PASSWORD=chess` temporarily in `.env` only for a volume known to have used that former fallback, so Compose can address the running database during the rotation.
+
+1. While the old database container is running, open `psql` as the configured database user:
+
+```bash
+docker compose -f docker-compose.prod.yml exec db \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+2. At the `psql` prompt, run `\password`. Enter a new strong password twice, then run `\q`. This avoids placing the password in shell history.
+3. Set `DB_PASSWORD` in `.env` to exactly that new password. If it contains `$`, single-quote the value so Compose does not interpolate it; escape any embedded single quote as `\'`.
+4. Pull the intended images and recreate the stack using the normal upgrade steps below. Recreating the containers does not remove `pgdata_prod`.
+
+If the backend is already failing to connect, start only the database with the temporary compatibility value, perform the rotation above, and immediately replace that value before recreating the stack. Never use the former fallback for a new deployment.
 
 ## Upgrading To A New Release
 1. Update `IMAGE_TAG` in `.env`

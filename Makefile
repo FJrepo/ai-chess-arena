@@ -28,11 +28,13 @@ help:
 	@echo "  make test-frontend Run frontend tests only"
 
 setup:
-	@if [ -f .env ]; then \
-		echo ".env already exists (keeping current file)"; \
+	@set -eu; \
+	if [ -f .env ]; then \
+		chmod 600 .env; \
+		echo ".env already exists (keeping current file; permissions set to 0600)"; \
 	else \
-		cp .env.example .env; \
-		echo "Created .env from .env.example"; \
+		install -m 600 .env.example .env; \
+		echo "Created .env from .env.example with permissions 0600"; \
 		echo "Set OPENROUTER_API_KEY in .env before running the stack"; \
 	fi
 
