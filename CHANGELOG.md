@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Development and released-image Compose ports now bind to loopback by default on the documented Docker Engine 28.0+ baseline, preserving local access without exposing the unauthenticated control plane to the surrounding network.
+- Production Compose now requires an explicit database password, includes a one-time rotation path for volumes created with the former fallback, and `make setup` creates or tightens `.env` to owner-only permissions.
+
+### Fixed
+- WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.
+
+### Security
+- Default Docker networking now matches the documented localhost-only product boundary for the unauthenticated application, with Docker Engine 28.0+ required for loopback isolation.
+
 ## [1.0.0] - 2026-03-08
 
 ### Added
