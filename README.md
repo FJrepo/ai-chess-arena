@@ -114,7 +114,7 @@ Default local ports:
 Prerequisites:
 - Java 25
 - Maven 3.9+
-- Node.js 24+ (26 recommended)
+- Node.js 24.15+ (26 recommended)
 - npm 11+
 - PostgreSQL 17
 - OpenRouter API key

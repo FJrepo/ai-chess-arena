@@ -8,7 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Changed
-- Runtime upgrade to current LTS versions: the backend builds and runs on Java 25 (Eclipse Temurin 25 build and JRE images, bytecode level 25) and the frontend builds on Node.js 26; CI uses the same versions. Local development needs Java 25+ and Node.js 24+ (26 recommended).
+- Runtime upgrade to current LTS versions: the backend builds and runs on Java 25 (Eclipse Temurin 25 build and JRE images, bytecode level 25) and the frontend builds on Node.js 26; CI uses the same versions. Local development needs Java 25+ and Node.js 24.15+ (26 recommended).
 
 ## [1.1.0] - 2026-11-15
 
