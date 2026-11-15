@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.aichessarena.repository.GameRepository;
+import io.quarkus.websockets.next.CloseReason;
 import io.quarkus.websockets.next.OnClose;
 import io.quarkus.websockets.next.OnOpen;
 import io.quarkus.websockets.next.OnTextMessage;
@@ -12,6 +13,7 @@ import io.quarkus.websockets.next.WebSocketConnection;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
@@ -20,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @WebSocket(path = "/ws/games")
 @ApplicationScoped
@@ -33,16 +36,68 @@ public class GameWebSocket {
     @Inject
     GameRepository gameRepository;
 
+    static final int TRY_AGAIN_LATER = 1013;
+    static final long SUBSCRIBE_WINDOW_MS = 10_000L;
+
+    /** Soft cap on simultaneous live connections; the app is a local, single-user tool. */
+    @ConfigProperty(name = "game.websocket.max-connections", defaultValue = "256")
+    int maxConnections = 256;
+
+    /**
+     * Subscribe messages allowed per connection within {@link #SUBSCRIBE_WINDOW_MS}. A connection that exceeds
+     * it is closed; the frontend reconnects after a few seconds and resubscribes to the game it shows.
+     */
+    @ConfigProperty(name = "game.websocket.max-subscriptions-per-window", defaultValue = "30")
+    int maxSubscriptionsPerWindow = 30;
+
+    private final AtomicInteger admittedConnections = new AtomicInteger();
+
     private final Map<UUID, Set<WebSocketConnection>> gameSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, UUID> connectionGameMap = new ConcurrentHashMap<>();
+    private final Map<String, SubscriptionWindow> subscriptionWindows = new ConcurrentHashMap<>();
+
+    private static final class SubscriptionWindow {
+        private long startedAtMs;
+        private int count;
+
+        synchronized boolean tryAcquire(long nowMs, int limit) {
+            if (nowMs - startedAtMs >= SUBSCRIBE_WINDOW_MS) {
+                startedAtMs = nowMs;
+                count = 0;
+            }
+            if (count >= limit) {
+                return false;
+            }
+            count++;
+            return true;
+        }
+    }
 
     @OnOpen
     public void onOpen(WebSocketConnection connection) {
+        // Open callbacks of different connections run concurrently: reserve a slot atomically.
+        if (admittedConnections.incrementAndGet() > maxConnections) {
+            admittedConnections.decrementAndGet();
+            LOG.warnf("Rejecting WebSocket %s: %d live connections already open", connection.id(), maxConnections);
+            closeQuietly(connection, "Too many live connections");
+            return;
+        }
+        subscriptionWindows.put(connection.id(), new SubscriptionWindow());
         LOG.debugf("WebSocket opened: %s", connection.id());
+    }
+
+    private void closeQuietly(WebSocketConnection connection, String reason) {
+        connection.close(new CloseReason(TRY_AGAIN_LATER, reason)).subscribe().with(
+                ignored -> { },
+                err -> LOG.debugf("Failed to close WebSocket %s: %s", connection.id(), err.getMessage())
+        );
     }
 
     @OnClose
     public void onClose(WebSocketConnection connection) {
+        if (subscriptionWindows.remove(connection.id()) != null) {
+            admittedConnections.decrementAndGet();
+        }
         UUID gameId = connectionGameMap.remove(connection.id());
         if (gameId != null) {
             removeSubscription(gameId, connection);
@@ -63,6 +118,18 @@ public class GameWebSocket {
         String type = node.path("type").asText("");
         if (!"subscribe".equals(type) && !"unsubscribe".equals(type)) {
             LOG.debugf("Ignoring unsupported WebSocket message type from %s", connection.id());
+            return;
+        }
+
+        SubscriptionWindow window = subscriptionWindows.get(connection.id());
+        if (window == null) {
+            LOG.debugf("Ignoring WebSocket message from connection %s that was not admitted", connection.id());
+            return;
+        }
+        if ("subscribe".equals(type) && !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
+            // Close instead of silently dropping: the client reconnects and resubscribes to its current game.
+            LOG.debugf("Closing WebSocket %s: too many subscriptions", connection.id());
+            closeQuietly(connection, "Too many subscriptions; reconnect later");
             return;
         }
 
@@ -100,6 +167,12 @@ public class GameWebSocket {
             currentSubscribers.add(connection);
             return currentSubscribers;
         });
+        if (!connection.isOpen()) {
+            // The connection closed while subscribing; onClose may already have run, so undo here.
+            connectionGameMap.remove(connection.id(), gameId);
+            removeSubscription(gameId, connection);
+            return;
+        }
         LOG.debugf("Connection %s subscribed to game %s", connection.id(), gameId);
     }
 
@@ -119,6 +192,10 @@ public class GameWebSocket {
 
     int trackedGameCount() {
         return gameSubscriptions.size();
+    }
+
+    int openConnectionCount() {
+        return admittedConnections.get();
     }
 
     int trackedConnectionCount() {
