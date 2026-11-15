@@ -253,6 +253,7 @@ public class TournamentService {
             ensureNextSeriesGameExists(completedGame, seriesGames);
             return;
         }
+        completedGame.advancedParticipant = winner;
 
         List<Game> tournamentGames = gameRepository.findByTournamentId(completedGame.tournament.id);
         int nextPosition = completedGame.bracketPosition / 2;
@@ -361,25 +362,31 @@ public class TournamentService {
         // Best of N: at most N regular games. A draw is a game played without a winner. The series is
         // decided once the lead can no longer be caught in the remaining regular games; if it is level
         // after all N, the draw policy decides (REPLAY_GAME: sudden-death games until one is decisive).
+        // Only regular games (number <= N) count toward the series score. Games beyond N are sudden-death
+        // tiebreaks under REPLAY_GAME; extra games created by older versions under other policies are ignored.
         int bestOf = completedGame.seriesBestOf;
         int whiteWins = 0;
         int blackWins = 0;
         int regularGamesFinished = 0;
+        TournamentParticipant firstTiebreakWinner = null;
         for (Game game : seriesGames) {
             if (game.result == null) {
                 continue;
             }
+            TournamentParticipant gameWinner = winnerOfGame(game);
+            TournamentParticipant side = gameWinner == null ? null
+                    : Objects.equals(gameWinner.id, bracketWhite.id) ? bracketWhite
+                    : Objects.equals(gameWinner.id, bracketBlack.id) ? bracketBlack
+                    : null;
             if (game.seriesGameNumber <= bestOf) {
                 regularGamesFinished++;
-            }
-            TournamentParticipant gameWinner = winnerOfGame(game);
-            if (gameWinner == null) {
-                continue;
-            }
-            if (Objects.equals(gameWinner.id, bracketWhite.id)) {
-                whiteWins++;
-            } else if (Objects.equals(gameWinner.id, bracketBlack.id)) {
-                blackWins++;
+                if (side == bracketWhite) {
+                    whiteWins++;
+                } else if (side == bracketBlack) {
+                    blackWins++;
+                }
+            } else if (side != null && firstTiebreakWinner == null) {
+                firstTiebreakWinner = side;
             }
         }
 
@@ -389,6 +396,11 @@ public class TournamentService {
         }
         if (remainingRegularGames > 0) {
             return null;
+        }
+        boolean suddenDeath = completedGame.tournament != null
+                && completedGame.tournament.drawPolicy == Tournament.DrawPolicy.REPLAY_GAME;
+        if (suddenDeath) {
+            return firstTiebreakWinner;
         }
         return applyDrawPolicy(completedGame.tournament, bracketWhite, bracketBlack);
     }

@@ -18,6 +18,7 @@ public record GameDto(
         String result,
         String resultReason,
         String statusDetail,
+        String advancedPlayerName,
         String pgn,
         String currentFen,
         String bracketRound,

@@ -95,6 +95,50 @@ class TournamentSeriesRulesTest {
     }
 
     @Test
+    void anExtraGameLeftByAnOlderVersionCannotChangeTheResult() {
+        Fixture fixture = new Fixture(3, DrawPolicy.BLACK_ADVANCES);
+        for (char outcome : "ADD".toCharArray()) {
+            fixture.play(outcome);
+        }
+        assertEquals("Seed 1", fixture.advanced());
+
+        // Older versions created a 4th game instead of deciding A-D-D; simulate that state and play it.
+        Game finalGame = fixture.slot("Final", 0);
+        finalGame.whiteParticipant = null;
+        finalGame.whitePlayerName = null;
+        Game legacy = new Game();
+        Game first = fixture.slot("Semifinal", 0);
+        legacy.tournament = fixture.tournament;
+        legacy.bracketRound = first.bracketRound;
+        legacy.bracketPosition = first.bracketPosition;
+        legacy.seriesId = first.seriesId;
+        legacy.seriesGameNumber = 4;
+        legacy.seriesBestOf = 3;
+        legacy.whiteParticipant = first.blackParticipant;
+        legacy.whitePlayerName = first.blackPlayerName;
+        legacy.blackParticipant = first.whiteParticipant;
+        legacy.blackPlayerName = first.whitePlayerName;
+        legacy.status = Game.GameStatus.WAITING;
+        fixture.gameRepository.persist(legacy);
+
+        fixture.play('B');
+
+        assertEquals("Seed 1", fixture.advanced());
+    }
+
+    @Test
+    void theGameThatDecidesALevelSeriesRecordsWhoAdvanced() {
+        Fixture fixture = new Fixture(3, DrawPolicy.RANDOM_ADVANCES);
+        for (char outcome : "DDD".toCharArray()) {
+            fixture.play(outcome);
+        }
+
+        Game deciding = fixture.seriesGames().getLast();
+        assertEquals(fixture.advanced(), deciding.advancedParticipant.playerName);
+        assertNull(fixture.seriesGames().getFirst().advancedParticipant);
+    }
+
+    @Test
     void bracketCanOnlyBeGeneratedOnce() {
         Fixture fixture = new Fixture(1, DrawPolicy.WHITE_ADVANCES);
         int games = fixture.gameRepository.games.size();

@@ -4,6 +4,7 @@ import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.TournamentRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,7 @@ public class TournamentCreationService {
 
     public record Result(Tournament tournament, boolean created) {}
 
+    @ActivateRequestContext
     public Result create(Tournament tournament, List<TournamentParticipant> participants, UUID clientRequestId) {
         if (clientRequestId != null) {
             Tournament existing = tournamentRepository.findByClientRequestId(clientRequestId);

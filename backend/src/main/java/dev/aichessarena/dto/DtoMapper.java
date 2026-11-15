@@ -16,7 +16,14 @@ public final class DtoMapper {
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.trashTalkEnabled,
                 t.createdAt, t.updatedAt,
                 t.participants.stream().map(DtoMapper::toDto).toList(),
-                t.games.stream().map(g -> toDto(g, false)).toList()
+                t.games.stream().map(g -> toDto(g, false)).toList(),
+                t.status == Tournament.TournamentStatus.COMPLETED
+                        ? t.games.stream()
+                                .filter(g -> "Final".equals(g.bracketRound) && g.advancedParticipant != null)
+                                .map(g -> g.advancedParticipant.playerName)
+                                .findFirst()
+                                .orElse(null)
+                        : null
         );
     }
 
@@ -45,6 +52,7 @@ public final class DtoMapper {
                 g.result != null ? g.result.name() : null,
                 g.resultReason != null ? g.resultReason.name() : null,
                 g.statusDetail,
+                g.advancedParticipant != null ? g.advancedParticipant.playerName : null,
                 g.pgn, g.currentFen,
                 g.bracketRound, g.bracketPosition, g.seriesId, g.seriesGameNumber, g.seriesBestOf,
                 g.totalCostUsd, g.createdAt, g.startedAt, g.completedAt,

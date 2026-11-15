@@ -54,6 +54,11 @@ public class Game extends PanacheEntityBase {
     @Column(name = "status_detail", length = 500)
     public String statusDetail;
 
+    /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "advanced_participant_id")
+    public TournamentParticipant advancedParticipant;
+
     @Column(columnDefinition = "TEXT")
     public String pgn;
 

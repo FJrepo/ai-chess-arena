@@ -72,6 +72,7 @@ describe('TournamentSetup', () => {
     api.createTournament = ((payload: Record<string, unknown>) => {
       api.createTournamentPayload = payload;
       return throwError(() => ({
+        status: 400,
         error: { error: 'Model is not allowed by backend policy: bogus' },
       }));
     }) as any;
@@ -84,6 +85,26 @@ describe('TournamentSetup', () => {
     expect(component.creating()).toBe(false);
     expect(api.createTournamentPayload?.['clientRequestId']).toBe(firstRequestId);
     expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('uses a new request id when the details change after an unconfirmed attempt', () => {
+    const api = createApiService();
+    const requestIds: unknown[] = [];
+    api.createTournament = ((payload: Record<string, unknown>) => {
+      requestIds.push(payload['clientRequestId']);
+      return throwError(() => ({ status: 0, error: null }));
+    }) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Arena';
+
+    component.create();
+    component.create();
+    component.name = 'Arena (edited)';
+    component.create();
+
+    expect(requestIds[0]).toBe(requestIds[1]);
+    expect(requestIds[2]).not.toBe(requestIds[0]);
+    expect(component.createError()).toContain('did not confirm');
   });
 
   it('ignores a second click while the tournament is being created', () => {

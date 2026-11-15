@@ -11,6 +11,12 @@
           <span class="status-badge" [class.active]="t.status === 'IN_PROGRESS'">
             {{ t.status }}
           </span>
+          @if (t.winnerName) {
+            <span class="dot-separator"></span>
+            <span class="champion-tag"
+              ><mat-icon>emoji_events</mat-icon> Champion: {{ t.winnerName }}</span
+            >
+          }
           <span class="dot-separator"></span>
           <span class="count-tag">{{ t.participants.length }} Players</span>
           <span class="dot-separator"></span>
