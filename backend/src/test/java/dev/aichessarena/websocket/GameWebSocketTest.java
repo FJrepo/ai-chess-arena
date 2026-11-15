@@ -170,18 +170,61 @@ class GameWebSocketTest {
     }
 
     @Test
-    void subscribeMessagesAreRateLimitedPerConnection() {
+    void tooManySubscriptionsCloseTheConnectionSoTheClientResubscribes() {
+        endpoint.maxSubscriptionsPerWindow = 3;
         WebSocketConnection connection = connection("connection-1");
-        UUID[] games = {gameRepository.addGame(), gameRepository.addGame()};
-        for (int i = 0; i < 10; i++) {
-            endpoint.onMessage(connection, subscribeMessage(games[i % 2]));
+        UUID[] games = {gameRepository.addGame(), gameRepository.addGame(), gameRepository.addGame()};
+
+        for (UUID game : games) {
+            endpoint.onMessage(connection, subscribeMessage(game));
+            endpoint.onMessage(connection, unsubscribeMessage(game)); // unsubscribes are not limited
         }
-        UUID lateGame = gameRepository.addGame();
+        assertFalse(closedConnections.contains("connection-1"));
 
-        endpoint.onMessage(connection, subscribeMessage(lateGame));
+        endpoint.onMessage(connection, subscribeMessage(gameRepository.addGame()));
 
-        assertEquals(games[1], endpoint.subscribedGameId(connection.id()));
-        assertEquals(0, endpoint.subscriberCount(lateGame));
+        assertTrue(closedConnections.contains("connection-1"));
+        assertNull(endpoint.subscribedGameId(connection.id()));
+    }
+
+    @Test
+    void concurrentOpensNeverExceedTheConnectionCap() throws Exception {
+        endpoint.maxConnections = 5;
+        int attempts = 40;
+        CountDownLatch go = new CountDownLatch(1);
+        java.util.List<Thread> threads = new java.util.ArrayList<>();
+        for (int i = 0; i < attempts; i++) {
+            String id = "connection-" + i;
+            Thread thread = new Thread(() -> {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                connection(id);
+            });
+            threads.add(thread);
+            thread.start();
+        }
+        go.countDown();
+        for (Thread thread : threads) {
+            thread.join(5_000);
+        }
+
+        assertEquals(5, endpoint.openConnectionCount());
+        assertEquals(attempts - 5, closedConnections.size());
+    }
+
+    @Test
+    void closingAnAdmittedConnectionFreesItsSlot() {
+        endpoint.maxConnections = 1;
+        WebSocketConnection first = connection("connection-1");
+        endpoint.onClose(first);
+
+        connection("connection-2");
+
+        assertEquals(1, endpoint.openConnectionCount());
+        assertFalse(closedConnections.contains("connection-2"));
     }
 
     @Test

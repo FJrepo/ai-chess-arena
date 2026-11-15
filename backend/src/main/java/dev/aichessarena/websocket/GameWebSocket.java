@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @WebSocket(path = "/ws/games")
 @ApplicationScoped
@@ -42,9 +43,14 @@ public class GameWebSocket {
     @ConfigProperty(name = "game.websocket.max-connections", defaultValue = "256")
     int maxConnections = 256;
 
-    /** Subscribe/unsubscribe messages allowed per connection within {@link #SUBSCRIBE_WINDOW_MS}. */
-    @ConfigProperty(name = "game.websocket.max-subscriptions-per-window", defaultValue = "10")
-    int maxSubscriptionsPerWindow = 10;
+    /**
+     * Subscribe messages allowed per connection within {@link #SUBSCRIBE_WINDOW_MS}. A connection that exceeds
+     * it is closed; the frontend reconnects after a few seconds and resubscribes to the game it shows.
+     */
+    @ConfigProperty(name = "game.websocket.max-subscriptions-per-window", defaultValue = "30")
+    int maxSubscriptionsPerWindow = 30;
+
+    private final AtomicInteger admittedConnections = new AtomicInteger();
 
     private final Map<UUID, Set<WebSocketConnection>> gameSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, UUID> connectionGameMap = new ConcurrentHashMap<>();
@@ -69,21 +75,29 @@ public class GameWebSocket {
 
     @OnOpen
     public void onOpen(WebSocketConnection connection) {
-        if (subscriptionWindows.size() >= maxConnections) {
+        // Open callbacks of different connections run concurrently: reserve a slot atomically.
+        if (admittedConnections.incrementAndGet() > maxConnections) {
+            admittedConnections.decrementAndGet();
             LOG.warnf("Rejecting WebSocket %s: %d live connections already open", connection.id(), maxConnections);
-            connection.close(new CloseReason(TRY_AGAIN_LATER, "Too many live connections")).subscribe().with(
-                    ignored -> { },
-                    err -> LOG.debugf("Failed to close rejected WebSocket %s: %s", connection.id(), err.getMessage())
-            );
+            closeQuietly(connection, "Too many live connections");
             return;
         }
         subscriptionWindows.put(connection.id(), new SubscriptionWindow());
         LOG.debugf("WebSocket opened: %s", connection.id());
     }
 
+    private void closeQuietly(WebSocketConnection connection, String reason) {
+        connection.close(new CloseReason(TRY_AGAIN_LATER, reason)).subscribe().with(
+                ignored -> { },
+                err -> LOG.debugf("Failed to close WebSocket %s: %s", connection.id(), err.getMessage())
+        );
+    }
+
     @OnClose
     public void onClose(WebSocketConnection connection) {
-        subscriptionWindows.remove(connection.id());
+        if (subscriptionWindows.remove(connection.id()) != null) {
+            admittedConnections.decrementAndGet();
+        }
         UUID gameId = connectionGameMap.remove(connection.id());
         if (gameId != null) {
             removeSubscription(gameId, connection);
@@ -108,8 +122,14 @@ public class GameWebSocket {
         }
 
         SubscriptionWindow window = subscriptionWindows.get(connection.id());
-        if (window == null || !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
-            LOG.debugf("Ignoring WebSocket %s message from %s: not accepted or rate limited", type, connection.id());
+        if (window == null) {
+            LOG.debugf("Ignoring WebSocket message from connection %s that was not admitted", connection.id());
+            return;
+        }
+        if ("subscribe".equals(type) && !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
+            // Close instead of silently dropping: the client reconnects and resubscribes to its current game.
+            LOG.debugf("Closing WebSocket %s: too many subscriptions", connection.id());
+            closeQuietly(connection, "Too many subscriptions; reconnect later");
             return;
         }
 
@@ -175,7 +195,7 @@ public class GameWebSocket {
     }
 
     int openConnectionCount() {
-        return subscriptionWindows.size();
+        return admittedConnections.get();
     }
 
     int trackedConnectionCount() {

@@ -70,7 +70,24 @@ docker compose -f docker-compose.prod.yml logs --tail=120 backend frontend
 - Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
 - Backend API: `http://localhost:${FRONTEND_PORT:-4200}/api` (proxied by the frontend)
 
-The backend publishes no host port in `docker-compose.prod.yml`. On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` and is reachable only from the Docker host. For direct API debugging, add a `docker-compose.override.yml` with `ports: ["127.0.0.1:8081:8080"]` for the backend service. The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
+The backend publishes no host port in `docker-compose.prod.yml`. On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` and is reachable only from the Docker host.
+
+### Direct backend access (debugging)
+Create `docker-compose.debug.yml`:
+
+```yaml
+services:
+  backend:
+    ports:
+      - "127.0.0.1:8081:8080"
+```
+
+and pass both files explicitly (an override file is only picked up automatically without `-f`):
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.debug.yml up -d backend
+curl http://127.0.0.1:8081/q/health/ready
+``` The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
 
 The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default: widening a bind address requires an operator-provided authentication boundary, TLS, authorization for mutations, and appropriate firewall/rate-limit controls.
 
