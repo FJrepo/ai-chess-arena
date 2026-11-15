@@ -1,191 +1,117 @@
 # AI Chess Arena
 
-AI Chess Arena is a local-first chess tournament app for OpenRouter models.
+[![CI](https://github.com/FJrepo/ai-chess-arena/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FJrepo/ai-chess-arena/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/FJrepo/ai-chess-arena)](https://github.com/FJrepo/ai-chess-arena/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Run tournaments, include one local human participant, watch games live, and review which models perform well, stay reliable, and justify their cost.
+Let large language models play chess against each other — in brackets, live, with trash talk.
 
-> Local-first by design: the bundled Compose configurations expose services on localhost only. Public auth, multi-tenant isolation, and internet-facing hardening are out of scope for the supported product. Private-network access requires an operator-provided security boundary.
+AI Chess Arena runs single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. You pick the models, watch every move and chat message as it happens, can jump in as a human player, and look at who actually won, who kept making illegal moves, and what it all cost.
 
-## What It Is For
-- Running model-vs-model chess tournaments from a local machine
-- Observing live games with move, chat, and status updates
-- Comparing model results with bracket views, PGN export, and analytics
-- Including one local human participant in the tournament flow
+![Tournament bracket](docs/screenshots/tournament-bracket.png)
 
-## What You Can Do
-- Create single-elimination tournaments with best-of `1`, `3`, `5`, or `7` series.
-- Add OpenRouter models as participants with shared or participant-specific custom instructions.
-- Add one local human participant and play moves from the live game view.
-- Watch games live with move feed, chat, PGN export, and optional Stockfish evaluation.
-- Review bracket progress, system health, and model analytics from the web UI.
+## Why this exists
+**Mainly for fun.** Watching two frontier models confidently blunder their queens while taunting each other is entertainment in its own right, and a bracket makes it a tournament night.
 
-## Current Scope
-- Tournament format: single elimination
-- Human participants: one local human participant per tournament
-- Authentication: none
-- Multi-user ownership or permissions: none
-- Recommended runtime: localhost; private-network access requires separate authentication, TLS, and firewall controls
+> **Side note: a benchmaxxing smell test.** New model releases arrive with impressive benchmark numbers. Chess is a cheap, unrehearsed check against that: the rules are simple, legality is verified move by move, and illegal moves, timeouts and forfeits are recorded. A model that tops the leaderboards but cannot finish a game without illegal moves is worth a second look. Treat the results as a smell test, not as a rigorous benchmark — brackets are small, games are few, and chess skill is only one narrow ability.
 
-## Stack
-- Backend: Quarkus 3.40 LTS, Java 25, REST, WebSocket, Panache, Flyway
-- Frontend: Angular 21.2.x, Angular Material 21.2.x, TypeScript 5.9.x
-- Database: PostgreSQL 17
-- Model provider: OpenRouter
-- Evaluation engine: Stockfish 18
+## Features
+- **Tournaments:** single elimination with best-of 1, 3, 5 or 7 series (separate setting for the final), configurable move timeout, retries for invalid output, and draw policies.
+- **Any OpenRouter model** as a participant, with shared or per-participant custom instructions; optionally **one human player** who moves from the live game view.
+- **Live games** over WebSocket: board, move list, model chat, retries, and an optional Stockfish 18 evaluation bar.
+- **Reliable runs:** OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; games interrupted by a restart can be resumed.
+- **Analysis:** bracket overview with series scores and the champion, PGN export, and analytics on results, reliability (illegal moves, timeouts, forfeits) and cost.
+- **Cost estimate** before you start: expected games, runtime and spend for the chosen models and format.
 
-## Screenshots
-### Tournament Bracket
-![Tournament bracket view](docs/screenshots/tournament-bracket.png)
+| Live game | Analytics |
+|---|---|
+| ![Live game with board, moves and chat](docs/screenshots/live-game-board-chat.png) | ![Analytics dashboard](docs/screenshots/analytics-dashboard.png) |
 
-### Live Game
-![Live game with board, moves, and chat](docs/screenshots/live-game-board-chat.png)
-
-### Analytics Dashboard
-![Analytics dashboard with model metrics](docs/screenshots/analytics-dashboard.png)
-
-## Typical Workflow
-1. Pick a few models and create a tournament.
-2. Tune the format, retries, timeouts, and optional custom instructions.
-3. Start the bracket and watch matches play out live.
-4. Jump into a game when a human-controlled participant is on move.
-5. Use analytics and PGNs to decide which models were actually worth running.
-
-## Quick Start
-For most users, the released-image path is the fastest way to get to a working arena.
-
-The Docker paths require Docker Engine 28.0 or newer (or a Docker Desktop release that includes Engine 28.0+) and Make for the setup helper. Older engines do not reliably isolate ports published to `127.0.0.1` from other hosts on the same layer-2 network.
-
-### Run Released Images
-1. Create an env file with owner-only permissions:
+## Quick start
+You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).
 
 ```bash
-make setup
+git clone https://github.com/FJrepo/ai-chess-arena.git && cd ai-chess-arena
+make setup                     # creates .env (mode 0600) from .env.example
 ```
 
-2. Edit `.env` and set:
-- `IMAGE_NAMESPACE`
-- `IMAGE_TAG`
-- `OPENROUTER_API_KEY`
-- `DB_PASSWORD`
+Edit `.env`:
 
-Single-quote a value containing `$` in `.env` (for example, `DB_PASSWORD='literal$value'`) so Docker Compose treats it literally instead of interpolating another variable.
+```bash
+IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
+IMAGE_TAG=v1.1.0               # a release from https://github.com/FJrepo/ai-chess-arena/releases
+OPENROUTER_API_KEY=sk-or-...
+DB_PASSWORD='choose-a-strong-password'
+```
 
-If an existing production database volume was created before `DB_PASSWORD` became mandatory, rotate its database role password using the one-time procedure in [docs/deployment.md](docs/deployment.md) before selecting a new value.
-
-3. Pull and start the released stack:
+Start it:
 
 ```bash
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-4. Verify the stack:
+Open **http://localhost:4200**, create a tournament, generate the bracket and start the first game. The API is available under `http://localhost:4200/api`.
 
-```bash
-docker compose -f docker-compose.prod.yml ps
-curl http://localhost:${FRONTEND_PORT:-4200}/api/tournaments
-```
+Everything binds to `127.0.0.1` only. Upgrades, backups, password rotation and troubleshooting are covered in [docs/deployment.md](docs/deployment.md).
 
-Default URLs:
-- Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
-- Backend API: `http://localhost:${FRONTEND_PORT:-4200}/api` (proxied by the frontend; the backend has no host port in the released-image stack)
+## How tournaments work
+- **Bracket:** participants are seeded in the order they are added; byes are assigned automatically when the field is not a power of two.
+- **Best of N:** a series lasts at most N games. A draw is a game without a winner, and a series ends as soon as the lead can no longer be caught.
+- **Level after N games** (or a drawn single game): the tournament's draw policy decides — *White advances* (white in game 1), *Black advances*, *Higher seed advances*, *Random*, or *Replay game*, which keeps adding sudden-death games until one is decisive (so it has no fixed maximum length or cost).
+- **Model turns:** each move must be a legal move in the requested JSON format within the move timeout. Invalid output is retried up to the configured limit; after that the model forfeits. A model that is too slow forfeits on time. Problems on OpenRouter's side never count against a model — the game pauses with the reason and can be resumed.
 
-On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` by default and are reachable only from the host running Docker. The development PostgreSQL port is loopback-only as well. Do not widen these bindings for private-network or public access without adding an authentication and network-security boundary.
+## Scope
+- Built for **one operator on localhost**: no authentication, no user accounts. Exposing it to a network requires your own authentication, TLS and firewall in front of it.
+- One human participant per tournament; single elimination only.
+- Not a public chess site, a hosted service, or an engine-research suite.
 
-See [docs/deployment.md](docs/deployment.md) for upgrade, persistence, and troubleshooting details.
+## Development
+**Source build with Docker:**
 
-## Local Development
-Use this path when you want the current source tree instead of published images.
-
-### Docker Compose From Source
 ```bash
 make setup
-docker compose up --build -d
-docker compose ps
-docker compose logs -f backend frontend
+docker compose up --build -d   # frontend :4200, backend :8081, PostgreSQL :5433 (all loopback)
 ```
 
-Default local ports:
-- Frontend: `http://localhost:4200`
-- Backend API: `http://localhost:8081`
-- PostgreSQL: `localhost:5433`
-
-### Run Services Without Docker
-Prerequisites:
-- Java 25
-- Maven 3.9+
-- Node.js 24.15+ (26 recommended)
-- npm 11+
-- PostgreSQL 17
-- OpenRouter API key
-- Stockfish 18 on `PATH` if you want evaluation outside Docker
-
-Start only the database with Docker if needed:
+**Without Docker** (Java 25, Maven 3.9+, Node.js 24.15+ — 26 recommended, PostgreSQL 17; Stockfish 18 on `PATH` for evaluation):
 
 ```bash
-docker compose up -d db
+docker compose up -d db                 # or your own PostgreSQL on :5433
+cd backend && mvn quarkus:dev           # http://localhost:8081
+cd frontend && npm ci && npm start      # http://localhost:4200, proxies /api and /ws
 ```
 
-Run the backend:
+**Tests and checks:**
 
 ```bash
-cd backend
-mvn quarkus:dev
+make test                               # backend unit + frontend tests
+cd backend && mvn verify                # + PostgreSQL integration tests (Docker required)
+cd frontend && npm run lint && npm run typecheck && npm run format:check
 ```
 
-Run the frontend:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
-```bash
-cd frontend
-npm ci
-npm start
-```
+## Stack
+| Part | Technology |
+|---|---|
+| Backend | Quarkus 3.40 LTS on Java 25 — REST, WebSockets Next, Hibernate ORM Panache, Flyway; game loops on virtual threads |
+| Frontend | Angular 21.2 with Angular Material, standalone components, CSS chessboard |
+| Database | PostgreSQL 17 |
+| Models | OpenRouter (any chat model) |
+| Evaluation | Stockfish 18 (bundled in the backend image, `amd64`/AVX2; the app runs without it) |
 
-### Useful Commands
-```bash
-cd backend && mvn test            # unit tests
-cd backend && mvn verify          # + database integration tests (Docker required)
-cd frontend && npm run lint
-cd frontend && npm run typecheck
-cd frontend && npm test -- --watch=false
-cd frontend && npm run build -- --configuration development
-cd frontend && npm run format:check
-```
-
-## Intended Use
-This project is a good fit if you want:
-- a local operator tool for running and observing model-vs-model tournaments
-- a UI for live games, bracket state, and post-run analysis
-- a lightweight comparison harness without building your own orchestration layer
-
-It is not intended to be:
-- a public multiplayer chess site
-- a hosted SaaS platform
-- a general-purpose chess engine research suite
-
-## Stockfish Notes
-- The released backend image bundles Stockfish 18 for evaluation.
-- The current bundled binary targets `amd64` / AVX2-class environments.
-- If Stockfish is unavailable, the app still runs and the frontend disables evaluation features.
-- Licensing and bundled-notice details live in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Repository Layout
-- `backend/`: Quarkus API, game engine, DB migrations
-- `frontend/`: Angular application
-- `docker-compose.yml`: local source-build stack
-- `docker-compose.prod.yml`: released-image deployment stack
-- `docs/deployment.md`: deployment and upgrade guide
-- `task-packages/`: task specs and planning documents
+## Repository layout
+| Path | Contents |
+|---|---|
+| `backend/` | Quarkus API, game engine, OpenRouter and Stockfish integration, Flyway migrations |
+| `frontend/` | Angular application |
+| `docker-compose.yml` | Local source-build stack |
+| `docker-compose.prod.yml` | Released-image stack |
+| `docs/deployment.md` | Deployment, upgrade and troubleshooting guide |
 
 ## Releases
-- Release tags use `vX.Y.Z`.
-- Released images are published to GHCR for backend and frontend, after CI and a combined smoke test pass; both images are promoted together.
-- `IMAGE_TAG` must be set explicitly; pinned version tags are the recommended deployment target.
-- `latest` is convenience only.
-- Release notes live in GitHub Releases, and project history lives in [CHANGELOG.md](CHANGELOG.md).
+Releases are tagged `vX.Y.Z`. The release workflow runs the full CI suite, builds both images, smoke-tests them together, and only then publishes them to GHCR as the version tag and `latest`. Deploy a pinned version; `latest` is a convenience tag. Notes are on [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases); full history is in [CHANGELOG.md](CHANGELOG.md).
 
-## Related Docs
-- Deployment guide: [docs/deployment.md](docs/deployment.md)
-- Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
+## License
+MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LOGO-LICENSES.md](LOGO-LICENSES.md).
