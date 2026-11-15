@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-15
+
+Maintenance and reliability release: fixes tournament-integrity and concurrency defects, moves to supported dependency versions, and hardens the release pipeline and default deployment.
+
+### Upgrade notes
+- Docker Engine 28.0+ is required for the localhost-only port bindings.
+- `.env` for `docker-compose.prod.yml` must set `IMAGE_TAG` (for example `v1.1.0`) and `DB_PASSWORD`; there are no more `latest`/password fallbacks. Volumes created with the former default password need the one-time rotation in `docs/deployment.md`.
+- The released-image stack no longer publishes a backend port; use `http://localhost:${FRONTEND_PORT}/api`. `BACKEND_PORT` is no longer used there.
+- Database migrations V8 and V9 run automatically. If they log that a unique index was skipped because of old duplicate data, see the troubleshooting section of `docs/deployment.md`.
+
 ### Changed
 - The released-image stack (`docker-compose.prod.yml`) no longer publishes a backend host port; the frontend proxies `/api` and `/ws`, so the API is at `http://localhost:${FRONTEND_PORT}/api`. `BACKEND_PORT` is no longer used there.
 - `POST /api/tournaments` accepts optional `participants` and `clientRequestId` fields and returns `200` with the existing tournament when the same `clientRequestId` is repeated.
