@@ -136,6 +136,63 @@ describe('GameView', () => {
     });
   });
 
+  it('shows the server reason when resuming fails', () => {
+    const { component, snackbar } = createComponent({
+      api: {
+        startGame: () => throwError(() => ({ error: { error: 'Game has already finished' } })),
+      },
+    });
+
+    component.resumeGame();
+
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'Game has already finished',
+      'Dismiss',
+      expect.any(Object),
+    );
+  });
+
+  it('keeps the pause reason from status updates and clears it on resume', () => {
+    const { component } = createComponent();
+    component.game.set({
+      id: 'g-1',
+      tournamentId: 't-1',
+      whitePlayerName: 'Alpha',
+      whiteControlType: 'AI',
+      whiteModelId: 'model-a',
+      blackPlayerName: 'Beta',
+      blackControlType: 'AI',
+      blackModelId: 'model-b',
+      status: 'IN_PROGRESS',
+      result: null,
+      resultReason: null,
+      pgn: null,
+      currentFen: 'fen',
+      bracketRound: null,
+      bracketPosition: null,
+      seriesId: null,
+      seriesGameNumber: 1,
+      seriesBestOf: 1,
+      totalCostUsd: 0,
+      createdAt: '2026-03-06T10:00:00Z',
+      startedAt: '2026-03-06T10:01:00Z',
+      completedAt: null,
+      moves: [],
+      chatMessages: [],
+    });
+
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail: 'OpenRouter rejected the API key (HTTP 401)',
+    });
+    expect(component.game()?.statusDetail).toBe('OpenRouter rejected the API key (HTTP 401)');
+
+    component.handleWsMessage({ type: 'gameStatus', gameId: 'g-1', status: 'IN_PROGRESS' });
+    expect(component.game()?.statusDetail).toBeNull();
+  });
+
   it('detects when the active side is human-controlled', () => {
     const { component } = createComponent();
     component.game.set({

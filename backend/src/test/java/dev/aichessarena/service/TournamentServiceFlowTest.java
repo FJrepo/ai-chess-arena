@@ -89,6 +89,44 @@ class TournamentServiceFlowTest {
     }
 
     @Test
+    void advanceWinnerNeverRewritesTheSlotOfAStartedGame() {
+        UUID tournamentId = UUID.randomUUID();
+        Tournament tournament = new Tournament();
+        tournament.id = tournamentId;
+        tournament.status = Tournament.TournamentStatus.CREATED;
+
+        List<TournamentParticipant> participants = List.of(
+                participant(tournament, "Seed 1", "m1", 0),
+                participant(tournament, "Seed 2", "m2", 1),
+                participant(tournament, "Seed 3", "m3", 2),
+                participant(tournament, "Seed 4", "m4", 3)
+        );
+
+        InMemoryGameRepository gameRepository = new InMemoryGameRepository();
+        TournamentService service = new TournamentService();
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
+        service.participantRepository = new FakeParticipantRepository(participants);
+        service.gameRepository = gameRepository;
+        service.moveRepository = new MoveRepository();
+        service.chatMessageRepository = new ChatMessageRepository();
+
+        service.generateBracket(tournamentId);
+        Game semifinal = gameRepository.findByRoundAndPosition("Semifinal", 0);
+        semifinal.status = Game.GameStatus.COMPLETED;
+        semifinal.result = Game.GameResult.WHITE_WINS;
+        service.advanceWinner(semifinal.id);
+
+        Game finalGame = gameRepository.findByRoundAndPosition("Final", 0);
+        String seatedWhite = finalGame.whitePlayerName;
+        finalGame.status = Game.GameStatus.IN_PROGRESS;
+
+        semifinal.result = Game.GameResult.BLACK_WINS;
+        service.advanceWinner(semifinal.id);
+
+        assertEquals(seatedWhite, finalGame.whitePlayerName);
+    }
+
+    @Test
     void advanceWinnerCreatesNextSeriesGameAfterDraw() {
         UUID tournamentId = UUID.randomUUID();
         Tournament tournament = new Tournament();
@@ -253,6 +291,11 @@ class TournamentServiceFlowTest {
 
     private static final class InMemoryGameRepository extends GameRepository {
         private final Map<UUID, Game> games = new HashMap<>();
+
+        @Override
+        public void refreshForUpdate(Game game) {
+            // In-memory games are always current.
+        }
 
         @Override
         public void persist(Game entity) {

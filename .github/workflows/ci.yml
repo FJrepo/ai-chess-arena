@@ -50,7 +50,8 @@ jobs:
         run: mvn -B -DskipTests spotless:check
 
       - name: Run backend tests
-        run: mvn -B test -DskipITs
+        # verify = unit tests + *IT database tests against a Dev Services PostgreSQL (Docker)
+        run: mvn -B verify
 
   frontend-build:
     name: Frontend build (Node 24)

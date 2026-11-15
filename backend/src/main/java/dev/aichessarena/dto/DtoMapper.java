@@ -44,6 +44,7 @@ public final class DtoMapper {
                 g.status.name(),
                 g.result != null ? g.result.name() : null,
                 g.resultReason != null ? g.resultReason.name() : null,
+                g.statusDetail,
                 g.pgn, g.currentFen,
                 g.bracketRound, g.bracketPosition, g.seriesId, g.seriesGameNumber, g.seriesBestOf,
                 g.totalCostUsd, g.createdAt, g.startedAt, g.completedAt,

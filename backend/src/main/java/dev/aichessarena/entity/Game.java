@@ -51,6 +51,9 @@ public class Game extends PanacheEntityBase {
     @Column(name = "result_reason")
     public ResultReason resultReason;
 
+    @Column(name = "status_detail", length = 500)
+    public String statusDetail;
+
     @Column(columnDefinition = "TEXT")
     public String pgn;
 

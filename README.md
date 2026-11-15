@@ -144,7 +144,8 @@ npm start
 
 ### Useful Commands
 ```bash
-cd backend && mvn test -DskipITs
+cd backend && mvn test            # unit tests
+cd backend && mvn verify          # + database integration tests (Docker required)
 cd frontend && npm run lint
 cd frontend && npm run typecheck
 cd frontend && npm test -- --watch=false

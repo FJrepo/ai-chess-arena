@@ -15,6 +15,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.io.IOException;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -114,15 +116,41 @@ public class OpenRouterService {
             long elapsed = System.currentTimeMillis() - startTime;
 
             if (response.statusCode() != 200) {
-                LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), response.body());
-                return new LlmResponse(
-                        null, 0, 0, null, elapsed, response.body(), false,
-                        "OpenRouter returned status " + response.statusCode()
+                LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
+                return LlmResponse.providerFailure(
+                        classifyHttpStatus(response.statusCode()),
+                        response.statusCode(),
+                        describeHttpFailure(response.statusCode(), response.body()),
+                        elapsed,
+                        response.body()
                 );
             }
 
-            JsonNode json = objectMapper.readTree(response.body());
-            String content = json.at("/choices/0/message/content").asText(null);
+            JsonNode json;
+            try {
+                json = objectMapper.readTree(response.body());
+            } catch (IOException e) {
+                LOG.warnf("OpenRouter returned a non-JSON body for model %s", modelId);
+                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                        "OpenRouter returned a malformed response", elapsed, response.body());
+            }
+            if (json == null || json.hasNonNull("error") || !json.path("choices").isArray()
+                    || json.path("choices").isEmpty()) {
+                String providerMessage = json == null ? null : json.path("error").path("message").asText(null);
+                LOG.warnf("OpenRouter returned no choices for model %s: %s", modelId, providerMessage);
+                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                        providerMessage == null
+                                ? "OpenRouter returned a response without choices"
+                                : "OpenRouter upstream error: " + abbreviate(providerMessage),
+                        elapsed, response.body());
+            }
+            JsonNode message = json.path("choices").get(0).path("message");
+            if (!message.isObject()) {
+                LOG.warnf("OpenRouter returned a choice without a message object for model %s", modelId);
+                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                        "OpenRouter returned a malformed choice", elapsed, response.body());
+            }
+            String content = message.path("content").asText(null);
             int promptTokens = json.at("/usage/prompt_tokens").asInt(0);
             int completionTokens = json.at("/usage/completion_tokens").asInt(0);
 
@@ -133,13 +161,65 @@ public class OpenRouterService {
             }
 
             return new LlmResponse(content, promptTokens, completionTokens, cost, elapsed, response.body(), false, null);
+        } catch (HttpConnectTimeoutException e) {
+            LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, e.getMessage());
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                    "Could not connect to OpenRouter (connection timed out)", 0, null);
         } catch (HttpTimeoutException e) {
             LOG.warnf("OpenRouter request timed out for model %s", modelId);
             return new LlmResponse(null, 0, 0, null, 0, null, true, "Request timed out");
+        } catch (IOException e) {
+            LOG.warnf("OpenRouter request failed for model %s: %s", modelId, e.toString());
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                    "Could not reach OpenRouter: " + abbreviate(String.valueOf(e.getMessage())), 0, null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                    "OpenRouter request was interrupted", 0, null);
         } catch (Exception e) {
             LOG.error("OpenRouter API call failed", e);
-            return new LlmResponse(null, 0, 0, null, 0, null, false, e.getMessage());
+            return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
+                    "OpenRouter request failed: " + abbreviate(String.valueOf(e.getMessage())), 0, null);
         }
+    }
+
+    static ProviderOutcome classifyHttpStatus(int status) {
+        if (status == 408 || status == 429 || status >= 500) {
+            return ProviderOutcome.RETRYABLE;
+        }
+        return ProviderOutcome.FATAL;
+    }
+
+    private String describeHttpFailure(int status, String body) {
+        String providerMessage = null;
+        try {
+            JsonNode json = body == null ? null : objectMapper.readTree(body);
+            if (json != null) {
+                providerMessage = json.path("error").path("message").asText(null);
+            }
+        } catch (IOException ignored) {
+            // Non-JSON error body; fall back to the status description.
+        }
+        String summary = switch (status) {
+            case 400 -> "OpenRouter rejected the request";
+            case 401 -> "OpenRouter rejected the API key";
+            case 402 -> "OpenRouter account has insufficient credits";
+            case 403 -> "OpenRouter denied the request";
+            case 404 -> "Model not found on OpenRouter";
+            case 408 -> "OpenRouter request timed out upstream";
+            case 429 -> "OpenRouter rate limit reached";
+            default -> status >= 500 ? "OpenRouter server error" : "OpenRouter request failed";
+        };
+        String detail = summary + " (HTTP " + status + ")";
+        if (providerMessage != null && !providerMessage.isBlank()) {
+            detail += ": " + abbreviate(providerMessage);
+        }
+        return detail;
+    }
+
+    private static String abbreviate(String text) {
+        String singleLine = text.replaceAll("\\s+", " ").trim();
+        return singleLine.length() <= 200 ? singleLine : singleLine.substring(0, 200) + "...";
     }
 
     public OpenRouterModelsResponseDto listModels(boolean featuredOnly, String query, Integer limit, String provider) {
@@ -486,6 +566,20 @@ public class OpenRouterService {
 
     public record ChatMsg(String role, String content) {}
 
+    /**
+     * How an OpenRouter call ended, from the provider's point of view.
+     * Only {@link #OK} responses are the model's own output; {@link #TIMEOUT} means the model
+     * did not answer within the move deadline. {@link #RETRYABLE} and {@link #FATAL} are
+     * infrastructure failures (network, rate limits, auth, credits) and must never be
+     * attributed to the model.
+     */
+    public enum ProviderOutcome {
+        OK,
+        TIMEOUT,
+        RETRYABLE,
+        FATAL
+    }
+
     public record LlmResponse(
             String content,
             int promptTokens,
@@ -494,8 +588,26 @@ public class OpenRouterService {
             long responseTimeMs,
             String rawResponse,
             boolean timedOut,
-            String errorMessage
-    ) {}
+            String errorMessage,
+            ProviderOutcome outcome,
+            int httpStatus
+    ) {
+        public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
+                           long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage) {
+            this(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse, timedOut,
+                    errorMessage, timedOut ? ProviderOutcome.TIMEOUT : ProviderOutcome.OK, timedOut ? 0 : 200);
+        }
+
+        static LlmResponse providerFailure(ProviderOutcome outcome, int httpStatus, String errorMessage,
+                                           long responseTimeMs, String rawResponse) {
+            return new LlmResponse(null, 0, 0, null, responseTimeMs, rawResponse, false,
+                    errorMessage, outcome, httpStatus);
+        }
+
+        public boolean isProviderFailure() {
+            return outcome == ProviderOutcome.RETRYABLE || outcome == ProviderOutcome.FATAL;
+        }
+    }
 
     private record ModelCandidate(
             String id,

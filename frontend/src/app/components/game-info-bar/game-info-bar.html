@@ -38,6 +38,12 @@
       {{ game.totalCostUsd | currency: 'USD' }}
     </span>
   </div>
+  @if (game.status === 'PAUSED' && game.statusDetail) {
+    <div class="pause-alert" role="status">
+      <mat-icon>pause_circle</mat-icon>
+      <span>Paused: {{ game.statusDetail }}. Fix the problem, then resume the game.</span>
+    </div>
+  }
   @if (retryInfo) {
     <div class="retry-alert"><mat-icon>warning</mat-icon> {{ retryInfo }}</div>
   }

@@ -56,9 +56,16 @@ public class GameMoveService {
             OpenRouterService.LlmResponse llmResponse,
             int retryCount,
             String promptVersion,
-            String promptHash
+            String promptHash,
+            String expectedFen
     ) {
-        Game game = gameRepository.findById(gameId);
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
+            throw new GameStateConflictException("Game is no longer in progress");
+        }
+        if (!samePosition(game.currentFen, expectedFen)) {
+            throw new GameStateConflictException("Position changed while the model was thinking");
+        }
 
         dev.aichessarena.entity.Move move = new dev.aichessarena.entity.Move();
         move.game = game;
@@ -109,9 +116,16 @@ public class GameMoveService {
             String san,
             String fen,
             String playerName,
-            String message
+            String message,
+            String expectedFen
     ) {
-        Game game = gameRepository.findById(gameId);
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
+            throw new GameStateConflictException("Game is not awaiting a human move");
+        }
+        if (!game.currentFen.equals(expectedFen)) {
+            throw new GameStateConflictException("The position changed; reload the game and try again");
+        }
 
         dev.aichessarena.entity.Move move = new dev.aichessarena.entity.Move();
         move.game = game;
@@ -150,10 +164,16 @@ public class GameMoveService {
     }
 
     @Transactional
-    public void applyOverrideMove(UUID gameId, String san) {
-        Game game = gameRepository.findById(gameId);
+    public void applyOverrideMove(UUID gameId, String san, String expectedFen) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
+        }
+        if (game.status != Game.GameStatus.PAUSED) {
+            throw new GameStateConflictException("Pause the game before overriding moves");
+        }
+        if (expectedFen != null && !game.currentFen.equals(expectedFen)) {
+            throw new GameStateConflictException("The position changed; reload the game and try again");
         }
         if (san == null || san.isBlank()) {
             throw new IllegalArgumentException("Move is required");
@@ -178,10 +198,26 @@ public class GameMoveService {
         move.promptVersion = "admin-override";
         move.promptHash = null;
         move.isOverride = true;
-        moveRepository.persist(move);
+        moveRepository.persistAndFlush(move);
 
         updateGameState(game, result.fen(), normalizedSan, moveNumber, sideToMove);
         gameWebSocket.broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), game.pgn, "admin-override", 0, 0);
+    }
+
+    /** Compares piece placement, side to move and castling rights; ignores clocks and en-passant formatting. */
+    static boolean samePosition(String fenA, String fenB) {
+        if (fenA == null || fenB == null) {
+            return false;
+        }
+        String[] a = fenA.trim().split("\\s+");
+        String[] b = fenB.trim().split("\\s+");
+        int fields = Math.min(3, Math.min(a.length, b.length));
+        for (int i = 0; i < fields; i++) {
+            if (!a[i].equals(b[i])) {
+                return false;
+            }
+        }
+        return fields == 3;
     }
 
     private void updateGameState(Game game, String fen, String san, int moveNumber, String color) {

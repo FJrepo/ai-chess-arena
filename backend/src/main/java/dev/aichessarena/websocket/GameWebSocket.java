@@ -181,6 +181,14 @@ public class GameWebSocket {
     public void broadcastGameStatus(UUID gameId, String status, String result,
                                      String resultReason, int totalMoves, BigDecimal totalCostUsd,
                                      String activeColor, Instant turnStartedAt, Instant turnDeadlineAt) {
+        broadcastGameStatus(gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                activeColor, turnStartedAt, turnDeadlineAt, null);
+    }
+
+    public void broadcastGameStatus(UUID gameId, String status, String result,
+                                     String resultReason, int totalMoves, BigDecimal totalCostUsd,
+                                     String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
+                                     String detail) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "gameStatus");
         msg.put("gameId", gameId.toString());
@@ -190,6 +198,7 @@ public class GameWebSocket {
         if (activeColor != null) msg.put("activeColor", activeColor);
         if (turnStartedAt != null) msg.put("turnStartedAt", turnStartedAt.toString());
         if (turnDeadlineAt != null) msg.put("turnDeadlineAt", turnDeadlineAt.toString());
+        if (detail != null) msg.put("detail", detail);
         msg.put("totalMoves", totalMoves);
         msg.put("totalCostUsd", totalCostUsd != null ? totalCostUsd.doubleValue() : 0);
         broadcast(gameId, msg.toString());

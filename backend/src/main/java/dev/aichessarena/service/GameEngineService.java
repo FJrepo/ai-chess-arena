@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.repository.GameRepository;
@@ -40,57 +41,127 @@ public class GameEngineService {
     @Inject
     GameConversationService gameConversationService;
 
-    private final Map<UUID, Boolean> runningGames = new ConcurrentHashMap<>();
+    /**
+     * One entry per game loop that is alive. The entry belongs to exactly one loop (identity matters):
+     * a pause only flags it, and only the owning loop removes it when it exits, so a resumed game can
+     * never run two loops at once.
+     */
+    private final Map<UUID, GameLoop> runningGames = new ConcurrentHashMap<>();
 
-    public void startGame(UUID gameId) {
-        startGame(gameId, null, null);
+    static final class GameLoop {
+        private volatile boolean stopRequested;
+
+        void requestStop() {
+            stopRequested = true;
+        }
+
+        boolean shouldContinue() {
+            return !stopRequested;
+        }
     }
 
-    public void startGame(UUID gameId, String lastMoveSan, String lastMessage) {
-        if (!tryMarkGameRunning(gameId)) {
+    /**
+     * Starts or resumes a WAITING or PAUSED game.
+     *
+     * @throws WebApplicationException 409 if the game is running, in progress or finished; 404 if it does not exist
+     */
+    public GameDto startGame(UUID gameId) {
+        GameLoop loop = tryClaimLoop(gameId);
+        if (loop == null) {
+            throw new GameStateConflictException("Game is already running");
+        }
+        GameDto started;
+        try {
+            started = gameLifecycleService.markGameStarted(gameId);
+        } catch (RuntimeException e) {
+            runningGames.remove(gameId, loop);
+            throw e;
+        }
+        spawnGameLoop(gameId, loop, null, null);
+        return started;
+    }
+
+    /** Continues an IN_PROGRESS game after a human move was recorded. */
+    void continueAfterHumanMove(UUID gameId, String lastMoveSan, String lastMessage) {
+        GameLoop loop = tryClaimLoop(gameId);
+        if (loop == null) {
             LOG.warnf("Game %s is already running", gameId);
             return;
         }
+        spawnGameLoop(gameId, loop, lastMoveSan, lastMessage);
+    }
 
+    private void spawnGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
         Thread.startVirtualThread(() -> {
             ManagedContext requestContext = Arc.container().requestContext();
             requestContext.activate();
             try {
-                runGameLoop(gameId, lastMoveSan, lastMessage);
+                runGameLoop(gameId, loop, lastMoveSan, lastMessage);
             } catch (Exception e) {
                 LOG.errorf(e, "Game loop failed for game %s", gameId);
+                pauseAfterLoopFailure(gameId, e);
             } finally {
+                runningGames.remove(gameId, loop);
+                // A pause may have flagged this loop just as it was finishing (e.g. returning for a human turn).
+                // Paired with the re-check in pauseGame, at least one side persists the pause.
+                if (!loop.shouldContinue()) {
+                    pauseQuietly(gameId);
+                }
                 if (requestContext.isActive()) {
                     requestContext.terminate();
                 }
-                runningGames.remove(gameId);
             }
         });
     }
 
+    private void pauseQuietly(UUID gameId) {
+        try {
+            gameLifecycleService.markGamePaused(gameId);
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Could not pause game %s", gameId);
+        }
+    }
+
+    private void pauseAfterLoopFailure(UUID gameId, Exception failure) {
+        try {
+            gameLifecycleService.pauseWithReason(gameId,
+                    "The game loop stopped unexpectedly (" + failure.getClass().getSimpleName() + "); resume to retry");
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Could not pause game %s after loop failure", gameId);
+        }
+    }
+
+    /**
+     * Requests a pause. A running loop is only flagged and pauses itself after its current turn
+     * (repeated requests are harmless); a game waiting for a human move is paused immediately.
+     */
     public void pauseGame(UUID gameId) {
-        if (Boolean.TRUE.equals(runningGames.get(gameId))) {
-            runningGames.put(gameId, false);
-            return;
+        GameLoop loop = runningGames.get(gameId);
+        if (loop != null) {
+            loop.requestStop();
+            if (runningGames.get(gameId) == loop) {
+                return; // the loop persists the pause when it exits
+            }
+            // The loop released the game while we flagged it; persist the pause ourselves below.
         }
 
-        runningGames.remove(gameId);
         Game game = gameRepository.findById(gameId);
         if (game != null && game.status == GameStatus.IN_PROGRESS) {
             gameLifecycleService.markGamePaused(gameId);
         }
+        // A loop may have been claimed meanwhile (e.g. right after a human move); make it stop too.
+        GameLoop late = runningGames.get(gameId);
+        if (late != null && late != loop) {
+            late.requestStop();
+        }
     }
 
     public boolean isRunning(UUID gameId) {
-        return runningGames.getOrDefault(gameId, false);
+        GameLoop loop = runningGames.get(gameId);
+        return loop != null && loop.shouldContinue();
     }
 
-    private void runGameLoop(UUID gameId, String lastMoveSan, String lastMessage) {
-        boolean resumingAfterHumanMove = lastMoveSan != null;
-        if (!resumingAfterHumanMove) {
-            gameLifecycleService.markGameStarted(gameId);
-        }
-
+    private void runGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
         GameConversationService.ConversationState conversation = gameConversationService.initializeConversation(gameId);
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
@@ -101,7 +172,7 @@ public class GameEngineService {
         String blackPromptHash = conversation.blackPrompt().hash();
         Game game = gameRepository.findById(gameId);
 
-        while (Boolean.TRUE.equals(runningGames.get(gameId))) {
+        while (loop.shouldContinue()) {
             if (chessService.isGameOver(board)) {
                 endGame(gameId, board);
                 return;
@@ -148,10 +219,10 @@ public class GameEngineService {
                     "WHITE".equals(sideToMove) ? whitePromptVersion : blackPromptVersion,
                     "WHITE".equals(sideToMove) ? whitePromptHash : blackPromptHash,
                     game.totalCostUsd,
-                    () -> Boolean.TRUE.equals(runningGames.get(gameId))
+                    loop::shouldContinue
             ));
 
-            if (turnResult.isTerminal()) {
+            if (turnResult.isTerminal() || turnResult.pausedGame()) {
                 return;
             }
 
@@ -182,10 +253,10 @@ public class GameEngineService {
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
-        if (game.status != GameStatus.PAUSED || Boolean.TRUE.equals(runningGames.get(gameId))) {
-            throw new WebApplicationException("Pause the game before overriding moves", Response.Status.CONFLICT);
+        if (game.status != GameStatus.PAUSED || runningGames.containsKey(gameId)) {
+            throw new GameStateConflictException("Pause the game before overriding moves");
         }
-        gameMoveService.applyOverrideMove(gameId, san);
+        gameMoveService.applyOverrideMove(gameId, san, game.currentFen);
     }
 
     public void submitHumanMove(UUID gameId, String san, String from, String to, String promotion, String message) {
@@ -196,8 +267,8 @@ public class GameEngineService {
         if (game.status != GameStatus.IN_PROGRESS) {
             throw new WebApplicationException("Game is not awaiting a human move", Response.Status.CONFLICT);
         }
-        if (Boolean.TRUE.equals(runningGames.get(gameId))) {
-            throw new WebApplicationException("Game is still processing a turn", Response.Status.CONFLICT);
+        if (runningGames.containsKey(gameId)) {
+            throw new GameStateConflictException("Game is still processing a turn");
         }
         boolean hasSan = san != null && !san.isBlank();
         boolean hasCoordinates = from != null && !from.isBlank() && to != null && !to.isBlank();
@@ -227,7 +298,8 @@ public class GameEngineService {
                 result.san(),
                 result.fen(),
                 playerName,
-                message
+                message,
+                game.currentFen
         );
 
         if (chessService.isGameOver(board)) {
@@ -235,7 +307,7 @@ public class GameEngineService {
             return;
         }
 
-        startGame(gameId, result.san(), message);
+        continueAfterHumanMove(gameId, result.san(), message);
     }
 
     private boolean isHumanTurn(Game game, String color) {
@@ -243,8 +315,15 @@ public class GameEngineService {
         return participant != null && participant.controlType == dev.aichessarena.entity.TournamentParticipant.ControlType.HUMAN;
     }
 
-    boolean tryMarkGameRunning(UUID gameId) {
-        return runningGames.putIfAbsent(gameId, true) == null;
+    /** Claims the game for a new loop; returns null if a loop (running or stopping) already owns it. */
+    GameLoop tryClaimLoop(UUID gameId) {
+        GameLoop loop = new GameLoop();
+        return runningGames.putIfAbsent(gameId, loop) == null ? loop : null;
+    }
+
+    /** Releases the claim only if it still belongs to {@code loop}. */
+    void releaseLoop(UUID gameId, GameLoop loop) {
+        runningGames.remove(gameId, loop);
     }
 
 }

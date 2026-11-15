@@ -1,7 +1,9 @@
 package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.ChatMessage;
@@ -23,10 +25,12 @@ import org.junit.jupiter.api.Test;
 
 class GameMoveServiceTest {
 
+    private static final String START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private static final String AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+
     @Test
     void recordModelMoveFlushesBeforeQueuingEvaluationAndBroadcastsChat() {
-        Game game = new Game();
-        game.id = UUID.randomUUID();
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
 
         TrackingMoveRepository moveRepository = new TrackingMoveRepository();
         TrackingChatMessageRepository chatRepository = new TrackingChatMessageRepository();
@@ -53,7 +57,8 @@ class GameMoveServiceTest {
                 new OpenRouterService.LlmResponse("e4", 12, 8, null, 1500L, "{}", false, null),
                 0,
                 "v1",
-                "hash-1"
+                "hash-1",
+                START_FEN
         );
 
         assertTrue(moveRepository.persistAndFlushCalled);
@@ -66,6 +71,79 @@ class GameMoveServiceTest {
         assertEquals("Model A", websocket.lastChatSenderName);
         assertEquals("e4", websocket.lastMoveSan);
         assertTrue(game.pgn.contains("1. e4"));
+        assertEquals(AFTER_E4, game.currentFen);
+    }
+
+    @Test
+    void recordModelMoveRejectsAPositionThatChangedMeanwhile() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, AFTER_E4);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        GameMoveService service = service(game, moveRepository);
+
+        assertThrows(GameStateConflictException.class, () -> service.recordModelMove(
+                game.id, 1, "WHITE", "d4", "fen", "model-a", "Model A", null,
+                new OpenRouterService.LlmResponse("d4", 1, 1, null, 1L, "{}", false, null),
+                0, "v1", "hash-1", START_FEN
+        ));
+        assertTrue(moveRepository.persistedMoves.isEmpty());
+    }
+
+    @Test
+    void recordHumanMoveRejectsStalePositionAndFinishedGames() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, AFTER_E4);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        GameMoveService service = service(game, moveRepository);
+
+        assertThrows(GameStateConflictException.class, () -> service.recordHumanMove(
+                game.id, 1, "WHITE", "d4", "fen", "Human", null, START_FEN));
+
+        game.status = Game.GameStatus.COMPLETED;
+        assertThrows(GameStateConflictException.class, () -> service.recordHumanMove(
+                game.id, 1, "BLACK", "e5", "fen", "Human", null, AFTER_E4));
+        assertTrue(moveRepository.persistedMoves.isEmpty());
+    }
+
+    @Test
+    void overrideRequiresAPausedGameAtTheExpectedPosition() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        GameMoveService service = service(game, moveRepository);
+
+        assertThrows(GameStateConflictException.class, () -> service.applyOverrideMove(game.id, "e4", START_FEN));
+
+        game.status = Game.GameStatus.PAUSED;
+        assertThrows(GameStateConflictException.class, () -> service.applyOverrideMove(game.id, "e4", AFTER_E4));
+
+        service.applyOverrideMove(game.id, "e4", START_FEN);
+        assertEquals(1, moveRepository.persistedMoves.size());
+        assertEquals(AFTER_E4.split(" ")[0], game.currentFen.split(" ")[0]);
+    }
+
+    @Test
+    void samePositionIgnoresMoveClocks() {
+        assertTrue(GameMoveService.samePosition(START_FEN, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 3 7"));
+        assertFalse(GameMoveService.samePosition(START_FEN, AFTER_E4));
+        assertFalse(GameMoveService.samePosition(START_FEN, null));
+    }
+
+    private static Game game(Game.GameStatus status, String fen) {
+        Game game = new Game();
+        game.id = UUID.randomUUID();
+        game.status = status;
+        game.currentFen = fen;
+        return game;
+    }
+
+    private static GameMoveService service(Game game, TrackingMoveRepository moveRepository) {
+        GameMoveService service = new GameMoveService();
+        service.chessService = new ChessService();
+        service.gameRepository = new FakeGameRepository(Map.of(game.id, game));
+        service.moveRepository = moveRepository;
+        service.chatMessageRepository = new TrackingChatMessageRepository();
+        service.costTrackingService = new CostTrackingService();
+        service.moveEvaluationEvents = new TrackingMoveEvaluationEvent();
+        service.gameWebSocket = new RecordingGameWebSocket();
+        return service;
     }
 
     private static final class FakeGameRepository extends GameRepository {
@@ -77,6 +155,11 @@ class GameMoveServiceTest {
 
         @Override
         public Game findById(UUID id) {
+            return games.get(id);
+        }
+
+        @Override
+        public Game findByIdForUpdate(UUID id) {
             return games.get(id);
         }
 

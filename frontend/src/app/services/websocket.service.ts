@@ -7,6 +7,8 @@ import { WsMessage, WsOutgoingMessage } from '../models/tournament.model';
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private messages$ = new Subject<WsMessage>();
+  private reconnected$ = new Subject<void>();
+  private hasConnectedBefore = false;
   private currentGameId: string | null = null;
   private shouldReconnect = true;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -31,6 +33,11 @@ export class WebSocketService {
       if (this.currentGameId) {
         this.subscribeToGame(this.currentGameId);
       }
+      // Updates sent while disconnected (e.g. a backend restart pausing games) were missed.
+      if (this.hasConnectedBefore) {
+        this.reconnected$.next();
+      }
+      this.hasConnectedBefore = true;
     };
 
     this.ws.onmessage = (event) => {
@@ -77,6 +84,11 @@ export class WebSocketService {
   unsubscribeFromGame(gameId: string): void {
     this.send({ type: 'unsubscribe', gameId });
     this.currentGameId = null;
+  }
+
+  /** Emits after the live connection was re-established; views should reload their state. */
+  reconnected(): Observable<void> {
+    return this.reconnected$.asObservable();
   }
 
   getMessages(gameId: string): Observable<WsMessage> {
