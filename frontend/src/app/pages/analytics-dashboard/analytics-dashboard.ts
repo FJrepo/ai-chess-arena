@@ -20,11 +20,7 @@ import {
 } from '../../models/analytics.model';
 
 type ComparisonSortOption =
-  | 'winRate'
-  | 'reliabilityScore'
-  | 'averageResponseTimeMs'
-  | 'costPerWinUsd'
-  | 'forfeits';
+  'winRate' | 'reliabilityScore' | 'averageResponseTimeMs' | 'costPerWinUsd' | 'forfeits';
 
 @Component({
   selector: 'app-analytics-dashboard',
