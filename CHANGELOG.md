@@ -8,6 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Changed
+- The released-image stack (`docker-compose.prod.yml`) no longer publishes a backend host port; the frontend proxies `/api` and `/ws`, so the API is at `http://localhost:${FRONTEND_PORT}/api`. `BACKEND_PORT` is no longer used there.
 - `POST /api/tournaments` accepts optional `participants` and `clientRequestId` fields and returns `200` with the existing tournament when the same `clientRequestId` is repeated.
 - Dependabot no longer proposes Angular/TypeScript/ESLint majors or Java/Node base-image version jumps; those upgrades are done deliberately.
 - Development and released-image Compose ports now bind to loopback by default on the documented Docker Engine 28.0+ baseline, preserving local access without exposing the unauthenticated control plane to the surrounding network.
@@ -37,6 +38,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.
 
 ### Security
+- Live-update WebSockets now limit message size (4 KB), cap simultaneous connections (256 by default), rate-limit subscribe requests per connection, detect dead peers with pings, and drop subscriptions from connections that closed while subscribing.
 - Default Docker networking now matches the documented localhost-only product boundary for the unauthenticated application, with Docker Engine 28.0+ required for loopback isolation.
 - Frontend runtime dependencies no longer carry known vulnerabilities (previously seven high-severity advisories in `@angular/core` and `@angular/compiler`); remaining moderate advisories are confined to build tooling and resolve with Angular 22.
 

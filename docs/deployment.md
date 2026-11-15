@@ -68,9 +68,9 @@ docker compose -f docker-compose.prod.yml logs --tail=120 backend frontend
 
 ## Default Endpoints
 - Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
-- Backend API: `http://localhost:${BACKEND_PORT:-8081}`
+- Backend API: `http://localhost:${FRONTEND_PORT:-4200}/api` (proxied by the frontend)
 
-On the supported Docker Engine 28.0+ baseline, both published ports bind to `127.0.0.1` and are reachable only from the Docker host. The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
+The backend publishes no host port in `docker-compose.prod.yml`. On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` and is reachable only from the Docker host. For direct API debugging, add a `docker-compose.override.yml` with `ports: ["127.0.0.1:8081:8080"]` for the backend service. The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
 
 The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default: widening a bind address requires an operator-provided authentication boundary, TLS, authorization for mutations, and appropriate firewall/rate-limit controls.
 
@@ -132,8 +132,8 @@ Useful commands:
 
 ```bash
 docker compose -f docker-compose.prod.yml ps
-curl http://localhost:${BACKEND_PORT:-8081}/q/health/live
-curl http://localhost:${BACKEND_PORT:-8081}/q/health/ready
+docker compose -f docker-compose.prod.yml exec backend wget -qO- http://localhost:8080/q/health/live
+docker compose -f docker-compose.prod.yml exec backend wget -qO- http://localhost:8080/q/health/ready
 ```
 
 ## Release Publishing Notes
@@ -250,9 +250,7 @@ docker compose -f docker-compose.prod.yml logs --tail=200 backend frontend
 The default frontend image expects the backend service to be reachable as `backend:8080` within the same Compose project.
 
 ### Ports are already in use
-Change these values in `.env`:
-- `FRONTEND_PORT`
-- `BACKEND_PORT`
+Change `FRONTEND_PORT` in `.env` (the released-image stack publishes no other host ports).
 
 Then recreate the stack:
 

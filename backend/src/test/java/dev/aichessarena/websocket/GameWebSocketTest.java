@@ -25,6 +25,7 @@ class GameWebSocketTest {
 
     private GameWebSocket endpoint;
     private FakeGameRepository gameRepository;
+    private final java.util.Set<String> closedConnections = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @BeforeEach
     void setUp() {
@@ -168,6 +169,50 @@ class GameWebSocketTest {
         assertEquals(0, endpoint.trackedConnectionCount());
     }
 
+    @Test
+    void subscribeMessagesAreRateLimitedPerConnection() {
+        WebSocketConnection connection = connection("connection-1");
+        UUID[] games = {gameRepository.addGame(), gameRepository.addGame()};
+        for (int i = 0; i < 10; i++) {
+            endpoint.onMessage(connection, subscribeMessage(games[i % 2]));
+        }
+        UUID lateGame = gameRepository.addGame();
+
+        endpoint.onMessage(connection, subscribeMessage(lateGame));
+
+        assertEquals(games[1], endpoint.subscribedGameId(connection.id()));
+        assertEquals(0, endpoint.subscriberCount(lateGame));
+    }
+
+    @Test
+    void connectionsBeyondTheCapAreClosedAndIgnored() {
+        endpoint.maxConnections = 2;
+        connection("connection-1");
+        connection("connection-2");
+        WebSocketConnection rejected = connection("connection-3");
+
+        endpoint.onMessage(rejected, subscribeMessage(gameRepository.addGame()));
+
+        assertTrue(closedConnections.contains("connection-3"));
+        assertEquals(2, endpoint.openConnectionCount());
+        assertEquals(0, endpoint.trackedConnectionCount());
+
+        endpoint.onClose(rejected);
+        assertEquals(2, endpoint.openConnectionCount());
+    }
+
+    @Test
+    void subscriptionFromAConnectionThatClosedMeanwhileLeavesNoState() {
+        UUID gameId = gameRepository.addGame();
+        WebSocketConnection connection = connection("connection-1");
+        closedConnections.add("connection-1");
+
+        endpoint.onMessage(connection, subscribeMessage(gameId));
+
+        assertEquals(0, endpoint.trackedGameCount());
+        assertEquals(0, endpoint.trackedConnectionCount());
+    }
+
     private String subscribeMessage(UUID gameId) {
         return "{\"type\":\"subscribe\",\"gameId\":\"%s\"}".formatted(gameId);
     }
@@ -180,9 +225,10 @@ class GameWebSocketTest {
         return connection(id, null, null);
     }
 
+    /** Creates a fake connection and opens it on the endpoint, like the runtime does. */
     private WebSocketConnection connection(
             String id, CountDownLatch hashCodeStarted, CountDownLatch allowHashCode) {
-        return (WebSocketConnection) Proxy.newProxyInstance(
+        WebSocketConnection connection = (WebSocketConnection) Proxy.newProxyInstance(
                 WebSocketConnection.class.getClassLoader(),
                 new Class<?>[]{WebSocketConnection.class},
                 (proxy, method, args) -> switch (method.getName()) {
@@ -196,9 +242,16 @@ class GameWebSocketTest {
                     }
                     case "equals" -> proxy == args[0];
                     case "toString" -> "WebSocketConnection[" + id + "]";
+                    case "isOpen" -> !closedConnections.contains(id);
+                    case "close" -> {
+                        closedConnections.add(id);
+                        yield io.smallrye.mutiny.Uni.createFrom().voidItem();
+                    }
                     default -> throw new UnsupportedOperationException(method.getName());
                 }
         );
+        endpoint.onOpen(connection);
+        return connection;
     }
 
     private void waitUntilBlockedOrFinished(Thread thread) {

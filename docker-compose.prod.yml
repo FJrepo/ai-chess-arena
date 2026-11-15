@@ -25,8 +25,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
       HTTP_PORT: 8080
-    ports:
-      - "127.0.0.1:${BACKEND_PORT:-8081}:8080"
+    # No host port: the frontend (nginx) proxies /api and /ws to backend:8080 on the Compose network.
+    # For direct API debugging, add `ports: ["127.0.0.1:8081:8080"]` in a docker-compose.override.yml.
     depends_on:
       db:
         condition: service_healthy

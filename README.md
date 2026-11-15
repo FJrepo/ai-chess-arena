@@ -83,15 +83,14 @@ docker compose -f docker-compose.prod.yml up -d
 
 ```bash
 docker compose -f docker-compose.prod.yml ps
-curl http://localhost:${BACKEND_PORT:-8081}/q/health/live
-curl http://localhost:${BACKEND_PORT:-8081}/q/health/ready
+curl http://localhost:${FRONTEND_PORT:-4200}/api/tournaments
 ```
 
 Default URLs:
 - Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
-- Backend API: `http://localhost:${BACKEND_PORT:-8081}`
+- Backend API: `http://localhost:${FRONTEND_PORT:-4200}/api` (proxied by the frontend; the backend has no host port in the released-image stack)
 
-On the supported Docker Engine 28.0+ baseline, both ports bind to `127.0.0.1` by default and are reachable only from the host running Docker. The development PostgreSQL port is loopback-only as well. Do not widen these bindings for private-network or public access without adding an authentication and network-security boundary.
+On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` by default and are reachable only from the host running Docker. The development PostgreSQL port is loopback-only as well. Do not widen these bindings for private-network or public access without adding an authentication and network-security boundary.
 
 See [docs/deployment.md](docs/deployment.md) for upgrade, persistence, and troubleshooting details.
 
