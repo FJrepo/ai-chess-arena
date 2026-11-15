@@ -42,16 +42,34 @@ public class GameEngineService {
 
     private final Map<UUID, Boolean> runningGames = new ConcurrentHashMap<>();
 
+    /**
+     * Starts or resumes a WAITING or PAUSED game.
+     *
+     * @throws WebApplicationException 409 if the game is running, in progress or finished; 404 if it does not exist
+     */
     public void startGame(UUID gameId) {
-        startGame(gameId, null, null);
+        if (!tryMarkGameRunning(gameId)) {
+            throw new GameStateConflictException("Game is already running");
+        }
+        try {
+            gameLifecycleService.markGameStarted(gameId);
+        } catch (RuntimeException e) {
+            runningGames.remove(gameId);
+            throw e;
+        }
+        spawnGameLoop(gameId, null, null);
     }
 
-    public void startGame(UUID gameId, String lastMoveSan, String lastMessage) {
+    /** Continues an IN_PROGRESS game after a human move was recorded. */
+    void continueAfterHumanMove(UUID gameId, String lastMoveSan, String lastMessage) {
         if (!tryMarkGameRunning(gameId)) {
             LOG.warnf("Game %s is already running", gameId);
             return;
         }
+        spawnGameLoop(gameId, lastMoveSan, lastMessage);
+    }
 
+    private void spawnGameLoop(UUID gameId, String lastMoveSan, String lastMessage) {
         Thread.startVirtualThread(() -> {
             ManagedContext requestContext = Arc.container().requestContext();
             requestContext.activate();
@@ -86,11 +104,6 @@ public class GameEngineService {
     }
 
     private void runGameLoop(UUID gameId, String lastMoveSan, String lastMessage) {
-        boolean resumingAfterHumanMove = lastMoveSan != null;
-        if (!resumingAfterHumanMove) {
-            gameLifecycleService.markGameStarted(gameId);
-        }
-
         GameConversationService.ConversationState conversation = gameConversationService.initializeConversation(gameId);
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
@@ -151,7 +164,7 @@ public class GameEngineService {
                     () -> Boolean.TRUE.equals(runningGames.get(gameId))
             ));
 
-            if (turnResult.isTerminal()) {
+            if (turnResult.isTerminal() || turnResult.pausedGame()) {
                 return;
             }
 
@@ -182,10 +195,10 @@ public class GameEngineService {
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
-        if (game.status != GameStatus.PAUSED || Boolean.TRUE.equals(runningGames.get(gameId))) {
-            throw new WebApplicationException("Pause the game before overriding moves", Response.Status.CONFLICT);
+        if (game.status != GameStatus.PAUSED || runningGames.containsKey(gameId)) {
+            throw new GameStateConflictException("Pause the game before overriding moves");
         }
-        gameMoveService.applyOverrideMove(gameId, san);
+        gameMoveService.applyOverrideMove(gameId, san, game.currentFen);
     }
 
     public void submitHumanMove(UUID gameId, String san, String from, String to, String promotion, String message) {
@@ -196,8 +209,8 @@ public class GameEngineService {
         if (game.status != GameStatus.IN_PROGRESS) {
             throw new WebApplicationException("Game is not awaiting a human move", Response.Status.CONFLICT);
         }
-        if (Boolean.TRUE.equals(runningGames.get(gameId))) {
-            throw new WebApplicationException("Game is still processing a turn", Response.Status.CONFLICT);
+        if (runningGames.containsKey(gameId)) {
+            throw new GameStateConflictException("Game is still processing a turn");
         }
         boolean hasSan = san != null && !san.isBlank();
         boolean hasCoordinates = from != null && !from.isBlank() && to != null && !to.isBlank();
@@ -227,7 +240,8 @@ public class GameEngineService {
                 result.san(),
                 result.fen(),
                 playerName,
-                message
+                message,
+                game.currentFen
         );
 
         if (chessService.isGameOver(board)) {
@@ -235,7 +249,7 @@ public class GameEngineService {
             return;
         }
 
-        startGame(gameId, result.san(), message);
+        continueAfterHumanMove(gameId, result.san(), message);
     }
 
     private boolean isHumanTurn(Game game, String color) {

@@ -41,7 +41,7 @@ public class GameResource {
         if (game == null) return Response.status(404).build();
         if (!hasConfiguredPlayer(game.whiteParticipant, game.whitePlayerName, game.whiteModelId)
                 || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
-            return Response.status(400).entity("Both players must be set").build();
+            throw new IllegalArgumentException("Both players must be set");
         }
         gameEngineService.startGame(id);
         return Response.ok(DtoMapper.toDto(game, false)).build();
@@ -50,6 +50,9 @@ public class GameResource {
     @POST
     @Path("/{id}/pause")
     public Response pauseGame(@PathParam("id") UUID id) {
+        if (gameRepository.findById(id) == null) {
+            return Response.status(404).build();
+        }
         gameEngineService.pauseGame(id);
         return Response.ok().build();
     }

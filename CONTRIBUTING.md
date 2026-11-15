@@ -33,9 +33,12 @@ npm start
 
 ## Test and Build Commands
 ```bash
-# backend tests
+# backend unit tests (no Docker needed)
 cd backend
-mvn test -DskipITs
+mvn test
+
+# backend unit + database integration tests (*IT, needs Docker for Dev Services PostgreSQL)
+mvn verify
 
 # frontend build (CI-aligned)
 cd frontend

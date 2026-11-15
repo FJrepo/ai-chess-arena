@@ -15,10 +15,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Container base images re-pinned to current digests.
 - CI and release workflows moved to Node 24-based action majors after GitHub removed the Node 20 Actions runtime; frontend CI now builds on Node 24 to match the container image.
 - Dependabot now proposes weekly Maven, npm and Docker updates and monthly GitHub Actions updates.
+- Backend database integration tests (`*IT`, run by `mvn verify` and in CI) use a Quarkus Dev Services PostgreSQL; `mvn test` still runs only Docker-free unit tests. The datasource URL and credentials are now configured per profile (`prod`, `dev`).
 - Releases now run the full CI suite on the tagged commit, accept only exact `vX.Y.Z` tags from `main`, push images as commit-addressed candidates first, smoke-test both candidates together via `docker-compose.prod.yml`, and only then promote both digests to the version tag and `latest`. A failed release no longer leaves a mismatched `latest` pair.
 - `docker-compose.prod.yml` now requires `IMAGE_TAG` instead of defaulting to `latest`; set a release version such as `v1.1.0` in `.env`.
 
 ### Fixed
+- OpenRouter infrastructure failures no longer decide games. Rate limits, server errors and network failures are retried with backoff without using up the model's attempts; invalid keys, missing credits, unknown models, or retries that run out pause the game with a visible reason instead of recording a forfeit. Resume the game once the problem is fixed.
+- Finished or running games can no longer be started again: `POST /api/games/{id}/start` only accepts `WAITING` and `PAUSED` games (atomically) and returns `409` otherwise, and a finished game's result can no longer be recorded or advanced twice.
+- Concurrent human or override moves can no longer write two moves for the same ply: move writes lock the game row and are rejected with `409` when the position changed, and the database enforces one move per ply (migration V8).
+- Bracket advancement no longer rewrites the pairing of a next-round game that has already started.
 - WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.
 
 ### Security

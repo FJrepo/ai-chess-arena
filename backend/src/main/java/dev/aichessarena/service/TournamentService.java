@@ -15,6 +15,7 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +26,8 @@ import java.util.concurrent.ThreadLocalRandom;
 
 @ApplicationScoped
 public class TournamentService {
+
+    private static final Logger LOG = Logger.getLogger(TournamentService.class);
 
     @Inject
     TournamentRepository tournamentRepository;
@@ -235,6 +238,16 @@ public class TournamentService {
             if (nextRound.equals(nextGame.bracketRound) && nextGame.bracketPosition != null
                     && nextGame.bracketPosition == nextPosition
                     && nextGame.seriesGameNumber == 1) {
+                if (nextGame.status != Game.GameStatus.WAITING) {
+                    // Never rewrite the pairing of a game that has already started or finished.
+                    TournamentParticipant seated = completedGame.bracketPosition % 2 == 0
+                            ? nextGame.whiteParticipant : nextGame.blackParticipant;
+                    if (seated == null || !Objects.equals(seated.id, winner.id)) {
+                        LOG.warnf("Not seating %s in game %s: it is already %s",
+                                winner.playerName, nextGame.id, nextGame.status);
+                    }
+                    break;
+                }
                 if (completedGame.bracketPosition % 2 == 0) {
                     nextGame.whiteParticipant = winner;
                     nextGame.whitePlayerName = winner.playerName;

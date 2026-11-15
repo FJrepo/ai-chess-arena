@@ -405,6 +405,11 @@ export class GameView implements OnInit, OnDestroy {
                 status: status || g.status,
                 result: msg.result || g.result,
                 resultReason: msg.resultReason || g.resultReason,
+                statusDetail: status
+                  ? status === 'PAUSED'
+                    ? (msg.detail ?? null)
+                    : null
+                  : g.statusDetail,
                 totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
                 startedAt:
                   status === 'IN_PROGRESS'
@@ -473,8 +478,13 @@ export class GameView implements OnInit, OnDestroy {
 
   resumeGame() {
     this.api.startGame(this.gameId).subscribe({
-      error: () => {
-        this.snackbar.open('Failed to resume the game.', 'Dismiss', {
+      error: (err) => {
+        const serverError = err?.error;
+        const message =
+          typeof serverError === 'string'
+            ? serverError
+            : (serverError?.error ?? 'Failed to resume the game.');
+        this.snackbar.open(message, 'Dismiss', {
           duration: 4000,
           horizontalPosition: 'right',
           verticalPosition: 'top',

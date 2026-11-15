@@ -17,6 +17,15 @@ import org.jboss.logging.Logger;
 public class GameTurnService {
 
     private static final Logger LOG = Logger.getLogger(GameTurnService.class);
+    private static final long STOP_POLL_INTERVAL_MS = 250L;
+
+    /**
+     * Waits between OpenRouter retries after a retryable provider failure (429, 5xx, network).
+     * These retries never consume the model's own attempts; once exhausted the game is paused.
+     */
+    long[] providerRetryBackoffMs = {1_000L, 3_000L, 9_000L};
+
+    Sleeper sleeper = Thread::sleep;
 
     @Inject
     ChessService chessService;
@@ -64,6 +73,8 @@ public class GameTurnService {
 
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt);
 
+        int providerFailures = 0;
+        String lastProviderFailure = null;
         for (int attempt = 1; attempt <= request.maxRetries(); attempt++) {
             if (!request.shouldContinue().getAsBoolean()) {
                 return TurnResult.stopped();
@@ -71,6 +82,10 @@ public class GameTurnService {
 
             long remainingMs = turnDeadlineAtMs - System.currentTimeMillis();
             if (remainingMs <= 0) {
+                if (lastProviderFailure != null) {
+                    // The deadline was eaten by provider outages, not by the model.
+                    return pauseForProvider(request, lastProviderFailure);
+                }
                 gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), request.moveTimeoutSeconds());
                 return TurnResult.terminal();
             }
@@ -83,6 +98,30 @@ public class GameTurnService {
                     request.history(),
                     Duration.ofMillis(Math.max(remainingMs, 100L))
             );
+
+            if (llmResponse.isProviderFailure()) {
+                String detail = llmResponse.errorMessage();
+                LOG.warnf("Game %s: OpenRouter failure for %s (%s): %s",
+                        request.gameId(), request.modelId(), llmResponse.outcome(), detail);
+                if (llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
+                        || providerFailures >= providerRetryBackoffMs.length) {
+                    return pauseForProvider(request, detail);
+                }
+                long delayMs = providerRetryBackoffMs[providerFailures];
+                providerFailures++;
+                lastProviderFailure = detail;
+                if (System.currentTimeMillis() + delayMs >= turnDeadlineAtMs) {
+                    return pauseForProvider(request, detail);
+                }
+                broadcastRetry(request.gameId(), request.sideToMove(), attempt,
+                        "%s; retrying in %ds (provider retry %d of %d)".formatted(
+                                detail, Math.max(1, delayMs / 1000), providerFailures, providerRetryBackoffMs.length));
+                if (!waitUnlessStopped(delayMs, request.shouldContinue())) {
+                    return TurnResult.stopped();
+                }
+                attempt--; // provider failures do not use up the model's attempts
+                continue;
+            }
 
             if (llmResponse.timedOut()) {
                 LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
@@ -156,25 +195,55 @@ public class GameTurnService {
             }
 
             request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-            gameMoveService.recordModelMove(
-                    request.gameId(),
-                    request.moveNumber(),
-                    request.sideToMove(),
-                    parseResult.move(),
-                    moveResult.fen(),
-                    request.modelId(),
-                    request.playerName(),
-                    parseResult.message(),
-                    llmResponse,
-                    attempt - 1,
-                    request.promptVersion(),
-                    request.promptHash()
-            );
+            try {
+                gameMoveService.recordModelMove(
+                        request.gameId(),
+                        request.moveNumber(),
+                        request.sideToMove(),
+                        parseResult.move(),
+                        moveResult.fen(),
+                        request.modelId(),
+                        request.playerName(),
+                        parseResult.message(),
+                        llmResponse,
+                        attempt - 1,
+                        request.promptVersion(),
+                        request.promptHash(),
+                        request.fen()
+                );
+            } catch (GameStateConflictException e) {
+                LOG.warnf("Game %s: discarding %s move %s: %s",
+                        request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
+                return TurnResult.stopped();
+            }
             return TurnResult.recorded(parseResult.move(), parseResult.message());
         }
 
         gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), request.maxRetries());
         return TurnResult.terminal();
+    }
+
+    private TurnResult pauseForProvider(TurnRequest request, String detail) {
+        gameLifecycleService.pauseForProviderFailure(request.gameId(), detail);
+        return TurnResult.paused();
+    }
+
+    private boolean waitUnlessStopped(long delayMs, BooleanSupplier shouldContinue) {
+        long remaining = delayMs;
+        try {
+            while (remaining > 0) {
+                long slice = Math.min(remaining, STOP_POLL_INTERVAL_MS);
+                sleeper.sleep(slice);
+                remaining -= slice;
+                if (!shouldContinue.getAsBoolean()) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason) {
@@ -249,6 +318,10 @@ public class GameTurnService {
             return new TurnResult(Status.TERMINAL, null, null);
         }
 
+        public static TurnResult paused() {
+            return new TurnResult(Status.PAUSED, null, null);
+        }
+
         public boolean moveRecorded() {
             return status == Status.MOVE_RECORDED;
         }
@@ -256,11 +329,22 @@ public class GameTurnService {
         public boolean isTerminal() {
             return status == Status.TERMINAL;
         }
+
+        /** The turn paused the game itself (with a visible reason); the loop must not overwrite that state. */
+        public boolean pausedGame() {
+            return status == Status.PAUSED;
+        }
     }
 
     public enum Status {
         MOVE_RECORDED,
         STOPPED,
+        PAUSED,
         TERMINAL
+    }
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
     }
 }

@@ -42,6 +42,8 @@ export interface Game {
   status: 'WAITING' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'FORFEIT';
   result: string | null;
   resultReason: string | null;
+  /** Why the game is paused when the pause was caused by an operational problem (e.g. OpenRouter). */
+  statusDetail?: string | null;
   pgn: string | null;
   currentFen: string;
   bracketRound: string | null;
@@ -130,6 +132,7 @@ export interface GameStatusWsMessage {
   activeColor?: 'WHITE' | 'BLACK';
   turnStartedAt?: string;
   turnDeadlineAt?: string;
+  detail?: string | null;
 }
 
 export interface RetryWsMessage {

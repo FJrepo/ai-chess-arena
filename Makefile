@@ -1,4 +1,4 @@
-.PHONY: help setup install-stockfish secrets-install secrets-scan up up-attached down restart ps logs logs-backend logs-frontend build doctor test test-backend test-frontend
+.PHONY: help setup install-stockfish secrets-install secrets-scan up up-attached down restart ps logs logs-backend logs-frontend build doctor test test-backend test-backend-it test-frontend
 
 DOCKER_COMPOSE := docker compose
 
@@ -24,7 +24,8 @@ help:
 	@echo "Quality:"
 	@echo "  make doctor        Check local prerequisites"
 	@echo "  make test          Run backend + frontend tests"
-	@echo "  make test-backend  Run backend tests only"
+	@echo "  make test-backend  Run backend unit tests only"
+	@echo "  make test-backend-it Run backend unit + database integration tests (Docker)"
 	@echo "  make test-frontend Run frontend tests only"
 
 setup:
@@ -93,7 +94,10 @@ doctor:
 test: test-backend test-frontend
 
 test-backend:
-	cd backend && mvn -B test -DskipITs
+	cd backend && mvn -B test
+
+test-backend-it:
+	cd backend && mvn -B verify
 
 test-frontend:
 	cd frontend && npm test
