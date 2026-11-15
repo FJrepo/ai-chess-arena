@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM maven:3.9-eclipse-temurin-21@sha256:c3c9d3ac4ce8431a3995c0318b8d390f448e693dd4fabc16e9b68d2e1f3d7b46 AS build
+FROM maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b518f8278320 AS build
 WORKDIR /app
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2 \
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     done; \
     exit 1'
 
-FROM eclipse-temurin:21-jre@sha256:34a58218d838035428163eb35abb629944c5906d1bedcfef8bc8864cce11dfe5
+FROM eclipse-temurin:21-jre@sha256:18bb4a91a3dea3f03ee31d3755af34dfb40f904fc77ab56cdc2f092e32fff9c2
 WORKDIR /app
 
 LABEL org.opencontainers.image.licenses="MIT, GPL-3.0-only" \

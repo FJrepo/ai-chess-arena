@@ -10,12 +10,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 - Development and released-image Compose ports now bind to loopback by default on the documented Docker Engine 28.0+ baseline, preserving local access without exposing the unauthenticated control plane to the surrounding network.
 - Production Compose now requires an explicit database password, includes a one-time rotation path for volumes created with the former fallback, and `make setup` creates or tightens `.env` to owner-only permissions.
+- Backend upgraded from Quarkus 3.21.3 to the 3.40 LTS stream; the CORS switch is now `quarkus.http.cors.enabled` and the Hibernate schema setting uses `schema-management.strategy`.
+- Frontend upgraded from Angular 21.1 to the latest 21.2.x patch release, including Angular Material, CDK and angular-eslint.
+- Container base images re-pinned to current digests.
+- CI and release workflows moved to Node 24-based action majors after GitHub removed the Node 20 Actions runtime; frontend CI now builds on Node 24 to match the container image.
+- Dependabot now proposes weekly Maven, npm and Docker updates and monthly GitHub Actions updates.
 
 ### Fixed
 - WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.
 
 ### Security
 - Default Docker networking now matches the documented localhost-only product boundary for the unauthenticated application, with Docker Engine 28.0+ required for loopback isolation.
+- Frontend runtime dependencies no longer carry known vulnerabilities (previously seven high-severity advisories in `@angular/core` and `@angular/compiler`); remaining moderate advisories are confined to build tooling and resolve with Angular 22.
 
 ## [1.0.0] - 2026-03-08
 

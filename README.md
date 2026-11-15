@@ -27,8 +27,8 @@ Run tournaments, include one local human participant, watch games live, and revi
 - Recommended runtime: localhost; private-network access requires separate authentication, TLS, and firewall controls
 
 ## Stack
-- Backend: Quarkus 3.21.3, Java 21, REST, WebSocket, Panache, Flyway
-- Frontend: Angular 21.1.x, Angular Material 21.1.x, TypeScript 5.9.x
+- Backend: Quarkus 3.40 LTS, Java 21, REST, WebSocket, Panache, Flyway
+- Frontend: Angular 21.2.x, Angular Material 21.2.x, TypeScript 5.9.x
 - Database: PostgreSQL 17
 - Model provider: OpenRouter
 - Evaluation engine: Stockfish 18
