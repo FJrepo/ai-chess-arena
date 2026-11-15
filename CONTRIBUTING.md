@@ -3,9 +3,9 @@
 Thanks for contributing. This file defines the minimum workflow for changes.
 
 ## Prerequisites
-- Java 21+
+- Java 25+
 - Maven 3.9+
-- Node.js 22+ and npm
+- Node.js 24+ and npm (26 recommended; CI and the image use 26)
 - Docker Engine 28.0+ with Docker Compose, or Docker Desktop with Engine 28.0+
 - Make
 - OpenRouter API key
