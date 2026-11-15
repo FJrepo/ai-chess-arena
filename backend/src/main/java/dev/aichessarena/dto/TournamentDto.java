@@ -19,5 +19,6 @@ public record TournamentDto(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<ParticipantDto> participants,
-        List<GameDto> games
+        List<GameDto> games,
+        String winnerName
 ) {}

@@ -25,3 +25,7 @@ BEGIN
     END IF;
 END
 $$;
+
+-- The game that decided its series records who advanced (needed when a draw policy decided a level series).
+ALTER TABLE games
+    ADD COLUMN IF NOT EXISTS advanced_participant_id UUID REFERENCES tournament_participants(id) ON DELETE SET NULL;

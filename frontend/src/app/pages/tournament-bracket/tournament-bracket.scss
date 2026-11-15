@@ -278,3 +278,16 @@
     grid-column: span 1;
   }
 }
+
+.champion-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}

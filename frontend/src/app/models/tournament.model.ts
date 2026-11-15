@@ -1,4 +1,6 @@
 export interface Tournament {
+  /** Champion of a completed tournament. */
+  winnerName?: string | null;
   id: string;
   name: string;
   status: 'CREATED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -44,6 +46,8 @@ export interface Game {
   resultReason: string | null;
   /** Why the game is paused when the pause was caused by an operational problem (e.g. OpenRouter). */
   statusDetail?: string | null;
+  /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
+  advancedPlayerName?: string | null;
   pgn: string | null;
   currentFen: string;
   bracketRound: string | null;

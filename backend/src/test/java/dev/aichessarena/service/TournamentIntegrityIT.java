@@ -73,6 +73,36 @@ class TournamentIntegrityIT {
     }
 
     @Test
+    void concurrentCreatesWithTheSameRequestIdProduceOneCompleteTournament() throws Exception {
+        UUID requestId = UUID.randomUUID();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<TournamentCreationService.Result>> results = new ArrayList<>();
+        try {
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    go.await();
+                    return creation.create(tournament("Same request"), List.of(ai("A", 0), ai("B", 1)), requestId);
+                }));
+            }
+            go.countDown();
+            TournamentCreationService.Result first = results.get(0).get(30, TimeUnit.SECONDS);
+            TournamentCreationService.Result second = results.get(1).get(30, TimeUnit.SECONDS);
+
+            assertEquals(first.tournament().id, second.tournament().id);
+            assertEquals(1, (first.created() ? 1 : 0) + (second.created() ? 1 : 0));
+        } finally {
+            pool.shutdownNow();
+        }
+        long tournamentsWithId = QuarkusTransaction.requiringNew().call(
+                () -> tournamentRepository.count("clientRequestId", requestId));
+        assertEquals(1, tournamentsWithId);
+        UUID id = QuarkusTransaction.requiringNew().call(() -> tournamentRepository.findByClientRequestId(requestId).id);
+        long participants = QuarkusTransaction.requiringNew().call(() -> participantRepository.count("tournament.id", id));
+        assertEquals(2, participants);
+    }
+
+    @Test
     void concurrentBracketGenerationCreatesExactlyOneBracket() throws Exception {
         UUID id = creation.create(tournament("Bracket race"),
                 List.of(ai("A", 0), ai("B", 1), ai("C", 2), ai("D", 3)), null).tournament().id;

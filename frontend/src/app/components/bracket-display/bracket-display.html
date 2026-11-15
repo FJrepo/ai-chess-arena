@@ -54,8 +54,8 @@
                   <div class="players-block">
                     <div
                       class="player white"
-                      [class.winner]="series.whiteWins > series.blackWins && series.isComplete"
-                      [class.loser]="series.blackWins > series.whiteWins && series.isComplete"
+                      [class.winner]="isSeriesWinner(series, 'white')"
+                      [class.loser]="isSeriesLoser(series, 'white')"
                     >
                       <span class="color-indicator white-indicator"></span>
                       @if (series.whiteModelId) {
@@ -73,8 +73,8 @@
                     <div class="players-divider"></div>
                     <div
                       class="player black"
-                      [class.winner]="series.blackWins > series.whiteWins && series.isComplete"
-                      [class.loser]="series.whiteWins > series.blackWins && series.isComplete"
+                      [class.winner]="isSeriesWinner(series, 'black')"
+                      [class.loser]="isSeriesLoser(series, 'black')"
                     >
                       <span class="color-indicator black-indicator"></span>
                       @if (series.blackModelId) {
