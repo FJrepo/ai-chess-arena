@@ -15,6 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Container base images re-pinned to current digests.
 - CI and release workflows moved to Node 24-based action majors after GitHub removed the Node 20 Actions runtime; frontend CI now builds on Node 24 to match the container image.
 - Dependabot now proposes weekly Maven, npm and Docker updates and monthly GitHub Actions updates.
+- Releases now run the full CI suite on the tagged commit, accept only exact `vX.Y.Z` tags from `main`, push images as commit-addressed candidates first, smoke-test both candidates together via `docker-compose.prod.yml`, and only then promote both digests to the version tag and `latest`. A failed release no longer leaves a mismatched `latest` pair.
+- `docker-compose.prod.yml` now requires `IMAGE_TAG` instead of defaulting to `latest`; set a release version such as `v1.1.0` in `.env`.
 
 ### Fixed
 - WebSocket game subscriptions now reject missing games, move a connection cleanly between games, and remove empty subscription state on unsubscribe or disconnect.

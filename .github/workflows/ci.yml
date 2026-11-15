@@ -4,10 +4,13 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_call:
 
 jobs:
   secret-scan:
     name: Secret scan (gitleaks)
+    # Release tags reuse this workflow; their commits were already scanned on main.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -179,8 +179,8 @@ It is not intended to be:
 
 ## Releases
 - Release tags use `vX.Y.Z`.
-- Released images are published to GHCR for backend and frontend.
-- Pinned tags are the recommended deployment target.
+- Released images are published to GHCR for backend and frontend, after CI and a combined smoke test pass; both images are promoted together.
+- `IMAGE_TAG` must be set explicitly; pinned version tags are the recommended deployment target.
 - `latest` is convenience only.
 - Release notes live in GitHub Releases, and project history lives in [CHANGELOG.md](CHANGELOG.md).
 
