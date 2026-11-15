@@ -40,7 +40,8 @@ make setup
 - `IMAGE_NAMESPACE`
   - your GitHub user or org that owns the published GHCR images
 - `IMAGE_TAG`
-  - recommended: a pinned version such as `v1.0.0`
+  - required; a release version such as `v1.1.0` (see GitHub Releases)
+  - `latest` works but is a convenience tag; pinned versions give predictable upgrades
 - `OPENROUTER_API_KEY`
 - `DB_PASSWORD`
   - required; production Compose does not provide a fallback password
@@ -136,11 +137,16 @@ curl http://localhost:${BACKEND_PORT:-8081}/q/health/ready
 ```
 
 ## Release Publishing Notes
-- The release workflow publishes:
-  - `ghcr.io/<owner>/chess-backend:<tag>`
-  - `ghcr.io/<owner>/chess-backend:latest`
-  - `ghcr.io/<owner>/chess-frontend:<tag>`
-  - `ghcr.io/<owner>/chess-frontend:latest`
+- The release workflow runs in this order, and any failure stops it before user-facing tags change:
+  1. validates the tag (exact `vX.Y.Z`, commit reachable from `main`)
+  2. runs the full CI suite on the tagged commit
+  3. builds both images and pushes them only as `sha-<commit>` candidates
+  4. starts `docker-compose.prod.yml` from both candidates and checks health, the frontend, and the proxied API
+  5. promotes both verified digests to `<tag>` and `latest`, then creates the GitHub Release
+- Published tags:
+  - `ghcr.io/<owner>/chess-backend:<tag>` and `:latest`
+  - `ghcr.io/<owner>/chess-frontend:<tag>` and `:latest`
+  - `sha-<commit>` candidate tags remain as build artifacts; do not deploy them directly
 - Public package visibility is recommended for easy third-party pulls.
 - After first publish, confirm the package visibility in GitHub:
   - repository/package settings -> set packages to public if you want anonymous pulls
@@ -158,10 +164,8 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-5. Watch the `Release` GitHub Actions workflow until:
-- backend image push succeeds
-- frontend image push succeeds
-- GitHub Release creation succeeds
+5. Watch the `Release` GitHub Actions workflow until all stages succeed: tag validation, CI, candidate builds, smoke test, promotion, and GitHub Release creation.
+   If any stage fails, no `<tag>` or `latest` image is published; fix the problem on `main` and release a new patch version.
 
 6. After the first publish for each package, confirm package visibility is public if you want anonymous pulls from GHCR.
 7. Verify the published deployment path with:

@@ -1,23 +1,55 @@
 name: Release
 
+# Release flow:
+#   1. validate the tag (exact vX.Y.Z, commit reachable from main)
+#   2. run the full CI suite on the tagged commit
+#   3. build both images and push them only under an immutable candidate tag
+#   4. smoke-test the candidates together via docker-compose.prod.yml
+#   5. promote both candidate digests to vX.Y.Z and latest, then publish the GitHub Release
+# A failure before step 5 leaves every user-facing tag (vX.Y.Z, latest) untouched.
+
 on:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  prepare:
-    name: Prepare Release Metadata
+  validate-tag:
+    name: Validate Release Tag
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.vars.outputs.version }}
+      namespace: ${{ steps.vars.outputs.namespace }}
       backend_image: ${{ steps.vars.outputs.backend_image }}
       frontend_image: ${{ steps.vars.outputs.frontend_image }}
+      candidate_tag: ${{ steps.vars.outputs.candidate_tag }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require vX.Y.Z tag on a commit from main
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tags must match vX.Y.Z exactly (got '$VERSION')."
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tagged commit $GITHUB_SHA is not reachable from main."
+            exit 1
+          fi
+
       - name: Derive image names
         id: vars
         env:
@@ -25,42 +57,166 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           owner_lc="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "backend_image=ghcr.io/${owner_lc}/chess-backend" >> "$GITHUB_OUTPUT"
-          echo "frontend_image=ghcr.io/${owner_lc}/chess-frontend" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$VERSION"
+            echo "namespace=$owner_lc"
+            echo "backend_image=ghcr.io/${owner_lc}/chess-backend"
+            echo "frontend_image=ghcr.io/${owner_lc}/chess-frontend"
+            echo "candidate_tag=sha-${GITHUB_SHA::12}"
+          } >> "$GITHUB_OUTPUT"
 
-  verify-backend-image-compliance:
-    name: Verify Backend Image Compliance
+  ci:
+    name: CI
+    needs: validate-tag
+    uses: ./.github/workflows/ci.yml
+
+  build-candidates:
+    name: Build ${{ matrix.component }} Candidate
     runs-on: ubuntu-latest
-    needs: prepare
+    needs:
+      - validate-tag
+      - ci
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        component: [backend, frontend]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Build backend image locally
-        run: docker build -t chess-backend:release-check ./backend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Verify Stockfish license files
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ needs.validate-tag.outputs.namespace }}/chess-${{ matrix.component }}
+          tags: |
+            type=raw,value=${{ needs.validate-tag.outputs.candidate_tag }}
+
+      - name: Build and push candidate image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.component }}
+          file: ./${{ matrix.component }}/Dockerfile
+          cache-from: type=gha,scope=release-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  smoke-test:
+    name: Smoke Test Candidates
+    runs-on: ubuntu-latest
+    needs:
+      - validate-tag
+      - build-candidates
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      backend_digest: ${{ steps.digests.outputs.backend_digest }}
+      frontend_digest: ${{ steps.digests.outputs.frontend_digest }}
+    env:
+      BACKEND_REF: ${{ needs.validate-tag.outputs.backend_image }}:${{ needs.validate-tag.outputs.candidate_tag }}
+      FRONTEND_REF: ${{ needs.validate-tag.outputs.frontend_image }}:${{ needs.validate-tag.outputs.candidate_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve candidate digests
+        id: digests
         run: |
-          docker run --rm --entrypoint sh chess-backend:release-check -c \
+          backend_digest="$(docker buildx imagetools inspect "$BACKEND_REF" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          frontend_digest="$(docker buildx imagetools inspect "$FRONTEND_REF" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          for d in "$backend_digest" "$frontend_digest"; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::Could not resolve candidate digest ($d)"; exit 1; }
+          done
+          echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
+          echo "frontend_digest=$frontend_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Stockfish license files and labels
+        env:
+          BACKEND_PINNED: ${{ needs.validate-tag.outputs.backend_image }}@${{ steps.digests.outputs.backend_digest }}
+        run: |
+          docker pull "$BACKEND_PINNED"
+          docker run --rm --entrypoint sh "$BACKEND_PINNED" -c \
             'test -f /usr/share/licenses/stockfish/COPYING.txt && test -f /usr/share/licenses/stockfish/NOTICE.txt'
-
-      - name: Verify Stockfish metadata labels
-        run: |
-          docker inspect chess-backend:release-check \
+          docker inspect "$BACKEND_PINNED" \
             --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }} {{ index .Config.Labels "dev.aichessarena.stockfish.source" }} {{ index .Config.Labels "org.opencontainers.image.licenses" }}' \
             | grep 'sf_18'
 
-  publish-backend:
-    name: Publish Backend Image
+      - name: Start released-image stack from candidates
+        env:
+          IMAGE_NAMESPACE: ${{ needs.validate-tag.outputs.namespace }}
+          IMAGE_TAG: ${{ needs.validate-tag.outputs.candidate_tag }}
+          OPENROUTER_API_KEY: smoke-test-placeholder
+        run: |
+          DB_PASSWORD="$(openssl rand -hex 24)"
+          export DB_PASSWORD
+          docker compose -f docker-compose.prod.yml up -d --wait --wait-timeout 300
+
+      - name: Check frontend and proxied API
+        run: |
+          curl -fsS -o /dev/null "http://127.0.0.1:${FRONTEND_PORT:-4200}/"
+          curl -fsS "http://127.0.0.1:${FRONTEND_PORT:-4200}/api/tournaments" | head -c 200
+          echo
+
+      - name: Show logs on failure
+        if: failure()
+        env:
+          IMAGE_NAMESPACE: ${{ needs.validate-tag.outputs.namespace }}
+          IMAGE_TAG: ${{ needs.validate-tag.outputs.candidate_tag }}
+          OPENROUTER_API_KEY: smoke-test-placeholder
+          DB_PASSWORD: unused
+        run: docker compose -f docker-compose.prod.yml logs --tail=200
+
+      - name: Stop stack
+        if: always()
+        env:
+          IMAGE_NAMESPACE: ${{ needs.validate-tag.outputs.namespace }}
+          IMAGE_TAG: ${{ needs.validate-tag.outputs.candidate_tag }}
+          OPENROUTER_API_KEY: smoke-test-placeholder
+          DB_PASSWORD: unused
+        run: docker compose -f docker-compose.prod.yml down -v
+
+  promote:
+    name: Promote Version and Latest Tags
     runs-on: ubuntu-latest
     needs:
-      - prepare
-      - verify-backend-image-compliance
+      - validate-tag
+      - smoke-test
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.validate-tag.outputs.version }}
+      BACKEND_IMAGE: ${{ needs.validate-tag.outputs.backend_image }}
+      FRONTEND_IMAGE: ${{ needs.validate-tag.outputs.frontend_image }}
+      BACKEND_DIGEST: ${{ needs.smoke-test.outputs.backend_digest }}
+      FRONTEND_DIGEST: ${{ needs.smoke-test.outputs.frontend_digest }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -71,73 +227,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ needs.prepare.outputs.backend_image }}
-          tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest
+      - name: Tag verified digests with the release version
+        run: |
+          docker buildx imagetools create -t "$BACKEND_IMAGE:$VERSION" "$BACKEND_IMAGE@$BACKEND_DIGEST"
+          docker buildx imagetools create -t "$FRONTEND_IMAGE:$VERSION" "$FRONTEND_IMAGE@$FRONTEND_DIGEST"
 
-      - name: Build and push backend image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          cache-from: type=gha,scope=release-backend
-          cache-to: type=gha,mode=max,scope=release-backend
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  publish-frontend:
-    name: Publish Frontend Image
-    runs-on: ubuntu-latest
-    needs: prepare
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ needs.prepare.outputs.frontend_image }}
-          tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest
-
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          cache-from: type=gha,scope=release-frontend
-          cache-to: type=gha,mode=max,scope=release-frontend
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Move latest to the verified digests
+        run: |
+          docker buildx imagetools create -t "$BACKEND_IMAGE:latest" "$BACKEND_IMAGE@$BACKEND_DIGEST"
+          docker buildx imagetools create -t "$FRONTEND_IMAGE:latest" "$FRONTEND_IMAGE@$FRONTEND_DIGEST"
 
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     needs:
-      - prepare
-      - publish-backend
-      - publish-frontend
+      - validate-tag
+      - smoke-test
+      - promote
+    permissions:
+      contents: write
     steps:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          body: |
+            Images (verified together before promotion):
+            - `${{ needs.validate-tag.outputs.backend_image }}:${{ needs.validate-tag.outputs.version }}` (`${{ needs.smoke-test.outputs.backend_digest }}`)
+            - `${{ needs.validate-tag.outputs.frontend_image }}:${{ needs.validate-tag.outputs.version }}` (`${{ needs.smoke-test.outputs.frontend_digest }}`)
