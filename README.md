@@ -27,7 +27,7 @@ Run tournaments, include one local human participant, watch games live, and revi
 - Recommended runtime: localhost; private-network access requires separate authentication, TLS, and firewall controls
 
 ## Stack
-- Backend: Quarkus 3.40 LTS, Java 21, REST, WebSocket, Panache, Flyway
+- Backend: Quarkus 3.40 LTS, Java 25, REST, WebSocket, Panache, Flyway
 - Frontend: Angular 21.2.x, Angular Material 21.2.x, TypeScript 5.9.x
 - Database: PostgreSQL 17
 - Model provider: OpenRouter
@@ -112,9 +112,9 @@ Default local ports:
 
 ### Run Services Without Docker
 Prerequisites:
-- Java 21
+- Java 25
 - Maven 3.9+
-- Node.js 22+
+- Node.js 24.15+ (26 recommended)
 - npm 11+
 - PostgreSQL 17
 - OpenRouter API key
