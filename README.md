@@ -6,21 +6,21 @@
 
 Let large language models play chess against each other — in brackets, live, with trash talk.
 
-AI Chess Arena runs single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. You pick the models, watch every move and chat message as it happens, can jump in as a human player, and look at who actually won, who kept making illegal moves, and what it all cost.
+AI Chess Arena runs single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. You pick the models, watch every move and chat message as it happens, can jump in as a human player, and look at who actually won, who needed retries or forfeited, and roughly what it cost.
 
 ![Tournament bracket](docs/screenshots/tournament-bracket.png)
 
 ## Why this exists
 **Mainly for fun.** Watching two frontier models confidently blunder their queens while taunting each other is entertainment in its own right, and a bracket makes it a tournament night.
 
-> **Side note: a benchmaxxing smell test.** New model releases arrive with impressive benchmark numbers. Chess is a cheap, unrehearsed check against that: the rules are simple, legality is verified move by move, and illegal moves, timeouts and forfeits are recorded. A model that tops the leaderboards but cannot finish a game without illegal moves is worth a second look. Treat the results as a smell test, not as a rigorous benchmark — brackets are small, games are few, and chess skill is only one narrow ability.
+> **Side note: a benchmaxxing smell test.** New model releases arrive with impressive benchmark numbers. A chess bracket is a cheap, informal second look: every move is checked for legality, and retries, timeouts and forfeits are recorded. A model that tops the leaderboards but cannot get through a game without invalid moves is worth a closer look. Treat the results as a smell test, not a benchmark: the prompt supplies the position and the legal moves, brackets are small, games are few, and chess is one narrow skill — it cannot tell you whether benchmark gains generalize.
 
 ## Features
-- **Tournaments:** single elimination with best-of 1, 3, 5 or 7 series (separate setting for the final), configurable move timeout, retries for invalid output, and draw policies.
-- **Any OpenRouter model** as a participant, with shared or per-participant custom instructions; optionally **one human player** who moves from the live game view.
+- **Tournaments:** single elimination with best-of 1, 3, 5 or 7 series (separate setting for the final), configurable move timeout, attempts per move, and draw policies.
+- **OpenRouter chat models** as participants (text-output models; embedding, vision, audio and similar models are filtered out by default), with shared or per-participant custom instructions; optionally **one human player** who moves from the live game view.
 - **Live games** over WebSocket: board, move list, model chat, retries, and an optional Stockfish 18 evaluation bar.
 - **Reliable runs:** OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; games interrupted by a restart can be resumed.
-- **Analysis:** bracket overview with series scores and the champion, PGN export, and analytics on results, reliability (illegal moves, timeouts, forfeits) and cost.
+- **Analysis:** bracket overview with series scores and the champion, PGN export, and analytics on results, reliability (retries, timeouts, forfeits) and reported cost. Invalid attempts are shown live; costs cover accepted moves only, as reported by OpenRouter.
 - **Cost estimate** before you start: expected games, runtime and spend for the chosen models and format.
 
 | Live game | Analytics |
@@ -56,10 +56,11 @@ Open **http://localhost:4200**, create a tournament, generate the bracket and st
 Everything binds to `127.0.0.1` only. Upgrades, backups, password rotation and troubleshooting are covered in [docs/deployment.md](docs/deployment.md).
 
 ## How tournaments work
-- **Bracket:** participants are seeded in the order they are added; byes are assigned automatically when the field is not a power of two.
+- **Bracket:** participants are ordered by seed (lowest first; the setup page assigns seeds in the order you add participants). When the field is not a power of two, the top seeds get byes; the rest are paired in seed order.
 - **Best of N:** a series lasts at most N games. A draw is a game without a winner, and a series ends as soon as the lead can no longer be caught.
-- **Level after N games** (or a drawn single game): the tournament's draw policy decides — *White advances* (white in game 1), *Black advances*, *Higher seed advances*, *Random*, or *Replay game*, which keeps adding sudden-death games until one is decisive (so it has no fixed maximum length or cost).
-- **Model turns:** each move must be a legal move in the requested JSON format within the move timeout. Invalid output is retried up to the configured limit; after that the model forfeits. A model that is too slow forfeits on time. Problems on OpenRouter's side never count against a model — the game pauses with the reason and can be resumed.
+- **Level after N games** (or a drawn single game): the tournament's draw policy decides — *White advances* (white in game 1), *Black advances*, *Higher seed advances*, *Random*, or *Replay game*. For longer series, *Replay game* adds sudden-death games until one is decisive; for a single-game match it resets and replays the same game, discarding the drawn game's moves, chat and recorded cost. Either way it has no fixed maximum length or cost.
+- **Model turns:** models are asked to answer in JSON, but the parser also extracts a move from other formats; the move must be legal and arrive within the move timeout. *Max Retries* is the total number of attempts per move (3 means up to two retries); after that the model forfeits, and a model that runs out of time forfeits on time.
+- **Provider problems:** recognized OpenRouter failures (rate limits, server or network errors, invalid key, no credits) are retried or pause the game with the reason, and the game can be resumed. A request that simply exceeds the move timeout still counts as the model's timeout.
 
 ## Scope
 - Built for **one operator on localhost**: no authentication, no user accounts. Exposing it to a network requires your own authentication, TLS and firewall in front of it.
@@ -74,20 +75,26 @@ make setup
 docker compose up --build -d   # frontend :4200, backend :8081, PostgreSQL :5433 (all loopback)
 ```
 
-**Without Docker** (Java 25, Maven 3.9+, Node.js 24.15+ — 26 recommended, PostgreSQL 17; Stockfish 18 on `PATH` for evaluation):
+**Without Docker** (Java 25, Maven 3.9+, Node.js 24.15+ — 26 recommended, PostgreSQL 17; Stockfish 18 on `PATH` for evaluation). Maven does not read the root `.env`, so export the settings in the backend terminal; run backend and frontend in separate terminals, each from the repository root:
 
 ```bash
-docker compose up -d db                 # or your own PostgreSQL on :5433
-cd backend && mvn quarkus:dev           # http://localhost:8081
-cd frontend && npm ci && npm start      # http://localhost:4200, proxies /api and /ws
+docker compose up -d db                 # or your own PostgreSQL on localhost:5433
+
+# terminal 1 – backend on http://localhost:8081
+export OPENROUTER_API_KEY=sk-or-...
+export DB_USER=chess DB_PASSWORD=chess  # dev-profile defaults; match your PostgreSQL
+cd backend && mvn quarkus:dev
+
+# terminal 2 – frontend on http://localhost:4200 (proxies /api and /ws to :8081)
+cd frontend && npm ci && npm start
 ```
 
-**Tests and checks:**
+**Tests and checks** (from the repository root):
 
 ```bash
 make test                               # backend unit + frontend tests
-cd backend && mvn verify                # + PostgreSQL integration tests (Docker required)
-cd frontend && npm run lint && npm run typecheck && npm run format:check
+(cd backend && mvn verify)              # + PostgreSQL integration tests (Docker required)
+(cd frontend && npm run lint && npm run typecheck && npm run format:check)
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
@@ -98,7 +105,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 | Backend | Quarkus 3.40 LTS on Java 25 — REST, WebSockets Next, Hibernate ORM Panache, Flyway; game loops on virtual threads |
 | Frontend | Angular 21.2 with Angular Material, standalone components, CSS chessboard |
 | Database | PostgreSQL 17 |
-| Models | OpenRouter (any chat model) |
+| Models | OpenRouter chat models (text output) |
 | Evaluation | Stockfish 18 (bundled in the backend image, `amd64`/AVX2; the app runs without it) |
 
 ## Repository layout
