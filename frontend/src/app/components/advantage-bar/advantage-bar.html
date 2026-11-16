@@ -3,8 +3,9 @@
     class="eval-bar"
     [class.unknown]="!known()"
     [class.checkmate]="checkmated() !== null"
+    role="img"
     [attr.title]="description()"
-    [attr.aria-label]="description()"
+    [attr.aria-label]="accessibleLabel()"
   >
     <div class="white-bar" [style.height.%]="barHeight()"></div>
     <div class="black-bar" [style.height.%]="100 - barHeight()"></div>

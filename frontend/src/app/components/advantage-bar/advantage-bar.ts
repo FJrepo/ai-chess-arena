@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import {
   PositionEvaluation,
   Side,
+  evaluationAccessibleLabel,
   evaluationDescription,
   evaluationLabel,
   hasEvaluation,
@@ -35,8 +36,11 @@ export class AdvantageBar {
 
   displayScore = computed(() => evaluationLabel(this.evaluation()));
 
-  /** Title and accessible label for the unknown and checkmate states; null (no attribute) otherwise. */
+  /** Title for the unknown and checkmate states; null (no title) otherwise. */
   description = computed(() => evaluationDescription(this.evaluation()));
+
+  /** Accessible name of the bar (role "img"), in every state. */
+  accessibleLabel = computed(() => evaluationAccessibleLabel(this.evaluation()));
 
   barHeight = computed(() => whiteBarShare(this.evaluation()));
 }

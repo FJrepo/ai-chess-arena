@@ -132,6 +132,29 @@ describe('evaluationAt', () => {
     expect(evaluationAt(moves, 0, game('COMPLETED', 'STALEMATE')).cp).toBe(300);
     expect(evaluationAt(moves, 1, game('COMPLETED', 'REPETITION'))).toEqual(NO_EVALUATION);
   });
+
+  it('shows a final stalemate or insufficient-material position as level even with a stored score', () => {
+    const level = { cp: 0, mate: null, checkmated: null };
+    const withCp = [move('WHITE', 40), move('BLACK', 300)];
+    const withMate = [move('WHITE', 40), move('BLACK', null, -4)];
+
+    expect(evaluationAt(withCp, 1, game('COMPLETED', 'STALEMATE'))).toEqual(level);
+    expect(evaluationAt(withCp, 1, game('COMPLETED', 'INSUFFICIENT_MATERIAL'))).toEqual(level);
+    expect(evaluationAt(withMate, 1, game('COMPLETED', 'STALEMATE'))).toEqual(level);
+    expect(evaluationLabel(evaluationAt(withCp, 1, game('COMPLETED', 'STALEMATE')))).toBe('0.0');
+  });
+
+  it('keeps a stored score on the last move of a drawn game that is not a dead position', () => {
+    const moves = [move('WHITE', 40), move('BLACK', 300)];
+
+    expect(evaluationAt(moves, 1, game('COMPLETED', 'REPETITION')).cp).toBe(300);
+    expect(evaluationAt(moves, 1, game('COMPLETED', 'FIFTY_MOVE')).cp).toBe(300);
+  });
+
+  it('keeps the stored score of the last move while the game is still running', () => {
+    const moves = [move('WHITE', 40), move('BLACK', 300)];
+    expect(evaluationAt(moves, 1, game('IN_PROGRESS', 'STALEMATE')).cp).toBe(300);
+  });
 });
 
 describe('evaluationLabel and whiteBarShare', () => {

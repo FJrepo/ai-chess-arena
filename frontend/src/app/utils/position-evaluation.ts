@@ -24,7 +24,8 @@ const DEAD_DRAW_REASONS = new Set(['STALEMATE', 'INSUFFICIENT_MATERIAL']);
  * Only the stored evaluation of that move counts: a move without one is shown as unknown rather than
  * as 0.0 or as an older move's score. The start position (index -1) has no stored evaluation either.
  * The final position of a game that ended on the board is known without an engine: checkmate is a win
- * for the side that delivered it, and stalemate or insufficient material is a draw.
+ * for the side that delivered it, and stalemate or insufficient material is a draw (0.0), even if a
+ * different score was stored for it.
  */
 export function evaluationAt(
   moves: readonly Move[],
@@ -38,8 +39,15 @@ export function evaluationAt(
   const checkmated: Side = move.color === 'WHITE' ? 'BLACK' : 'WHITE';
   const isFinalPosition = index === moves.length - 1 && game?.status === 'COMPLETED';
 
+  // The result of a game that ended on the board decides its final position, whatever was stored.
+  if (isFinalPosition && game?.resultReason === 'CHECKMATE') {
+    return { cp: null, mate: 0, checkmated };
+  }
+  if (isFinalPosition && game?.resultReason && DEAD_DRAW_REASONS.has(game.resultReason)) {
+    return { cp: 0, mate: null, checkmated: null };
+  }
   // Stockfish reports a checkmated position as "mate 0", which carries no sign.
-  if (move.evaluationMate === 0 || (isFinalPosition && game?.resultReason === 'CHECKMATE')) {
+  if (move.evaluationMate === 0) {
     return { cp: null, mate: 0, checkmated };
   }
   if (move.evaluationMate != null) {
@@ -47,9 +55,6 @@ export function evaluationAt(
   }
   if (move.evaluationCp != null) {
     return { cp: move.evaluationCp, mate: null, checkmated: null };
-  }
-  if (isFinalPosition && game?.resultReason && DEAD_DRAW_REASONS.has(game.resultReason)) {
-    return { cp: 0, mate: null, checkmated: null };
   }
   return NO_EVALUATION;
 }
@@ -85,6 +90,19 @@ export function evaluationDescription(evaluation: PositionEvaluation): string | 
       : 'Black wins by checkmate';
   }
   return hasEvaluation(evaluation) ? null : 'Evaluation unavailable';
+}
+
+/** Accessible name of the evaluation bar: the description, or the spoken score. */
+export function evaluationAccessibleLabel(evaluation: PositionEvaluation): string {
+  const description = evaluationDescription(evaluation);
+  if (description) {
+    return description;
+  }
+  if (evaluation.mate != null) {
+    const side = evaluation.mate > 0 ? 'White' : 'Black';
+    return `Evaluation: ${side} mates in ${Math.abs(evaluation.mate)}`;
+  }
+  return `Evaluation: ${evaluationLabel(evaluation)}`;
 }
 
 /** White's share of the evaluation bar in percent; 50 when the evaluation is unknown. */
