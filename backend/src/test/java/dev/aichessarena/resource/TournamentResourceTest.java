@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.aichessarena.dto.CreateTournamentRequest;
 import dev.aichessarena.dto.TournamentDto;
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.TournamentRepository;
@@ -151,6 +152,43 @@ class TournamentResourceTest {
         assertChat(resource.update(UUID.randomUUID(), withChat(null, true)), "OPTIONAL", true);
         assertChat(resource.update(UUID.randomUUID(), withChat("MANDATORY", false)), "MANDATORY", true);
         assertEquals(ChatMode.MANDATORY, stored.chatMode);
+    }
+
+    @Test
+    void reasoningEffortIsTheModelDefaultUnlessSentAndKeptOnUpdateWhenOmitted() {
+        TournamentDto created = (TournamentDto) resourceWithCapturingCreation().create(withTimeout("Old client", null))
+                .getEntity();
+        assertNull(created.reasoningEffort(), "a request without the field (older clients) means the model default");
+
+        TournamentResource resource = new TournamentResource();
+        Tournament stored = new Tournament();
+        stored.reasoningEffort = ReasoningEffort.LOW;
+        resource.tournamentRepository = repositoryHolding(stored);
+
+        assertEquals("low", ((TournamentDto) resource.update(UUID.randomUUID(), withTimeout("Renamed", null))
+                .getEntity()).reasoningEffort());
+        assertEquals("max", ((TournamentDto) resource.update(UUID.randomUUID(), withEffort("Max")).getEntity())
+                .reasoningEffort());
+        assertNull(((TournamentDto) resource.update(UUID.randomUUID(), withEffort("default")).getEntity())
+                .reasoningEffort());
+        assertNull(stored.reasoningEffort);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> resource.update(UUID.randomUUID(), withEffort("turbo")));
+        assertEquals("Invalid reasoningEffort: turbo (must be one of none, minimal, low, medium, high, xhigh, max or "
+                + "default)", error.getMessage());
+    }
+
+    @Test
+    void participantOverridesAreLevelsOnly() {
+        assertEquals(ReasoningEffort.MINIMAL, TournamentResource.parseParticipantReasoningEffort("MINIMAL"));
+        assertThrows(IllegalArgumentException.class, () -> TournamentResource.parseParticipantReasoningEffort("default"));
+        assertThrows(IllegalArgumentException.class, () -> TournamentResource.parseParticipantReasoningEffort(" "));
+        assertNull(TournamentResource.parseTournamentReasoningEffort(" Default "));
+    }
+
+    private static CreateTournamentRequest withEffort(String reasoningEffort) {
+        return new CreateTournamentRequest("Effort", null, null, null, null, null, null, null, null, null, null, null,
+                null, reasoningEffort);
     }
 
     private static void assertChat(Response response, String chatMode, boolean trashTalkEnabled) {

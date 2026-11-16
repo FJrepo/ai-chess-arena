@@ -81,6 +81,14 @@ public class Tournament extends PanacheEntityBase {
     /** The first move number at which a side may resign: a game cannot end on move 3 because a model gives up. */
     public static final int MIN_RESIGNATION_MOVE = 10;
 
+    /**
+     * OpenRouter {@code reasoning.effort} for every model of the tournament unless a participant overrides it; null
+     * means the model's default (nothing is sent). A change applies from the next turn of running games.
+     */
+    @Convert(converter = ReasoningEffortConverter.class)
+    @Column(name = "reasoning_effort", length = 16)
+    public ReasoningEffort reasoningEffort;
+
     /** Cap on generated tokens per model answer (OpenRouter max_tokens; includes reasoning tokens). */
     @Column(name = "max_output_tokens", nullable = false)
     public int maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS;

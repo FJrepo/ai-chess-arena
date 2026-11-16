@@ -62,6 +62,22 @@
                   >Includes reasoning tokens; answers cut off at this limit pause the game</mat-hint
                 >
               </mat-form-field>
+
+              <mat-form-field
+                appearance="outline"
+                floatLabel="always"
+                subscriptSizing="dynamic"
+                class="reasoning-effort-field"
+              >
+                <mat-label>Reasoning effort</mat-label>
+                <mat-select [(ngModel)]="reasoningEffort" placeholder="Model default">
+                  <mat-option [value]="null">Model default</mat-option>
+                  @for (option of reasoningEffortOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+                <mat-hint class="reasoning-effort-hint">{{ reasoningEffortHint }}</mat-hint>
+              </mat-form-field>
             </div>
           </section>
 
@@ -236,6 +252,33 @@
 
             @if (selectedModel(); as model) {
               <app-model-details class="model-details-card" [model]="model" />
+
+              <div class="add-participant participant-effort">
+                @if (selectedModelEfforts().length > 0) {
+                  <mat-form-field
+                    appearance="outline"
+                    floatLabel="always"
+                    subscriptSizing="dynamic"
+                    class="participant-effort-field"
+                  >
+                    <mat-label>Reasoning effort for this participant</mat-label>
+                    <mat-select
+                      [(ngModel)]="newReasoningEffort"
+                      [placeholder]="tournamentEffortOptionLabel()"
+                    >
+                      <mat-option [value]="null">{{ tournamentEffortOptionLabel() }}</mat-option>
+                      @for (effort of selectedModelEfforts(); track effort) {
+                        <mat-option [value]="effort">{{ reasoningEffortLabel(effort) }}</mat-option>
+                      }
+                    </mat-select>
+                    <mat-hint>Only the levels this model offers</mat-hint>
+                  </mat-form-field>
+                } @else {
+                  <span class="caption participant-effort-na"
+                    >Reasoning effort: n/a (this model offers no effort levels)</span
+                  >
+                }
+              </div>
             }
           }
 
@@ -301,6 +344,11 @@
                     }
                   </span>
                   <span class="participant-meta">{{ participantInstructionLabel(p) }}</span>
+                  @if (p.reasoningEffort) {
+                    <span class="participant-meta participant-effort-meta"
+                      >Reasoning effort: {{ reasoningEffortLabel(p.reasoningEffort) }}</span
+                    >
+                  }
                 </div>
                 <button
                   mat-icon-button

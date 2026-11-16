@@ -23,6 +23,8 @@ public record TournamentDto(
         // Models may resign instead of moving from their 10th move on (Tournament.MIN_RESIGNATION_MOVE).
         boolean resignationAllowed,
         int maxOutputTokens,
+        // OpenRouter reasoning effort for all models (lower case); null (omitted) means each model's default.
+        String reasoningEffort,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<ParticipantDto> participants,

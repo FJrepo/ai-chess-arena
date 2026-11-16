@@ -2,6 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { EMPTY, Subject, of, throwError } from 'rxjs';
 import { GameView } from './game-view';
+import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
+import { REASONING_EFFORTS } from '../../utils/reasoning-effort';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
@@ -90,6 +92,7 @@ function createSpectator() {
     getGame,
     getSystemStatus: () => EMPTY,
     getGameAttempts: () => of([]),
+    getModels: () => of({ data: [] }),
   };
   const ws = {
     connect: vi.fn(),
@@ -115,9 +118,12 @@ function createSpectator() {
 
 function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<any> }) {
   const api = {
+    getGame: () => EMPTY,
+    getTournament: () => EMPTY,
     pauseGame: () => of(void 0),
     startGame: () => of(void 0),
     getGameAttempts: () => of([]),
+    getModels: () => of({ data: [] }),
     ...overrides?.api,
   };
   const snackbar = {
@@ -578,6 +584,8 @@ describe('GameView', () => {
     const responses: Array<Subject<MoveAttempt[]>> = [];
     const { component } = createComponent({
       api: {
+        getGame: () => of(gameFixture({ tournamentId: 't-1', status: 'PAUSED' })),
+        getTournament: () => of({ maxOutputTokens: 4096 }),
         getGameAttempts: () => {
           const response = new Subject<MoveAttempt[]>();
           responses.push(response);
@@ -728,6 +736,353 @@ describe('GameView', () => {
       expect.any(Object),
     );
     expect(component.savingLimit()).toBe(false);
+  });
+
+  it('offers the cut-off side’s reasoning effort with the levels its model supports', () => {
+    const getModels = vi.fn(() =>
+      of({
+        data: [
+          { id: 'meta/muse-ember-x', reasoningEfforts: ['low'] },
+          {
+            id: 'meta/muse-ember',
+            name: 'Meta: Muse Ember',
+            reasoningEfforts: ['max', 'xhigh', 'high', 'medium', 'low', 'minimal'],
+          },
+        ],
+      }),
+    );
+    const { component } = createComponent({
+      api: {
+        getModels,
+        getGameAttempts: () =>
+          of([
+            attemptFixture({
+              color: 'BLACK',
+              modelId: 'meta/muse-ember',
+              outcome: 'TRUNCATED',
+              reasoningEffort: null,
+            }),
+          ]),
+      },
+    });
+    (component as any).gameId = 'g-1';
+    component.tournamentMaxOutputTokens.set(30000);
+    component.tournamentReasoningEffort.set('high');
+    component.game.set(
+      gameFixture({
+        tournamentId: 't-1',
+        status: 'PAUSED',
+        statusDetail: 'Ember was cut off',
+        blackPlayerName: 'Ember',
+        blackModelId: 'meta/muse-ember',
+        blackParticipantId: 'p-2',
+        blackReasoningEffort: 'high',
+      }),
+    );
+    component.moves.set([moveFixture()]);
+
+    component.loadAttempts();
+
+    expect(getModels).toHaveBeenCalledWith({
+      featuredOnly: false,
+      q: 'meta/muse-ember',
+      limit: 0,
+    });
+    expect(component.truncationEffort()).toEqual({
+      participantId: 'p-2',
+      playerName: 'Ember',
+      current: 'high',
+      tournamentLevel: 'high',
+      options: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      fromCatalog: true,
+    });
+
+    // Looked up once per model.
+    component.loadAttempts();
+    expect(getModels).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])(
+    'offers normalized all-level models in the pause banner (mandatory: %s)',
+    (mandatory) => {
+      const { component } = createComponent({
+        api: {
+          getModels: () =>
+            of({
+              data: [
+                {
+                  id: 'example/all-levels',
+                  reasoningEfforts: [...REASONING_EFFORTS],
+                  reasoningMandatory: mandatory,
+                },
+              ],
+            }),
+          getGameAttempts: () => of([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]),
+        },
+      });
+      component.game.set(
+        gameFixture({
+          tournamentId: 't-1',
+          status: 'PAUSED',
+          statusDetail: 'Cut off',
+          blackParticipantId: 'p-2',
+          blackModelId: 'example/all-levels',
+        }),
+      );
+      component.moves.set([moveFixture()]);
+      component.loadAttempts();
+      expect(component.truncationEffort()?.options).toEqual(
+        mandatory ? REASONING_EFFORTS.slice(1) : REASONING_EFFORTS,
+      );
+      const bar = new GameInfoBar();
+      bar.game = component.game()!;
+      bar.truncationLimit = component.truncationPauseLimit();
+      bar.truncationEffort = component.truncationEffort();
+      expect(bar.showEffortSelect()).toBe(true);
+      expect(bar.newReasoningEffort).toBe('low');
+    },
+  );
+
+  it('refreshes effort settings on pause before offering a suggestion', () => {
+    const refreshedGame = new Subject<Game>();
+    const refreshedTournament = new Subject<any>();
+    const getGame = vi.fn(() => refreshedGame);
+    const getTournament = vi.fn(() => refreshedTournament);
+    const updateTournament = vi.fn();
+    const { component } = createComponent({
+      api: {
+        getGame,
+        getTournament,
+        updateTournament,
+        getGameAttempts: () => of([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]),
+        getModels: () =>
+          of({ data: [{ id: 'model-b', reasoningEfforts: [...REASONING_EFFORTS] }] }),
+      },
+    });
+    (component as any).gameId = 'g-1';
+    const original = gameFixture({
+      tournamentId: 't-1',
+      status: 'IN_PROGRESS',
+      blackParticipantId: 'p-2',
+      blackModelId: 'model-b',
+      blackReasoningEffort: 'high',
+    });
+    component.game.set(original);
+    component.moves.set([moveFixture()]);
+    component.tournamentReasoningEffort.set('high');
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail: 'Cut off',
+      statusRevision: 1,
+    });
+    expect(getGame).toHaveBeenCalledWith('g-1');
+    expect(getTournament).toHaveBeenCalledWith('t-1');
+    expect(component.truncationEffort()).toBeNull();
+    expect(component.truncationPauseLimit()).toBeNull();
+    component.saveLimitAndResume(8192, 'low');
+    expect(updateTournament).not.toHaveBeenCalled();
+
+    // The participant changed elsewhere while the game view stayed open.
+    refreshedGame.next({ ...original, status: 'PAUSED', blackReasoningEffort: 'minimal' });
+    refreshedGame.complete();
+    expect(component.truncationEffort()).toBeNull();
+    refreshedTournament.next({ reasoningEffort: 'minimal', maxOutputTokens: 12000 });
+    refreshedTournament.complete();
+    expect(component.truncationEffort()?.current).toBe('minimal');
+    expect(component.truncationEffort()?.tournamentLevel).toBe('minimal');
+    expect(component.truncationPauseLimit()).toBe(12000);
+    const bar = new GameInfoBar();
+    bar.truncationEffort = component.truncationEffort();
+    expect(bar.newReasoningEffort).toBe('minimal');
+  });
+
+  it.each(['game', 'tournament'])(
+    'ignores an older %s reload response after refreshing pause settings',
+    (delayed) => {
+      const oldGame = new Subject<Game>();
+      const oldTournament = new Subject<any>();
+      const original = gameFixture({
+        tournamentId: 't-1',
+        status: 'IN_PROGRESS',
+        statusRevision: 0,
+        blackParticipantId: 'p-2',
+        blackReasoningEffort: 'high',
+        moves: [moveFixture()],
+      });
+      const refreshed = {
+        ...original,
+        status: 'PAUSED',
+        statusRevision: 1,
+        blackReasoningEffort: 'minimal',
+      } as Game;
+      const getGame = vi
+        .fn()
+        .mockReturnValueOnce(delayed === 'game' ? oldGame : of(original))
+        .mockReturnValueOnce(of(refreshed));
+      const getTournament = vi.fn();
+      const currentTournament = { reasoningEffort: 'minimal', maxOutputTokens: 12000 };
+      if (delayed === 'game') {
+        getTournament.mockReturnValueOnce(of(currentTournament)).mockReturnValueOnce(oldTournament);
+      } else {
+        getTournament.mockReturnValueOnce(oldTournament).mockReturnValueOnce(of(currentTournament));
+      }
+      const { component } = createComponent({
+        api: {
+          getGame,
+          getTournament,
+          getGameAttempts: () => of([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]),
+        },
+      });
+      component.game.set(original);
+      component.moves.set(original.moves!);
+      component.loadGame();
+      component.handleWsMessage({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'PAUSED',
+        detail: 'Cut off',
+        statusRevision: 1,
+      });
+      // Both the old game snapshot and its tournament response carry the previous effort.
+      oldGame.next({ ...original, status: 'PAUSED', statusDetail: 'Cut off', statusRevision: 1 });
+      oldGame.complete();
+      oldTournament.next({ reasoningEffort: 'high', maxOutputTokens: 4096 });
+      oldTournament.complete();
+      expect(component.game()?.blackReasoningEffort).toBe('minimal');
+      expect(component.tournamentReasoningEffort()).toBe('minimal');
+      expect(component.truncationEffort()?.current).toBe('minimal');
+      expect(component.truncationPauseLimit()).toBe(12000);
+    },
+  );
+
+  it('keeps stale pause controls hidden if refreshing settings fails', () => {
+    const { component, snackbar } = createComponent({
+      api: {
+        getGame: () => throwError(() => new Error('unavailable')),
+        getTournament: () => of({ reasoningEffort: 'minimal' }),
+      },
+    });
+    component.game.set(gameFixture({ tournamentId: 't-1', status: 'IN_PROGRESS' }));
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail: 'Cut off',
+      statusRevision: 1,
+    });
+    component.attempts.set([attemptFixture({ outcome: 'TRUNCATED' })]);
+    expect(component.truncationPauseLimit()).toBeNull();
+    expect(component.truncationEffort()).toBeNull();
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'Failed to refresh the paused game settings.',
+      'Dismiss',
+      expect.any(Object),
+    );
+  });
+
+  it('offers every level while the catalog cannot tell, and nothing for a side without participant', () => {
+    const { component } = createComponent({
+      api: { getModels: () => throwError(() => new Error('offline')) },
+    });
+    component.tournamentMaxOutputTokens.set(4096);
+    component.game.set(
+      gameFixture({
+        tournamentId: 't-1',
+        status: 'PAUSED',
+        statusDetail: 'Cut off',
+        blackParticipantId: 'p-2',
+      }),
+    );
+    component.moves.set([moveFixture()]);
+    component.attempts.set([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]);
+
+    expect(component.truncationEffort()?.options).toHaveLength(7);
+    expect(component.truncationEffort()?.fromCatalog).toBe(false);
+
+    component.game.update((g) => (g ? { ...g, blackParticipantId: null } : g));
+    expect(component.truncationEffort()).toBeNull();
+    expect(component.truncationPauseLimit()).toBe(4096);
+  });
+
+  it('saves the limit and the participant’s reasoning effort, then resumes the game', () => {
+    const calls: string[] = [];
+    const updateTournament = vi.fn(() => {
+      calls.push('tournament');
+      return of({ id: 't-1', maxOutputTokens: 32768 });
+    });
+    const updateParticipant = vi.fn(() => {
+      calls.push('participant');
+      return of({ id: 'p-2', reasoningEffort: 'low' });
+    });
+    const startGame = vi.fn(() => {
+      calls.push('start');
+      return of(void 0);
+    });
+    const { component, snackbar } = createComponent({
+      api: { updateTournament, updateParticipant, startGame },
+    });
+    (component as any).gameId = 'g-1';
+    component.game.set(
+      gameFixture({
+        tournamentId: 't-1',
+        status: 'PAUSED',
+        statusDetail: 'Cut off',
+        blackParticipantId: 'p-2',
+        blackReasoningEffort: null,
+      }),
+    );
+    component.moves.set([moveFixture()]);
+    component.attempts.set([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]);
+
+    component.saveTruncationFixAndResume({ maxOutputTokens: 32768, reasoningEffort: 'low' });
+
+    expect(updateTournament).toHaveBeenCalledWith('t-1', { maxOutputTokens: 32768 });
+    expect(updateParticipant).toHaveBeenCalledWith('t-1', 'p-2', { reasoningEffort: 'low' });
+    expect(startGame).toHaveBeenCalledWith('g-1');
+    expect(calls).toEqual(['tournament', 'participant', 'start']);
+    expect(component.game()?.blackReasoningEffort).toBe('low');
+    expect(component.savingLimit()).toBe(false);
+    expect(snackbar.open).not.toHaveBeenCalled();
+  });
+
+  it('does not resume when saving the reasoning effort fails, and skips it when none was offered', () => {
+    const startGame = vi.fn(() => of(void 0));
+    const updateParticipant = vi.fn(() =>
+      throwError(() => ({ status: 400, error: { error: 'Invalid reasoningEffort: x' } })),
+    );
+    const { component, snackbar } = createComponent({
+      api: {
+        updateTournament: () => of({ id: 't-1', maxOutputTokens: 8192 }),
+        updateParticipant,
+        startGame,
+      },
+    });
+    (component as any).gameId = 'g-1';
+    component.game.set(
+      gameFixture({
+        tournamentId: 't-1',
+        status: 'PAUSED',
+        statusDetail: 'Cut off',
+        blackParticipantId: 'p-2',
+      }),
+    );
+    component.moves.set([moveFixture()]);
+    component.attempts.set([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]);
+
+    component.saveTruncationFixAndResume({ maxOutputTokens: 8192, reasoningEffort: 'minimal' });
+    expect(startGame).not.toHaveBeenCalled();
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'Invalid reasoningEffort: x',
+      'Dismiss',
+      expect.any(Object),
+    );
+
+    updateParticipant.mockClear();
+    component.saveTruncationFixAndResume({ maxOutputTokens: 8192 });
+    expect(updateParticipant).not.toHaveBeenCalled();
+    expect(startGame).toHaveBeenCalledWith('g-1');
   });
 
   it('shows the start position when the history is rewound to before the first move', () => {
@@ -1475,6 +1830,79 @@ describe('GameView resignation', () => {
     });
     expect(getGame).toHaveBeenCalledTimes(2);
     component.ngOnDestroy();
+  });
+});
+
+describe('GameView resume while saving', () => {
+  it('blocks Admin Controls Resume until a delayed participant PUT finishes', () => {
+    const participantSaved = new Subject<any>();
+    const startGame = vi.fn(() => of(void 0));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () =>
+              of(
+                gameFixture({
+                  tournamentId: 't-1',
+                  status: 'PAUSED',
+                  statusDetail: 'Cut off',
+                  blackParticipantId: 'p-2',
+                  currentFen: AFTER_E4,
+                  moves: [moveFixture({ fen: AFTER_E4 })],
+                }),
+              ),
+            getTournament: () => of({ maxOutputTokens: 4096 }),
+            getGameAttempts: () => of([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]),
+            getModels: () => of({ data: [] }),
+            getSystemStatus: () => EMPTY,
+            updateTournament: () => of({ maxOutputTokens: 8192 }),
+            updateParticipant: () => participantSaved,
+            startGame,
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => EMPTY,
+            reconnected: () => EMPTY,
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const resume = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>(
+        '.admin-controls button',
+      ),
+    ).find((button) => button.textContent?.includes('Resume'))!;
+    expect(resume.disabled).toBe(false);
+    component.saveTruncationFixAndResume({ maxOutputTokens: 8192, reasoningEffort: 'low' });
+    fixture.detectChanges();
+    expect(component.savingLimit()).toBe(true);
+    expect(resume.disabled).toBe(true);
+    resume.click();
+    component.resumeGame();
+    expect(startGame).not.toHaveBeenCalled();
+    participantSaved.next({ reasoningEffort: 'low' });
+    participantSaved.complete();
+    fixture.detectChanges();
+    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
+    expect(component.game()?.blackReasoningEffort).toBe('low');
+    expect(component.savingLimit()).toBe(false);
+    expect(resume.disabled).toBe(false);
+    fixture.destroy();
   });
 });
 

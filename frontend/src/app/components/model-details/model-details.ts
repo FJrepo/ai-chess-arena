@@ -42,6 +42,7 @@ export class ModelDetails {
       { label: 'Max output tokens', value: formatTokenCount(model.maxCompletionTokens) },
       { label: 'Reasoning', value: formatReasoning(model) },
       { label: 'Effort levels', value: formatReasoningEfforts(model) },
+      { label: 'Default effort', value: model.defaultEffort || 'n/a' },
       { label: 'Intelligence Index', value: formatIntelligenceIndex(model.intelligenceIndex) },
     ];
   });

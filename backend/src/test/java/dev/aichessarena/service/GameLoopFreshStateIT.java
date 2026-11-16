@@ -8,9 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.Tournament;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import io.quarkus.arc.ClientProxy;
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -28,7 +32,8 @@ import org.junit.jupiter.api.function.Executable;
 /**
  * Runs the real game loop (its own thread and request context) against a real PostgreSQL with a scripted model, and
  * checks that every turn sees what other transactions committed since the loop started: the moves (PGN), the cost
- * and tournament settings changed mid-game.
+ * and tournament settings changed mid-game, including the reasoning effort (tournament level and a participant's
+ * override), which is also recorded on every attempt.
  */
 @QuarkusTest
 class GameLoopFreshStateIT {
@@ -52,23 +57,30 @@ class GameLoopFreshStateIT {
     @Inject
     TournamentRepository tournamentRepository;
 
+    @Inject
+    MoveAttemptRepository moveAttemptRepository;
+
     @Test
     void everyTurnSeesTheMovesCostAndSettingsCommittedSinceTheLoopStarted() throws InterruptedException {
         UUID[] ids = QuarkusTransaction.requiringNew().call(() -> {
             Tournament tournament = new Tournament();
             tournament.name = "Fresh state " + UUID.randomUUID();
             tournamentRepository.persist(tournament);
+            TournamentParticipant white = participant(tournament, "White", "test/white");
+            TournamentParticipant black = participant(tournament, "Black", "test/black");
             Game game = new Game();
             game.tournament = tournament;
             game.whitePlayerName = "White";
             game.whiteModelId = "test/white";
+            game.whiteParticipant = white;
             game.blackPlayerName = "Black";
             game.blackModelId = "test/black";
+            game.blackParticipant = black;
             gameRepository.persist(game);
-            return new UUID[] {tournament.id, game.id};
+            return new UUID[] {tournament.id, game.id, black.id};
         });
 
-        ScriptedModel model = new ScriptedModel(ids[0]);
+        ScriptedModel model = new ScriptedModel(ids[0], ids[2]);
         GameTurnService realTurns = ClientProxy.unwrap(gameTurnService);
         List<GameTurnService.TurnRequest> turns = Collections.synchronizedList(new ArrayList<>());
         QuarkusMock.installMockForType(model, OpenRouterService.class);
@@ -107,6 +119,12 @@ class GameLoopFreshStateIT {
                     "chat mode" + label));
             checks.add(() -> assertEquals(changed ? ChatMode.MANDATORY : ChatMode.OPTIONAL,
                     request.tournamentChatMode(), "tournament chat mode" + label));
+            // White follows the tournament's new level, Black's override wins over it.
+            boolean white = turn % 2 == 0;
+            ReasoningEffort expectedEffort = !changed ? null : white ? ReasoningEffort.LOW : ReasoningEffort.HIGH;
+            ReasoningEffort sentEffort = model.efforts.get(turn);
+            checks.add(() -> assertEquals(expectedEffort, request.reasoningEffort(), "requested effort" + label));
+            checks.add(() -> assertEquals(expectedEffort, sentEffort, "effort sent" + label));
             if (turn < SCRIPT.size()) {
                 played.add(SCRIPT.get(turn));
             }
@@ -114,6 +132,30 @@ class GameLoopFreshStateIT {
         assertAll(checks);
         assertEquals("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6",
                 QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(ids[1]).pgn));
+
+        // Every attempt records the level that was sent with it.
+        List<String> recorded = QuarkusTransaction.requiringNew().call(() -> moveAttemptRepository
+                .list("game.id = ?1 order by createdAt", ids[1]).stream()
+                .map(attempt -> attempt.outcome + " " + attempt.color + " " + attempt.moveNumber + " "
+                        + (attempt.reasoningEffort != null ? attempt.reasoningEffort.apiValue() : "-"))
+                .toList());
+        assertEquals(List.of(
+                "ACCEPTED WHITE 1 -", "ACCEPTED BLACK 1 -", "ACCEPTED WHITE 2 -",
+                "ACCEPTED BLACK 2 high", "ACCEPTED WHITE 3 low", "ACCEPTED BLACK 3 high",
+                "PROVIDER_FATAL WHITE 4 low"), recorded);
+        assertEquals("low", given().when().get("/api/games/{id}", ids[1].toString())
+                .then().statusCode(200).extract().path("whiteReasoningEffort"));
+        assertEquals("high", given().when().get("/api/games/{id}/attempts", ids[1].toString())
+                .then().statusCode(200).extract().path("[3].reasoningEffort"));
+    }
+
+    private static TournamentParticipant participant(Tournament tournament, String name, String modelId) {
+        TournamentParticipant participant = new TournamentParticipant();
+        participant.tournament = tournament;
+        participant.playerName = name;
+        participant.modelId = modelId;
+        participant.persist();
+        return participant;
     }
 
     @Test
@@ -156,27 +198,40 @@ class GameLoopFreshStateIT {
         assertTrue(false, "game did not reach " + expected + " (last status " + status + ")");
     }
 
-    /** Plays the script, changes the tournament's settings once mid-game, then pauses the game with a fatal error. */
+    /**
+     * Plays the script, changes the tournament's settings and Black's reasoning effort once mid-game, then pauses the
+     * game with a fatal error. Without a catalog every reasoning effort is sent as requested.
+     */
     private static final class ScriptedModel extends OpenRouterService {
         private final UUID tournamentId;
+        private final UUID blackParticipantId;
         final List<String> prompts = Collections.synchronizedList(new ArrayList<>());
         final List<Integer> maxOutputTokens = Collections.synchronizedList(new ArrayList<>());
+        final List<ReasoningEffort> efforts = Collections.synchronizedList(new ArrayList<>());
 
-        private ScriptedModel(UUID tournamentId) {
+        private ScriptedModel(UUID tournamentId, UUID blackParticipantId) {
             this.tournamentId = tournamentId;
+            this.blackParticipantId = blackParticipantId;
         }
 
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
-                                int maxOutputTokens) {
+                                int maxOutputTokens, ReasoningEffort reasoningEffort) {
             int turn = prompts.size();
             prompts.add(messages.getLast().content());
             this.maxOutputTokens.add(maxOutputTokens);
+            efforts.add(reasoningEffort);
             if (turn == SETTINGS_CHANGED_DURING_TURN) {
                 given().contentType("application/json")
-                        .body("{\"chatMode\":\"MANDATORY\",\"maxOutputTokens\":%d,\"maxRetries\":%d}"
+                        .body(("{\"chatMode\":\"MANDATORY\",\"maxOutputTokens\":%d,\"maxRetries\":%d,"
+                                + "\"reasoningEffort\":\"LOW\"}")
                                 .formatted(CHANGED_MAX_OUTPUT_TOKENS, CHANGED_MAX_RETRIES))
                         .when().put("/api/tournaments/{id}", tournamentId.toString())
+                        .then().statusCode(200);
+                given().contentType("application/json")
+                        .body("{\"reasoningEffort\":\"high\"}")
+                        .when().put("/api/tournaments/{id}/participants/{pid}", tournamentId.toString(),
+                                blackParticipantId.toString())
                         .then().statusCode(200);
             }
             if (turn >= SCRIPT.size()) {

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Game } from '../../models/tournament.model';
-import { GameInfoBar } from './game-info-bar';
+import { GameInfoBar, RaiseLimitRequest, TruncationEffortChoice } from './game-info-bar';
 
 function pausedGame(statusDetail: string | null = 'Cut off'): Game {
   return {
@@ -63,7 +63,7 @@ describe('GameInfoBar raise-limit control', () => {
     const bar = new GameInfoBar();
     bar.game = pausedGame();
     bar.truncationLimit = 4096;
-    const emitted: number[] = [];
+    const emitted: RaiseLimitRequest[] = [];
     bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
 
     bar.saveAndResume();
@@ -75,7 +75,127 @@ describe('GameInfoBar raise-limit control', () => {
     bar.saving = true;
     bar.saveAndResume();
 
-    expect(emitted).toEqual([8192]);
+    expect(emitted).toEqual([{ maxOutputTokens: 8192 }]);
+  });
+});
+
+describe('GameInfoBar reasoning effort for a cut-off answer', () => {
+  const choice = (overrides: Partial<TruncationEffortChoice> = {}): TruncationEffortChoice => ({
+    participantId: 'p-2',
+    playerName: 'Ember',
+    current: null,
+    tournamentLevel: null,
+    options: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    fromCatalog: true,
+    ...overrides,
+  });
+
+  it('pre-selects low and sends it with the limit', () => {
+    const bar = new GameInfoBar();
+    bar.game = pausedGame();
+    bar.truncationLimit = 30000;
+    bar.truncationEffort = choice();
+    const emitted: RaiseLimitRequest[] = [];
+    bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+
+    expect(bar.showEffortSelect()).toBe(true);
+    expect(bar.newReasoningEffort).toBe('low');
+    expect(bar.tournamentEffortOptionLabel()).toBe('Tournament setting (model default)');
+    expect(bar.effortHint()).toBe('Currently model default; saved for Ember from the next turn');
+
+    bar.saveAndResume();
+    bar.newReasoningEffort = null;
+    bar.saveAndResume();
+
+    expect(emitted).toEqual([
+      { maxOutputTokens: 32768, reasoningEffort: 'low' },
+      { maxOutputTokens: 32768, reasoningEffort: null },
+    ]);
+  });
+
+  it('pre-selects the nearest supported level and keeps a level that is already low', () => {
+    const bar = new GameInfoBar();
+    bar.truncationEffort = choice({ options: ['none', 'high', 'max'] });
+    expect(bar.newReasoningEffort).toBe('high');
+
+    bar.truncationEffort = choice({ current: 'minimal', tournamentLevel: 'medium' });
+    expect(bar.newReasoningEffort).toBe('minimal');
+    expect(bar.tournamentEffortOptionLabel()).toBe('Tournament setting (Medium)');
+
+    // The same choice again (a re-render) keeps what the user picked.
+    bar.newReasoningEffort = 'max';
+    bar.truncationEffort = choice({ current: 'minimal', tournamentLevel: 'medium' });
+    expect(bar.newReasoningEffort).toBe('max');
+  });
+
+  it('shows and saves a supported suggestion when the tournament level is not an option', async () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    const bar = fixture.componentInstance;
+    bar.game = pausedGame();
+    bar.truncationLimit = 4096;
+    bar.truncationEffort = choice({
+      current: 'minimal',
+      tournamentLevel: 'minimal',
+      options: ['none', 'low', 'high', 'max'],
+    });
+    const emitted: RaiseLimitRequest[] = [];
+    bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement as HTMLElement)
+        .querySelector('.effort-field .mat-mdc-select-value')
+        ?.textContent?.trim(),
+    ).toBe('Low');
+    bar.saveAndResume();
+    expect(emitted).toEqual([{ maxOutputTokens: 8192, reasoningEffort: 'low' }]);
+  });
+
+  it('offers no select for a model without effort levels and sends no effort then', () => {
+    const bar = new GameInfoBar();
+    bar.game = pausedGame();
+    bar.truncationLimit = 4096;
+    bar.truncationEffort = choice({ options: [] });
+    const emitted: RaiseLimitRequest[] = [];
+    bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+
+    expect(bar.showEffortSelect()).toBe(false);
+    bar.saveAndResume();
+    expect(emitted).toEqual([{ maxOutputTokens: 8192 }]);
+  });
+
+  it('explains that every level is offered when the catalog could not tell', () => {
+    const bar = new GameInfoBar();
+    bar.truncationEffort = choice({ current: 'max', fromCatalog: false });
+    expect(bar.effortHint()).toBe('Currently Max; sent as the nearest level the model supports');
+  });
+
+  it('renders the select in the pause banner and the level each side asks for', async () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentInstance.game = {
+      ...pausedGame('Ember was cut off'),
+      blackPlayerName: 'Ember',
+      whiteReasoningEffort: 'high',
+      blackReasoningEffort: null,
+    };
+    fixture.componentInstance.truncationLimit = 30000;
+    fixture.componentInstance.truncationEffort = choice();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+
+    expect(element.querySelector('.effort-field mat-label')?.textContent?.trim()).toBe(
+      'Reasoning effort for Ember',
+    );
+    expect(element.querySelector('.effort-field .mat-mdc-select-value')?.textContent?.trim()).toBe(
+      'Low',
+    );
+    const tags = Array.from(element.querySelectorAll('.effort-tag')).map((tag) =>
+      tag.textContent?.trim(),
+    );
+    expect(tags).toEqual(['· effort high']);
   });
 });
 

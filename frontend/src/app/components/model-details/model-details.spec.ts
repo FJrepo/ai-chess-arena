@@ -36,6 +36,7 @@ describe('ModelDetails', () => {
       reasoningSupported: true,
       reasoningMandatory: false,
       reasoningEfforts: ['high', 'medium', 'low'],
+      defaultEffort: 'medium',
       intelligenceIndex: 36.5,
       description: 'Small, fast model.',
     });
@@ -51,6 +52,7 @@ describe('ModelDetails', () => {
       'Max output tokens': '128K',
       Reasoning: 'Optional',
       'Effort levels': 'high, medium, low',
+      'Default effort': 'medium',
       'Intelligence Index': '36.5',
     });
     expect(element.querySelector('.details-description')?.textContent?.trim()).toBe(
@@ -70,7 +72,8 @@ describe('ModelDetails', () => {
     });
 
     const values = Object.values(facts(element));
-    expect(values.filter((value) => value === 'n/a')).toHaveLength(8);
+    expect(values.filter((value) => value === 'n/a')).toHaveLength(9);
+    expect(facts(element)['Default effort']).toBe('n/a');
     expect(facts(element)['Reasoning']).toBe('Not supported');
     expect(element.textContent).not.toMatch(/NaN|\$0\b/);
     expect(element.querySelector('.details-description')?.textContent?.trim()).toBe(

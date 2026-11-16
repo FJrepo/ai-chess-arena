@@ -3,8 +3,9 @@
     [game]="g"
     [retryInfo]="retryInfo()"
     [truncationLimit]="truncationPauseLimit()"
+    [truncationEffort]="truncationEffort()"
     [saving]="savingLimit()"
-    (raiseLimitAndResume)="saveLimitAndResume($event)"
+    (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
   />
 
   <div class="view-actions">
@@ -314,7 +315,7 @@
       @if (g.status === 'IN_PROGRESS') {
         <button mat-raised-button (click)="pauseGame()"><mat-icon>pause</mat-icon> Pause</button>
       } @else if (g.status === 'PAUSED') {
-        <button mat-raised-button color="primary" (click)="resumeGame()">
+        <button mat-raised-button color="primary" [disabled]="savingLimit()" (click)="resumeGame()">
           <mat-icon>play_arrow</mat-icon> Resume
         </button>
       }

@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.dto.OpenRouterModelOptionDto;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.dto.OpenRouterModelsResponseDto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +26,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -139,6 +141,16 @@ public class OpenRouterService {
      */
     public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                             int maxOutputTokens) {
+        return chat(modelId, messages, answerDeadline, maxOutputTokens, null);
+    }
+
+    /**
+     * As {@link #chat(String, List, AnswerDeadline, int)}, with OpenRouter's {@code "reasoning": {"effort": ...}}
+     * when {@code reasoningEffort} is set; null sends no reasoning parameter (the model's default). The level is sent
+     * as given: map it to one the model supports with {@link #resolveReasoningEffort} first.
+     */
+    public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
+                            int maxOutputTokens, ReasoningEffort reasoningEffort) {
         long startNanos = nanoClock.getAsLong();
         AnswerDeadline safetyDeadline = AnswerDeadline.after(requestSafetyCap, startNanos);
         boolean limitedByMoveTime = answerDeadline != null && answerDeadline.isBefore(safetyDeadline);
@@ -154,6 +166,9 @@ public class OpenRouterService {
             body.put("model", modelId);
             body.put("temperature", defaultTemperature);
             body.put("max_tokens", maxOutputTokens);
+            if (reasoningEffort != null) {
+                body.putObject("reasoning").put("effort", reasoningEffort.apiValue());
+            }
 
             ArrayNode msgs = body.putArray("messages");
             for (ChatMsg msg : messages) {
@@ -458,6 +473,102 @@ public class OpenRouterService {
         ).stream().anyMatch(candidate -> normalizedModelId.equals(candidate.option().id()));
     }
 
+    /**
+     * The reasoning effort to send to {@code modelId} for the {@code requested} level, decided from the cached model
+     * catalog (see {@link #decideReasoningEffort}); null sends nothing. A level changed on the way is logged.
+     */
+    public ReasoningEffort resolveReasoningEffort(String modelId, ReasoningEffort requested) {
+        if (requested == null) {
+            return null;
+        }
+        JsonNode model = catalogEntry(modelId);
+        EffortDecision decision = decideReasoningEffort(requested, model);
+        if (decision.effort() != requested) {
+            LOG.infof("Reasoning effort %s for %s: %s", requested.apiValue(), modelId, decision.reason());
+        } else if (model == null) {
+            LOG.debugf("Reasoning effort %s for %s: %s", requested.apiValue(), modelId, decision.reason());
+        }
+        return decision.effort();
+    }
+
+    /** The model's raw catalog entry; null when the catalog is unavailable or does not list the model. */
+    private JsonNode catalogEntry(String modelId) {
+        if (modelId == null || apiKey == null || apiKey.isBlank() || objectMapper == null) {
+            return null;
+        }
+        try {
+            JsonNode rawModels = fetchRawModels();
+            JsonNode data = rawModels.get("data");
+            if (data == null || !data.isArray() || rawModels.hasNonNull("error")) {
+                return null;
+            }
+            for (JsonNode node : data) {
+                if (modelId.equals(node.path("id").asText(null))) {
+                    return node;
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.debugf(e, "Could not look up model %s in the OpenRouter catalog", modelId);
+        }
+        return null;
+    }
+
+    /** The level to send (null: send nothing) and why, for the log. */
+    record EffortDecision(ReasoningEffort effort, String reason) {}
+
+    /**
+     * Decides the reasoning effort to send for {@code requested} from a model's catalog entry ({@code model}; null
+     * when the catalog is unavailable or does not list the model):
+     * <ul>
+     *   <li>no catalog entry: the level as is (OpenRouter decides);</li>
+     *   <li>a model without reasoning, or one whose entry has no {@code reasoning.supported_efforts} (OpenRouter: it
+     *       does not expose effort selection): nothing;</li>
+     *   <li>{@code supported_efforts: null} (all levels accepted): the level as is;</li>
+     *   <li>a list: the level if listed, otherwise the nearest listed one (ties go to the lower level).</li>
+     * </ul>
+     * A model with mandatory reasoning never gets {@code none}, which it would reject.
+     */
+    static EffortDecision decideReasoningEffort(ReasoningEffort requested, JsonNode model) {
+        if (requested == null) {
+            return new EffortDecision(null, "model default");
+        }
+        if (model == null) {
+            return new EffortDecision(requested, "model catalog unavailable or model not listed; sent as is");
+        }
+        if (!supportsReasoning(model)) {
+            return new EffortDecision(null, "the model does not support reasoning; nothing sent");
+        }
+        JsonNode reasoning = model.path("reasoning");
+        boolean mandatory = reasoning.path("mandatory").asBoolean(false);
+        if (!reasoning.has("supported_efforts")) {
+            return new EffortDecision(null, "the model does not offer reasoning effort levels; nothing sent");
+        }
+        Set<ReasoningEffort> supported = EnumSet.noneOf(ReasoningEffort.class);
+        JsonNode efforts = reasoning.get("supported_efforts");
+        if (efforts.isNull()) {
+            supported.addAll(EnumSet.allOf(ReasoningEffort.class));
+        } else {
+            for (String value : parseStringList(efforts)) {
+                ReasoningEffort effort = ReasoningEffort.fromApiValue(value);
+                if (effort != null) {
+                    supported.add(effort);
+                }
+            }
+        }
+        if (mandatory) {
+            supported.remove(ReasoningEffort.NONE);
+        }
+        ReasoningEffort nearest = ReasoningEffort.nearest(requested, supported);
+        if (nearest == null) {
+            return new EffortDecision(null, "the model lists no known reasoning effort level; nothing sent");
+        }
+        if (nearest != requested) {
+            return new EffortDecision(nearest, "not supported by the model (supported: %s); sent %s instead"
+                    .formatted(supported.stream().map(ReasoningEffort::apiValue).toList(), nearest.apiValue()));
+        }
+        return new EffortDecision(requested, "supported by the model");
+    }
+
     public boolean checkApiKey() {
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -563,7 +674,7 @@ public class OpenRouterService {
                 // One malformed entry must not break listing or validation of the whole catalog.
                 LOG.debugf(e, "Ignoring unreadable details of OpenRouter model '%s'", id);
                 option = new OpenRouterModelOptionDto(id, buildDisplayName(id, null), provider, null, null, null,
-                        featured, null, null, null, false, null, List.of(), null, null);
+                        featured, null, null, null, false, null, List.of(), null, null, null);
             }
             String searchText = (option.name() + " " + id + " " + provider).toLowerCase(Locale.ROOT);
             result.add(new ModelCandidate(option, searchText));
@@ -590,9 +701,10 @@ public class OpenRouterService {
                 positiveInt(node.path("top_provider").path("max_completion_tokens")),
                 supportsReasoning(node),
                 mandatory.isBoolean() ? mandatory.booleanValue() : null,
-                parseStringList(reasoning.path("supported_efforts")),
+                catalogReasoningEfforts(reasoning),
                 finiteNumber(node.path("benchmarks").path("artificial_analysis").path("intelligence_index")),
-                trimDescription(node.path("description").asText(null))
+                trimDescription(node.path("description").asText(null)),
+                textOrNull(reasoning.path("default_effort"))
         );
     }
 
@@ -732,6 +844,24 @@ public class OpenRouterService {
             return null;
         }
         return node.asDouble();
+    }
+
+    private static String textOrNull(JsonNode node) {
+        if (node == null || !node.isTextual() || node.asText().isBlank()) {
+            return null;
+        }
+        return node.asText().trim();
+    }
+
+    /** Explicit null accepts every level; a missing field does not expose effort selection. */
+    private static List<String> catalogReasoningEfforts(JsonNode reasoning) {
+        JsonNode efforts = reasoning.path("supported_efforts");
+        List<String> levels = efforts.isNull()
+                ? EnumSet.allOf(ReasoningEffort.class).stream().map(ReasoningEffort::apiValue).toList()
+                : parseStringList(efforts);
+        return reasoning.path("mandatory").asBoolean(false)
+                ? levels.stream().filter(level -> !"none".equals(level)).toList()
+                : levels;
     }
 
     private static List<String> parseStringList(JsonNode node) {

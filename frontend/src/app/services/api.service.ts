@@ -10,6 +10,7 @@ import {
   MoveAttempt,
 } from '../models/tournament.model';
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
+import { ReasoningEffort } from '../utils/reasoning-effort';
 import {
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
@@ -72,6 +73,21 @@ export class ApiService {
   addParticipant(tournamentId: string, data: Partial<Participant>): Observable<Participant> {
     return this.http.post<Participant>(
       `${this.baseUrl}/tournaments/${tournamentId}/participants`,
+      data,
+    );
+  }
+
+  /**
+   * Changes a participant's reasoning-effort override (null: use the tournament's). Allowed at any time; a running
+   * or resumed game applies it from that participant's next turn.
+   */
+  updateParticipant(
+    tournamentId: string,
+    participantId: string,
+    data: { reasoningEffort: ReasoningEffort | null },
+  ): Observable<Participant> {
+    return this.http.put<Participant>(
+      `${this.baseUrl}/tournaments/${tournamentId}/participants/${participantId}`,
       data,
     );
   }

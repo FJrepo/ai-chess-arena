@@ -40,5 +40,12 @@ public record GameDto(
         /** How the game ended by resignation; only with the moves and only for a resignation, otherwise null. */
         ResignationDto resignation,
         /** Grows with every status change; live status updates carry it too (see Game.statusRevision). */
-        long statusRevision
+        long statusRevision,
+        /**
+         * The reasoning effort each side asks for (the participant's override, else the tournament's; lower case);
+         * null for the model default, a human side or a game outside a tournament. The level sent may be mapped to
+         * the nearest one the model supports (see MoveAttemptDto.reasoningEffort).
+         */
+        String whiteReasoningEffort,
+        String blackReasoningEffort
 ) {}

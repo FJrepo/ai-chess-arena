@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -40,8 +41,18 @@ public class MoveAttemptService {
             Outcome outcome,
             String proposedMove,
             String errorMessage,
-            OpenRouterService.LlmResponse response
-    ) {}
+            OpenRouterService.LlmResponse response,
+            // The reasoning effort sent with the request; null when none was sent.
+            ReasoningEffort reasoningEffort
+    ) {
+        /** An attempt sent without a reasoning effort. */
+        public AttemptRecord(UUID gameId, int moveNumber, String color, int attemptNumber, String modelId,
+                             Outcome outcome, String proposedMove, String errorMessage,
+                             OpenRouterService.LlmResponse response) {
+            this(gameId, moveNumber, color, attemptNumber, modelId, outcome, proposedMove, errorMessage, response,
+                    null);
+        }
+    }
 
     /** Records the attempt in its own transaction; failures to record never interrupt the game. */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -62,6 +73,7 @@ public class MoveAttemptService {
             row.outcome = attempt.outcome();
             row.proposedMove = truncate(attempt.proposedMove(), MAX_PROPOSED_MOVE_CHARS);
             row.errorMessage = truncate(attempt.errorMessage(), MAX_ERROR_CHARS);
+            row.reasoningEffort = attempt.reasoningEffort();
             OpenRouterService.LlmResponse response = attempt.response();
             if (response != null) {
                 row.promptTokens = response.promptTokens() > 0 ? response.promptTokens() : null;

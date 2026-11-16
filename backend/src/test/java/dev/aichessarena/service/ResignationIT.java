@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
@@ -387,7 +388,7 @@ class ResignationIT {
 
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
-                                int maxOutputTokens) {
+                                int maxOutputTokens, ReasoningEffort reasoningEffort) {
             int call = calls.size();
             calls.add(List.copyOf(messages));
             if (call == SETTING_CHANGED_DURING_CALL) {

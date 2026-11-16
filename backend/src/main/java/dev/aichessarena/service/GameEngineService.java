@@ -245,7 +245,9 @@ public class GameEngineService {
                     maxOutputTokens,
                     prompt.chatMode(),
                     conversation.chatMode(),
-                    prompt.resignationOffered()
+                    prompt.resignationOffered(),
+                    // Read with the game this turn, so a changed tournament level or participant override applies now.
+                    game.requestedReasoningEffort(sideToMove)
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

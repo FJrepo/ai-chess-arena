@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
@@ -14,6 +15,7 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -123,6 +125,35 @@ public class TournamentService {
         participant.controlType = controlType;
         participant.modelId = controlType == TournamentParticipant.ControlType.AI ? modelId : null;
         participant.customInstructions = normalizeInstructions(participant.customInstructions);
+        if (controlType == TournamentParticipant.ControlType.HUMAN && participant.reasoningEffort != null) {
+            throw new IllegalArgumentException("Human participants have no reasoning effort");
+        }
+        return participant;
+    }
+
+    /** The participant of the tournament; 404 when either does not exist or they do not belong together. */
+    public TournamentParticipant findParticipant(UUID tournamentId, UUID participantId) {
+        TournamentParticipant participant = participantRepository.findById(participantId);
+        if (participant == null || participant.tournament == null || !participant.tournament.id.equals(tournamentId)) {
+            throw new WebApplicationException("Participant not found", Response.Status.NOT_FOUND);
+        }
+        return participant;
+    }
+
+    /**
+     * Sets or clears (null: use the tournament's) a participant's reasoning-effort override. Allowed in every
+     * tournament state, so a paused game can be fixed in place; running games pick it up from the participant's next
+     * turn.
+     */
+    @Transactional
+    public TournamentParticipant updateParticipantReasoningEffort(UUID tournamentId, UUID participantId,
+                                                                  ReasoningEffort effort) {
+        TournamentParticipant participant = findParticipant(tournamentId, participantId);
+        if (participant.controlType == TournamentParticipant.ControlType.HUMAN && effort != null) {
+            throw new IllegalArgumentException("Human participants have no reasoning effort");
+        }
+        participant.reasoningEffort = effort;
+        participant.tournament.updatedAt = LocalDateTime.now();
         return participant;
     }
 
