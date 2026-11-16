@@ -86,6 +86,8 @@ class GameTurnServiceTest {
         assertEquals(0, fixture.moves.lastRetryCount);
         assertEquals(3, fixture.openRouter.calls);
         assertEquals(List.of(10L, 20L), fixture.sleptMs);
+        // The backoff waits are taken from the same turn deadline.
+        assertEquals(List.of(30_000L, 29_990L, 29_970L), fixture.openRouter.remainingMsAtCall);
         assertEquals(2, fixture.websocket.retryReasons.size());
         assertTrue(fixture.websocket.retryReasons.getFirst().contains("provider retry 1 of 3"));
         assertNull(fixture.lifecycle.pauseDetail);
@@ -197,8 +199,9 @@ class GameTurnServiceTest {
 
         assertTrue(result.pausedGame());
         assertTrue(fixture.lifecycle.pauseDetail.endsWith(
-                "answer was cut off at the 2048-token output limit (1800 of them reasoning). Raise the limit and resume"),
+                "answer was cut off at the 2048-token output limit (1800 of them reasoning). Raise the limit and resume."),
                 fixture.lifecycle.pauseDetail);
+        assertFalse(fixture.lifecycle.pauseDetail.endsWith(".."), fixture.lifecycle.pauseDetail);
         // User-facing: no API route, field name or pointer to the page the user is already on.
         assertFalse(fixture.lifecycle.pauseDetail.contains("/api/"), fixture.lifecycle.pauseDetail);
         assertFalse(fixture.lifecycle.pauseDetail.contains("maxOutputTokens"), fixture.lifecycle.pauseDetail);
@@ -342,6 +345,164 @@ class GameTurnServiceTest {
         assertEquals(43, history.size(), "the full history is kept locally");
     }
 
+    @Test
+    void slowModelWithAMoveTimeLimitForfeitsOnTime() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+        fixture.openRouter.modelAnswerMs = 45_000L;
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.isTerminal());
+        assertEquals("WHITE", fixture.lifecycle.lastForfeitColor);
+        assertEquals(30, fixture.lifecycle.lastTimeoutSeconds);
+        assertNull(fixture.moves.lastRecordedSan);
+        assertEquals(List.of(Outcome.TIMEOUT), fixture.attempts.outcomes());
+        // The whole remaining turn time is the deadline for the complete answer.
+        assertEquals(List.of(30_000L), fixture.openRouter.remainingMsAtCall);
+        assertEquals(Duration.ofSeconds(30),
+                Duration.between(fixture.websocket.lastTurnStartedAt, fixture.websocket.lastTurnDeadlineAt));
+    }
+
+    @Test
+    void aRetryNearExpiryGetsOnlyTheTimeLeftOfTheSameTurnDeadline() {
+        // The first answer is illegal and arrives 20 ms before the deadline; the retry must not get extra time.
+        Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+        fixture.openRouter.callDurationsMs.add(29_980L);
+        fixture.openRouter.callDurationsMs.add(50L);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertEquals(java.util.Arrays.asList(30_000L, 20L), fixture.openRouter.remainingMsAtCall);
+        assertEquals(fixture.openRouter.answerDeadlines.get(0), fixture.openRouter.answerDeadlines.get(1),
+                "every attempt shares the one turn deadline");
+        assertTrue(result.isTerminal());
+        assertEquals(30, fixture.lifecycle.lastTimeoutSeconds);
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.TIMEOUT), fixture.attempts.outcomes());
+    }
+
+    @Test
+    void aProviderBackoffThatRunsPastTheDeadlinePausesWithoutAnotherRequest() {
+        // 29 s pass in a failing request; the 500 ms backoff fits in the remaining second but takes twice as long
+        // (a busy host), so the turn deadline passes while waiting.
+        Fixture fixture = new Fixture(failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
+                VALID_MOVE);
+        fixture.openRouter.callDurationsMs.add(29_000L);
+        fixture.service.providerRetryBackoffMs = new long[] {500L};
+        fixture.service.sleeper = ms -> {
+            fixture.sleptMs.add(ms);
+            fixture.openRouter.clockNanos[0] += 2 * ms * 1_000_000L;
+        };
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.pausedGame());
+        assertEquals("OpenRouter server error (HTTP 503)", fixture.lifecycle.pauseDetail);
+        assertEquals(500L, fixture.sleptMs.stream().mapToLong(Long::longValue).sum());
+        assertEquals(1, fixture.openRouter.calls);
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
+    @Test
+    void aProviderBackoffLongerThanTheTimeLeftPausesWithoutWaiting() {
+        Fixture fixture = new Fixture(failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
+                VALID_MOVE);
+        fixture.openRouter.callDurationsMs.add(29_800L);
+        fixture.service.providerRetryBackoffMs = new long[] {500L};
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.pausedGame());
+        assertEquals(List.of(), fixture.sleptMs);
+        assertEquals(1, fixture.openRouter.calls);
+    }
+
+    @Test
+    void aDeadlinePassedDuringAnAttemptForfeitsWithoutSendingAnotherRequest() {
+        Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+        // The illegal answer arrives exactly at the deadline: no time is left for a retry.
+        fixture.openRouter.callDurationsMs.add(30_000L);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.isTerminal());
+        assertEquals("WHITE", fixture.lifecycle.lastForfeitColor);
+        assertEquals(1, fixture.openRouter.calls);
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE), fixture.attempts.outcomes());
+        assertNull(fixture.moves.lastRecordedSan);
+    }
+
+    @Test
+    void withoutAMoveTimeLimitASlowModelIsNotForfeitedAndNoDeadlineIsSent() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+        fixture.openRouter.modelAnswerMs = 45_000L;
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, null));
+
+        assertTrue(result.moveRecorded(), String.valueOf(result.status()));
+        assertEquals("e4", fixture.moves.lastRecordedSan);
+        assertNull(fixture.lifecycle.lastForfeitColor);
+        assertNull(fixture.lifecycle.pauseDetail);
+        assertEquals(java.util.Collections.singletonList(null), fixture.openRouter.answerDeadlines);
+        assertTrue(fixture.websocket.turnTimingBroadcast);
+        assertNull(fixture.websocket.lastTurnDeadlineAt);
+    }
+
+    @Test
+    void slowModelAfterAProviderFailureInTheSameTurnPausesInsteadOfForfeiting() {
+        Fixture fixture = new Fixture(
+                failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
+                VALID_MOVE
+        );
+        fixture.openRouter.modelAnswerMs = 45_000L;
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.pausedGame());
+        assertTrue(fixture.lifecycle.pauseDetail.contains("OpenRouter server error (HTTP 503)"),
+                fixture.lifecycle.pauseDetail);
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
+    @Test
+    void withoutAMoveTimeLimitProviderRetriesAreNotCutShortByADeadline() {
+        Fixture fixture = new Fixture(
+                failure(ProviderOutcome.RETRYABLE, 0, "OpenRouter request did not finish within the safety limit"),
+                VALID_MOVE
+        );
+        fixture.service.providerRetryBackoffMs = new long[] {60_000L};
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, null));
+
+        assertTrue(result.moveRecorded(), String.valueOf(result.status()));
+        assertEquals(60_000L, fixture.sleptMs.stream().mapToLong(Long::longValue).sum());
+        assertNull(fixture.lifecycle.pauseDetail);
+    }
+
+    @Test
+    void withoutAMoveTimeLimitARepeatedSafetyCapPausesInsteadOfForfeiting() {
+        LlmResponse hung = failure(ProviderOutcome.RETRYABLE, 0,
+                "OpenRouter request did not finish within the safety limit of 10 min");
+        Fixture fixture = new Fixture(hung, hung, hung, hung);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, null));
+
+        assertTrue(result.pausedGame());
+        assertEquals("OpenRouter request did not finish within the safety limit of 10 min",
+                fixture.lifecycle.pauseDetail);
+        assertNull(fixture.lifecycle.lastForfeitColor);
+        assertEquals(4, fixture.openRouter.calls);
+    }
+
+    @Test
+    void withoutAMoveTimeLimitAnUnexpectedTimeoutPausesInsteadOfForfeiting() {
+        Fixture fixture = new Fixture(new LlmResponse(null, 0, 0, null, 0, null, true, "timeout"));
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, null));
+
+        assertTrue(result.pausedGame());
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
     private static LlmResponse answer(String content) {
         return new LlmResponse(content, 10, 6, 0.001, 400, "{}", false, null);
     }
@@ -356,18 +517,18 @@ class GameTurnServiceTest {
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
-                                                       int maxRetries, int moveTimeoutSeconds) {
+                                                       int maxRetries, Integer moveTimeoutSeconds) {
         return request(history, maxRetries, moveTimeoutSeconds, () -> true);
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
-                                                       int maxRetries, int moveTimeoutSeconds,
+                                                       int maxRetries, Integer moveTimeoutSeconds,
                                                        java.util.function.BooleanSupplier shouldContinue) {
         return request(history, maxRetries, moveTimeoutSeconds, shouldContinue, true);
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
-                                                       int maxRetries, int moveTimeoutSeconds,
+                                                       int maxRetries, Integer moveTimeoutSeconds,
                                                        java.util.function.BooleanSupplier shouldContinue,
                                                        boolean trashTalkEnabled) {
         Board board = new Board();
@@ -421,7 +582,12 @@ class GameTurnServiceTest {
             service.gameMoveService = moves;
             service.moveAttemptService = attempts;
             service.providerRetryBackoffMs = new long[] {10L, 20L, 40L};
-            service.sleeper = sleptMs::add;
+            // Backoff waits pass on the same clock as the model calls, so they count against the turn deadline.
+            service.sleeper = ms -> {
+                sleptMs.add(ms);
+                openRouter.clockNanos[0] += ms * 1_000_000L;
+            };
+            service.nanoClock = () -> openRouter.clockNanos[0];
         }
     }
 
@@ -437,6 +603,15 @@ class GameTurnServiceTest {
 
         private final List<Integer> maxOutputTokens = new ArrayList<>();
         private final List<List<ChatMsg>> sentMessages = new ArrayList<>();
+        private final List<AnswerDeadline> answerDeadlines = new ArrayList<>();
+        /** Time left until the deadline when each call started, in ms (null without a deadline). */
+        private final List<Long> remainingMsAtCall = new ArrayList<>();
+        /** How long the model needs for a complete answer; like the real service, a later deadline times out. */
+        private long modelAnswerMs;
+        /** Per-call answer times in ms, used before {@link #modelAnswerMs}. */
+        private final Deque<Long> callDurationsMs = new ArrayDeque<>();
+        /** The test's monotonic clock, advanced by the simulated answer time. */
+        private final long[] clockNanos = {1_000_000_000L};
 
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout) {
@@ -444,14 +619,25 @@ class GameTurnServiceTest {
         }
 
         @Override
-        public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout,
+        public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                                 int maxOutputTokens) {
             calls++;
             this.maxOutputTokens.add(maxOutputTokens);
             sentMessages.add(List.copyOf(messages));
+            answerDeadlines.add(answerDeadline);
+            Long remainingMs = answerDeadline == null
+                    ? null : answerDeadline.remainingNanos(clockNanos[0]) / 1_000_000L;
+            remainingMsAtCall.add(remainingMs);
             if (!responses.isEmpty()) {
                 last = responses.removeFirst();
             }
+            long answerMs = callDurationsMs.isEmpty() ? modelAnswerMs : callDurationsMs.removeFirst();
+            if (last.outcome() == ProviderOutcome.OK && remainingMs != null && answerMs > remainingMs) {
+                clockNanos[0] += remainingMs * 1_000_000L;
+                return new LlmResponse(null, 0, 0, null, remainingMs, null, true,
+                        "No complete answer within the move time");
+            }
+            clockNanos[0] += answerMs * 1_000_000L;
             return last;
         }
     }
@@ -552,7 +738,16 @@ class GameTurnServiceTest {
                 java.time.Instant turnStartedAt,
                 java.time.Instant turnDeadlineAt
         ) {
+            if (turnStartedAt != null) {
+                turnTimingBroadcast = true;
+                lastTurnStartedAt = turnStartedAt;
+                lastTurnDeadlineAt = turnDeadlineAt;
+            }
         }
+
+        private boolean turnTimingBroadcast;
+        private java.time.Instant lastTurnStartedAt;
+        private java.time.Instant lastTurnDeadlineAt;
 
         private final List<String> retryOutcomes = new ArrayList<>();
         private final List<String> proposedMoves = new ArrayList<>();

@@ -194,6 +194,8 @@ export class GameView implements OnInit, OnDestroy {
   moveTimerSeconds!: () => number | null;
   moveTimerDisplay!: () => string;
   moveTimerWarning!: () => boolean;
+  /** The tournament has no time limit per move, so the header shows whose turn it is without a countdown. */
+  noMoveTimeLimit!: () => boolean;
   isAwaitingHumanMove = computed(() => {
     const game = this.game();
     const activeColor = this.activeColor();
@@ -361,6 +363,7 @@ export class GameView implements OnInit, OnDestroy {
     this.moveTimerSeconds = this.turnState.moveTimerSeconds;
     this.moveTimerDisplay = this.turnState.moveTimerDisplay;
     this.moveTimerWarning = this.turnState.moveTimerWarning;
+    this.noMoveTimeLimit = this.turnState.noMoveTimeLimit;
     this.turnState.bind(
       () => this.game(),
       () => this.moves(),
@@ -414,14 +417,17 @@ export class GameView implements OnInit, OnDestroy {
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
             next: (tournament) => {
-              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds || 60);
+              // null: the tournament has no time limit per move, so there is no countdown.
+              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
               this.tournamentMaxOutputTokens.set(
                 tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
               );
             },
-            error: () => this.turnState.setMoveTimeoutSeconds(60),
+            // Limit unknown: only a deadline sent by the server shows a countdown.
+            error: () => this.turnState.moveTimeoutSeconds.set(null),
           });
         } else {
+          // Games outside a tournament keep the backend's 60-second limit.
           this.turnState.setMoveTimeoutSeconds(60);
         }
       },

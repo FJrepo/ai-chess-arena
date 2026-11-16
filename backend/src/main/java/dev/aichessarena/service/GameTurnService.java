@@ -11,7 +11,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -27,6 +29,9 @@ public class GameTurnService {
     long[] providerRetryBackoffMs = {1_000L, 3_000L, 9_000L};
 
     Sleeper sleeper = Thread::sleep;
+
+    /** Monotonic clock for the turn deadline ({@link System#nanoTime()}); replaceable in tests. */
+    LongSupplier nanoClock = System::nanoTime;
 
     @Inject
     ChessService chessService;
@@ -72,9 +77,19 @@ public class GameTurnService {
         int turnStart = request.history().size();
         request.history().add(new OpenRouterService.ChatMsg("user", turnPrompt));
 
+        // Without a move time limit there is no turn deadline; each request is still bounded by the OpenRouter
+        // safety cap, which is a provider problem when reached, never the model's timeout.
+        // One absolute deadline on the monotonic clock is enforced for the whole turn; every attempt gets exactly the
+        // time that is left. The wall-clock instants are only shown to viewers.
+        Integer moveTimeoutSeconds = request.moveTimeoutSeconds();
         Instant turnStartedAt = Instant.now();
-        Instant turnDeadlineAt = turnStartedAt.plusSeconds(request.moveTimeoutSeconds());
-        long turnDeadlineAtMs = turnDeadlineAt.toEpochMilli();
+        Instant turnDeadlineAt = null;
+        OpenRouterService.AnswerDeadline turnDeadline = null;
+        if (moveTimeoutSeconds != null) {
+            turnDeadlineAt = turnStartedAt.plusSeconds(moveTimeoutSeconds);
+            turnDeadline = OpenRouterService.AnswerDeadline.after(
+                    Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
+        }
 
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt);
 
@@ -85,13 +100,12 @@ public class GameTurnService {
                 return TurnResult.stopped();
             }
 
-            long remainingMs = turnDeadlineAtMs - System.currentTimeMillis();
-            if (remainingMs <= 0) {
+            if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
                 if (lastProviderFailure != null) {
                     // The deadline was eaten by provider outages, not by the model.
                     return pauseForProvider(request, lastProviderFailure);
                 }
-                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), request.moveTimeoutSeconds());
+                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
                 return TurnResult.terminal();
             }
 
@@ -101,7 +115,7 @@ public class GameTurnService {
             OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
                     request.modelId(),
                     ConversationWindow.trim(request.history(), turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES),
-                    Duration.ofMillis(Math.max(remainingMs, 100L)),
+                    turnDeadline,
                     request.maxOutputTokens()
             );
 
@@ -120,7 +134,8 @@ public class GameTurnService {
                 long delayMs = providerRetryBackoffMs[providerFailures];
                 providerFailures++;
                 lastProviderFailure = detail;
-                if (System.currentTimeMillis() + delayMs >= turnDeadlineAtMs) {
+                if (turnDeadline != null
+                        && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= TimeUnit.MILLISECONDS.toNanos(delayMs)) {
                     return pauseForProvider(request, detail);
                 }
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt,
@@ -140,8 +155,13 @@ public class GameTurnService {
                     return pauseForProvider(request,
                             "Move time ran out after OpenRouter problems earlier in this turn (" + lastProviderFailure + ")");
                 }
+                if (moveTimeoutSeconds == null) {
+                    // Without a move time limit the model cannot run out of time: this timeout is technical.
+                    return pauseForProvider(request, "The OpenRouter request timed out although the tournament has "
+                            + "no move time limit");
+                }
                 LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
-                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), request.moveTimeoutSeconds());
+                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
                 return TurnResult.terminal();
             }
 
@@ -265,9 +285,8 @@ public class GameTurnService {
         String reasoning = response.reasoningTokens() != null && response.reasoningTokens() > 0
                 ? " (%d of them reasoning)".formatted(response.reasoningTokens())
                 : "";
-        // No trailing period: the game view appends its own sentence end after the pause reason.
-        // Shown to the user above the raise-limit field; the API route is documented in the README only.
-        String detail = "%s's answer was cut off at the %d-token output limit%s. Raise the limit and resume"
+        // Shown as-is (a full sentence) above the raise-limit field; the API route is documented in the README only.
+        String detail = "%s's answer was cut off at the %d-token output limit%s. Raise the limit and resume."
                 .formatted(request.playerName() != null ? request.playerName() : request.modelId(),
                         request.maxOutputTokens(), reasoning);
         LOG.warnf("Game %s: %s", request.gameId(), detail);
@@ -367,7 +386,8 @@ public class GameTurnService {
             String lastMessage,
             boolean isFirstMove,
             int maxRetries,
-            int moveTimeoutSeconds,
+            // Seconds for the whole turn (all attempts); null means no move time limit.
+            Integer moveTimeoutSeconds,
             String promptVersion,
             String promptHash,
             BigDecimal totalCostUsd,

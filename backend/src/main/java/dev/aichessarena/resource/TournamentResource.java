@@ -46,7 +46,8 @@ public class TournamentResource {
         Tournament t = new Tournament();
         t.name = req.name();
         t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
-        if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = req.moveTimeoutSeconds();
+        // null keeps the default of 60 seconds; 0 means no time limit per move.
+        if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
@@ -96,7 +97,8 @@ public class TournamentResource {
         if (req.sharedCustomInstructions() != null) {
             t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
         }
-        if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = req.moveTimeoutSeconds();
+        // null leaves the move time limit unchanged; 0 removes it.
+        if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
@@ -154,6 +156,18 @@ public class TournamentResource {
         p.customInstructions = normalizeInstructions(req.customInstructions());
         if (req.seed() != null) p.seed = req.seed();
         return p;
+    }
+
+    /** {@code 0} means no time limit per move (stored as null); other values must be 10-3600 seconds. */
+    static Integer parseMoveTimeout(int value) {
+        if (value == 0) {
+            return null;
+        }
+        if (value < Tournament.MIN_MOVE_TIMEOUT_SECONDS || value > Tournament.MAX_MOVE_TIMEOUT_SECONDS) {
+            throw new IllegalArgumentException("moveTimeoutSeconds must be 0 (no limit) or between %d and %d"
+                    .formatted(Tournament.MIN_MOVE_TIMEOUT_SECONDS, Tournament.MAX_MOVE_TIMEOUT_SECONDS));
+        }
+        return value;
     }
 
     private int parseMaxOutputTokens(int value) {

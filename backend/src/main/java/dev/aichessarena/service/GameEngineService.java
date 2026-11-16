@@ -162,7 +162,18 @@ public class GameEngineService {
         return loop != null && loop.shouldContinue();
     }
 
-    private void runGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
+    /**
+     * The time limit per move for a game: the tournament's (null when it has no limit), or 60 seconds for a game
+     * outside a tournament. Deliberately no ternary: mixing {@code Integer} and {@code int} would unbox null.
+     */
+    static Integer moveTimeoutSecondsFor(Game game) {
+        if (game.tournament == null) {
+            return Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS;
+        }
+        return game.tournament.moveTimeoutSeconds;
+    }
+
+    void runGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
         GameConversationService.ConversationState conversation = gameConversationService.initializeConversation(gameId);
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
@@ -199,7 +210,7 @@ public class GameEngineService {
             boolean isFirstMove = moveNumber == 1 && "WHITE".equals(sideToMove);
 
             int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
-            int moveTimeoutSeconds = game.tournament != null ? game.tournament.moveTimeoutSeconds : 60;
+            Integer moveTimeoutSeconds = moveTimeoutSecondsFor(game);
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
             boolean trashTalkEnabled = game.tournament == null || game.tournament.trashTalkEnabled;

@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- Migration V11 runs automatically: it makes `tournaments.move_timeout_seconds` nullable (null = no time limit per move). Existing tournaments keep their values.
+- The move timeout is now enforced: models that used to answer after the limit (for example slow reasoning models in a 30-second preset) now forfeit on time. Switch the limit off or raise it for such tournaments.
+
+### Fixed
+- The move timeout is enforced as a hard deadline for the whole answer, from the start of the turn to the last byte of the response, across all attempts of the turn. Before, it only limited the time until OpenRouter started its response, so a model that took 45–70 s per move under a 30-second limit was never timed out while the UI timer ran down to zero. Running out of time forfeits on time, unless an OpenRouter problem happened earlier in the same turn (then the game pauses, as before). Retries get only the time that is left (no grace period), and an OpenRouter error status whose body arrives too slowly stays a provider problem instead of a model timeout.
+- The pause reason for an answer cut off at the output-token limit ends with a full stop.
+- The configured fallback output-token limit is 4096 as documented (was still 500); unused `game.default-*` properties removed.
+
+### Changed
+- The time limit per move is optional per tournament: the setup page has a *Limit time per move* switch (on by default and in every preset) with the seconds field shown while it is on, and the estimate treats runtime without a limit as open-ended (it assumes about 30 s per answer). Without a limit the game view shows whose turn it is without a countdown.
+- API: `moveTimeoutSeconds` on create and update accepts `0` for "no time limit" (stored as null) and otherwise 10–3600 seconds (400 for other values); omitting it or sending null keeps today's meaning (create: 60 seconds, update: unchanged). `TournamentDto.moveTimeoutSeconds` is null for a tournament without a limit, and live turn updates then carry no `turnDeadlineAt`.
+- Every model request, with or without a move time limit, is bounded by a technical safety cap (`openrouter.request-safety-cap`, default 10 minutes). Reaching it counts as an OpenRouter problem (retried, then the game pauses), never as the model's timeout.
+
 ## [1.3.0] - 2026-11-16
 
 "Trustworthy results": the app no longer blames models for its own limits, keeps every model attempt as evidence, scores reliability fairly, and gets a desktop polish of every page.

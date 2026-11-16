@@ -24,11 +24,17 @@
 
           <section class="field-group" aria-labelledby="setup-moves-heading">
             <h3 class="group-heading" id="setup-moves-heading">Moves</h3>
+            <div class="toggle-row">
+              <mat-slide-toggle [(ngModel)]="limitMoveTime">Limit time per move</mat-slide-toggle>
+            </div>
             <div class="settings-grid">
-              <mat-form-field appearance="outline" floatLabel="always">
-                <mat-label>Move Timeout (seconds)</mat-label>
-                <input matInput type="number" [(ngModel)]="moveTimeout" />
-              </mat-form-field>
+              @if (limitMoveTime) {
+                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                  <mat-label>Move Timeout (seconds)</mat-label>
+                  <input matInput type="number" min="10" max="3600" [(ngModel)]="moveTimeout" />
+                  <mat-hint>10–3600; a model that runs out of time forfeits</mat-hint>
+                </mat-form-field>
+              }
 
               <mat-form-field appearance="outline" floatLabel="always">
                 <mat-label>Max attempts per move</mat-label>
@@ -373,15 +379,19 @@
               <div class="confidence-metric">
                 <span class="metric-label">Estimated Runtime</span>
                 <strong>{{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
-                <span
-                  >{{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
-                  {{ formatDuration(summary.maxRuntimeMinutes) }}</span
-                >
+                <span>
+                  @if (summary.maxRuntimeMinutes !== null) {
+                    {{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
+                    {{ formatDuration(summary.maxRuntimeMinutes) }}
+                  } @else {
+                    open-ended
+                  }
+                </span>
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Move Pace</span>
                 <strong>{{ summary.paceLabel }}</strong>
-                <span>{{ moveTimeout }}s timeout</span>
+                <span>{{ limitMoveTime ? moveTimeout + 's timeout' : 'no time limit' }}</span>
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Estimated Spend</span>
@@ -418,6 +428,13 @@
                 Reasoning models can use far more output tokens per answer, up to the tournament's
                 max output tokens ({{ maxOutputTokens }}), so their cost can be many times higher.
               </p>
+              @if (!limitMoveTime) {
+                <p>
+                  Without a time limit per move, runtime is open-ended: the estimate assumes about
+                  {{ typicalMoveSecondsWithoutLimit }} seconds per answer, and reasoning models can
+                  take much longer.
+                </p>
+              }
               @if (summary.drawCanExtendSeries) {
                 <p class="confidence-warning">
                   With `Replay Game`, a match that is still level after its regular games continues

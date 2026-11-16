@@ -7,11 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.repository.GameRepository;
 import jakarta.ws.rs.WebApplicationException;
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -122,6 +127,65 @@ class GameEngineServiceTest {
 
         assertTrue(service.isRunning(gameId));
         assertNull(service.tryClaimLoop(gameId));
+    }
+
+    @Test
+    void aTurnOfAnUntimedTournamentRunsWithoutATimeLimit() {
+        GameTurnService.TurnRequest request = runOneTurnFor(tournamentWithTimeout(null));
+
+        assertNull(request.moveTimeoutSeconds());
+        assertEquals("model-white", request.modelId());
+        assertEquals(2, request.maxRetries());
+    }
+
+    @Test
+    void aTurnOfATimedTournamentUsesItsLimitAndAGameWithoutATournamentUsesSixtySeconds() {
+        assertEquals(45, runOneTurnFor(tournamentWithTimeout(45)).moveTimeoutSeconds());
+        assertEquals(60, runOneTurnFor(null).moveTimeoutSeconds());
+    }
+
+    /** Runs the real game loop for one turn of a fresh game and returns the request it passed to the turn. */
+    private static GameTurnService.TurnRequest runOneTurnFor(Tournament tournament) {
+        Game game = new Game();
+        game.id = UUID.randomUUID();
+        game.status = GameStatus.IN_PROGRESS;
+        game.tournament = tournament;
+        game.whitePlayerName = "White";
+        game.whiteModelId = "model-white";
+        game.blackPlayerName = "Black";
+        game.blackModelId = "model-black";
+        game.totalCostUsd = BigDecimal.ZERO;
+
+        GameEngineService service = new GameEngineService();
+        service.chessService = new ChessService();
+        service.gameRepository = new FakeGameRepository(Map.of(game.id, game));
+        service.gameConversationService = new GameConversationService() {
+            @Override
+            public ConversationState initializeConversation(UUID gameId) {
+                return new ConversationState(new Board(), new ArrayList<>(), new ArrayList<>(),
+                        new PromptContext("v1", "hash-w"), new PromptContext("v1", "hash-b"));
+            }
+        };
+        List<GameTurnService.TurnRequest> requests = new ArrayList<>();
+        service.gameTurnService = new GameTurnService() {
+            @Override
+            public TurnResult playTurn(TurnRequest request) {
+                requests.add(request);
+                return TurnResult.terminal();
+            }
+        };
+
+        service.runGameLoop(game.id, new GameEngineService.GameLoop(), null, null);
+
+        assertEquals(1, requests.size());
+        return requests.getFirst();
+    }
+
+    private static Tournament tournamentWithTimeout(Integer moveTimeoutSeconds) {
+        Tournament tournament = new Tournament();
+        tournament.moveTimeoutSeconds = moveTimeoutSeconds;
+        tournament.maxRetries = 2;
+        return tournament;
     }
 
     private static final class FakeGameRepository extends GameRepository {

@@ -85,4 +85,50 @@ describe('GameTurnStateService', () => {
     expect(service.moveTimerDisplay()).toBe('00:08');
     expect(service.moveTimerWarning()).toBe(true);
   });
+
+  it('shows no countdown when the tournament has no time limit per move', () => {
+    const service = new GameTurnStateService();
+    service.bind(
+      () => createGame(),
+      () => [],
+      () => '8/8/8/8/8/8/8/8 w - - 0 1',
+    );
+    service.setMoveTimeoutSeconds(null);
+    service.timerNowMs.set(Date.parse('2026-03-07T10:01:10Z'));
+    // The server announces the turn without a deadline.
+    service.applyStatusUpdate('IN_PROGRESS', 'WHITE', '2026-03-07T10:01:05Z', undefined);
+
+    expect(service.noMoveTimeLimit()).toBe(true);
+    expect(service.moveTimerSeconds()).toBeNull();
+    expect(service.moveTimerDisplay()).toBe('--:--');
+    expect(service.moveTimerWarning()).toBe(false);
+    expect(service.activeColor()).toBe('WHITE');
+  });
+
+  it('shows no countdown before the time limit is known', () => {
+    const service = new GameTurnStateService();
+    service.bind(
+      () => createGame(),
+      () => [],
+      () => '8/8/8/8/8/8/8/8 w - - 0 1',
+    );
+
+    expect(service.noMoveTimeLimit()).toBe(false);
+    expect(service.moveTimerSeconds()).toBeNull();
+  });
+
+  it('counts down from a known time limit until the server sends a deadline', () => {
+    const service = new GameTurnStateService();
+    service.bind(
+      () => createGame(),
+      () => [],
+      () => '8/8/8/8/8/8/8/8 w - - 0 1',
+    );
+    service.setMoveTimeoutSeconds(30);
+    service.timerNowMs.set(Date.parse('2026-03-07T10:01:10Z'));
+
+    // 10 s after the game started at 10:01:00.
+    expect(service.noMoveTimeLimit()).toBe(false);
+    expect(service.moveTimerSeconds()).toBe(20);
+  });
 });

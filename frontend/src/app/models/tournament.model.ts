@@ -12,7 +12,11 @@ export interface Tournament {
     | 'RANDOM_ADVANCES'
     | 'REPLAY_GAME';
   sharedCustomInstructions: string | null;
-  moveTimeoutSeconds: number;
+  /**
+   * Time limit per move in seconds (10-3600); null means no time limit. In create and update requests, 0
+   * removes the limit and an omitted or null value keeps the default (60 s) or the current value.
+   */
+  moveTimeoutSeconds: number | null;
   maxRetries: number;
   matchupBestOf: 1 | 3 | 5 | 7;
   finalsBestOf: 1 | 3 | 5 | 7 | null;

@@ -66,6 +66,30 @@ describe('TournamentSetup', () => {
     expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(16384);
   });
 
+  it('sends the move time limit in seconds while the limit is on', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Timed Arena';
+    component.moveTimeout = 45;
+
+    component.create();
+
+    expect(component.limitMoveTime).toBe(true);
+    expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(45);
+  });
+
+  it('sends 0 (no limit) when the move time limit is switched off', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Untimed Arena';
+    component.moveTimeout = 45;
+    component.limitMoveTime = false;
+
+    component.create();
+
+    expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(0);
+  });
+
   it('shows the server error, keeps the request id for a retry, and does not navigate', () => {
     const api = createApiService();
     const router = { navigate: vi.fn() } as any;
@@ -151,6 +175,47 @@ describe('TournamentSetup', () => {
     expect(component.drawPolicy).toBe('REPLAY_GAME');
     expect(component.sharedCustomInstructions).toContain('Play your strongest chess');
     expect(component.maxOutputTokens).toBe(8192);
+    expect(component.limitMoveTime).toBe(true);
+    expect(component.moveTimeout).toBe(60);
+  });
+
+  it('presets switch the move time limit back on with their seconds', () => {
+    const component = new TournamentSetup(
+      createApiService(),
+      createRouter(),
+      createRoute({ preset: 'quickstart' }),
+    );
+    component.limitMoveTime = false;
+
+    component.ngOnInit();
+
+    expect(component.limitMoveTime).toBe(true);
+    expect(component.moveTimeout).toBe(30);
+  });
+
+  it('estimates runtime without a move time limit as open-ended', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.matchupBestOf = 1;
+    component.finalsBestOf = null;
+    component.limitMoveTime = false;
+    component.participants.set([
+      pricedParticipant('Alpha', 'model-alpha', 1, 1),
+      pricedParticipant('Beta', 'model-beta', 1, 1),
+    ]);
+
+    const summary = component.confidenceSummary();
+
+    // One game of about 70 answers at the typical 30 s each.
+    expect(summary?.likelyGames).toBe(1);
+    expect(summary?.likelyRuntimeMinutes).toBe(35);
+    expect(summary?.maxRuntimeMinutes).toBeNull();
+    expect(summary?.paceLabel).toBe('No limit');
+
+    component.limitMoveTime = true;
+    component.moveTimeout = 60;
+    const timed = component.confidenceSummary();
+    expect(timed?.maxRuntimeMinutes).toBe(25);
+    expect(timed?.paceLabel).toBe('Balanced');
   });
 
   it('builds a confidence summary with finals override and pricing data', () => {
