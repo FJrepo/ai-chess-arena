@@ -8,8 +8,6 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { MatListModule } from '@angular/material/list';
-import { MatDividerModule } from '@angular/material/divider';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
@@ -59,8 +57,6 @@ type TournamentConfidence = {
     MatButtonModule,
     MatIconModule,
     MatSlideToggleModule,
-    MatListModule,
-    MatDividerModule,
     MatSelectModule,
     MatProgressSpinnerModule,
     CurrencyPipe,
