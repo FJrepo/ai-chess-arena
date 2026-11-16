@@ -35,4 +35,24 @@ describe('AdvantageBar', () => {
     expect(bar.classList).toContain('checkmate');
     expect(bar.classList).not.toContain('unknown');
   });
+
+  it('explains the unknown and checkmate states in a title and an accessible label', () => {
+    const unknown = render({ cp: null, mate: null }).bar;
+    expect(unknown.getAttribute('title')).toBe('Evaluation unavailable');
+    expect(unknown.getAttribute('aria-label')).toBe('Evaluation unavailable');
+
+    const whiteMated = render({ cp: null, mate: 0, checkmated: 'WHITE' }).bar;
+    expect(whiteMated.getAttribute('title')).toBe('Black wins by checkmate');
+    expect(whiteMated.getAttribute('aria-label')).toBe('Black wins by checkmate');
+
+    const blackMated = render({ cp: null, mate: 0, checkmated: 'BLACK' }).bar;
+    expect(blackMated.getAttribute('aria-label')).toBe('White wins by checkmate');
+  });
+
+  it('adds no title or label to a regular score', () => {
+    const { bar } = render({ cp: 42, mate: null });
+
+    expect(bar.hasAttribute('title')).toBe(false);
+    expect(bar.hasAttribute('aria-label')).toBe(false);
+  });
 });

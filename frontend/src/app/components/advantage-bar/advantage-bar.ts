@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import {
   PositionEvaluation,
   Side,
+  evaluationDescription,
   evaluationLabel,
   hasEvaluation,
   whiteBarShare,
@@ -33,6 +34,9 @@ export class AdvantageBar {
   known = computed(() => hasEvaluation(this.evaluation()));
 
   displayScore = computed(() => evaluationLabel(this.evaluation()));
+
+  /** Title and accessible label for the unknown and checkmate states; null (no attribute) otherwise. */
+  description = computed(() => evaluationDescription(this.evaluation()));
 
   barHeight = computed(() => whiteBarShare(this.evaluation()));
 }

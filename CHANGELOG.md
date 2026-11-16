@@ -33,7 +33,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Game view: moves that arrive over the live connection while the game is still loading are merged into the loaded move list instead of being lost or shown twice; a live move that is already listed is ignored.
 - Game view: live override moves are marked as overrides immediately instead of only after a reload.
 - Game view: reviewing earlier moves no longer changes whose turn the page shows when the server has not reported it.
-- Game view: the evaluation bar no longer shows 0.0 for positions without a Stockfish evaluation (not evaluated yet, Stockfish unavailable, or the start position); it shows a dash on a neutral bar instead. The final position of a game won by checkmate shows the result (1-0 or 0-1) with the bar fully on the winner's side, also when Stockfish reported it as an unsigned "mate 0"; a final stalemate or insufficient-material position shows 0.0.
+- Game view: the evaluation bar no longer shows 0.0 for positions without a Stockfish evaluation (not evaluated yet, Stockfish unavailable, or the start position); it shows a dash on a neutral bar instead, titled and labelled "Evaluation unavailable" for screen readers. The final position of a game won by checkmate shows the result (1-0 or 0-1) with the bar fully on the winner's side and the label "White wins by checkmate" or "Black wins by checkmate", also when Stockfish reported it as an unsigned "mate 0"; a final stalemate or insufficient-material position shows 0.0.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
 
 ## [1.2.0] - 2026-11-16

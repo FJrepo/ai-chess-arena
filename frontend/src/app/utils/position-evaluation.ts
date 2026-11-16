@@ -74,6 +74,19 @@ export function evaluationLabel(evaluation: PositionEvaluation): string {
   return '–';
 }
 
+/**
+ * Spoken description for the states whose short label needs explaining: an unknown evaluation and a
+ * delivered checkmate. Null for regular scores, whose label speaks for itself.
+ */
+export function evaluationDescription(evaluation: PositionEvaluation): string | null {
+  if (evaluation.checkmated) {
+    return evaluation.checkmated === 'BLACK'
+      ? 'White wins by checkmate'
+      : 'Black wins by checkmate';
+  }
+  return hasEvaluation(evaluation) ? null : 'Evaluation unavailable';
+}
+
 /** White's share of the evaluation bar in percent; 50 when the evaluation is unknown. */
 export function whiteBarShare(evaluation: PositionEvaluation): number {
   if (evaluation.checkmated) {

@@ -1,5 +1,11 @@
 <div class="advantage-container">
-  <div class="eval-bar" [class.unknown]="!known()" [class.checkmate]="checkmated() !== null">
+  <div
+    class="eval-bar"
+    [class.unknown]="!known()"
+    [class.checkmate]="checkmated() !== null"
+    [attr.title]="description()"
+    [attr.aria-label]="description()"
+  >
     <div class="white-bar" [style.height.%]="barHeight()"></div>
     <div class="black-bar" [style.height.%]="100 - barHeight()"></div>
     <div class="center-line"></div>

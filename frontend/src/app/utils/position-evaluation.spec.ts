@@ -2,6 +2,7 @@ import { Game, Move } from '../models/tournament.model';
 import {
   NO_EVALUATION,
   evaluationAt,
+  evaluationDescription,
   evaluationLabel,
   hasEvaluation,
   whiteBarShare,
@@ -160,5 +161,17 @@ describe('evaluationLabel and whiteBarShare', () => {
   it('shows an unknown evaluation as a dash on a neutral bar, not as 0.0', () => {
     expect(evaluationLabel(NO_EVALUATION)).toBe('–');
     expect(whiteBarShare(NO_EVALUATION)).toBe(50);
+  });
+
+  it('describes only the unknown and checkmate states', () => {
+    expect(evaluationDescription(NO_EVALUATION)).toBe('Evaluation unavailable');
+    expect(evaluationDescription({ cp: null, mate: 0, checkmated: 'BLACK' })).toBe(
+      'White wins by checkmate',
+    );
+    expect(evaluationDescription({ cp: null, mate: 0, checkmated: 'WHITE' })).toBe(
+      'Black wins by checkmate',
+    );
+    expect(evaluationDescription({ cp: 0, mate: null, checkmated: null })).toBeNull();
+    expect(evaluationDescription({ cp: null, mate: -2, checkmated: null })).toBeNull();
   });
 });
