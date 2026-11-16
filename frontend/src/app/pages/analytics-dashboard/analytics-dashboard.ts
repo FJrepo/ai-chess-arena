@@ -9,7 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
-import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, DecimalPipe, formatNumber } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import {
@@ -94,6 +94,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return [
       {
         label: 'Strongest',
+        showsGrade: false,
         description: 'Highest win rate in the current sample',
         row: this.pickBest(
           rows,
@@ -113,11 +114,14 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
           (row) => row.gamesPlayed,
           true,
         ),
-        value: (row: AnalyticsComparisonModel) => row.reliabilityBand,
-        detail: (row: AnalyticsComparisonModel) => `${row.reliabilityScore.toFixed(1)} score`,
+        showsGrade: true,
+        value: (row: AnalyticsComparisonModel) => this.formatScore(row.reliabilityScore),
+        detail: (row: AnalyticsComparisonModel) =>
+          `Out of 100, over ${row.gamesPlayed} ${row.gamesPlayed === 1 ? 'game' : 'games'}`,
       },
       {
         label: 'Fastest',
+        showsGrade: false,
         description: 'Lowest average move latency',
         row: this.pickBest(
           rows,
@@ -130,6 +134,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       },
       {
         label: 'Best Value',
+        showsGrade: false,
         description: 'Lowest cost per win when pricing exists',
         row: this.pickBest(
           rows.filter((row) => row.pricingAvailable && row.costPerWinUsd !== null && row.wins > 0),
@@ -205,11 +210,16 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     this.refreshAll();
   }
 
+  /** One formatter for every reliability score, so the leader card and the tables agree. */
+  formatScore(value: number): string {
+    return formatNumber(value, 'en-US', '1.1-1');
+  }
+
   formatMs(value: number | null): string {
     if (value === null || value === undefined) {
       return 'n/a';
     }
-    return `${Math.round(value)} ms`;
+    return `${Math.round(value).toLocaleString('en-US')} ms`;
   }
 
   private refreshAll(): void {
