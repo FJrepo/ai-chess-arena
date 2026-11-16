@@ -3,7 +3,7 @@ import { Tournament } from '../../models/tournament.model';
 
 describe('TournamentList', () => {
   it('filters tournaments by search, status, and best-of', () => {
-    const component = new TournamentList({} as any, {} as any);
+    const component = new TournamentList({} as any);
     component.tournaments.set([
       tournament('Alpha Cup', 'CREATED', 1, 4, 2, '2026-03-01T10:00:00Z'),
       tournament('Bravo Finals', 'IN_PROGRESS', 3, 8, 6, '2026-03-03T10:00:00Z'),
@@ -17,8 +17,21 @@ describe('TournamentList', () => {
     expect(component.filteredTournaments().map((t) => t.name)).toEqual(['Bravo Finals']);
   });
 
+  it('finds tournaments by their readable status label', () => {
+    const component = new TournamentList({} as any);
+    component.tournaments.set([
+      tournament('Alpha Cup', 'CREATED', 1, 4, 2, '2026-03-01T10:00:00Z'),
+      tournament('Bravo Finals', 'IN_PROGRESS', 3, 8, 6, '2026-03-03T10:00:00Z'),
+    ]);
+
+    component.searchTerm.set('not started');
+
+    expect(component.filteredTournaments().map((t) => t.name)).toEqual(['Alpha Cup']);
+    expect(component.statusLabel('IN_PROGRESS')).toBe('In progress');
+  });
+
   it('sorts tournaments by participant count when requested', () => {
-    const component = new TournamentList({} as any, {} as any);
+    const component = new TournamentList({} as any);
     component.tournaments.set([
       tournament('Alpha Cup', 'CREATED', 1, 4, 2, '2026-03-01T10:00:00Z'),
       tournament('Bravo Finals', 'IN_PROGRESS', 3, 8, 6, '2026-03-03T10:00:00Z'),
@@ -35,7 +48,7 @@ describe('TournamentList', () => {
   });
 
   it('describes onboarding as ready when system status is healthy', () => {
-    const component = new TournamentList({} as any, {} as any);
+    const component = new TournamentList({} as any);
     component.systemStatus.set({
       backendVersion: '0.4.0',
       openRouterValid: true,
