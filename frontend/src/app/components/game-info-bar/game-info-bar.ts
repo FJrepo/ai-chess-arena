@@ -6,10 +6,11 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
-import { Game } from '../../models/tournament.model';
+import { Game, SideQuality } from '../../models/tournament.model';
 import { CurrencyPipe } from '@angular/common';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
 import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
+import { qualityCounts, sideQualityTooltip } from '../../utils/move-quality';
 
 @Component({
   selector: 'app-game-info-bar',
@@ -37,6 +38,8 @@ export class GameInfoBar {
 
   /** Reader-facing status label for the chip. */
   readonly statusLabel = gameStatusLabel;
+  readonly qualityCounts = qualityCounts;
+  readonly sideQualityTooltip = sideQualityTooltip;
 
   static readonly MIN_OUTPUT_TOKENS = 128;
   static readonly MAX_OUTPUT_TOKENS = 32768;
@@ -61,6 +64,16 @@ export class GameInfoBar {
 
   get truncationLimit(): number | null {
     return this.currentLimit;
+  }
+
+  /** A side's move-quality summary once at least one of its moves has been judged; null before. */
+  sideQuality(color: 'WHITE' | 'BLACK'): SideQuality | null {
+    const summary = this.game?.qualitySummary;
+    if (!summary) {
+      return null;
+    }
+    const side = color === 'WHITE' ? summary.white : summary.black;
+    return side && side.analyzedMoves > 0 ? side : null;
   }
 
   showRaiseLimit(): boolean {

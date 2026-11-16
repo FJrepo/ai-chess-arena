@@ -80,7 +80,18 @@
                   <mat-icon>{{ event.icon }}</mat-icon>
                 </span>
                 <span class="timeline-copy">
-                  <span class="timeline-label">{{ event.label }}</span>
+                  <span class="timeline-label">
+                    <span>{{ event.label }}</span>
+                    @if (event.quality; as q) {
+                      <span
+                        class="quality-badge"
+                        [class]="'quality-' + q.badge.tone"
+                        [attr.title]="q.tooltip"
+                        [attr.aria-label]="q.tooltip"
+                        >{{ q.badge.glyph }}</span
+                      >
+                    }
+                  </span>
                   <span class="timeline-detail">{{ event.detail }}</span>
                   @if (event.attemptSummary) {
                     <span class="feed-attempts">{{ event.attemptSummary }}</span>

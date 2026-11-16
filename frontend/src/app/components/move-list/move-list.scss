@@ -1,7 +1,7 @@
 // Sizes to its content; the host caps the height (100% of a sized host, or
 // --move-list-max-height) and the list scrolls inside.
-// --move-cell-min fits the longest SAN (7 characters, e.g. `exd8=Q+`) plus a retry badge, so a
-// notation cell never shrinks below its content and runs into the next move.
+// --move-cell-min fits the longest SAN (7 characters, e.g. `exd8=Q+`) plus a retry badge and a
+// quality annotation, so a notation cell never shrinks below its content and runs into the next move.
 :host {
   --move-cell-min: 6.75rem;
 
@@ -92,6 +92,14 @@
   line-height: 16px;
   margin-left: 4px;
   vertical-align: middle;
+}
+
+// Move-quality annotation right after the SAN, as in printed notation; the colour carries the tone.
+// Smaller than the SAN, so a 7-character move with retries and ?? still fits --move-cell-min.
+.quality-badge {
+  font-family: var(--mat-sys-label-small-font);
+  font-size: 0.75rem;
+  letter-spacing: -0.02em;
 }
 
 .empty-state {

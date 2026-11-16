@@ -2,8 +2,10 @@ package dev.aichessarena.dto;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import java.util.UUID;
@@ -62,6 +64,68 @@ class DtoMapperTest {
         assertEquals(bye.whiteParticipant.id, dto.whiteParticipantId());
         assertNull(dto.blackParticipantId());
         assertNull(dto.advancedParticipantId());
+    }
+
+    @Test
+    void gameWithMovesCarriesMoveQualityAndSummary() {
+        Game game = game(null, "Final", null);
+        game.moves.add(move(game, 1, "WHITE", 30));
+        game.moves.add(move(game, 1, "BLACK", 400));
+        game.moves.add(move(game, 2, "WHITE", null));
+
+        GameDto dto = DtoMapper.toDto(game, true);
+
+        MoveQualityDto first = dto.moves().get(0).quality();
+        assertEquals(0, first.centipawnLoss());
+        assertNull(first.judgement());
+        assertEquals(0.5, first.winChanceBefore());
+        MoveQualityDto second = dto.moves().get(1).quality();
+        assertEquals("BLUNDER", second.judgement());
+        assertEquals(370, second.centipawnLoss());
+        assertNull(second.excluded());
+        assertNull(dto.moves().get(2).quality(), "not evaluated yet");
+        assertEquals(1, dto.qualitySummary().white().analyzedMoves());
+        assertEquals(0, dto.qualitySummary().white().averageCentipawnLoss());
+        assertEquals(1, dto.qualitySummary().black().blunders());
+        assertEquals(370, dto.qualitySummary().black().averageCentipawnLoss());
+    }
+
+    @Test
+    void gameWithoutMovesHasNoQualitySummary() {
+        Game game = game(null, "Final", null);
+        game.moves.add(move(game, 1, "WHITE", 30));
+
+        GameDto dto = DtoMapper.toDto(game, false);
+
+        assertTrue(dto.moves().isEmpty());
+        assertNull(dto.qualitySummary());
+    }
+
+    @Test
+    void overrideMoveIsMarkedAsExcluded() {
+        Game game = game(null, "Final", null);
+        game.moves.add(move(game, 1, "WHITE", 30));
+        Move override = move(game, 1, "BLACK", 30);
+        override.isOverride = true;
+        game.moves.add(override);
+
+        MoveQualityDto quality = DtoMapper.toDto(game, true).moves().get(1).quality();
+
+        assertEquals("OVERRIDE", quality.excluded());
+        assertNull(quality.judgement());
+        assertNull(quality.centipawnLoss());
+    }
+
+    private static Move move(Game game, int number, String color, Integer cp) {
+        Move move = new Move();
+        move.id = UUID.randomUUID();
+        move.game = game;
+        move.moveNumber = number;
+        move.color = color;
+        move.san = "x";
+        move.fen = "fen";
+        move.evaluationCp = cp;
+        return move;
     }
 
     private static TournamentParticipant participant(String name) {

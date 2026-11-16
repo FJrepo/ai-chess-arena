@@ -21,5 +21,7 @@ public record MoveDto(
         boolean isOverride,
         Integer evaluationCp,
         Integer evaluationMate,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        /** Null when the move is not judged (an evaluation is missing) or outside a full game view. */
+        MoveQualityDto quality
 ) {}

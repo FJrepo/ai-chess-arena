@@ -1,3 +1,4 @@
+import { AnalyticsComparisonModel } from '../../models/analytics.model';
 import { AnalyticsDashboard } from './analytics-dashboard';
 
 describe('AnalyticsDashboard', () => {
@@ -124,6 +125,56 @@ describe('AnalyticsDashboard', () => {
     expect(component.formatMs(812)).toBe('812 ms');
     expect(component.formatMs(null)).toBe('n/a');
   });
+
+  it('lists move quality for models with judged moves, lowest ACPL first', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 6,
+      models: [
+        comparisonRow('model.alpha', {
+          analyzedMoves: 80,
+          analyzedGames: 3,
+          averageCentipawnLoss: 92.4,
+          blunders: 4,
+          blundersPerGame: 1.333333,
+        }),
+        comparisonRow('model.beta', {
+          analyzedMoves: 60,
+          analyzedGames: 2,
+          averageCentipawnLoss: 35.6,
+          blunders: 1,
+          blundersPerGame: 0.5,
+        }),
+        comparisonRow('model.unjudged', {
+          analyzedMoves: 0,
+          averageCentipawnLoss: null,
+          blundersPerGame: null,
+        }),
+        // An older backend without the fields.
+        comparisonRow('model.legacy'),
+      ],
+    });
+
+    expect(component.qualityRows().map((row) => row.modelId)).toEqual([
+      'model.beta',
+      'model.alpha',
+    ]);
+    expect(component.formatAcpl(35.6)).toBe('36');
+    expect(component.formatAcpl(null)).toBe('n/a');
+    expect(component.formatPerGame(1.333333)).toBe('1.33');
+    expect(component.formatPerGame(undefined)).toBe('n/a');
+  });
+
+  it('explains the move-quality metrics in one line', () => {
+    const component = new AnalyticsDashboard({} as any);
+
+    expect(component.qualityExplanation).toContain('average centipawn loss');
+    expect(component.qualityExplanation).toContain('5 / 10 / 15 percentage points');
+    expect(component.qualityExplanation).toContain('Lichess-style');
+  });
 });
 
 type AnalyticsComparisonRow = {
@@ -156,7 +207,7 @@ type AnalyticsComparisonRow = {
   insufficientData: boolean;
 };
 
-function comparisonRow(modelId: string, overrides: Partial<AnalyticsComparisonRow> = {}) {
+function comparisonRow(modelId: string, overrides: Partial<AnalyticsComparisonModel> = {}) {
   return { ...baseRow(modelId), ...overrides };
 }
 

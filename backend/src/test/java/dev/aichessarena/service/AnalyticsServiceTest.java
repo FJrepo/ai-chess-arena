@@ -316,6 +316,75 @@ class AnalyticsServiceTest {
         assertEquals(new BigDecimal("0.016000"), alpha.averageCostPerMoveUsd());
     }
 
+    @Test
+    void comparisonReportsMoveQualityPerModelFromFinishedGamesOnly() {
+        Game game1 = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        Game game2 = finishedGame("model.beta", "model.alpha", Game.GameResult.DRAW, null, YESTERDAY);
+        Game running = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.IN_PROGRESS);
+        Move override = evaluatedMove(game1, null, 2, "BLACK", 100);
+        override.isOverride = true;
+
+        AnalyticsService service = service(
+                List.of(game1, game2, running),
+                // Deliberately not in play order: quality depends on the move before.
+                List.of(
+                        evaluatedMove(game1, "model.alpha", 2, "WHITE", 100), // loss 300, blunder
+                        override,
+                        evaluatedMove(game1, "model.beta", 1, "BLACK", 400), // loss 370, blunder
+                        evaluatedMove(game1, "model.alpha", 1, "WHITE", 30), // loss 0
+                        evaluatedMove(game2, "model.beta", 1, "WHITE", 20), // loss 0
+                        evaluatedMove(game2, "model.alpha", 1, "BLACK", null), // not evaluated
+                        evaluatedMove(running, "model.alpha", 1, "WHITE", -900),
+                        evaluatedMove(running, "model.beta", 1, "BLACK", 900)
+                ),
+                List.of()
+        );
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        AnalyticsModelComparisonRowDto alpha = row(response, "model.alpha");
+        assertEquals(2, alpha.analyzedMoves());
+        assertEquals(1, alpha.analyzedGames(), "game 2 has no judged move of alpha");
+        assertEquals(new BigDecimal("150.0"), alpha.averageCentipawnLoss());
+        assertEquals(1, alpha.blunders());
+        assertEquals(0, alpha.mistakes());
+        assertEquals(0, alpha.inaccuracies());
+        assertEquals(new BigDecimal("1.00"), alpha.blundersPerGame());
+
+        AnalyticsModelComparisonRowDto beta = row(response, "model.beta");
+        assertEquals(2, beta.analyzedMoves());
+        assertEquals(2, beta.analyzedGames());
+        assertEquals(new BigDecimal("185.0"), beta.averageCentipawnLoss());
+        assertEquals(1, beta.blunders());
+        assertEquals(new BigDecimal("0.50"), beta.blundersPerGame());
+    }
+
+    @Test
+    void comparisonWithoutEvaluationsHasNoMoveQuality() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        AnalyticsService service = service(
+                List.of(game),
+                List.of(move(game, "model.alpha", 1000L, null), move(game, "model.beta", 1000L, null)),
+                List.of()
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+
+        assertEquals(0, alpha.analyzedMoves());
+        assertNull(alpha.averageCentipawnLoss());
+        assertNull(alpha.blundersPerGame());
+    }
+
+    private Move evaluatedMove(Game game, String modelId, int number, String color, Integer cp) {
+        Move move = move(game, modelId, 1000L, null);
+        move.moveNumber = number;
+        move.color = color;
+        move.san = "x";
+        move.fen = "fen";
+        move.evaluationCp = cp;
+        return move;
+    }
+
     private AnalyticsService service(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts) {
         AnalyticsService service = new AnalyticsService();
         service.gameRepository = new FakeGameRepository(games);

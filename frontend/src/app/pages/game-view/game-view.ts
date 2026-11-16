@@ -34,6 +34,12 @@ import { GameTurnStateService } from '../../services/game-turn-state.service';
 import { LastMove, lastMoveSquares } from '../../utils/last-move';
 import { PositionEvaluation, evaluationAt } from '../../utils/position-evaluation';
 import {
+  QualityBadge,
+  applyPlyQualities,
+  qualityBadge,
+  qualityTooltip,
+} from '../../utils/move-quality';
+import {
   latestAttemptFor,
   nextPly,
   notableAttemptsByPly,
@@ -49,6 +55,8 @@ type TimelineEvent = {
   /** Failed or cut-off answers for the ply, shown as their own line; null when there were none. */
   attemptSummary: string | null;
   tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
+  /** ?! / ? / ?? annotation of a move judged an error, with its tooltip; null otherwise. */
+  quality: { badge: QualityBadge; tooltip: string | null } | null;
   icon: string;
   createdAtMs: number;
   createdAtLabel: string;
@@ -253,6 +261,7 @@ export class GameView implements OnInit, OnDestroy {
       events.push({
         id: `start-${game.id}`,
         type: 'start',
+        quality: null,
         label: 'Game Started',
         detail: `${game.whitePlayerName || 'White'} vs ${game.blackPlayerName || 'Black'}`,
         tone: 'neutral',
@@ -276,9 +285,11 @@ export class GameView implements OnInit, OnDestroy {
           ? `${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
           : null);
       const overrideSuffix = move.isOverride ? ' (override)' : '';
+      const badge = qualityBadge(move.quality);
       events.push({
         id: `move-${move.id || `${move.moveNumber}-${move.color}`}`,
         type: 'move',
+        quality: badge ? { badge, tooltip: qualityTooltip(move.quality) } : null,
         label: `${move.color === 'WHITE' ? 'White' : 'Black'} played ${move.san}`,
         detail: `${this.timelinePlayerName(move.color, move.modelId)}${overrideSuffix}`,
         attemptSummary,
@@ -296,6 +307,7 @@ export class GameView implements OnInit, OnDestroy {
       events.push({
         id: `attempts-${plyKey(last.moveNumber, last.color)}`,
         type: 'attempts',
+        quality: null,
         label: `${last.color === 'WHITE' ? 'White' : 'Black'} move ${last.moveNumber} not played`,
         detail: this.timelinePlayerName(last.color, last.modelId),
         attemptSummary: summarizeAttempts(plyAttempts),
@@ -312,6 +324,7 @@ export class GameView implements OnInit, OnDestroy {
       events.push({
         id: `chat-${message.id || `${message.moveNumber}-${message.senderColor}-${message.createdAt}`}`,
         type: 'chat',
+        quality: null,
         label: `${message.senderColor === 'WHITE' ? 'White' : 'Black'} chat`,
         detail: `${this.timelinePlayerName(message.senderColor, message.senderModel)}: ${message.message}`,
         tone: 'chat',
@@ -331,6 +344,7 @@ export class GameView implements OnInit, OnDestroy {
       events.push({
         id: `result-${game.id}`,
         type: 'result',
+        quality: null,
         label: game.status === 'FORFEIT' ? 'Game Forfeit' : 'Game Complete',
         detail: resultLabel.charAt(0).toUpperCase() + resultLabel.slice(1),
         tone: game.status === 'FORFEIT' ? 'warning' : 'success',
@@ -493,15 +507,20 @@ export class GameView implements OnInit, OnDestroy {
         this.applyLiveMove(msg);
         break;
 
-      case 'evaluationUpdate':
-        this.moves.update((list) =>
-          list.map((m) =>
-            m.moveNumber === msg.moveNumber && m.color === msg.color
-              ? { ...m, evaluationCp: msg.evaluationCp, evaluationMate: msg.evaluationMate }
-              : m,
-          ),
+      case 'evaluationUpdate': {
+        const evaluated = this.moves().map((m) =>
+          m.moveNumber === msg.moveNumber && m.color === msg.color
+            ? { ...m, evaluationCp: msg.evaluationCp, evaluationMate: msg.evaluationMate }
+            : m,
         );
+        // The evaluation decides this move's quality and the next one's; the backend sends both.
+        this.moves.set(applyPlyQualities(evaluated, msg.qualities));
+        if (msg.qualitySummary) {
+          const qualitySummary = msg.qualitySummary;
+          this.game.update((g) => (g ? { ...g, qualitySummary } : g));
+        }
         break;
+      }
 
       case 'chat':
         const newChat: ChatMessage = {

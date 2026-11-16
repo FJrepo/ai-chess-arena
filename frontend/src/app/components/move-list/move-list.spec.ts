@@ -1,0 +1,107 @@
+import { TestBed } from '@angular/core/testing';
+import { Move, MoveQuality } from '../../models/tournament.model';
+import { MoveListComponent } from './move-list';
+
+function move(
+  moveNumber: number,
+  color: 'WHITE' | 'BLACK',
+  san: string,
+  quality: MoveQuality | null = null,
+): Move {
+  return {
+    id: `m-${moveNumber}-${color}`,
+    moveNumber,
+    color,
+    san,
+    fen: 'fen',
+    modelId: 'model-a',
+    promptVersion: null,
+    promptHash: null,
+    promptTokens: null,
+    completionTokens: null,
+    costUsd: null,
+    responseTimeMs: 100,
+    retryCount: 0,
+    isOverride: false,
+    createdAt: '2026-03-06T10:02:00Z',
+    quality,
+  };
+}
+
+function render(moves: Move[]): HTMLElement {
+  const fixture = TestBed.createComponent(MoveListComponent);
+  fixture.componentRef.setInput('moves', moves);
+  fixture.detectChanges();
+  return fixture.nativeElement as HTMLElement;
+}
+
+describe('MoveListComponent quality annotations', () => {
+  it('annotates errors with ?? / ? / ?! in their tone, right after the SAN', () => {
+    const element = render([
+      move(1, 'WHITE', 'e4', {
+        judgement: null,
+        centipawnLoss: 0,
+        winChanceBefore: 0.5,
+        winChanceAfter: 0.53,
+        excluded: null,
+      }),
+      move(1, 'BLACK', 'f6', {
+        judgement: 'INACCURACY',
+        centipawnLoss: 60,
+        winChanceBefore: 0.47,
+        winChanceAfter: 0.41,
+        excluded: null,
+      }),
+      move(2, 'WHITE', 'Qh5', {
+        judgement: 'MISTAKE',
+        centipawnLoss: 120,
+        winChanceBefore: 0.6,
+        winChanceAfter: 0.49,
+        excluded: null,
+      }),
+      move(2, 'BLACK', 'g5', {
+        judgement: 'BLUNDER',
+        centipawnLoss: 1000,
+        winChanceBefore: 0.4,
+        winChanceAfter: 0,
+        excluded: null,
+      }),
+    ]);
+
+    const cells = Array.from(element.querySelectorAll<HTMLElement>('.move'));
+    const badges = cells.map((cell) => cell.querySelector('.quality-badge'));
+
+    expect(badges[0]).toBeNull();
+    expect(cells[0].getAttribute('title')).toBeNull();
+    expect(badges[1]?.textContent?.trim()).toBe('?!');
+    expect(badges[1]?.classList).toContain('quality-inaccuracy');
+    expect(badges[2]?.textContent?.trim()).toBe('?');
+    expect(badges[2]?.classList).toContain('quality-mistake');
+    expect(badges[3]?.textContent?.trim()).toBe('??');
+    expect(badges[3]?.classList).toContain('quality-blunder');
+    expect(badges[3]?.classList).toContain('quality-badge');
+    expect(badges[3]?.getAttribute('aria-label')).toBe('Blunder');
+    expect(cells[3].getAttribute('title')).toBe('Blunder: winning chances 40% → 0% (−10.0)');
+    // No space between the move and its annotation, as in printed notation.
+    expect(cells[3].textContent?.replace(/\s+$/, '')).toMatch(/g5\?\?$/);
+  });
+
+  it('shows no annotation before the evaluations are in, and a note for forced moves', () => {
+    const element = render([
+      move(1, 'WHITE', 'e4'),
+      move(1, 'BLACK', 'Kh8', {
+        judgement: null,
+        centipawnLoss: null,
+        winChanceBefore: 0.1,
+        winChanceAfter: 0.1,
+        excluded: 'FORCED',
+      }),
+    ]);
+
+    const cells = Array.from(element.querySelectorAll<HTMLElement>('.move'));
+
+    expect(element.querySelector('.quality-badge')).toBeNull();
+    expect(cells[0].getAttribute('title')).toBeNull();
+    expect(cells[1].getAttribute('title')).toBe('Only legal move: not judged');
+  });
+});
