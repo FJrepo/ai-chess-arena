@@ -43,6 +43,25 @@ class GameConversationServiceTest {
     }
 
     @Test
+    void disabledTrashTalkUsesTheSilentPromptForBothSides() {
+        Game game = new Game();
+        game.id = UUID.randomUUID();
+        game.whitePlayerName = "White";
+        game.whiteModelId = "white-model";
+        game.blackPlayerName = "Black";
+        game.blackModelId = "black-model";
+        game.tournament = new Tournament();
+        game.tournament.trashTalkEnabled = false;
+
+        GameConversationService.ConversationState state =
+                baseService(Map.of(game.id, game), List.of()).initializeConversation(game.id);
+
+        assertEquals("v2-silent", state.whitePrompt().version());
+        assertEquals("v2-silent", state.blackPrompt().version());
+        assertTrue(state.whiteHistory().getFirst().content().contains(PromptService.SILENT_MESSAGE_RULE));
+    }
+
+    @Test
     void initializeConversationReplaysMovesIntoBoardState() {
         Game game = new Game();
         game.id = UUID.randomUUID();

@@ -13,7 +13,7 @@ public final class DtoMapper {
                 t.id, t.name, t.status.name(), t.format.name(),
                 t.drawPolicy.name(),
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
-                t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.trashTalkEnabled,
+                t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.trashTalkEnabled, t.maxOutputTokens,
                 t.createdAt, t.updatedAt,
                 t.participants.stream().map(DtoMapper::toDto).toList(),
                 t.games.stream().map(g -> toDto(g, false)).toList(),
@@ -58,6 +58,14 @@ public final class DtoMapper {
                 g.totalCostUsd, g.createdAt, g.startedAt, g.completedAt,
                 includeMoves ? g.moves.stream().map(DtoMapper::toDto).toList() : List.of(),
                 includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of()
+        );
+    }
+
+    public static MoveAttemptDto toDto(MoveAttempt a) {
+        return new MoveAttemptDto(
+                a.id, a.moveNumber, a.color, a.attemptNumber, a.modelId, a.outcome.name(), a.proposedMove,
+                a.promptTokens, a.completionTokens, a.reasoningTokens, a.costUsd, a.responseTimeMs,
+                a.finishReason, a.errorMessage, a.createdAt
         );
     }
 

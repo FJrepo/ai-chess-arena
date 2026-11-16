@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -51,6 +52,9 @@ public class GameTurnService {
     @Inject
     GameMoveService gameMoveService;
 
+    @Inject
+    MoveAttemptService moveAttemptService;
+
     public TurnResult playTurn(TurnRequest request) {
         String turnPrompt = promptService.buildTurnPrompt(
                 request.pgn(),
@@ -65,6 +69,7 @@ public class GameTurnService {
                 request.isFirstMove()
         );
 
+        int turnStart = request.history().size();
         request.history().add(new OpenRouterService.ChatMsg("user", turnPrompt));
 
         Instant turnStartedAt = Instant.now();
@@ -95,14 +100,19 @@ public class GameTurnService {
 
             OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
                     request.modelId(),
-                    request.history(),
-                    Duration.ofMillis(Math.max(remainingMs, 100L))
+                    ConversationWindow.trim(request.history(), turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES),
+                    Duration.ofMillis(Math.max(remainingMs, 100L)),
+                    request.maxOutputTokens()
             );
 
             if (llmResponse.isProviderFailure()) {
                 String detail = llmResponse.errorMessage();
                 LOG.warnf("Game %s: OpenRouter failure for %s (%s): %s",
                         request.gameId(), request.modelId(), llmResponse.outcome(), detail);
+                recordAttempt(request, attempt,
+                        llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
+                                ? Outcome.PROVIDER_FATAL : Outcome.PROVIDER_RETRYABLE,
+                        null, detail, llmResponse);
                 if (llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
                         || providerFailures >= providerRetryBackoffMs.length) {
                     return pauseForProvider(request, detail);
@@ -124,6 +134,7 @@ public class GameTurnService {
             }
 
             if (llmResponse.timedOut()) {
+                recordAttempt(request, attempt, Outcome.TIMEOUT, null, "No answer within the move time", llmResponse);
                 if (lastProviderFailure != null) {
                     // Outages earlier in this turn ate part of the move time; don't score that as a model timeout.
                     return pauseForProvider(request,
@@ -135,8 +146,13 @@ public class GameTurnService {
             }
 
             if (llmResponse.content() == null) {
+                if (llmResponse.truncated()) {
+                    return pauseForTruncation(request, attempt, null, llmResponse);
+                }
                 LOG.errorf("Game %s: null response from %s", request.gameId(), request.modelId());
-                broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Model returned an empty response");
+                recordAttempt(request, attempt, Outcome.EMPTY_RESPONSE, null, "Model returned an empty response", llmResponse);
+                broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Model returned an empty response",
+                        Outcome.EMPTY_RESPONSE, null);
                 if (attempt < request.maxRetries()) {
                     request.history().add(new OpenRouterService.ChatMsg(
                             "user",
@@ -154,9 +170,14 @@ public class GameTurnService {
 
             ResponseParserService.ParseResult parseResult = responseParserService.parse(llmResponse.content());
             if (parseResult.isFailure()) {
+                if (llmResponse.truncated()) {
+                    return pauseForTruncation(request, attempt, null, llmResponse);
+                }
                 LOG.warnf("Game %s: parse failure from %s: %s",
                         request.gameId(), request.modelId(), parseResult.message());
-                broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Failed to parse response as JSON");
+                recordAttempt(request, attempt, Outcome.PARSE_FAILURE, null, parseResult.message(), llmResponse);
+                broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Failed to parse response as JSON",
+                        Outcome.PARSE_FAILURE, null);
                 if (attempt < request.maxRetries()) {
                     request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
                     request.history().add(new OpenRouterService.ChatMsg(
@@ -175,13 +196,19 @@ public class GameTurnService {
 
             ChessService.ValidMoveResult moveResult = chessService.validateAndApply(request.board(), parseResult.move());
             if (!moveResult.valid()) {
+                if (llmResponse.truncated()) {
+                    return pauseForTruncation(request, attempt, parseResult.move(), llmResponse);
+                }
                 LOG.warnf("Game %s: illegal move '%s' from %s: %s",
                         request.gameId(), parseResult.move(), request.modelId(), moveResult.error());
+                recordAttempt(request, attempt, Outcome.ILLEGAL_MOVE, parseResult.move(), moveResult.error(), llmResponse);
                 broadcastRetry(
                         request.gameId(),
                         request.sideToMove(),
                         attempt,
-                        "Illegal move attempted: " + parseResult.move()
+                        "Illegal move attempted: " + parseResult.move(),
+                        Outcome.ILLEGAL_MOVE,
+                        parseResult.move()
                 );
                 if (attempt < request.maxRetries()) {
                     request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
@@ -200,6 +227,8 @@ public class GameTurnService {
             }
 
             request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
+            // With trash talk disabled, messages are neither stored, broadcast nor relayed to the opponent.
+            String message = request.trashTalkEnabled() ? parseResult.message() : null;
             try {
                 gameMoveService.recordModelMove(
                         request.gameId(),
@@ -209,7 +238,7 @@ public class GameTurnService {
                         moveResult.fen(),
                         request.modelId(),
                         request.playerName(),
-                        parseResult.message(),
+                        message,
                         llmResponse,
                         attempt - 1,
                         request.promptVersion(),
@@ -219,13 +248,45 @@ public class GameTurnService {
             } catch (GameStateConflictException e) {
                 LOG.warnf("Game %s: discarding %s move %s: %s",
                         request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
+                // The move transaction has rolled back; keep the paid answer and its cost (added once, here).
+                recordAttempt(request, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
                 return TurnResult.stopped();
             }
-            return TurnResult.recorded(parseResult.move(), parseResult.message());
+            recordAttempt(request, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
+            return TurnResult.recorded(parseResult.move(), message);
         }
 
         gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), request.maxRetries());
         return TurnResult.terminal();
+    }
+
+    private TurnResult pauseForTruncation(TurnRequest request, int attempt, String proposedMove,
+                                          OpenRouterService.LlmResponse response) {
+        String reasoning = response.reasoningTokens() != null && response.reasoningTokens() > 0
+                ? " (%d of them reasoning)".formatted(response.reasoningTokens())
+                : "";
+        // No trailing period: the game view appends its own sentence end after the pause reason.
+        String detail = ("%s's answer was cut off at the %d-token output limit%s. "
+                + "Raise 'Max output tokens per answer' with 'Save and resume' in the game view "
+                + "(or set maxOutputTokens via PUT /api/tournaments/{id} and resume)")
+                .formatted(request.playerName() != null ? request.playerName() : request.modelId(),
+                        request.maxOutputTokens(), reasoning);
+        LOG.warnf("Game %s: %s", request.gameId(), detail);
+        recordAttempt(request, attempt, Outcome.TRUNCATED, proposedMove, detail, response);
+        gameLifecycleService.pauseWithReason(request.gameId(), detail);
+        return TurnResult.paused();
+    }
+
+    private void recordAttempt(TurnRequest request, int attempt, Outcome outcome, String proposedMove,
+                               String errorMessage, OpenRouterService.LlmResponse response) {
+        try {
+            moveAttemptService.record(new MoveAttemptService.AttemptRecord(
+                    request.gameId(), request.moveNumber(), request.sideToMove(), attempt, request.modelId(),
+                    outcome, proposedMove, errorMessage, response));
+        } catch (RuntimeException e) {
+            // The attempt is committed in its own transaction; a failed commit must not interrupt the game.
+            LOG.warnf(e, "Game %s: could not record %s attempt", request.gameId(), outcome);
+        }
     }
 
     private TurnResult pauseForProvider(TurnRequest request, String detail) {
@@ -253,6 +314,11 @@ public class GameTurnService {
 
     private void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason) {
         gameWebSocket.broadcastRetry(gameId, color, attemptNumber, reason);
+    }
+
+    private void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason,
+                                Outcome outcome, String proposedMove) {
+        gameWebSocket.broadcastRetry(gameId, color, attemptNumber, reason, outcome.name(), proposedMove);
     }
 
     public void broadcastHumanTurnReady(UUID gameId, BigDecimal totalCostUsd, String activeColor) {
@@ -306,7 +372,9 @@ public class GameTurnService {
             String promptVersion,
             String promptHash,
             BigDecimal totalCostUsd,
-            BooleanSupplier shouldContinue
+            BooleanSupplier shouldContinue,
+            int maxOutputTokens,
+            boolean trashTalkEnabled
     ) {
     }
 

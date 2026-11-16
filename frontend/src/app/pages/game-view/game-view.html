@@ -1,5 +1,11 @@
 @if (game(); as g) {
-  <app-game-info-bar [game]="g" [retryInfo]="retryInfo()" />
+  <app-game-info-bar
+    [game]="g"
+    [retryInfo]="retryInfo()"
+    [truncationLimit]="truncationPauseLimit()"
+    [saving]="savingLimit()"
+    (raiseLimitAndResume)="saveLimitAndResume($event)"
+  />
 
   <div class="view-actions">
     <button mat-stroked-button (click)="goToTournament()" [disabled]="!g.tournamentId">

@@ -1,7 +1,13 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Tournament, Participant, Game, CreateTournamentRequest } from '../models/tournament.model';
+import {
+  Tournament,
+  Participant,
+  Game,
+  CreateTournamentRequest,
+  MoveAttempt,
+} from '../models/tournament.model';
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import {
   AnalyticsComparisonResponse,
@@ -113,6 +119,11 @@ export class ApiService {
       promotion,
       message,
     });
+  }
+
+  /** Every model attempt of the game, including rejected answers, ordered by move number. */
+  getGameAttempts(gameId: string): Observable<MoveAttempt[]> {
+    return this.http.get<MoveAttempt[]>(`${this.baseUrl}/games/${gameId}/attempts`);
   }
 
   getGamePgn(id: string): Observable<string> {

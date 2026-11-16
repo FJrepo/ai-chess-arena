@@ -13,19 +13,34 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
-import { Game, Move, ChatMessage, MoveWsMessage, WsMessage } from '../../models/tournament.model';
+import {
+  Game,
+  Move,
+  ChatMessage,
+  MoveAttempt,
+  MoveWsMessage,
+  RetryWsMessage,
+  WsMessage,
+} from '../../models/tournament.model';
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
 import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
-import { Subscription } from 'rxjs';
+import { Subscription, switchMap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import {
+  latestAttemptFor,
+  nextPly,
+  notableAttemptsByPly,
+  plyKey,
+  summarizeAttempts,
+} from '../../utils/move-attempts';
 
 type TimelineEvent = {
   id: string;
-  type: 'start' | 'move' | 'chat' | 'result';
+  type: 'start' | 'move' | 'attempts' | 'chat' | 'result';
   label: string;
   detail: string;
   tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
@@ -36,6 +51,9 @@ type TimelineEvent = {
 };
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/** Backend default for a tournament's output-token limit. */
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
 const WHITE_PIECE_GLYPHS: Record<CapturablePiece, string> = {
   Q: '\u2655',
@@ -83,6 +101,27 @@ export class GameView implements OnInit, OnDestroy {
   game = signal<Game | null>(null);
   moves = signal<Move[]>([]);
   chatMessages = signal<ChatMessage[]>([]);
+  /** Every model answer of the game, including rejected ones. */
+  attempts = signal<MoveAttempt[]>([]);
+  /** The tournament's output-token limit, once loaded. */
+  tournamentMaxOutputTokens = signal<number | null>(null);
+  savingLimit = signal(false);
+  /**
+   * The current output-token limit when the game is paused because the latest answer for the ply to be
+   * played was cut off at it (outcome TRUNCATED); null otherwise.
+   */
+  truncationPauseLimit = computed<number | null>(() => {
+    const game = this.game();
+    if (!game || game.status !== 'PAUSED' || !game.statusDetail || !game.tournamentId) {
+      return null;
+    }
+    const ply = nextPly(this.moves());
+    const latest = latestAttemptFor(this.attempts(), ply.moveNumber, ply.color);
+    if (latest?.outcome !== 'TRUNCATED') {
+      return null;
+    }
+    return this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  });
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -114,6 +153,8 @@ export class GameView implements OnInit, OnDestroy {
   private loadInFlight = false;
   private loadSub?: Subscription;
   private bufferedLiveMessages: WsMessage[] = [];
+  private attemptsGeneration = 0;
+  private attemptsSub?: Subscription;
 
   /** The position shown on the board: the start position before the first move, else the selected move. */
   currentFen = computed(() => {
@@ -202,6 +243,7 @@ export class GameView implements OnInit, OnDestroy {
     const moves = this.moves();
     const chats = this.chatMessages();
     const game = this.game();
+    const attemptsByPly = notableAttemptsByPly(this.attempts());
 
     if (game?.startedAt) {
       events.push({
@@ -218,8 +260,13 @@ export class GameView implements OnInit, OnDestroy {
     }
 
     moves.forEach((move, index) => {
-      const retrySuffix =
-        move.retryCount > 0
+      const attemptsSummary = summarizeAttempts(
+        attemptsByPly.get(plyKey(move.moveNumber, move.color)) ?? [],
+      );
+      attemptsByPly.delete(plyKey(move.moveNumber, move.color));
+      const retrySuffix = attemptsSummary
+        ? `: ${attemptsSummary}`
+        : move.retryCount > 0
           ? ` after ${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
           : '';
       const overrideSuffix = move.isOverride ? ' (override)' : '';
@@ -233,6 +280,22 @@ export class GameView implements OnInit, OnDestroy {
         createdAtMs: Date.parse(move.createdAt),
         createdAtLabel: move.createdAt,
         moveIndex: index,
+      });
+    });
+
+    // Plies whose attempts did not end in a move (forfeit, or a pause after a cut-off answer).
+    attemptsByPly.forEach((plyAttempts) => {
+      const last = plyAttempts[plyAttempts.length - 1];
+      events.push({
+        id: `attempts-${plyKey(last.moveNumber, last.color)}`,
+        type: 'attempts',
+        label: `${last.color === 'WHITE' ? 'White' : 'Black'} move ${last.moveNumber} not played`,
+        detail: `${this.timelinePlayerName(last.color, last.modelId)}: ${summarizeAttempts(plyAttempts)}`,
+        tone: 'warning',
+        icon: 'error_outline',
+        createdAtMs: Date.parse(last.createdAt),
+        createdAtLabel: last.createdAt,
+        moveIndex: moves.length > 0 ? moves.length - 1 : null,
       });
     });
 
@@ -316,6 +379,7 @@ export class GameView implements OnInit, OnDestroy {
     this.wsSub?.unsubscribe();
     this.reconnectSub?.unsubscribe();
     this.loadSub?.unsubscribe();
+    this.attemptsSub?.unsubscribe();
     this.turnState.stopTicker();
   }
 
@@ -336,11 +400,16 @@ export class GameView implements OnInit, OnDestroy {
           this.currentMoveIndex.set(game.moves.length - 1);
         }
         this.replayBufferedLiveMessages();
+        this.loadAttempts();
 
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
-            next: (tournament) =>
-              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds || 60),
+            next: (tournament) => {
+              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds || 60);
+              this.tournamentMaxOutputTokens.set(
+                tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+              );
+            },
             error: () => this.turnState.setMoveTimeoutSeconds(60),
           });
         } else {
@@ -359,6 +428,28 @@ export class GameView implements OnInit, OnDestroy {
           verticalPosition: 'top',
         });
         void this.router.navigate(['/tournaments']);
+      },
+    });
+  }
+
+  /**
+   * (Re)loads the game's attempts. A newer request supersedes an older one: the older one is cancelled and
+   * its late answer ignored, so an outdated list cannot hide a newer cut-off answer (and "Save and resume").
+   */
+  loadAttempts() {
+    const generation = ++this.attemptsGeneration;
+    this.attemptsSub?.unsubscribe();
+    this.attemptsSub = this.api.getGameAttempts(this.gameId).subscribe({
+      next: (attempts) => {
+        if (generation === this.attemptsGeneration) {
+          this.attempts.set(attempts);
+        }
+      },
+      // The feed falls back to the retry counts stored with each move.
+      error: () => {
+        if (generation === this.attemptsGeneration) {
+          this.attempts.set([]);
+        }
       },
     });
   }
@@ -437,15 +528,19 @@ export class GameView implements OnInit, OnDestroy {
           msg.turnStartedAt,
           msg.turnDeadlineAt,
         );
+        if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
+          this.loadAttempts();
+        }
         break;
 
       case 'retry':
-        this.retryInfo.set(`${msg.color} attempt ${msg.attemptNumber}: ${msg.reason}`);
+        this.retryInfo.set(retryText(msg));
         break;
 
       case 'forfeit':
         this.turnState.clearServerTurnState();
         this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
+        this.loadAttempts();
         break;
     }
   }
@@ -483,6 +578,12 @@ export class GameView implements OnInit, OnDestroy {
     }
     this.game.update((g) => (g ? { ...g, currentFen: msg.fen, pgn: msg.pgn ?? g.pgn } : g));
     this.retryInfo.set(null);
+    const plyHadAttempts = this.attempts().some(
+      (a) => a.moveNumber === msg.moveNumber && a.color === msg.color,
+    );
+    if ((msg.retryCount ?? 0) > 0 || plyHadAttempts) {
+      this.loadAttempts();
+    }
   }
 
   private replayBufferedLiveMessages() {
@@ -530,19 +631,34 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
+  /** Saves a raised output-token limit for the game's tournament, then resumes the game. */
+  saveLimitAndResume(maxOutputTokens: number) {
+    const tournamentId = this.game()?.tournamentId;
+    if (!tournamentId || this.savingLimit()) {
+      return;
+    }
+    this.savingLimit.set(true);
+    this.api
+      .updateTournament(tournamentId, { maxOutputTokens })
+      .pipe(
+        switchMap((tournament) => {
+          this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens);
+          return this.api.startGame(this.gameId);
+        }),
+      )
+      .subscribe({
+        next: () => this.savingLimit.set(false),
+        error: (err) => {
+          this.savingLimit.set(false);
+          this.showServerError(err, 'Failed to save the limit and resume the game.');
+        },
+      });
+  }
+
   resumeGame() {
     this.api.startGame(this.gameId).subscribe({
       error: (err) => {
-        const serverError = err?.error;
-        const message =
-          typeof serverError === 'string'
-            ? serverError
-            : (serverError?.error ?? 'Failed to resume the game.');
-        this.snackbar.open(message, 'Dismiss', {
-          duration: 4000,
-          horizontalPosition: 'right',
-          verticalPosition: 'top',
-        });
+        this.showServerError(err, 'Failed to resume the game.');
       },
     });
   }
@@ -701,8 +817,27 @@ export class GameView implements OnInit, OnDestroy {
     return game?.blackPlayerName || fallbackModel || 'Black';
   }
 
+  private showServerError(err: { error?: unknown } | null | undefined, fallback: string): void {
+    const serverError = err?.error as string | { error?: string } | null | undefined;
+    const message =
+      typeof serverError === 'string' ? serverError : (serverError?.error ?? fallback);
+    this.snackbar.open(message, 'Dismiss', {
+      duration: 4000,
+      horizontalPosition: 'right',
+      verticalPosition: 'top',
+    });
+  }
+
   private normalizeMessage(value: string): string | null {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+}
+
+function retryText(msg: RetryWsMessage): string {
+  const reason =
+    msg.outcome === 'ILLEGAL_MOVE' && msg.proposedMove
+      ? `illegal move ${msg.proposedMove}`
+      : msg.reason;
+  return `${msg.color} attempt ${msg.attemptNumber}: ${reason}`;
 }

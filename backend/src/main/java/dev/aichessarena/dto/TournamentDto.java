@@ -16,6 +16,7 @@ public record TournamentDto(
         int matchupBestOf,
         Integer finalsBestOf,
         boolean trashTalkEnabled,
+        int maxOutputTokens,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<ParticipantDto> participants,

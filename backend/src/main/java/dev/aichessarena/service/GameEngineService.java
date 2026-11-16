@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.repository.GameRepository;
 import com.github.bhlangonijr.chesslib.Board;
@@ -199,6 +200,9 @@ public class GameEngineService {
 
             int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
             int moveTimeoutSeconds = game.tournament != null ? game.tournament.moveTimeoutSeconds : 60;
+            int maxOutputTokens = game.tournament != null
+                    ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
+            boolean trashTalkEnabled = game.tournament == null || game.tournament.trashTalkEnabled;
             GameTurnService.TurnResult turnResult = gameTurnService.playTurn(new GameTurnService.TurnRequest(
                     gameId,
                     pgn,
@@ -219,7 +223,9 @@ public class GameEngineService {
                     "WHITE".equals(sideToMove) ? whitePromptVersion : blackPromptVersion,
                     "WHITE".equals(sideToMove) ? whitePromptHash : blackPromptHash,
                     game.totalCostUsd,
-                    loop::shouldContinue
+                    loop::shouldContinue,
+                    maxOutputTokens,
+                    trashTalkEnabled
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

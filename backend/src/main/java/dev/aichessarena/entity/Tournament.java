@@ -51,6 +51,14 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "trash_talk_enabled", nullable = false)
     public boolean trashTalkEnabled = true;
 
+    /** Cap on generated tokens per model answer (OpenRouter max_tokens; includes reasoning tokens). */
+    @Column(name = "max_output_tokens", nullable = false)
+    public int maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS;
+
+    public static final int DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+    public static final int MIN_MAX_OUTPUT_TOKENS = 128;
+    public static final int MAX_MAX_OUTPUT_TOKENS = 32768;
+
     /** Client-generated id of the create request; makes retried creations return the same tournament. */
     @Column(name = "client_request_id", unique = true)
     public UUID clientRequestId;

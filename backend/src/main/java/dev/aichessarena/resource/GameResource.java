@@ -3,6 +3,7 @@ package dev.aichessarena.resource;
 import dev.aichessarena.dto.*;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameEngineService;
 import jakarta.inject.Inject;
@@ -22,6 +23,9 @@ public class GameResource {
 
     @Inject
     MoveRepository moveRepository;
+
+    @Inject
+    MoveAttemptRepository moveAttemptRepository;
 
     @Inject
     GameEngineService gameEngineService;
@@ -83,6 +87,18 @@ public class GameResource {
     public Response getMoves(@PathParam("id") UUID id) {
         return Response.ok(
                 moveRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList()
+        ).build();
+    }
+
+    /** Every model attempt of the game, including rejected ones, ordered by move number and time. */
+    @GET
+    @Path("/{id}/attempts")
+    public Response getAttempts(@PathParam("id") UUID id) {
+        if (gameRepository.findById(id) == null) {
+            return Response.status(404).build();
+        }
+        return Response.ok(
+                moveAttemptRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList()
         ).build();
     }
 

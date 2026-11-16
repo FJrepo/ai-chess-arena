@@ -283,12 +283,20 @@ public class GameWebSocket {
     }
 
     public void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason) {
+        broadcastRetry(gameId, color, attemptNumber, reason, null, null);
+    }
+
+    /** {@code outcome} is a {@code MoveAttempt.Outcome} name; {@code proposedMove} is the rejected move, if any. */
+    public void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason,
+                               String outcome, String proposedMove) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "retry");
         msg.put("gameId", gameId.toString());
         msg.put("color", color);
         msg.put("attemptNumber", attemptNumber);
         msg.put("reason", reason);
+        if (outcome != null) msg.put("outcome", outcome);
+        if (proposedMove != null) msg.put("proposedMove", proposedMove);
         broadcast(gameId, msg.toString());
     }
 

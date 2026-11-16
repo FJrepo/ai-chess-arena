@@ -129,6 +129,55 @@ class PromptServiceTest {
     }
 
     @Test
+    void defaultPromptStillContainsTheTrashTalkRuleThatTheSilentVariantReplaces() {
+        assertTrue(promptService.getDefaultSystemPromptTemplate().contains(PromptService.TRASH_TALK_RULE));
+    }
+
+    @Test
+    void silentPromptReplacesTheTrashTalkRuleAndMarksTheVersion() {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                null, null, "WHITE", "Opponent Bot", "model/opponent", false);
+
+        assertFalse(prompt.prompt().contains(PromptService.TRASH_TALK_RULE));
+        assertFalse(prompt.prompt().contains("trash talk if you want"));
+        assertTrue(prompt.prompt().contains(PromptService.SILENT_MESSAGE_RULE));
+        assertTrue(prompt.prompt().contains("You are playing as WHITE in this game."));
+        assertEquals("v2-silent", prompt.version());
+    }
+
+    @Test
+    void silentPromptWithCustomInstructionsKeepsBothSuffixes() {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                null, "Play the London.", "BLACK", "Opponent Bot", "model/opponent", false);
+
+        assertTrue(prompt.prompt().contains(PromptService.SILENT_MESSAGE_RULE));
+        assertTrue(prompt.prompt().contains("Play the London."));
+        assertEquals("v2+custom-instructions-silent", prompt.version());
+    }
+
+    @Test
+    void enabledTrashTalkMatchesTheFiveArgumentPrompt() {
+        PromptService.ResolvedPrompt legacy = promptService.buildSystemPrompt(
+                null, null, "WHITE", "Opponent Bot", "model/opponent");
+        PromptService.ResolvedPrompt enabled = promptService.buildSystemPrompt(
+                null, null, "WHITE", "Opponent Bot", "model/opponent", true);
+
+        assertEquals(legacy, enabled);
+        assertEquals("v2", enabled.version());
+    }
+
+    @Test
+    void silentModeLeavesLegacyCustomTemplatesUntouched() {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                "Play as %s against %s (%s). You can trash talk if you want.", null,
+                "WHITE", "Opponent Bot", "model/opponent", false);
+
+        assertEquals("Play as WHITE against Opponent Bot (model/opponent). You can trash talk if you want.",
+                prompt.prompt());
+        assertEquals("legacy-custom-template", prompt.version());
+    }
+
+    @Test
     void computePromptHashIsDeterministicAndSensitiveToChanges() {
         String hashA1 = promptService.computePromptHash("Prompt A");
         String hashA2 = promptService.computePromptHash("Prompt A");

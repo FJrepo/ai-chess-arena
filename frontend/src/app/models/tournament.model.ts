@@ -17,6 +17,11 @@ export interface Tournament {
   matchupBestOf: 1 | 3 | 5 | 7;
   finalsBestOf: 1 | 3 | 5 | 7 | null;
   trashTalkEnabled: boolean;
+  /**
+   * Cap on generated tokens per model answer (includes reasoning tokens); cut-off answers pause the game.
+   * Always sent by the backend (default 4096); optional only so existing test fixtures stay valid.
+   */
+  maxOutputTokens?: number;
   createdAt: string;
   updatedAt: string;
   participants: Participant[];
@@ -83,6 +88,36 @@ export interface Move {
   createdAt: string;
 }
 
+export type MoveAttemptOutcome =
+  | 'ACCEPTED'
+  | 'ILLEGAL_MOVE'
+  | 'PARSE_FAILURE'
+  | 'EMPTY_RESPONSE'
+  | 'TRUNCATED'
+  | 'TIMEOUT'
+  | 'PROVIDER_RETRYABLE'
+  | 'PROVIDER_FATAL'
+  | 'DISCARDED';
+
+/** One model answer for a ply, including rejected ones (GET /api/games/{id}/attempts). */
+export interface MoveAttempt {
+  id: string;
+  moveNumber: number;
+  color: 'WHITE' | 'BLACK';
+  attemptNumber: number;
+  modelId: string | null;
+  outcome: MoveAttemptOutcome;
+  proposedMove: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  reasoningTokens: number | null;
+  costUsd: number | null;
+  responseTimeMs: number | null;
+  finishReason: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   moveNumber: number;
@@ -146,6 +181,10 @@ export interface RetryWsMessage {
   color: 'WHITE' | 'BLACK';
   attemptNumber: number;
   reason: string;
+  /** MoveAttempt outcome of the rejected answer, e.g. 'ILLEGAL_MOVE'. */
+  outcome?: MoveAttemptOutcome;
+  /** The rejected move, when the answer contained one. */
+  proposedMove?: string | null;
 }
 
 export interface ForfeitWsMessage {

@@ -41,8 +41,36 @@
   @if (game.status === 'PAUSED' && game.statusDetail) {
     <div class="pause-alert" role="status">
       <mat-icon>pause_circle</mat-icon>
-      <span>Paused: {{ game.statusDetail }}. Fix the problem, then resume the game.</span>
+      @if (showRaiseLimit()) {
+        <span>Paused: {{ game.statusDetail }}.</span>
+      } @else {
+        <span>Paused: {{ game.statusDetail }}. Fix the problem, then resume the game.</span>
+      }
     </div>
+    @if (showRaiseLimit()) {
+      <div class="raise-limit">
+        <mat-form-field appearance="outline">
+          <mat-label>Max output tokens per answer</mat-label>
+          <input
+            matInput
+            type="number"
+            min="128"
+            max="32768"
+            step="128"
+            [(ngModel)]="newMaxOutputTokens"
+          />
+          <mat-hint>Currently {{ truncationLimit }}; 128–32768, includes reasoning tokens</mat-hint>
+        </mat-form-field>
+        <button
+          mat-flat-button
+          type="button"
+          [disabled]="!canSaveLimit()"
+          (click)="saveAndResume()"
+        >
+          Save and resume
+        </button>
+      </div>
+    }
   }
   @if (retryInfo) {
     <div class="retry-alert"><mat-icon>warning</mat-icon> {{ retryInfo }}</div>

@@ -63,6 +63,7 @@ public class GameConversationService {
     }
 
     PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color) {
+        boolean trashTalkEnabled = game.tournament == null || game.tournament.trashTalkEnabled;
         if (game.tournament == null) {
             return promptService.buildSystemPrompt(
                     null,
@@ -72,7 +73,8 @@ public class GameConversationService {
                     opponentDescriptor(
                             "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
                             "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
-                    )
+                    ),
+                    trashTalkEnabled
             );
         }
 
@@ -103,7 +105,8 @@ public class GameConversationService {
                 customInstructions,
                 color,
                 opponentName,
-                opponentModel
+                opponentModel,
+                trashTalkEnabled
         );
     }
 

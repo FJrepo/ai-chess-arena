@@ -70,7 +70,7 @@ public class OpenRouterService {
     @ConfigProperty(name = "game.default-temperature", defaultValue = "0.7")
     double defaultTemperature;
 
-    @ConfigProperty(name = "game.default-max-tokens", defaultValue = "500")
+    @ConfigProperty(name = "game.default-max-tokens", defaultValue = "4096")
     int defaultMaxTokens;
 
     @Inject
@@ -88,11 +88,19 @@ public class OpenRouterService {
     }
 
     public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout) {
+        return chat(modelId, messages, requestTimeout, defaultMaxTokens);
+    }
+
+    /**
+     * Sends one chat completion. {@code maxOutputTokens} caps the generated tokens of the answer (OpenRouter
+     * {@code max_tokens}, which includes reasoning tokens for reasoning models).
+     */
+    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout, int maxOutputTokens) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("model", modelId);
             body.put("temperature", defaultTemperature);
-            body.put("max_tokens", defaultMaxTokens);
+            body.put("max_tokens", maxOutputTokens);
 
             ArrayNode msgs = body.putArray("messages");
             for (ChatMsg msg : messages) {
@@ -151,6 +159,9 @@ public class OpenRouterService {
                         "OpenRouter returned a malformed choice", elapsed, response.body());
             }
             String content = message.path("content").asText(null);
+            String finishReason = json.path("choices").get(0).path("finish_reason").asText(null);
+            JsonNode reasoningNode = json.at("/usage/completion_tokens_details/reasoning_tokens");
+            Integer reasoningTokens = reasoningNode.isNumber() ? reasoningNode.asInt() : null;
             int promptTokens = json.at("/usage/prompt_tokens").asInt(0);
             int completionTokens = json.at("/usage/completion_tokens").asInt(0);
 
@@ -160,7 +171,8 @@ public class OpenRouterService {
                 cost = json.get("usage").get("cost").asDouble();
             }
 
-            return new LlmResponse(content, promptTokens, completionTokens, cost, elapsed, response.body(), false, null);
+            return new LlmResponse(content, promptTokens, completionTokens, cost, elapsed, response.body(), false, null,
+                    ProviderOutcome.OK, 200, finishReason, reasoningTokens);
         } catch (HttpConnectTimeoutException e) {
             LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, e.getMessage());
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
@@ -591,18 +603,26 @@ public class OpenRouterService {
             boolean timedOut,
             String errorMessage,
             ProviderOutcome outcome,
-            int httpStatus
+            int httpStatus,
+            String finishReason,
+            Integer reasoningTokens
     ) {
         public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
                            long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage) {
             this(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse, timedOut,
-                    errorMessage, timedOut ? ProviderOutcome.TIMEOUT : ProviderOutcome.OK, timedOut ? 0 : 200);
+                    errorMessage, timedOut ? ProviderOutcome.TIMEOUT : ProviderOutcome.OK, timedOut ? 0 : 200,
+                    null, null);
         }
 
         static LlmResponse providerFailure(ProviderOutcome outcome, int httpStatus, String errorMessage,
                                            long responseTimeMs, String rawResponse) {
             return new LlmResponse(null, 0, 0, null, responseTimeMs, rawResponse, false,
-                    errorMessage, outcome, httpStatus);
+                    errorMessage, outcome, httpStatus, null, null);
+        }
+
+        /** The answer stopped because it hit the output-token limit. */
+        public boolean truncated() {
+            return "length".equals(finishReason);
         }
 
         public boolean isProviderFailure() {
