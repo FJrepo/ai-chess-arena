@@ -305,6 +305,58 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
+    void anAnswerCompleteBeforeTheDeadlineCountsEvenIfTheCallerLooksLater() throws IOException {
+        // Fake clock: the answer is complete at 66 ms, the caller only checks at 1,517 ms (deadline 1,000 ms).
+        LlmResponse response = chatWithDelayedCaller(66, 1_517, 1_000);
+
+        assertEquals(ProviderOutcome.OK, response.outcome());
+        assertEquals("e4", response.content());
+    }
+
+    @Test
+    void anAnswerCompleteOnlyAfterTheDeadlineIsATimeoutEvenIfItIsThereWhenTheCallerLooks() throws IOException {
+        LlmResponse response = chatWithDelayedCaller(1_200, 1_517, 1_000);
+
+        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        assertTrue(response.timedOut());
+    }
+
+    /**
+     * Sends a request with a fake clock: the server sets the clock to {@code completeAtMs} before it answers (so the
+     * answer is complete at that time), and the caller resumes only at {@code callerResumesAtMs}, after the
+     * response future is done.
+     */
+    private LlmResponse chatWithDelayedCaller(long completeAtMs, long callerResumesAtMs, long deadlineMs)
+            throws IOException {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+        byte[] body = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}".getBytes(StandardCharsets.UTF_8);
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            clock.set(Duration.ofMillis(completeAtMs).toNanos());
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+            exchange.close();
+        });
+        server.start();
+        OpenRouterService service = service("http://127.0.0.1:" + server.getAddress().getPort());
+        service.nanoClock = clock::get;
+        service.sendObserver = sent -> {
+            try {
+                sent.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            }
+            clock.set(Duration.ofMillis(callerResumesAtMs).toNanos());
+        };
+
+        return service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                OpenRouterService.AnswerDeadline.after(Duration.ofMillis(deadlineMs), 0L), 100);
+    }
+
+    @Test
     void modelValidationHonoursFailOpenWhenTheCatalogIsUnavailable() throws IOException {
         OpenRouterService service = serviceAnswering(503, "");
         server.createContext("/models", exchange -> {

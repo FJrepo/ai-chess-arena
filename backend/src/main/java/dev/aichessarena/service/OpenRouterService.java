@@ -31,6 +31,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
 @ApplicationScoped
@@ -89,6 +91,9 @@ public class OpenRouterService {
 
     /** Monotonic clock for deadlines ({@link System#nanoTime()}); replaceable in tests. */
     LongSupplier nanoClock = System::nanoTime;
+
+    /** Sees each chat request's response future right after it is sent; a test seam for a delayed caller. */
+    Consumer<CompletableFuture<?>> sendObserver = sent -> { };
 
     @Inject
     ObjectMapper objectMapper;
@@ -163,15 +168,19 @@ public class OpenRouterService {
                     .timeout(Duration.ofNanos(sendBudgetNanos))
                     .build();
 
+            // The completion time is taken when the last body byte has been read, before the future completes, so it
+            // is known whenever the future is done and the deadline is judged by it, not by when the caller looks.
+            AtomicReference<Long> completedAtNanos = new AtomicReference<>();
             pending = httpClient.sendAsync(request, info -> {
                 responseStatus.set(info.statusCode());
-                return HttpResponse.BodyHandlers.ofString().apply(info);
+                return HttpResponse.BodySubscribers.mapping(HttpResponse.BodyHandlers.ofString().apply(info),
+                        responseBody -> {
+                            completedAtNanos.set(nanoClock.getAsLong());
+                            return responseBody;
+                        });
             });
-            long waitNanos = deadline.remainingNanos(nanoClock.getAsLong());
-            if (waitNanos <= 0) {
-                throw new TimeoutException("No time left to wait for the answer");
-            }
-            HttpResponse<String> response = pending.get(waitNanos, TimeUnit.NANOSECONDS);
+            sendObserver.accept(pending);
+            HttpResponse<String> response = awaitAnswer(pending, deadline, completedAtNanos);
             long elapsed = elapsedMs(startNanos);
 
             if (response.statusCode() != 200) {
@@ -209,6 +218,31 @@ public class OpenRouterService {
             return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
                     "OpenRouter request failed: " + abbreviate(String.valueOf(e.getMessage())), 0, null);
         }
+    }
+
+    /**
+     * Waits until the deadline for the complete response. An answer that was complete before the deadline is used
+     * even if this thread only looks after it (a delayed caller); only an answer that was really incomplete at the
+     * deadline ends in a {@link TimeoutException}.
+     */
+    private HttpResponse<String> awaitAnswer(CompletableFuture<HttpResponse<String>> pending, AnswerDeadline deadline,
+                                             AtomicReference<Long> completedAtNanos)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        long waitNanos = Math.max(0L, deadline.remainingNanos(nanoClock.getAsLong()));
+        HttpResponse<String> response;
+        try {
+            response = pending.get(waitNanos, TimeUnit.NANOSECONDS);
+        } catch (TimeoutException e) {
+            if (!pending.isDone()) {
+                throw e;
+            }
+            response = pending.get(); // completed right as the wait ended; judged by its completion time below
+        }
+        Long completedAt = completedAtNanos.get();
+        if (completedAt != null && deadline.remainingNanos(completedAt) < 0) {
+            throw new TimeoutException("The answer was complete only after the deadline");
+        }
+        return response;
     }
 
     private LlmResponse parseCompletion(String modelId, String responseBody, long elapsed) {

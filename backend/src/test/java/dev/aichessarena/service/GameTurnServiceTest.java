@@ -86,6 +86,8 @@ class GameTurnServiceTest {
         assertEquals(0, fixture.moves.lastRetryCount);
         assertEquals(3, fixture.openRouter.calls);
         assertEquals(List.of(10L, 20L), fixture.sleptMs);
+        // The backoff waits are taken from the same turn deadline.
+        assertEquals(List.of(30_000L, 29_990L, 29_970L), fixture.openRouter.remainingMsAtCall);
         assertEquals(2, fixture.websocket.retryReasons.size());
         assertTrue(fixture.websocket.retryReasons.getFirst().contains("provider retry 1 of 3"));
         assertNull(fixture.lifecycle.pauseDetail);
@@ -379,6 +381,42 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void aProviderBackoffThatRunsPastTheDeadlinePausesWithoutAnotherRequest() {
+        // 29 s pass in a failing request; the 500 ms backoff fits in the remaining second but takes twice as long
+        // (a busy host), so the turn deadline passes while waiting.
+        Fixture fixture = new Fixture(failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
+                VALID_MOVE);
+        fixture.openRouter.callDurationsMs.add(29_000L);
+        fixture.service.providerRetryBackoffMs = new long[] {500L};
+        fixture.service.sleeper = ms -> {
+            fixture.sleptMs.add(ms);
+            fixture.openRouter.clockNanos[0] += 2 * ms * 1_000_000L;
+        };
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.pausedGame());
+        assertEquals("OpenRouter server error (HTTP 503)", fixture.lifecycle.pauseDetail);
+        assertEquals(500L, fixture.sleptMs.stream().mapToLong(Long::longValue).sum());
+        assertEquals(1, fixture.openRouter.calls);
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
+    @Test
+    void aProviderBackoffLongerThanTheTimeLeftPausesWithoutWaiting() {
+        Fixture fixture = new Fixture(failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
+                VALID_MOVE);
+        fixture.openRouter.callDurationsMs.add(29_800L);
+        fixture.service.providerRetryBackoffMs = new long[] {500L};
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.pausedGame());
+        assertEquals(List.of(), fixture.sleptMs);
+        assertEquals(1, fixture.openRouter.calls);
+    }
+
+    @Test
     void aDeadlinePassedDuringAnAttemptForfeitsWithoutSendingAnotherRequest() {
         Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
         // The illegal answer arrives exactly at the deadline: no time is left for a retry.
@@ -544,7 +582,11 @@ class GameTurnServiceTest {
             service.gameMoveService = moves;
             service.moveAttemptService = attempts;
             service.providerRetryBackoffMs = new long[] {10L, 20L, 40L};
-            service.sleeper = sleptMs::add;
+            // Backoff waits pass on the same clock as the model calls, so they count against the turn deadline.
+            service.sleeper = ms -> {
+                sleptMs.add(ms);
+                openRouter.clockNanos[0] += ms * 1_000_000L;
+            };
             service.nanoClock = () -> openRouter.clockNanos[0];
         }
     }
