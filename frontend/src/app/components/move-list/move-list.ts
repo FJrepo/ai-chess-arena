@@ -11,7 +11,12 @@ import {
 } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { Move } from '../../models/tournament.model';
-import { QualityBadge, qualityBadge, qualityTooltip } from '../../utils/move-quality';
+import {
+  QualityBadge,
+  qualityBadge,
+  qualityTooltip,
+  missedMateTooltip,
+} from '../../utils/move-quality';
 
 interface MovePair {
   number: number;
@@ -75,6 +80,10 @@ export class MoveListComponent implements AfterViewChecked {
   /** "Blunder: winning chances 72% → 18% (−3.2)", or a note for forced and overridden moves. */
   tooltip(move: Move): string | null {
     return qualityTooltip(move.quality);
+  }
+
+  missedMate(move: Move): string | null {
+    return missedMateTooltip(move.quality);
   }
 
   formatTime(ms: number | null): string {

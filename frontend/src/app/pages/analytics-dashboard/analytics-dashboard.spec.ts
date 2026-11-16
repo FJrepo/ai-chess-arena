@@ -1,7 +1,98 @@
+import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
+import { ApiService } from '../../services/api.service';
 import { AnalyticsComparisonModel } from '../../models/analytics.model';
 import { AnalyticsDashboard } from './analytics-dashboard';
 
 describe('AnalyticsDashboard', () => {
+  it('renders conversion counts, coverage and n/a in the selected comparison scope', async () => {
+    const response = {
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 3,
+      models: [
+        comparisonRow('model.converted', {
+          gamesPlayed: 3,
+          conversion: {
+            evaluatedGames: 2,
+            winningPositionsReached: 2,
+            converted: 1,
+            adjudicatedWins: 1,
+            thrownAway: 1,
+            missedMates: 4,
+          },
+        }),
+        comparisonRow('model.unknown'),
+        comparisonRow('model.zero', {
+          conversion: {
+            evaluatedGames: 1,
+            winningPositionsReached: 0,
+            converted: 0,
+            adjudicatedWins: 0,
+            thrownAway: 0,
+            missedMates: 0,
+          },
+        }),
+      ],
+    };
+    TestBed.configureTestingModule({
+      imports: [AnalyticsDashboard],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getTournaments: () => of([]),
+            getAnalyticsComparison: () => of(response),
+            getAnalyticsHealth: () => of(null),
+            getAnalyticsReliability: () => of(null),
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(AnalyticsDashboard);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const table = element.querySelector('.conversion-table');
+    expect(table?.querySelectorAll('thead th')).toHaveLength(6);
+    expect(table?.textContent).toContain('Adjudicated wins');
+    const rows = Array.from(table?.querySelectorAll('tbody tr') ?? []);
+    const converted = rows.find((row) => row.textContent?.includes('model.converted'));
+    expect(converted?.querySelector('.table-note')?.textContent).toContain(
+      '2 of 3 games evaluated',
+    );
+    expect(
+      Array.from(converted?.querySelectorAll('td.num') ?? []).map((cell) =>
+        cell.textContent?.trim(),
+      ),
+    ).toEqual(['2', '1', '1', '1', '4']);
+    const unknown = rows.find((row) => row.textContent?.includes('model.unknown'));
+    expect(
+      Array.from(unknown?.querySelectorAll('td.num') ?? []).every(
+        (cell) => cell.textContent?.trim() === 'n/a',
+      ),
+    ).toBe(true);
+    const zero = rows.find((row) => row.textContent?.includes('model.zero'));
+    expect(
+      Array.from(zero?.querySelectorAll('td.num') ?? []).every(
+        (cell) => cell.textContent?.trim() === '0',
+      ),
+    ).toBe(true);
+    expect(element.querySelector('.conversion-table-card .table-footnote')?.textContent).toContain(
+      '≥90%',
+    );
+    fixture.destroy();
+  });
+
+  it('distinguishes unknown conversion counts from observed zero', () => {
+    const component = new AnalyticsDashboard({} as any);
+    expect(component.conversionCount(null)).toBe('n/a');
+    expect(component.conversionCount(undefined)).toBe('n/a');
+    expect(component.conversionCount(0)).toBe('0');
+  });
+
   it('sorts comparison rows by win rate by default', () => {
     const component = new AnalyticsDashboard({} as any);
     component.comparison.set({

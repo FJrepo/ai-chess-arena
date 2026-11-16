@@ -135,6 +135,18 @@
             </div>
             <div class="resignation-row">
               <mat-slide-toggle
+                class="adjudication-toggle"
+                [(ngModel)]="adjudicationEnabled"
+                aria-describedby="adjudication-hint"
+                >Adjudicate decisive wins</mat-slide-toggle
+              >
+              <span class="caption resignation-hint" id="adjudication-hint"
+                >Model games only: award a win after 10 plies of forced mate or +10 pawns; off by
+                default.</span
+              >
+            </div>
+            <div class="resignation-row">
+              <mat-slide-toggle
                 class="resignation-toggle"
                 [(ngModel)]="resignationAllowed"
                 aria-describedby="resignation-hint"

@@ -39,6 +39,8 @@ public record GameDto(
         GameQualitySummaryDto qualitySummary,
         /** How the game ended by resignation; only with the moves and only for a resignation, otherwise null. */
         ResignationDto resignation,
+        /** Decisive-position adjudication evidence; only with the moves of an adjudicated game. */
+        AdjudicationDto adjudication,
         /** Grows with every status change; live status updates carry it too (see Game.statusRevision). */
         long statusRevision,
         /**

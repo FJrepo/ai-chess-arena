@@ -88,6 +88,12 @@
       </span>
     </div>
   </div>
+  @if (adjudicationText(); as text) {
+    <div class="resignation-panel adjudication-panel" role="status">
+      <mat-icon class="resignation-icon" aria-hidden="true">gavel</mat-icon>
+      <span class="resignation-title">{{ text }}</span>
+    </div>
+  }
   @if (resignation(); as r) {
     <div class="resignation-panel" role="status">
       <mat-icon class="resignation-icon" aria-hidden="true">flag</mat-icon>

@@ -12,6 +12,7 @@ import dev.aichessarena.dto.ModelReliabilityResponseDto;
 import dev.aichessarena.dto.TournamentCostSummaryDto;
 import dev.aichessarena.dto.TalkativenessDto;
 import dev.aichessarena.dto.PromptCachingDto;
+import dev.aichessarena.dto.ConversionDto;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -457,6 +458,7 @@ public class AnalyticsService {
             accumulator.rejectedAttemptsCosted = true;
         });
         registerMoveQuality(byModel, moves);
+        registerConversion(byModel, terminalGames, moves);
         registerTalkativeness(byModel, moves, scope.messages());
         registerResignations(byModel, terminalGames, moves);
         for (AttemptUsage usage : scope.attemptUsage()) {
@@ -565,7 +567,13 @@ public class AnalyticsService {
                     accumulator.resignationsEvaluated,
                     accumulator.resignationsWhileNotLosing,
                     accumulator.wonByResignation,
-                    promptCaching(entry.getKey(), accumulator.cacheUsage, cacheReadSavings)
+                    promptCaching(entry.getKey(), accumulator.cacheUsage, cacheReadSavings),
+                    new ConversionDto(accumulator.evaluatedGames,
+                            accumulator.evaluatedGames == 0 ? null : accumulator.winningPositionsReached,
+                            accumulator.evaluatedGames == 0 ? null : accumulator.converted,
+                            accumulator.evaluatedGames == 0 ? null : accumulator.adjudicatedWins,
+                            accumulator.evaluatedGames == 0 ? null : accumulator.thrownAway,
+                            accumulator.analyzedMoves == 0 ? null : accumulator.missedMates)
             ));
         }
 
@@ -676,6 +684,9 @@ public class AnalyticsService {
                 accumulator.analyzedMoves++;
                 accumulator.analyzedGameIds.add(gameId);
                 accumulator.centipawnLossTotal += quality.centipawnLoss();
+                if (quality.missedMate()) {
+                    accumulator.missedMates++;
+                }
                 if (quality.judgement() == MoveQualityClassifier.Judgement.INACCURACY) {
                     accumulator.inaccuracies++;
                 } else if (quality.judgement() == MoveQualityClassifier.Judgement.MISTAKE) {
@@ -685,6 +696,54 @@ public class AnalyticsService {
                 }
             }
         });
+    }
+
+    /** Probability threshold for a winning position, using the same model as move quality. */
+    static final double CONVERSION_WIN_CHANCE = 0.90;
+
+    /**
+     * Each model side/game counts once if any evaluated position (including the opponent's moves, overrides and
+     * forced moves) reached 90% winning chances. Missing evaluations give no evidence, never an assumed zero.
+     */
+    private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
+        Map<UUID, List<MoveQualityClassifier.Score>> scoresByGame = new HashMap<>();
+        for (Move move : moves) {
+            MoveQualityClassifier.Score score = MoveQualityClassifier.score(
+                    move.evaluationCp, move.evaluationMate, move.color);
+            if (score != null && move.game != null) {
+                scoresByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(score);
+            }
+        }
+        for (Game game : games) {
+            List<MoveQualityClassifier.Score> scores = scoresByGame.getOrDefault(game.id, List.of());
+            if (!countsAsPlayed(game) || scores.isEmpty()) {
+                continue;
+            }
+            for (boolean white : new boolean[] {true, false}) {
+                String model = modelSide(game, white);
+                if (model == null) {
+                    continue;
+                }
+                ComparisonAccumulator accumulator = byModel.computeIfAbsent(model, ignored -> new ComparisonAccumulator());
+                accumulator.evaluatedGames++;
+                int sign = white ? 1 : -1;
+                boolean reached = scores.stream()
+                        .anyMatch(score -> (1 + sign * score.winningChances()) / 2 >= CONVERSION_WIN_CHANCE);
+                if (!reached) {
+                    continue;
+                }
+                accumulator.winningPositionsReached++;
+                var outcome = outcomeClassifier.classifyComparison(game, white);
+                if (outcome.win()) {
+                    accumulator.converted++;
+                    if (game.resultReason == Game.ResultReason.ADJUDICATION) {
+                        accumulator.adjudicatedWins++;
+                    }
+                } else if (outcome.draw() || outcome.loss()) {
+                    accumulator.thrownAway++;
+                }
+            }
+        }
     }
 
     /**
@@ -1011,6 +1070,12 @@ public class AnalyticsService {
         private long resignationsEvaluated;
         private long resignationsWhileNotLosing;
         private long wonByResignation;
+        private long evaluatedGames;
+        private long winningPositionsReached;
+        private long converted;
+        private long adjudicatedWins;
+        private long thrownAway;
+        private long missedMates;
         private final List<AttemptUsage> cacheUsage = new ArrayList<>();
     }
 

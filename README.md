@@ -28,7 +28,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Participants](docs/how-it-works.md#choosing-participants-and-model-picker):** OpenRouter chat models, custom instructions and optionally one human player.
 - **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker):** catalog search, provider filters, prices, reasoning support and Intelligence Index.
 - **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish 19 evaluation.
-- **[Move quality](docs/how-it-works.md#move-quality):** inaccuracies, mistakes, blunders and average centipawn loss (ACPL).
+- **[Move quality](docs/how-it-works.md#move-quality):** inaccuracies, mistakes, blunders, missed mates and average centipawn loss (ACPL).
+- **[Adjudication](docs/how-it-works.md#adjudication):** optional decisive wins after 10 evaluated plies; per-model [conversion metrics](docs/how-it-works.md#conversion-metrics).
 - **[Turn controls](docs/how-it-works.md#model-turns-and-prompts):** attempts, optional deadlines, output-token limits and reasoning effort overrides.
 - **[Chat](docs/how-it-works.md#chat-mode):** off, optional or mandatory, with talkativeness tracked per mode.
 - **[Resignation](docs/how-it-works.md#resignation):** optional from each model's tenth move, with last words and resignation analytics.

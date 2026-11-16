@@ -40,7 +40,7 @@ public final class MoveQualityClassifier {
     static final double BLUNDER_DROP = 0.3;
 
     /** The start position counts as roughly equal. */
-    static final Score START = new Score(0, 0.0);
+    static final Score START = new Score(0, 0.0, null);
 
     /** Moves in play order: by move number, White before Black, then by creation time. */
     public static final Comparator<Move> PLAY_ORDER = Comparator
@@ -63,13 +63,17 @@ public final class MoveQualityClassifier {
     /**
      * One move's quality. Winning chances are the mover's, as a probability (0–1). {@code judgement} is null for a
      * move without a notable error; {@code centipawnLoss} and {@code judgement} are null for an excluded move.
+     * A missed mate loses the mover's forced mate; a longer mate and delivered mate 0 both keep it. Excluded moves
+     * never get a missed-mate marker; the former distance is null without a marker.
      */
     public record MoveQuality(
             Judgement judgement,
             Integer centipawnLoss,
             double winChanceBefore,
             double winChanceAfter,
-            Exclusion excluded
+            Exclusion excluded,
+            boolean missedMate,
+            Integer missedMateIn
     ) {
     }
 
@@ -98,8 +102,8 @@ public final class MoveQualityClassifier {
     public record GameSummary(SideSummary white, SideSummary black) {
     }
 
-    /** An evaluation from White's point of view: capped centipawns and winning chances (−1…+1). */
-    record Score(int cp, double winningChances) {
+    /** White's view: capped centipawns, winning chances (−1…+1), and absolute mate distance (null for cp). */
+    record Score(int cp, double winningChances, Integer mateIn) {
     }
 
     /**
@@ -115,13 +119,13 @@ public final class MoveQualityClassifier {
             } else {
                 sign = mate > 0 ? 1 : -1;
             }
-            return new Score(sign * CP_CAP, sign);
+            return new Score(sign * CP_CAP, sign, Math.abs(mate));
         }
         if (cp == null) {
             return null;
         }
         int capped = Math.max(-CP_CAP, Math.min(CP_CAP, cp));
-        return new Score(capped, winningChances(capped));
+        return new Score(capped, winningChances(capped), null);
     }
 
     /** Lichess's logistic model: centipawns to winning chances between −1 and +1. */
@@ -149,12 +153,16 @@ public final class MoveQualityClassifier {
         double chancesBefore = sign * before.winningChances();
         double chancesAfter = sign * after.winningChances();
         int loss = Math.max(0, Math.min(CP_CAP, sign * before.cp() - sign * after.cp()));
+        boolean missedMate = before.mateIn() != null && chancesBefore > 0
+                && !(after.mateIn() != null && chancesAfter > 0);
         return new MoveQuality(
                 judgement(chancesBefore - chancesAfter),
                 loss,
                 probability(chancesBefore),
                 probability(chancesAfter),
-                null
+                null,
+                missedMate,
+                missedMate ? before.mateIn() : null
         );
     }
 
@@ -232,7 +240,7 @@ public final class MoveQualityClassifier {
     }
 
     private static MoveQuality excluded(MoveQuality judged, Exclusion reason) {
-        return new MoveQuality(null, null, judged.winChanceBefore(), judged.winChanceAfter(), reason);
+        return new MoveQuality(null, null, judged.winChanceBefore(), judged.winChanceAfter(), reason, false, null);
     }
 
     /** Winning chances (−1…+1) as a probability (0–1). */

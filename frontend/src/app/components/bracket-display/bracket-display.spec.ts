@@ -3,6 +3,29 @@ import { BracketDisplay } from './bracket-display';
 import { Game } from '../../models/tournament.model';
 
 describe('BracketDisplay', () => {
+  it('counts adjudication as a normal series win across color swaps', () => {
+    const component = new BracketDisplay();
+    component.games = [
+      game('final-1', 'Final', 0, {
+        seriesId: 'series-final',
+        seriesBestOf: 3,
+        status: 'COMPLETED',
+        result: 'WHITE_WINS',
+        resultReason: 'ADJUDICATION',
+      }),
+      game('final-2', 'Final', 0, {
+        ...swapped(),
+        seriesId: 'series-final',
+        seriesBestOf: 3,
+        seriesGameNumber: 2,
+      }),
+    ];
+    const card = component.rounds()[0].games[0];
+    expect(card.whiteWins).toBe(0);
+    expect(card.blackWins).toBe(1);
+    expect(component.getResultText(card)).toContain('White wins');
+  });
+
   it('orders larger rounds before smaller rounds', () => {
     const component = new BracketDisplay();
 

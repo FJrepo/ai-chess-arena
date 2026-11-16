@@ -6,6 +6,7 @@ import dev.aichessarena.service.MoveQualityClassifier.GameSummary;
 import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
 import dev.aichessarena.service.MoveQualityClassifier.SideSummary;
 import dev.aichessarena.service.ResignationAnalysis;
+import dev.aichessarena.service.WinAdjudication;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +22,7 @@ public final class DtoMapper {
                 t.drawPolicy.name(),
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
-                t.resignationAllowed,
+                t.resignationAllowed, t.adjudicationEnabled,
                 t.maxOutputTokens,
                 apiValue(t.reasoningEffort),
                 t.createdAt, t.updatedAt,
@@ -93,6 +94,7 @@ public final class DtoMapper {
                 includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of(),
                 qualitySummary,
                 resignation,
+                includeMoves ? adjudication(g, g.moves) : null,
                 g.statusRevision,
                 apiValue(g.requestedReasoningEffort("WHITE")),
                 apiValue(g.requestedReasoningEffort("BLACK"))
@@ -137,6 +139,18 @@ public final class DtoMapper {
         );
     }
 
+    private static AdjudicationDto adjudication(Game game, List<Move> moves) {
+        if (game.resultReason != Game.ResultReason.ADJUDICATION || moves.isEmpty()) {
+            return null;
+        }
+        String color = game.result == Game.GameResult.WHITE_WINS ? "WHITE" : "BLACK";
+        Move last = moves.getLast();
+        int sign = "WHITE".equals(color) ? 1 : -1;
+        return new AdjudicationDto(color, WinAdjudication.WINDOW_PLIES,
+                last.evaluationCp != null ? sign * last.evaluationCp : null,
+                last.evaluationMate != null ? Math.abs(last.evaluationMate) : null);
+    }
+
     public static MoveAttemptDto toDto(MoveAttempt a) {
         return new MoveAttemptDto(
                 a.id, a.moveNumber, a.color, a.attemptNumber, a.modelId, a.outcome.name(), a.proposedMove,
@@ -172,7 +186,8 @@ public final class DtoMapper {
                 quality.centipawnLoss(),
                 round4(quality.winChanceBefore()),
                 round4(quality.winChanceAfter()),
-                quality.excluded() != null ? quality.excluded().name() : null
+                quality.excluded() != null ? quality.excluded().name() : null,
+                quality.missedMate(), quality.missedMateIn()
         );
     }
 

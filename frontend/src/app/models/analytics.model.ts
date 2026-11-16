@@ -42,7 +42,18 @@ export interface AnalyticsPromptCaching {
   estimatedSavingsUsd?: number | null;
 }
 
+/** Counts from stored evaluations in finished model-side games; absent/null means unknown. */
+export interface AnalyticsConversion {
+  evaluatedGames: number;
+  winningPositionsReached?: number | null;
+  converted?: number | null;
+  adjudicatedWins?: number | null;
+  thrownAway?: number | null;
+  missedMates?: number | null;
+}
+
 export interface AnalyticsComparisonModel {
+  conversion?: AnalyticsConversion;
   promptCaching?: AnalyticsPromptCaching;
 
   modelId: string;

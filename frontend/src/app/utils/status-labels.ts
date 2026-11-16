@@ -24,6 +24,7 @@ const RESULT_REASON_LABELS: Record<string, string> = {
   TIMEOUT: 'on time',
   FORFEIT_INVALID_MOVES: 'by forfeit after invalid moves',
   RESIGNATION: 'by resignation',
+  ADJUDICATION: 'by adjudication',
 };
 
 /** Reader-facing label for a tournament status; unknown values are humanized. */

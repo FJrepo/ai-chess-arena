@@ -158,6 +158,7 @@ Your opponent is %s (%s).`;
    * default and in every preset, so games are played to the end.
    */
   resignationAllowed = false;
+  adjudicationEnabled = false;
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
   matchupBestOf: Tournament['matchupBestOf'] = 1;
   finalsBestOf: Tournament['finalsBestOf'] = null;
@@ -479,6 +480,7 @@ Your opponent is %s (%s).`;
       finalsBestOf: this.finalsBestOf,
       chatMode: this.chatMode,
       resignationAllowed: this.resignationAllowed,
+      adjudicationEnabled: this.adjudicationEnabled,
       // Left out for the model default, so nothing is sent to OpenRouter.
       ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
       drawPolicy: this.drawPolicy,
@@ -692,6 +694,7 @@ Your opponent is %s (%s).`;
     this.chatMode = preset.chatMode;
     // Presets play every game to the end, with each model's default reasoning effort.
     this.resignationAllowed = false;
+    this.adjudicationEnabled = false;
     this.reasoningEffort = null;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
   }

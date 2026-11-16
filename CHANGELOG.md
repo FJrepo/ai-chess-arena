@@ -8,9 +8,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Upgrade notes
+- Flyway `V18__adjudication.sql` adds `tournaments.adjudication_enabled` (not null, default false). Existing tournaments keep adjudication off; existing results and evaluations stay unchanged. Missed mates and conversion metrics derive from stored evaluations without backfill. Back up before upgrading.
 - Flyway migration `V17__cache_tokens.sql` adds nullable `cached_prompt_tokens` and `cache_write_tokens` columns to `move_attempts` on backend startup. Back up before upgrading. Existing rows and costs remain unchanged; historical cache usage is not backfilled.
 
 ### Added
+- Optional tournament win adjudication for model-vs-model games: at the start of a turn, ten fully evaluated consecutive plies with forced mate or at least +1000 cp for the same side end the game as a decisive win (`ADJUDICATION`). Includes overrides; missing evaluations never block play. Default off, changes apply next turn. Setup switch, game result panel and normal bracket/series progression.
+- Always-on missed-mate move markers and live quality fields; compact per-model Conversion table with winning positions reached (at least 90% winning chances), converted wins, adjudicated wins, thrown-away games and missed mates, with n/a for missing evaluation data.
 - Prompt caching metrics: nullable OpenRouter cache-read and cache-write tokens persisted for every attempt with usage, exposed in the attempts API, and a compact per-model *Prompt caching* analytics table for finished, non-bye games. The table shows prompt tokens, cache reads, hit rate, writes and estimated USD read savings using current catalog prices; incomplete counters and unknown prices show n/a. OpenRouter's reported cost remains authoritative. Measurement only: no prompt changes or `cache_control`.
 - Bracket draw choice on the tournament page: Random draw (UI default) or In added order, with stored seeds shown after generation. Random draws shuffle once and reassign seeds so byes and Higher seed advances follow the drawn order. The bracket-generation API accepts an optional `drawMode=ORDER|RANDOM` query parameter and defaults to ORDER for existing clients; repeated generation still returns 409. No migration or backfill is required.
 
