@@ -4,6 +4,7 @@ import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
@@ -63,7 +64,8 @@ public class GameMoveService {
             int retryCount,
             String promptVersion,
             String promptHash,
-            String expectedFen
+            String expectedFen,
+            ChatMode chatMode
     ) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
@@ -91,6 +93,8 @@ public class GameMoveService {
         move.responseTimeMs = llmResponse.responseTimeMs();
         move.retryCount = retryCount;
         move.rawResponse = llmResponse.rawResponse();
+        // The mode that applied to this move; with a message it also has a chat message (see AnalyticsService).
+        move.chatMode = chatMode;
         moveRepository.persistAndFlush(move);
 
         updateGameState(game, fen, san, moveNumber, color);

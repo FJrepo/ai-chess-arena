@@ -8,10 +8,11 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
-import { Participant, Tournament } from '../../models/tournament.model';
+import { ChatMode, Participant, Tournament } from '../../models/tournament.model';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
@@ -67,6 +68,7 @@ type TournamentConfidence = {
     MatButtonModule,
     MatIconModule,
     MatSlideToggleModule,
+    MatButtonToggleModule,
     MatSelectModule,
     MatProgressSpinnerModule,
     CurrencyPipe,
@@ -97,7 +99,8 @@ Your opponent is %s (%s).`;
   set name(value: string) {
     this.nameValue.set(value);
   }
-  systemRulesTemplate = '';
+  /** Default rules from the backend (OPTIONAL) and, from 1.4 on, the rules of every chat mode. */
+  private promptTemplates: PromptTemplateResponse | null = null;
   sharedCustomInstructions = '';
   /** Off: no time limit per move (sent as moveTimeoutSeconds 0). */
   limitMoveTime = true;
@@ -107,7 +110,25 @@ Your opponent is %s (%s).`;
   maxRetries = 3;
   /** Cap on generated tokens per answer (128-32768); includes reasoning tokens. */
   maxOutputTokens = 4096;
-  trashTalkEnabled = true;
+  /** Whether models talk; sent as chatMode. */
+  chatMode: ChatMode = 'OPTIONAL';
+  readonly chatModeOptions: ReadonlyArray<{ value: ChatMode; label: string; hint: string }> = [
+    {
+      value: 'OFF',
+      label: 'Off',
+      hint: 'Models are told to stay silent; messages they send anyway are dropped.',
+    },
+    {
+      value: 'OPTIONAL',
+      label: 'Optional',
+      hint: 'Models may send a message with a move; whether they do is part of the observation.',
+    },
+    {
+      value: 'MANDATORY',
+      label: 'Mandatory',
+      hint: 'Models are asked for a short message with every move; a missing one is recorded, never penalized.',
+    },
+  ];
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
   matchupBestOf: Tournament['matchupBestOf'] = 1;
   finalsBestOf: Tournament['finalsBestOf'] = null;
@@ -145,7 +166,7 @@ Your opponent is %s (%s).`;
       drawPolicy: Tournament['drawPolicy'];
       matchupBestOf: Tournament['matchupBestOf'];
       finalsBestOf: Tournament['finalsBestOf'];
-      trashTalkEnabled: boolean;
+      chatMode: ChatMode;
       sharedCustomInstructions: string;
     }
   > = {
@@ -157,7 +178,7 @@ Your opponent is %s (%s).`;
       drawPolicy: 'WHITE_ADVANCES',
       matchupBestOf: 1,
       finalsBestOf: null,
-      trashTalkEnabled: true,
+      chatMode: 'OPTIONAL',
       sharedCustomInstructions: '',
     },
     balanced: {
@@ -168,7 +189,7 @@ Your opponent is %s (%s).`;
       drawPolicy: 'HIGHER_SEED_ADVANCES',
       matchupBestOf: 3,
       finalsBestOf: null,
-      trashTalkEnabled: true,
+      chatMode: 'OPTIONAL',
       sharedCustomInstructions: 'Stay practical. Avoid unnecessary risks when ahead.',
     },
     showcase: {
@@ -179,7 +200,7 @@ Your opponent is %s (%s).`;
       drawPolicy: 'REPLAY_GAME',
       matchupBestOf: 3,
       finalsBestOf: 5,
-      trashTalkEnabled: true,
+      chatMode: 'OPTIONAL',
       sharedCustomInstructions: 'Play your strongest chess and keep messages concise.',
     },
   };
@@ -210,17 +231,37 @@ Your opponent is %s (%s).`;
     this.promptTemplateLoadError.set(null);
     this.api.getPromptTemplate().subscribe({
       next: (response: PromptTemplateResponse) => {
-        this.systemRulesTemplate = response.template;
+        this.promptTemplates = response;
         this.promptTemplateVersion.set(response.version);
       },
       error: () => {
-        this.systemRulesTemplate = TournamentSetup.PROMPT_FALLBACK;
+        this.promptTemplates = null;
         this.promptTemplateVersion.set('fallback');
         this.promptTemplateLoadError.set(
           'Failed to load prompt template from backend. Using local fallback.',
         );
       },
     });
+  }
+
+  /** The system rules for the selected chat mode (the default rules from an older backend). */
+  get systemRulesTemplate(): string {
+    const templates = this.promptTemplates;
+    if (!templates) {
+      return this.promptTemplateVersion() === 'fallback' ? TournamentSetup.PROMPT_FALLBACK : '';
+    }
+    return templates.chatModes?.[this.chatMode]?.template ?? templates.template;
+  }
+
+  /** The prompt version of the rules shown, e.g. v2-chat-required for MANDATORY. */
+  systemRulesVersion(): string | null {
+    return (
+      this.promptTemplates?.chatModes?.[this.chatMode]?.version ?? this.promptTemplateVersion()
+    );
+  }
+
+  chatModeHint(): string {
+    return this.chatModeOptions.find((option) => option.value === this.chatMode)?.hint ?? '';
   }
 
   /** Loads the whole catalog (every text-output model, no cap) once; the picker filters it client-side. */
@@ -355,7 +396,7 @@ Your opponent is %s (%s).`;
       maxOutputTokens: this.maxOutputTokens,
       matchupBestOf: this.matchupBestOf,
       finalsBestOf: this.finalsBestOf,
-      trashTalkEnabled: this.trashTalkEnabled,
+      chatMode: this.chatMode,
       drawPolicy: this.drawPolicy,
       participants: this.participants().map((p) => ({
         playerName: p.playerName,
@@ -559,7 +600,7 @@ Your opponent is %s (%s).`;
     this.drawPolicy = preset.drawPolicy;
     this.matchupBestOf = preset.matchupBestOf;
     this.finalsBestOf = preset.finalsBestOf;
-    this.trashTalkEnabled = preset.trashTalkEnabled;
+    this.chatMode = preset.chatMode;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
   }
 

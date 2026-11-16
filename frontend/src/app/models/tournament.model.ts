@@ -1,3 +1,6 @@
+/** OFF: models stay silent. OPTIONAL: models may send a message. MANDATORY: models are asked for one every move. */
+export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
+
 export interface Tournament {
   /** Champion of a completed tournament. */
   winnerName?: string | null;
@@ -20,7 +23,10 @@ export interface Tournament {
   maxRetries: number;
   matchupBestOf: 1 | 3 | 5 | 7;
   finalsBestOf: 1 | 3 | 5 | 7 | null;
+  /** True unless chatMode is OFF; kept for older clients. */
   trashTalkEnabled: boolean;
+  /** Whether models talk: OFF, OPTIONAL (default) or MANDATORY. Absent from backends before 1.4. */
+  chatMode?: ChatMode;
   /**
    * Cap on generated tokens per model answer (includes reasoning tokens); cut-off answers pause the game.
    * Always sent by the backend (default 4096); optional only so existing test fixtures stay valid.
@@ -139,6 +145,8 @@ export interface Move {
   createdAt: string;
   /** Null or absent until both evaluations around the move are known. */
   quality?: MoveQuality | null;
+  /** The chat mode that applied to a model move; absent for human moves, overrides and older backends. */
+  chatMode?: ChatMode | null;
 }
 
 export type MoveAttemptOutcome =

@@ -56,7 +56,8 @@ public class ResponseParserService {
             JsonNode node = objectMapper.readTree(json);
             if (node.has("move")) {
                 String move = node.get("move").asText();
-                String message = node.has("message") ? node.get("message").asText() : null;
+                // "message": null means no message (asText() would turn it into the text "null").
+                String message = node.hasNonNull("message") ? node.get("message").asText() : null;
                 if (move != null && !move.isBlank()) {
                     return new ParseResult(move.trim(), message, "JSON");
                 }

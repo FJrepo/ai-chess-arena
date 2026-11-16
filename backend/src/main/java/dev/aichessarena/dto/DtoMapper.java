@@ -14,11 +14,13 @@ public final class DtoMapper {
     private DtoMapper() {}
 
     public static TournamentDto toDto(Tournament t) {
+        ChatMode chatMode = t.chatMode != null ? t.chatMode : ChatMode.OPTIONAL;
         return new TournamentDto(
                 t.id, t.name, t.status.name(), t.format.name(),
                 t.drawPolicy.name(),
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
-                t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.trashTalkEnabled, t.maxOutputTokens,
+                t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
+                t.maxOutputTokens,
                 t.createdAt, t.updatedAt,
                 t.participants.stream().map(DtoMapper::toDto).toList(),
                 t.games.stream().map(g -> toDto(g, false)).toList(),
@@ -102,7 +104,8 @@ public final class DtoMapper {
                 m.costUsd, m.responseTimeMs, m.retryCount,
                 m.isOverride, m.evaluationCp, m.evaluationMate,
                 m.createdAt,
-                toDto(quality)
+                toDto(quality),
+                m.chatMode != null ? m.chatMode.name() : null
         );
     }
 

@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -178,10 +179,6 @@ public class GameEngineService {
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
         List<OpenRouterService.ChatMsg> blackHistory = conversation.blackHistory();
-        String whitePromptVersion = conversation.whitePrompt().version();
-        String blackPromptVersion = conversation.blackPrompt().version();
-        String whitePromptHash = conversation.whitePrompt().hash();
-        String blackPromptHash = conversation.blackPrompt().hash();
         Game game = gameRepository.findById(gameId);
 
         while (loop.shouldContinue()) {
@@ -213,7 +210,14 @@ public class GameEngineService {
             Integer moveTimeoutSeconds = moveTimeoutSecondsFor(game);
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
-            boolean trashTalkEnabled = game.tournament == null || game.tournament.trashTalkEnabled;
+            // A changed chat mode applies from this turn on: rebuild both prompts so prompt, message handling and the
+            // mode recorded on the move agree. Read from the database: this loop's entities are not refreshed.
+            ChatMode chatMode = gameRepository.findChatMode(gameId);
+            if (chatMode != conversation.chatMode()) {
+                conversation = gameConversationService.refreshSystemPrompts(game, conversation, chatMode);
+            }
+            GameConversationService.PromptContext prompt =
+                    "WHITE".equals(sideToMove) ? conversation.whitePrompt() : conversation.blackPrompt();
             GameTurnService.TurnResult turnResult = gameTurnService.playTurn(new GameTurnService.TurnRequest(
                     gameId,
                     pgn,
@@ -231,12 +235,12 @@ public class GameEngineService {
                     isFirstMove,
                     maxRetries,
                     moveTimeoutSeconds,
-                    "WHITE".equals(sideToMove) ? whitePromptVersion : blackPromptVersion,
-                    "WHITE".equals(sideToMove) ? whitePromptHash : blackPromptHash,
+                    prompt.version(),
+                    prompt.hash(),
                     game.totalCostUsd,
                     loop::shouldContinue,
                     maxOutputTokens,
-                    trashTalkEnabled
+                    prompt.chatMode()
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

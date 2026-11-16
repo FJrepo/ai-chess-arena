@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,14 @@ class ResponseParserServiceTest {
     void setUp() {
         parser = new ResponseParserService();
         parser.objectMapper = new ObjectMapper();
+    }
+
+    @Test
+    void aNullMessageIsNoMessageNotTheTextNull() {
+        ResponseParserService.ParseResult result = parser.parse("{\"move\":\"Nf3\",\"message\":null}");
+
+        assertEquals("Nf3", result.move());
+        assertNull(result.message());
     }
 
     @Test

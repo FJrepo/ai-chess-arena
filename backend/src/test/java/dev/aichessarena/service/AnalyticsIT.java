@@ -2,8 +2,12 @@ package dev.aichessarena.service;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 
+import dev.aichessarena.entity.ChatMessage;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
@@ -11,6 +15,7 @@ import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
+import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
@@ -46,6 +51,9 @@ class AnalyticsIT {
     @Inject
     MoveAttemptRepository attemptRepository;
 
+    @Inject
+    ChatMessageRepository chatMessageRepository;
+
     private UUID tournamentId;
 
     /**
@@ -72,8 +80,10 @@ class AnalyticsIT {
             recent.result = Game.GameResult.WHITE_WINS;
             recent.resultReason = Game.ResultReason.CHECKMATE;
             gameRepository.persist(recent);
-            move(recent, 1, "WHITE", "model-alpha", "0.01", 1);
-            move(recent, 1, "BLACK", "model-beta", "0.02", 0);
+            // Chat was MANDATORY: alpha talked (10 characters without the surrounding spaces), beta stayed silent.
+            move(recent, 1, "WHITE", "model-alpha", "0.01", 1).chatMode = ChatMode.MANDATORY;
+            move(recent, 1, "BLACK", "model-beta", "0.02", 0).chatMode = ChatMode.MANDATORY;
+            chat(recent, 1, "WHITE", "model-alpha", "  Good luck!  ");
             attempt(recent, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0.003");
             attempt(recent, 1, "WHITE", 2, "model-alpha", Outcome.ACCEPTED, "0.01");
             attempt(recent, 1, "BLACK", 1, "model-beta", Outcome.ACCEPTED, "0.02");
@@ -82,7 +92,8 @@ class AnalyticsIT {
             Game old = game(tournament, beta, alpha, 1, GameStatus.COMPLETED, now.minusDays(50), now.minusDays(35));
             old.result = Game.GameResult.WHITE_WINS;
             gameRepository.persist(old);
-            move(old, 1, "BLACK", "model-alpha", "1.00", 0);
+            move(old, 1, "BLACK", "model-alpha", "1.00", 0).chatMode = ChatMode.OPTIONAL;
+            chat(old, 1, "BLACK", "model-alpha", "Outside the window");
             attempt(old, 1, "BLACK", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "1.00");
 
             Game bye = game(tournament, alpha, null, 2, GameStatus.COMPLETED, now.minusDays(2), null);
@@ -109,6 +120,24 @@ class AnalyticsIT {
                 .body("models.find { it.modelId == 'model-alpha' }.firstTryLegalRate", equalTo(0.0f))
                 .body("models.find { it.modelId == 'model-beta' }.totalCostUsd", equalTo(0.02f))
                 .body("models.find { it.modelId == 'model-beta' }.firstTryLegalRate", equalTo(1.0f));
+    }
+
+    @Test
+    void comparisonReportsTalkativenessPerChatModeFromStoredMessages() {
+        given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models.find { it.modelId == 'model-alpha' }.mandatoryChat.moves", equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.mandatoryChat.messages", equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.mandatoryChat.talkRate", equalTo(1.0f))
+                .body("models.find { it.modelId == 'model-alpha' }.mandatoryChat.averageMessageLength",
+                        equalTo(10.0f))
+                // The OPTIONAL move of alpha is in a game outside the window.
+                .body("models.find { it.modelId == 'model-alpha' }.optionalChat.moves", equalTo(0))
+                .body("models.find { it.modelId == 'model-alpha' }.optionalChat", not(hasKey("talkRate")))
+                .body("models.find { it.modelId == 'model-beta' }.mandatoryChat.moves", equalTo(1))
+                .body("models.find { it.modelId == 'model-beta' }.mandatoryChat.messages", equalTo(0))
+                .body("models.find { it.modelId == 'model-beta' }.mandatoryChat.talkRate", equalTo(0.0f));
     }
 
     @Test
@@ -179,7 +208,17 @@ class AnalyticsIT {
         return game;
     }
 
-    private void move(Game game, int moveNumber, String color, String modelId, String cost, int retryCount) {
+    private void chat(Game game, int moveNumber, String color, String modelId, String text) {
+        ChatMessage message = new ChatMessage();
+        message.game = game;
+        message.moveNumber = moveNumber;
+        message.senderColor = color;
+        message.senderModel = modelId;
+        message.message = text;
+        chatMessageRepository.persist(message);
+    }
+
+    private Move move(Game game, int moveNumber, String color, String modelId, String cost, int retryCount) {
         Move move = new Move();
         move.game = game;
         move.moveNumber = moveNumber;
@@ -191,6 +230,7 @@ class AnalyticsIT {
         move.retryCount = retryCount;
         move.createdAt = game.createdAt;
         moveRepository.persist(move);
+        return move;
     }
 
     private void attempt(Game game, int moveNumber, String color, int number, String modelId, Outcome outcome,

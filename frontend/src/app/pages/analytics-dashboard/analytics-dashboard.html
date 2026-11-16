@@ -250,6 +250,64 @@
             <p class="table-footnote">{{ qualityExplanation }}</p>
           </div>
 
+          <div class="table-card talk-table-card">
+            <div class="section-header">
+              <div>
+                <h3>Talkativeness</h3>
+                <p>
+                  How often each model sent a message with its move, by the tournament's chat mode.
+                </p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table talk-table">
+                <thead>
+                  <tr>
+                    <th class="col-model" rowspan="2">Model</th>
+                    <th class="group-head" colspan="2" scope="colgroup">Chat optional</th>
+                    <th class="group-head" colspan="2" scope="colgroup">Chat mandatory</th>
+                  </tr>
+                  <tr>
+                    <th class="num">Talk rate</th>
+                    <th class="num">Avg. length</th>
+                    <th class="num">Compliance</th>
+                    <th class="num">Avg. length</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of talkRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                      </td>
+                      <td class="num">
+                        {{ formatTalkRate(row.optionalChat) }}
+                        @if (talkSample(row.optionalChat); as sample) {
+                          <span class="table-note">{{ sample }}</span>
+                        }
+                      </td>
+                      <td class="num">{{ formatMessageLength(row.optionalChat) }}</td>
+                      <td class="num">
+                        {{ formatTalkRate(row.mandatoryChat) }}
+                        @if (talkSample(row.mandatoryChat); as sample) {
+                          <span class="table-note">{{ sample }}</span>
+                        }
+                      </td>
+                      <td class="num">{{ formatMessageLength(row.mandatoryChat) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="5" class="empty">
+                        No model moves with chat Optional or Mandatory in finished games yet.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ talkExplanation }}</p>
+          </div>
+
           <div class="breakdown-grid">
             <div class="breakdown-card">
               <h3>Color Split</h3>

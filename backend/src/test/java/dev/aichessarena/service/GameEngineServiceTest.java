@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Tournament;
@@ -144,6 +145,23 @@ class GameEngineServiceTest {
         assertEquals(60, runOneTurnFor(null).moveTimeoutSeconds());
     }
 
+    @Test
+    void aTurnUsesTheChatModeOfItsPromptAndAChangedModeRebuildsThePromptsFirst() {
+        // The conversation was built for OPTIONAL (see runOneTurnFor); the tournament is MANDATORY by now.
+        Tournament tournament = tournamentWithTimeout(45);
+        tournament.chatMode = ChatMode.MANDATORY;
+
+        GameTurnService.TurnRequest request = runOneTurnFor(tournament);
+
+        assertEquals(ChatMode.MANDATORY, request.chatMode());
+        assertEquals("v2-chat-required", request.promptVersion());
+        assertTrue(request.history().getFirst().content().contains(PromptService.REQUIRED_MESSAGE_RULE));
+
+        GameTurnService.TurnRequest unchanged = runOneTurnFor(tournamentWithTimeout(45));
+        assertEquals(ChatMode.OPTIONAL, unchanged.chatMode());
+        assertEquals("v1", unchanged.promptVersion(), "the mode did not change, so the prompt is kept");
+    }
+
     /** Runs the real game loop for one turn of a fresh game and returns the request it passed to the turn. */
     private static GameTurnService.TurnRequest runOneTurnFor(Tournament tournament) {
         Game game = new Game();
@@ -162,10 +180,15 @@ class GameEngineServiceTest {
         service.gameConversationService = new GameConversationService() {
             @Override
             public ConversationState initializeConversation(UUID gameId) {
-                return new ConversationState(new Board(), new ArrayList<>(), new ArrayList<>(),
+                List<OpenRouterService.ChatMsg> white = new ArrayList<>();
+                white.add(new OpenRouterService.ChatMsg("system", "rules v1"));
+                List<OpenRouterService.ChatMsg> black = new ArrayList<>();
+                black.add(new OpenRouterService.ChatMsg("system", "rules v1"));
+                return new ConversationState(new Board(), white, black,
                         new PromptContext("v1", "hash-w"), new PromptContext("v1", "hash-b"));
             }
         };
+        service.gameConversationService.promptService = new PromptService();
         List<GameTurnService.TurnRequest> requests = new ArrayList<>();
         service.gameTurnService = new GameTurnService() {
             @Override
@@ -198,6 +221,12 @@ class GameEngineServiceTest {
         @Override
         public Game findById(UUID id) {
             return games.get(id);
+        }
+
+        @Override
+        public ChatMode findChatMode(UUID gameId) {
+            Game game = games.get(gameId);
+            return game.tournament != null ? game.tournament.chatMode : ChatMode.OPTIONAL;
         }
     }
 

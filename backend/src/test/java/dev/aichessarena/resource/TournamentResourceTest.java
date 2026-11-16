@@ -3,9 +3,11 @@ package dev.aichessarena.resource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.dto.CreateTournamentRequest;
 import dev.aichessarena.dto.TournamentDto;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.TournamentRepository;
@@ -85,9 +87,69 @@ class TournamentResourceTest {
         assertEquals(90, stored.moveTimeoutSeconds);
     }
 
+    @Test
+    void createResolvesTheChatModeFromChatModeAndTheOlderTrashTalkFlag() {
+        TournamentResource resource = resourceWithCapturingCreation();
+
+        // neither: the default
+        assertChat(resource.create(withChat(null, null)), "OPTIONAL", true);
+        // only trashTalkEnabled
+        assertChat(resource.create(withChat(null, false)), "OFF", false);
+        assertChat(resource.create(withChat(null, true)), "OPTIONAL", true);
+        // only chatMode (case-insensitive)
+        assertChat(resource.create(withChat("OFF", null)), "OFF", false);
+        assertChat(resource.create(withChat("optional", null)), "OPTIONAL", true);
+        assertChat(resource.create(withChat(" Mandatory ", null)), "MANDATORY", true);
+        // both: chatMode wins
+        assertChat(resource.create(withChat("MANDATORY", false)), "MANDATORY", true);
+        assertChat(resource.create(withChat("OFF", true)), "OFF", false);
+    }
+
+    @Test
+    void createAndUpdateRejectUnknownChatModes() {
+        TournamentResource resource = resourceWithCapturingCreation();
+        Tournament stored = new Tournament();
+        stored.chatMode = ChatMode.MANDATORY;
+        resource.tournamentRepository = repositoryHolding(stored);
+
+        for (String invalid : new String[] {"LOUD", "", "  ", "on"}) {
+            IllegalArgumentException onCreate = assertThrows(IllegalArgumentException.class,
+                    () -> resource.create(withChat(invalid, true)));
+            assertTrue(onCreate.getMessage().contains("OFF, OPTIONAL or MANDATORY"), onCreate.getMessage());
+            assertThrows(IllegalArgumentException.class,
+                    () -> resource.update(UUID.randomUUID(), withChat(invalid, null)));
+        }
+        assertEquals(ChatMode.MANDATORY, stored.chatMode);
+    }
+
+    @Test
+    void updateKeepsTheChatModeUnlessOneOfTheFieldsIsSent() {
+        TournamentResource resource = new TournamentResource();
+        Tournament stored = new Tournament();
+        stored.chatMode = ChatMode.MANDATORY;
+        resource.tournamentRepository = repositoryHolding(stored);
+
+        assertChat(resource.update(UUID.randomUUID(), withChat(null, null)), "MANDATORY", true);
+        assertChat(resource.update(UUID.randomUUID(), withChat(null, false)), "OFF", false);
+        assertChat(resource.update(UUID.randomUUID(), withChat(null, true)), "OPTIONAL", true);
+        assertChat(resource.update(UUID.randomUUID(), withChat("MANDATORY", false)), "MANDATORY", true);
+        assertEquals(ChatMode.MANDATORY, stored.chatMode);
+    }
+
+    private static void assertChat(Response response, String chatMode, boolean trashTalkEnabled) {
+        TournamentDto dto = (TournamentDto) response.getEntity();
+        assertEquals(chatMode, dto.chatMode());
+        assertEquals(trashTalkEnabled, dto.trashTalkEnabled());
+    }
+
+    private static CreateTournamentRequest withChat(String chatMode, Boolean trashTalkEnabled) {
+        return new CreateTournamentRequest("Chat", null, null, null, null, null, trashTalkEnabled, null, null, null,
+                null, chatMode);
+    }
+
     private static CreateTournamentRequest withTimeout(String name, Integer moveTimeoutSeconds) {
         return new CreateTournamentRequest(name, null, moveTimeoutSeconds, null, null, null, null, null, null, null,
-                null);
+                null, null);
     }
 
     private static TournamentResource resourceWithCapturingCreation() {
@@ -127,7 +189,7 @@ class TournamentResourceTest {
         resource.analyticsService = new AnalyticsService();
 
         assertThrows(IllegalArgumentException.class, () -> resource.create(
-                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null, null, null, null)
+                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null, null, null, null, null)
         ));
     }
 
@@ -140,7 +202,7 @@ class TournamentResourceTest {
 
         for (int limit : new int[] {127, 32769}) {
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> resource.create(
-                    new CreateTournamentRequest("Limits", null, null, null, null, null, null, null, null, null, limit)
+                    new CreateTournamentRequest("Limits", null, null, null, null, null, null, null, null, null, limit, null)
             ));
             assertEquals("maxOutputTokens must be between 128 and 32768", error.getMessage());
         }

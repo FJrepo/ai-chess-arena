@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  ChatMode,
   Tournament,
   Participant,
   Game,
@@ -21,6 +22,8 @@ export interface PromptTemplateResponse {
   template: string;
   version: string;
   hash: string;
+  /** The rules of every chat mode by name; absent from backends before 1.4. */
+  chatModes?: Partial<Record<ChatMode, { template: string; version: string; hash: string }>>;
 }
 
 export interface SystemStatusResponse {

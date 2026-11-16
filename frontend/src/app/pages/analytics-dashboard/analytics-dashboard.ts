@@ -16,6 +16,7 @@ import {
   AnalyticsComparisonModel,
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
+  AnalyticsTalkativeness,
   ModelReliabilityResponse,
 } from '../../models/analytics.model';
 
@@ -54,6 +55,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
   readonly qualityExplanation =
     "ACPL is the average centipawn loss per move (lower is better). A move is ?! / ? / ?? when it drops the mover's winning chances by at least 5 / 10 / 15 percentage points (Lichess-style win-probability model); forced moves, overrides and moves without an evaluation are not judged.";
+  readonly talkExplanation =
+    "Talk rate is the share of a model's moves in finished games that came with a non-empty message: with chat Optional it is the model's own choice, with chat Mandatory it shows how often it complied. Average length is in characters per message; moves made with chat Off are left out.";
   readonly comparisonSortOptions = [
     { value: 'winRate', label: 'Win Rate' },
     { value: 'reliabilityScore', label: 'Reliability' },
@@ -162,6 +165,19 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       ),
   );
 
+  /** Models with moves made with chat Optional or Mandatory, most talkative first. */
+  talkRows = computed(() =>
+    (this.comparison()?.models ?? [])
+      .filter((row) => (row.optionalChat?.moves ?? 0) > 0 || (row.mandatoryChat?.moves ?? 0) > 0)
+      .slice()
+      .sort(
+        (a, b) =>
+          talkRateOrder(b.optionalChat) - talkRateOrder(a.optionalChat) ||
+          talkRateOrder(b.mandatoryChat) - talkRateOrder(a.mandatoryChat) ||
+          a.modelId.localeCompare(b.modelId),
+      ),
+  );
+
   colorSplitHighlights = computed(() =>
     this.comparisonRows()
       .filter((row) => row.gamesPlayed > 0)
@@ -236,6 +252,26 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
 
   formatPerGame(value: number | null | undefined): string {
     return value == null ? 'n/a' : formatNumber(value, 'en-US', '1.2-2');
+  }
+
+  /** Share of moves with a message; n/a without moves in that chat mode. */
+  formatTalkRate(talk: AnalyticsTalkativeness | null | undefined): string {
+    return !talk || talk.moves === 0 || talk.talkRate == null ? 'n/a' : this.percent(talk.talkRate);
+  }
+
+  /** "12 of 40 moves"; empty without moves in that chat mode. */
+  talkSample(talk: AnalyticsTalkativeness | null | undefined): string {
+    if (!talk || talk.moves === 0) {
+      return '';
+    }
+    return `${talk.messages} of ${talk.moves} ${talk.moves === 1 ? 'move' : 'moves'}`;
+  }
+
+  /** Average message length in characters; n/a without messages. */
+  formatMessageLength(talk: AnalyticsTalkativeness | null | undefined): string {
+    return talk?.averageMessageLength == null
+      ? 'n/a'
+      : `${formatNumber(talk.averageMessageLength, 'en-US', '1.0-0')} chars`;
   }
 
   formatMs(value: number | null): string {
@@ -408,4 +444,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       maximumFractionDigits: 2,
     }).format(value);
   }
+}
+
+/** Sort key for a talk rate: models without moves in that mode go last. */
+function talkRateOrder(talk: AnalyticsTalkativeness | null | undefined): number {
+  return talk && talk.moves > 0 && talk.talkRate != null ? talk.talkRate : -1;
 }

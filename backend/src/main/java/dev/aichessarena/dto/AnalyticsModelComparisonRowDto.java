@@ -6,7 +6,8 @@ import java.math.BigDecimal;
  * One model's results in finished, non-bye games. Costs include rejected attempts. Move quality counts the model's
  * judged moves (evaluated by Stockfish, not overrides, not forced): {@code averageCentipawnLoss} over those moves
  * and {@code blundersPerGame} over the games with at least one of them ({@code analyzedGames}); both are null
- * without judged moves.
+ * without judged moves. Talkativeness ({@code optionalChat}, {@code mandatoryChat}) counts the model's moves per chat
+ * mode that applied to them and how many of them came with a message.
  */
 public record AnalyticsModelComparisonRowDto(
         String modelId,
@@ -42,5 +43,8 @@ public record AnalyticsModelComparisonRowDto(
         long inaccuracies,
         long mistakes,
         long blunders,
-        BigDecimal blundersPerGame
+        BigDecimal blundersPerGame,
+        // Talkativeness per chat mode; moves made with chat OFF are left out.
+        TalkativenessDto optionalChat,
+        TalkativenessDto mandatoryChat
 ) {}

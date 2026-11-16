@@ -17,6 +17,7 @@ import {
   Game,
   Move,
   ChatMessage,
+  ChatMode,
   MoveAttempt,
   MoveWsMessage,
   RetryWsMessage,
@@ -112,6 +113,8 @@ export class GameView implements OnInit, OnDestroy {
   attempts = signal<MoveAttempt[]>([]);
   /** The tournament's output-token limit, once loaded. */
   tournamentMaxOutputTokens = signal<number | null>(null);
+  /** The tournament's chat mode, once loaded (shown in the chat panel). */
+  tournamentChatMode = signal<ChatMode | null>(null);
   savingLimit = signal(false);
   /**
    * The current output-token limit when the game is paused because the latest answer for the ply to be
@@ -435,6 +438,9 @@ export class GameView implements OnInit, OnDestroy {
               this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
               this.tournamentMaxOutputTokens.set(
                 tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+              );
+              this.tournamentChatMode.set(
+                tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
               );
             },
             // Limit unknown: only a deadline sent by the server shows a countdown.

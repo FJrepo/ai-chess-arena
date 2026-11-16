@@ -17,7 +17,9 @@ public record TournamentDto(
         int maxRetries,
         int matchupBestOf,
         Integer finalsBestOf,
+        // True unless chatMode is OFF; kept for older clients.
         boolean trashTalkEnabled,
+        String chatMode,
         int maxOutputTokens,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,

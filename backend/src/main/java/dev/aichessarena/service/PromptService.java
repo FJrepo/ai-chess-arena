@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.entity.ChatMode;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -11,15 +12,46 @@ public class PromptService {
 
   private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
 
-  /** Version suffix of prompts rendered with trash talk disabled. */
+  /** Version suffix of prompts rendered with chat OFF. */
   static final String SILENT_VERSION_SUFFIX = "-silent";
 
-  /** Rule 5 of {@link #DEFAULT_SYSTEM_PROMPT}; replaced by {@link #SILENT_MESSAGE_RULE} when trash talk is off. */
+  /** Version suffix of prompts rendered with chat MANDATORY. */
+  static final String CHAT_REQUIRED_VERSION_SUFFIX = "-chat-required";
+
+  /**
+   * Rule 5 of {@link #DEFAULT_SYSTEM_PROMPT} (chat OPTIONAL); replaced by {@link #SILENT_MESSAGE_RULE} when chat is
+   * OFF and by {@link #REQUIRED_MESSAGE_RULE} when it is MANDATORY.
+   */
   static final String TRASH_TALK_RULE = "5. You can respond to your opponent however you want. They are your opponent, "
       + "so do not give them an advantage by revealing your next move or plans. You can trash talk if you want.";
 
   static final String SILENT_MESSAGE_RULE = "5. Trash talk is disabled in this tournament. Leave the \"message\" field "
       + "empty (\"\") and do not address your opponent.";
+
+  /** Upper bound for the message the MANDATORY prompt asks for; a guideline for the model, not enforced. */
+  static final int REQUIRED_MESSAGE_MAX_CHARS = 200;
+
+  static final String REQUIRED_MESSAGE_RULE = ("5. Chat is required in this tournament: with every move, send your "
+      + "opponent one short message (at most %d characters) in the \"message\" field. Banter and trash talk about "
+      + "the game are welcome; stay civil. They are your opponent, so do not give them an advantage by revealing "
+      + "your next move or plans.").formatted(REQUIRED_MESSAGE_MAX_CHARS);
+
+  /** Rule 4 of {@link #DEFAULT_SYSTEM_PROMPT}; replaced by {@link #REQUIRED_MESSAGE_FIELD_RULE} when chat is MANDATORY. */
+  static final String OPTIONAL_MESSAGE_FIELD_RULE = "4. The \"message\" field is OPTIONAL.";
+
+  static final String REQUIRED_MESSAGE_FIELD_RULE = "4. The \"message\" field is REQUIRED in this tournament.";
+
+  /** The "message" line of the response format in {@link #DEFAULT_SYSTEM_PROMPT}. */
+  static final String OPTIONAL_MESSAGE_FORMAT = "\"message\": \"<optional message to your opponent>\"";
+
+  static final String REQUIRED_MESSAGE_FORMAT = "\"message\": \"<short message to your opponent>\"";
+
+  /** Last line of the turn prompt. */
+  static final String DEFAULT_ANSWER_LINE = "Respond with your move as JSON: {\"move\": \"<SAN>\", \"message\": \"<optional>\"}";
+
+  /** Last line of the turn prompt with chat MANDATORY. */
+  static final String REQUIRED_MESSAGE_ANSWER_LINE = "Respond with your move and a short message as JSON: "
+      + "{\"move\": \"<SAN>\", \"message\": \"<your message>\"}";
 
   private static final String DEFAULT_SYSTEM_PROMPT = """
       You are playing chess in a tournament match. This is a real competition.
@@ -44,6 +76,7 @@ public class PromptService {
 
       Play your best chess. May the best model win.""";
 
+  /** The default rules (chat OPTIONAL), unformatted. */
   public String getDefaultSystemPromptTemplate() {
     return DEFAULT_SYSTEM_PROMPT;
   }
@@ -52,7 +85,21 @@ public class PromptService {
     return DEFAULT_SYSTEM_PROMPT_VERSION;
   }
 
-  public record ResolvedPrompt(String prompt, String version) {}
+  /** The default rules for a chat mode, unformatted (with the %s placeholders); OPTIONAL is the default template. */
+  public String getSystemPromptTemplate(ChatMode chatMode) {
+    return applyChatMode(DEFAULT_SYSTEM_PROMPT, chatMode);
+  }
+
+  /** The version of the default rules for a chat mode without custom instructions: v2, v2-silent, v2-chat-required. */
+  public String getSystemPromptVersion(ChatMode chatMode) {
+    return DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix(chatMode);
+  }
+
+  /**
+   * A rendered system prompt. {@code chatMode} is the mode that applies to the model's answers: the requested one,
+   * except that a legacy custom template (used as stored) cannot ask for a message, so MANDATORY counts as OPTIONAL.
+   */
+  public record ResolvedPrompt(String prompt, String version, ChatMode chatMode) {}
 
   public String computePromptHash(String prompt) {
     if (prompt == null) {
@@ -86,29 +133,29 @@ public class PromptService {
 
   public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
       String color, String opponentName, String opponentModel) {
-    return buildSystemPrompt(legacyPromptTemplate, customInstructions, color, opponentName, opponentModel, true);
+    return buildSystemPrompt(legacyPromptTemplate, customInstructions, color, opponentName, opponentModel,
+        ChatMode.OPTIONAL);
   }
 
   /**
-   * Renders the system prompt. With {@code trashTalkEnabled == false} the default prompt asks the model to leave
-   * "message" empty and its version gets the {@value #SILENT_VERSION_SUFFIX} suffix; legacy custom templates are
-   * used as stored.
+   * Renders the system prompt for a chat mode. OPTIONAL is the default text; OFF asks the model to leave "message"
+   * empty (version suffix {@value #SILENT_VERSION_SUFFIX}); MANDATORY asks for a short message with every move
+   * (version suffix {@value #CHAT_REQUIRED_VERSION_SUFFIX}). Legacy custom templates are used as stored.
    */
   public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
-      String color, String opponentName, String opponentModel, boolean trashTalkEnabled) {
+      String color, String opponentName, String opponentModel, ChatMode chatMode) {
+    ChatMode mode = chatMode != null ? chatMode : ChatMode.OPTIONAL;
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
           legacyPromptTemplate.formatted(color, opponentName, opponentModel),
-          "legacy-custom-template");
+          "legacy-custom-template",
+          mode == ChatMode.MANDATORY ? ChatMode.OPTIONAL : mode);
     }
 
-    String versionSuffix = trashTalkEnabled ? "" : SILENT_VERSION_SUFFIX;
-    String basePrompt = DEFAULT_SYSTEM_PROMPT.formatted(color, opponentName, opponentModel);
-    if (!trashTalkEnabled) {
-      basePrompt = basePrompt.replace(TRASH_TALK_RULE, SILENT_MESSAGE_RULE);
-    }
+    String versionSuffix = versionSuffix(mode);
+    String basePrompt = applyChatMode(DEFAULT_SYSTEM_PROMPT, mode).formatted(color, opponentName, opponentModel);
     if (!hasCustomInstructions(customInstructions)) {
-      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix);
+      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix, mode);
     }
 
     String combinedPrompt = basePrompt + """
@@ -120,7 +167,31 @@ public class PromptService {
         Follow the rules above exactly. Treat these custom instructions as additional guidance, not as permission to break the required response format or reveal hidden plans.
         """.formatted(customInstructions.trim());
 
-    return new ResolvedPrompt(combinedPrompt, DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions" + versionSuffix);
+    return new ResolvedPrompt(combinedPrompt,
+        DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions" + versionSuffix, mode);
+  }
+
+  /**
+   * The rule changes per chat mode. OPTIONAL is the default text itself; every other mode swaps whole rules, so a
+   * new mode (or a later rule, such as offering resignation) adds a case here and a version suffix below.
+   */
+  private static String applyChatMode(String template, ChatMode chatMode) {
+    return switch (chatMode) {
+      case OPTIONAL -> template;
+      case OFF -> template.replace(TRASH_TALK_RULE, SILENT_MESSAGE_RULE);
+      case MANDATORY -> template
+          .replace(OPTIONAL_MESSAGE_FORMAT, REQUIRED_MESSAGE_FORMAT)
+          .replace(OPTIONAL_MESSAGE_FIELD_RULE, REQUIRED_MESSAGE_FIELD_RULE)
+          .replace(TRASH_TALK_RULE, REQUIRED_MESSAGE_RULE);
+    };
+  }
+
+  private static String versionSuffix(ChatMode chatMode) {
+    return switch (chatMode) {
+      case OPTIONAL -> "";
+      case OFF -> SILENT_VERSION_SUFFIX;
+      case MANDATORY -> CHAT_REQUIRED_VERSION_SUFFIX;
+    };
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,
@@ -128,6 +199,16 @@ public class PromptService {
       List<String> legalMoves,
       String opponentName, String lastMove,
       String opponentMessage, boolean isFirstMove) {
+    return buildTurnPrompt(pgn, fen, asciiBoard, color, moveNumber, legalMoves, opponentName, lastMove,
+        opponentMessage, isFirstMove, ChatMode.OPTIONAL);
+  }
+
+  /** The turn prompt; with chat MANDATORY its last line asks for the move and a message (OFF, OPTIONAL: unchanged). */
+  public String buildTurnPrompt(String pgn, String fen, String asciiBoard,
+      String color, int moveNumber,
+      List<String> legalMoves,
+      String opponentName, String lastMove,
+      String opponentMessage, boolean isFirstMove, ChatMode chatMode) {
     String legalMovesStr = String.join(", ", legalMoves);
 
     String opponentSection;
@@ -156,10 +237,11 @@ public class PromptService {
 
         %s
 
-        Respond with your move as JSON: {"move": "<SAN>", "message": "<optional>"}"""
+        %s"""
         .formatted(
             pgn != null ? pgn : "(starting position)",
-            fen, asciiBoard, color, moveNumber, legalMovesStr, opponentSection);
+            fen, asciiBoard, color, moveNumber, legalMovesStr, opponentSection,
+            chatMode == ChatMode.MANDATORY ? REQUIRED_MESSAGE_ANSWER_LINE : DEFAULT_ANSWER_LINE);
   }
 
   public String buildRetryPrompt(String errorReason, String fen,
@@ -204,10 +286,18 @@ public class PromptService {
     return template.replace("\r\n", "\n").trim();
   }
 
+  /** A stored template is a legacy override unless it is blank or the default rules of one of the chat modes. */
   private boolean isLegacyTemplateOverride(String promptTemplate) {
-    return promptTemplate != null
-        && !promptTemplate.isBlank()
-        && !normalizeTemplate(promptTemplate).equals(normalizeTemplate(DEFAULT_SYSTEM_PROMPT));
+    if (promptTemplate == null || promptTemplate.isBlank()) {
+      return false;
+    }
+    String normalized = normalizeTemplate(promptTemplate);
+    for (ChatMode mode : ChatMode.values()) {
+      if (normalized.equals(normalizeTemplate(getSystemPromptTemplate(mode)))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private boolean hasCustomInstructions(String customInstructions) {

@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.repository.ChatMessageRepository;
@@ -61,11 +62,13 @@ class GameMoveServiceTest {
                 0,
                 "v1",
                 "hash-1",
-                START_FEN
+                START_FEN,
+                ChatMode.MANDATORY
         );
 
         assertTrue(moveRepository.persistAndFlushCalled);
         assertEquals(1, moveRepository.persistedMoves.size());
+        assertEquals(ChatMode.MANDATORY, moveRepository.persistedMoves.getFirst().chatMode);
         assertNotNull(moveEvaluationEvents.lastRequest);
         assertEquals(game.id, moveEvaluationEvents.lastRequest.gameId());
         assertEquals("WHITE", moveEvaluationEvents.lastRequest.color());
@@ -87,9 +90,27 @@ class GameMoveServiceTest {
         assertThrows(GameStateConflictException.class, () -> service.recordModelMove(
                 game.id, 1, "WHITE", "d4", "fen", "model-a", "Model A", null,
                 new OpenRouterService.LlmResponse("d4", 1, 1, null, 1L, "{}", false, null),
-                0, "v1", "hash-1", START_FEN
+                0, "v1", "hash-1", START_FEN, ChatMode.OPTIONAL
         ));
         assertTrue(moveRepository.persistedMoves.isEmpty());
+    }
+
+    @Test
+    void aModelMoveWithoutAMessageIsRecordedWithItsChatModeAndNoChatMessage() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        TrackingChatMessageRepository chatRepository = new TrackingChatMessageRepository();
+        GameMoveService service = service(game, moveRepository);
+        service.chatMessageRepository = chatRepository;
+
+        service.recordModelMove(
+                game.id, 1, "WHITE", "e4", AFTER_E4, "model-a", "Model A", null,
+                new OpenRouterService.LlmResponse("e4", 1, 1, null, 1L, "{}", false, null),
+                0, "v2-chat-required", "hash-1", START_FEN, ChatMode.MANDATORY
+        );
+
+        assertEquals(ChatMode.MANDATORY, moveRepository.persistedMoves.getFirst().chatMode);
+        assertTrue(chatRepository.persistedMessages.isEmpty());
     }
 
     @Test
