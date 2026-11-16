@@ -49,7 +49,7 @@ $warning: mat.$orange-palette;
   gap: 20px;
 }
 
-// Compact operator header: title block left, last check + Refresh right.
+// Compact operator header: title block left, Refresh right.
 .system-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
