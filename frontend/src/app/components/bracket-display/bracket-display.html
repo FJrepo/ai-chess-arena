@@ -19,7 +19,12 @@
             <div class="round-matches">
               @for (series of round.games; track series.id) {
                 @let tone = series.stateTone;
-                @let showScore = tone !== 'ready' && tone !== 'pending' && tone !== 'bye';
+                @let hasPlayed =
+                  series.whiteWins > 0 ||
+                  series.blackWins > 0 ||
+                  series.currentGame.seriesGameNumber > 1;
+                @let showScore =
+                  tone !== 'bye' && (hasPlayed || (tone !== 'ready' && tone !== 'pending'));
                 @let showDetail =
                   tone === 'live' ||
                   tone === 'paused' ||

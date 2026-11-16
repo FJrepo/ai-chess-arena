@@ -85,10 +85,11 @@ $warning: mat.$orange-palette;
   padding: 20px 24px 24px;
 }
 
+// Fills the panel so the round columns shrink and long result lines wrap; below the
+// columns' minimum widths it grows past the panel and the scroll area takes over.
 .bracket-content {
   position: relative;
-  width: max-content;
-  min-width: 100%;
+  min-width: min-content;
 }
 
 .connector-layer {
