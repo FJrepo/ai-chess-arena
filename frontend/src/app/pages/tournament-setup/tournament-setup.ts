@@ -12,7 +12,12 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
-import { ChatMode, Participant, Tournament } from '../../models/tournament.model';
+import {
+  ChatMode,
+  DEFAULT_MOVE_TIMEOUT_SECONDS,
+  Participant,
+  Tournament,
+} from '../../models/tournament.model';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
@@ -28,10 +33,16 @@ const PROMPT_TOKENS_PER_MOVE = 1400;
 /** Completion tokens of a typical non-reasoning answer (JSON move plus a short message). */
 const COMPLETION_TOKENS_PER_MOVE = 140;
 /**
- * Typical seconds per model answer for the runtime estimate when there is no time limit per move: fast models
- * answer in seconds, reasoning models often take about a minute. Runtime without a limit is open-ended.
+ * Typical seconds per model answer for the runtime estimate: fast models answer in seconds, reasoning models often
+ * take about a minute. A time limit per move only bounds the slow end, so the likely runtime never exceeds the one
+ * without a limit; without a limit runtime is open-ended.
  */
-export const TYPICAL_MOVE_SECONDS_WITHOUT_LIMIT = 30;
+export const TYPICAL_MOVE_SECONDS = 30;
+/**
+ * Below this limit the setup page warns that reasoning models may run out of time, and the pace reads "Tight".
+ * Running out of time forfeits the game.
+ */
+export const SHORT_MOVE_TIMEOUT_SECONDS = 90;
 /** Moves (plies) per game assumed by the estimate. */
 const ESTIMATED_MOVES_PER_GAME = 70;
 
@@ -104,9 +115,9 @@ Your opponent is %s (%s).`;
   sharedCustomInstructions = '';
   /** Off: no time limit per move (sent as moveTimeoutSeconds 0). */
   limitMoveTime = true;
-  readonly typicalMoveSecondsWithoutLimit = TYPICAL_MOVE_SECONDS_WITHOUT_LIMIT;
+  readonly typicalMoveSeconds = TYPICAL_MOVE_SECONDS;
   /** Seconds per move (10-3600) while limitMoveTime is on. */
-  moveTimeout = 60;
+  moveTimeout = DEFAULT_MOVE_TIMEOUT_SECONDS;
   maxRetries = 3;
   /** Cap on generated tokens per answer (128-32768); includes reasoning tokens. */
   maxOutputTokens = 4096;
@@ -177,7 +188,7 @@ Your opponent is %s (%s).`;
   > = {
     quickstart: {
       name: 'Quick Start Arena',
-      moveTimeout: 30,
+      moveTimeout: 120,
       maxRetries: 2,
       maxOutputTokens: 4096,
       drawPolicy: 'WHITE_ADVANCES',
@@ -188,7 +199,7 @@ Your opponent is %s (%s).`;
     },
     balanced: {
       name: 'Balanced Ladder',
-      moveTimeout: 45,
+      moveTimeout: 180,
       maxRetries: 3,
       maxOutputTokens: 4096,
       drawPolicy: 'HIGHER_SEED_ADVANCES',
@@ -199,7 +210,7 @@ Your opponent is %s (%s).`;
     },
     showcase: {
       name: 'Series Showcase',
-      moveTimeout: 60,
+      moveTimeout: 300,
       maxRetries: 3,
       maxOutputTokens: 8192,
       drawPolicy: 'REPLAY_GAME',
@@ -280,6 +291,15 @@ Your opponent is %s (%s).`;
     return this.resignationAllowed
       ? 'Both models may resign instead of moving from their 10th move on, and are told so.'
       : 'Every game is played to the end; a model that tries to resign must send a move instead.';
+  }
+
+  /** Whether the time limit per move is short enough that reasoning models are likely to forfeit on time. */
+  showShortMoveTimeoutWarning(): boolean {
+    return (
+      this.limitMoveTime &&
+      typeof this.moveTimeout === 'number' &&
+      this.moveTimeout < SHORT_MOVE_TIMEOUT_SECONDS
+    );
   }
 
   chatModeHint(): string {
@@ -499,16 +519,25 @@ Your opponent is %s (%s).`;
     let likelyRuntimeMinutes: number;
     let maxRuntimeMinutes: number | null;
     if (this.limitMoveTime) {
-      const fastMinutesPerGame = Math.max(6, Math.round(this.moveTimeout * 0.22));
-      const slowMinutesPerGame = Math.max(10, Math.round(this.moveTimeout * 0.42));
-      likelyRuntimeMinutes =
-        likelyGames * Math.round((fastMinutesPerGame + slowMinutesPerGame) / 2);
+      // A limit is a ceiling, not a pace: models answer in their typical time unless a short limit cuts them off
+      // (a quarter of the limit), and slow games use about half of the limit per move.
+      const likelyMoveSeconds = Math.min(TYPICAL_MOVE_SECONDS, this.moveTimeout * 0.25);
+      const slowMoveSeconds = this.moveTimeout * 0.5;
+      const likelyMinutesPerGame = Math.max(
+        6,
+        Math.round((ESTIMATED_MOVES_PER_GAME * likelyMoveSeconds) / 60),
+      );
+      const slowMinutesPerGame = Math.max(
+        10,
+        likelyMinutesPerGame,
+        Math.round((ESTIMATED_MOVES_PER_GAME * slowMoveSeconds) / 60),
+      );
+      likelyRuntimeMinutes = likelyGames * likelyMinutesPerGame;
       maxRuntimeMinutes = maxGames * slowMinutesPerGame;
     } else {
       // No time limit per move: a typical answer time for the estimate, and no upper bound.
       likelyRuntimeMinutes =
-        likelyGames *
-        Math.round((ESTIMATED_MOVES_PER_GAME * TYPICAL_MOVE_SECONDS_WITHOUT_LIMIT) / 60);
+        likelyGames * Math.round((ESTIMATED_MOVES_PER_GAME * TYPICAL_MOVE_SECONDS) / 60);
       maxRuntimeMinutes = null;
     }
 
@@ -542,13 +571,8 @@ Your opponent is %s (%s).`;
       (participantCount >= 16 ? 3 : participantCount >= 8 ? 2 : 1) +
       (this.matchupBestOf >= 5 ? 2 : this.matchupBestOf >= 3 ? 1 : 0) +
       (this.finalsBestOf != null && this.finalsBestOf > this.matchupBestOf ? 1 : 0) +
-      (!this.limitMoveTime || this.moveTimeout >= 90
-        ? 3
-        : this.moveTimeout >= 60
-          ? 2
-          : this.moveTimeout >= 45
-            ? 1
-            : 0) +
+      // Longer limits mostly lengthen the slow end; no limit leaves runtime open-ended.
+      (!this.limitMoveTime ? 3 : this.moveTimeout >= 300 ? 2 : this.moveTimeout >= 180 ? 1 : 0) +
       (drawCanExtendSeries ? 1 : 0) +
       (likelyRuntimeMinutes >= 360 ? 2 : likelyRuntimeMinutes >= 120 ? 1 : 0) +
       (likelyCostUsd != null ? (likelyCostUsd >= 5 ? 2 : likelyCostUsd >= 1 ? 1 : 0) : 0);
@@ -574,11 +598,11 @@ Your opponent is %s (%s).`;
       maxRuntimeMinutes,
       paceLabel: !this.limitMoveTime
         ? 'No limit'
-        : this.moveTimeout <= 30
-          ? 'Fast'
-          : this.moveTimeout <= 60
+        : this.moveTimeout < SHORT_MOVE_TIMEOUT_SECONDS
+          ? 'Tight'
+          : this.moveTimeout <= 180
             ? 'Balanced'
-            : 'Slow',
+            : 'Generous',
       riskBand,
       riskReason,
       drawCanExtendSeries,

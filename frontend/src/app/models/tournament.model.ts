@@ -1,3 +1,9 @@
+/**
+ * The backend's time limit per move in seconds (Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS): used when a tournament is
+ * created without one and for games outside a tournament. Running out of time forfeits the game.
+ */
+export const DEFAULT_MOVE_TIMEOUT_SECONDS = 120;
+
 /** OFF: models stay silent. OPTIONAL: models may send a message. MANDATORY: models are asked for one every move. */
 export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
 
@@ -17,7 +23,7 @@ export interface Tournament {
   sharedCustomInstructions: string | null;
   /**
    * Time limit per move in seconds (10-3600); null means no time limit. In create and update requests, 0
-   * removes the limit and an omitted or null value keeps the default (60 s) or the current value.
+   * removes the limit and an omitted or null value keeps the default (120 s) or the current value.
    */
   moveTimeoutSeconds: number | null;
   maxRetries: number;

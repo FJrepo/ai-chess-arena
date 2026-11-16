@@ -4,6 +4,7 @@ import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
+import { DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
   it('adds participant-specific custom instructions when provided', () => {
@@ -66,6 +67,20 @@ describe('TournamentSetup', () => {
     component.create();
 
     expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(16384);
+  });
+
+  it('starts with a 120-second time limit per move and sends it by default', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Default Arena';
+
+    expect(component.limitMoveTime).toBe(true);
+    expect(component.moveTimeout).toBe(120);
+    expect(component.moveTimeout).toBe(DEFAULT_MOVE_TIMEOUT_SECONDS);
+
+    component.create();
+
+    expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(120);
   });
 
   it('sends the move time limit in seconds while the limit is on', () => {
@@ -178,7 +193,23 @@ describe('TournamentSetup', () => {
     expect(component.sharedCustomInstructions).toContain('Play your strongest chess');
     expect(component.maxOutputTokens).toBe(8192);
     expect(component.limitMoveTime).toBe(true);
-    expect(component.moveTimeout).toBe(60);
+    expect(component.moveTimeout).toBe(300);
+  });
+
+  it('presets give 120, 180 and 300 seconds per move, from quickest to most thorough', () => {
+    const timeoutOf = (preset: string) => {
+      const component = new TournamentSetup(
+        createApiService(),
+        createRouter(),
+        createRoute({ preset }),
+      );
+      component.ngOnInit();
+      return component.moveTimeout;
+    };
+
+    expect(timeoutOf('quickstart')).toBe(120);
+    expect(timeoutOf('balanced')).toBe(180);
+    expect(timeoutOf('showcase')).toBe(300);
   });
 
   it('presets switch the move time limit back on with their seconds', () => {
@@ -192,7 +223,129 @@ describe('TournamentSetup', () => {
     component.ngOnInit();
 
     expect(component.limitMoveTime).toBe(true);
-    expect(component.moveTimeout).toBe(30);
+    expect(component.moveTimeout).toBe(120);
+  });
+
+  it('warns about forfeits on time only while the limit is on and below 90 seconds', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+
+    expect(component.showShortMoveTimeoutWarning()).toBe(false);
+
+    component.moveTimeout = 89;
+    expect(component.showShortMoveTimeoutWarning()).toBe(true);
+    component.moveTimeout = 90;
+    expect(component.showShortMoveTimeoutWarning()).toBe(false);
+
+    component.moveTimeout = 30;
+    component.limitMoveTime = false;
+    expect(component.showShortMoveTimeoutWarning()).toBe(false);
+
+    // A cleared number field is no reason to warn.
+    component.limitMoveTime = true;
+    component.moveTimeout = null as unknown as number;
+    expect(component.showShortMoveTimeoutWarning()).toBe(false);
+  });
+
+  it('renders the short-limit warning under the timeout field instead of the range hint', async () => {
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: createApiService() },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element: HTMLElement = fixture.nativeElement;
+    const movesSection = () => element.querySelector('[aria-labelledby="setup-moves-heading"]');
+
+    expect(movesSection()?.querySelector('.timeout-warning')).toBeNull();
+    expect(movesSection()?.textContent).toContain(
+      '10–3600; a model that runs out of time forfeits',
+    );
+
+    fixture.componentInstance.moveTimeout = 60;
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(movesSection()?.querySelector('.timeout-warning')?.textContent?.trim()).toBe(
+      'Reasoning models often need more than a minute per move; running out of time forfeits the game',
+    );
+    expect(movesSection()?.textContent).not.toContain('10–3600');
+  });
+
+  it('labels the move pace Tight below 90 s, Balanced up to 180 s and Generous above', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.participants.set([
+      pricedParticipant('Alpha', 'model-alpha', 1, 1),
+      pricedParticipant('Beta', 'model-beta', 1, 1),
+    ]);
+    const paceAt = (seconds: number) => {
+      component.moveTimeout = seconds;
+      return component.confidenceSummary()?.paceLabel;
+    };
+
+    expect(paceAt(30)).toBe('Tight');
+    expect(paceAt(89)).toBe('Tight');
+    expect(paceAt(90)).toBe('Balanced');
+    expect(paceAt(120)).toBe('Balanced');
+    expect(paceAt(180)).toBe('Balanced');
+    expect(paceAt(181)).toBe('Generous');
+    expect(paceAt(300)).toBe('Generous');
+    component.limitMoveTime = false;
+    expect(component.confidenceSummary()?.paceLabel).toBe('No limit');
+  });
+
+  it('keeps the likely runtime at the typical answer time for generous limits and scales the slow end', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.matchupBestOf = 1;
+    component.finalsBestOf = null;
+    component.participants.set([
+      pricedParticipant('Alpha', 'model-alpha', 1, 1),
+      pricedParticipant('Beta', 'model-beta', 1, 1),
+    ]);
+    const runtimeAt = (seconds: number) => {
+      component.moveTimeout = seconds;
+      const summary = component.confidenceSummary();
+      return [summary?.likelyRuntimeMinutes, summary?.maxRuntimeMinutes];
+    };
+
+    // One game of 70 answers: likely at min(30 s, a quarter of the limit), slow at half the limit.
+    expect(runtimeAt(10)).toEqual([6, 10]);
+    expect(runtimeAt(30)).toEqual([9, 18]);
+    expect(runtimeAt(60)).toEqual([18, 35]);
+    expect(runtimeAt(120)).toEqual([35, 70]);
+    expect(runtimeAt(180)).toEqual([35, 105]);
+    expect(runtimeAt(300)).toEqual([35, 175]);
+
+    // A limit never makes the likely runtime longer than no limit at all.
+    component.limitMoveTime = false;
+    expect(component.confidenceSummary()?.likelyRuntimeMinutes).toBe(35);
+  });
+
+  it('rates the presets Safe or Moderate for a four-player field, not Expensive', () => {
+    const bandOf = (preset: string) => {
+      const component = new TournamentSetup(
+        createApiService(),
+        createRouter(),
+        createRoute({ preset }),
+      );
+      component.ngOnInit();
+      component.participants.set([
+        pricedParticipant('Alpha', 'model-alpha', 1, 1),
+        pricedParticipant('Beta', 'model-beta', 1, 1),
+        pricedParticipant('Gamma', 'model-gamma', 1, 1),
+        pricedParticipant('Delta', 'model-delta', 1, 1),
+      ]);
+      return component.confidenceSummary()?.riskBand;
+    };
+
+    expect(bandOf('quickstart')).toBe('Safe');
+    expect(bandOf('balanced')).toBe('Safe');
+    expect(bandOf('showcase')).toBe('Moderate');
   });
 
   it('estimates runtime without a move time limit as open-ended', () => {
@@ -214,9 +367,10 @@ describe('TournamentSetup', () => {
     expect(summary?.paceLabel).toBe('No limit');
 
     component.limitMoveTime = true;
-    component.moveTimeout = 60;
+    component.moveTimeout = 120;
     const timed = component.confidenceSummary();
-    expect(timed?.maxRuntimeMinutes).toBe(25);
+    expect(timed?.likelyRuntimeMinutes).toBe(35);
+    expect(timed?.maxRuntimeMinutes).toBe(70);
     expect(timed?.paceLabel).toBe('Balanced');
   });
 
