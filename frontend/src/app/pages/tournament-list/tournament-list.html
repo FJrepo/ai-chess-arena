@@ -8,11 +8,6 @@
         activity.
       </p>
     </div>
-    <div class="page-actions">
-      <a mat-raised-button color="primary" routerLink="/tournaments/new">
-        <mat-icon>add</mat-icon> Create Tournament
-      </a>
-    </div>
   </section>
 
   @if (deleteError()) {
@@ -44,10 +39,10 @@
         <mat-label>Status</mat-label>
         <mat-select [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
           <mat-option value="ALL">All statuses</mat-option>
-          <mat-option value="CREATED">Created</mat-option>
-          <mat-option value="IN_PROGRESS">In Progress</mat-option>
-          <mat-option value="COMPLETED">Completed</mat-option>
-          <mat-option value="CANCELLED">Cancelled</mat-option>
+          <mat-option value="CREATED">{{ statusLabel('CREATED') }}</mat-option>
+          <mat-option value="IN_PROGRESS">{{ statusLabel('IN_PROGRESS') }}</mat-option>
+          <mat-option value="COMPLETED">{{ statusLabel('COMPLETED') }}</mat-option>
+          <mat-option value="CANCELLED">{{ statusLabel('CANCELLED') }}</mat-option>
         </mat-select>
       </mat-form-field>
 
@@ -219,43 +214,72 @@
   <div class="tournament-grid">
     @for (tournament of filteredTournaments(); track tournament.id) {
       <mat-card
+        appearance="outlined"
         class="tournament-card"
-        role="button"
-        tabindex="0"
-        (click)="openTournament(tournament.id)"
-        (keydown.enter)="openTournament(tournament.id)"
-        (keydown.space)="openTournament(tournament.id)"
+        [class.is-deleting]="deletingIds().has(tournament.id)"
       >
-        <mat-card-header>
-          <mat-card-title>{{ tournament.name }}</mat-card-title>
-          <mat-card-subtitle>
-            <mat-chip-set>
-              <mat-chip [highlighted]="tournament.status === 'IN_PROGRESS'">
-                {{ tournament.status }}
-              </mat-chip>
-            </mat-chip-set>
-          </mat-card-subtitle>
-        </mat-card-header>
-        <mat-card-content>
-          <p>{{ tournament.participants.length }} participants</p>
-          <p>{{ tournament.games.length }} games</p>
-          <p>Best of {{ tournament.matchupBestOf }} matchups</p>
-          @if (tournament.finalsBestOf) {
-            <p>Finals best of {{ tournament.finalsBestOf }}</p>
-          }
-          <p class="date">Created {{ tournament.createdAt | date }}</p>
-        </mat-card-content>
-        <mat-card-actions align="end">
+        <div class="card-head">
+          <h2 class="card-title">
+            <a class="card-link" [routerLink]="['/tournaments', tournament.id]">
+              {{ tournament.name }}
+            </a>
+          </h2>
           <button
             mat-icon-button
-            color="warn"
             type="button"
-            [disabled]="deletingIds().has(tournament.id)"
-            (click)="deleteTournament(tournament.id, $event)"
+            class="card-menu-trigger"
+            [matMenuTriggerFor]="cardMenu"
+            [attr.aria-label]="'More actions for ' + tournament.name"
           >
-            <mat-icon>delete</mat-icon>
+            <mat-icon>more_vert</mat-icon>
           </button>
-        </mat-card-actions>
+          <mat-menu #cardMenu="matMenu" xPosition="before">
+            <button
+              mat-menu-item
+              type="button"
+              class="delete-action"
+              [disabled]="deletingIds().has(tournament.id)"
+              (click)="deleteTournament(tournament.id, $event)"
+            >
+              <mat-icon>delete</mat-icon>
+              <span>Delete tournament</span>
+            </button>
+          </mat-menu>
+        </div>
+
+        <div class="card-badges">
+          <span class="status-pill" [attr.data-status]="tournament.status">
+            @if (tournament.status === 'COMPLETED') {
+              <mat-icon class="status-icon" aria-hidden="true">check</mat-icon>
+            } @else {
+              <span class="status-dot" aria-hidden="true"></span>
+            }
+            {{ statusLabel(tournament.status) }}
+          </span>
+          <span class="format-pill">Best of {{ tournament.matchupBestOf }}</span>
+          @if (tournament.finalsBestOf) {
+            <span class="format-pill">Final best of {{ tournament.finalsBestOf }}</span>
+          }
+        </div>
+
+        <dl class="card-stats">
+          <div class="stat">
+            <dt>{{ tournament.participants.length === 1 ? 'Participant' : 'Participants' }}</dt>
+            <dd>{{ tournament.participants.length }}</dd>
+          </div>
+          <div class="stat">
+            <dt>{{ tournament.games.length === 1 ? 'Game' : 'Games' }}</dt>
+            <dd>{{ tournament.games.length }}</dd>
+          </div>
+        </dl>
+
+        <div class="card-foot">
+          <span class="date">Created {{ tournament.createdAt | date }}</span>
+          <span class="open-cue" aria-hidden="true">
+            Open
+            <mat-icon>arrow_forward</mat-icon>
+          </span>
+        </div>
       </mat-card>
     }
   </div>

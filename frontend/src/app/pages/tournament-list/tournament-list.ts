@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -8,11 +8,13 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { DatePipe } from '@angular/common';
 import { ApiService, SystemStatusResponse } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import { finalize } from 'rxjs';
+import { tournamentStatusLabel } from '../../utils/status-labels';
 
 @Component({
   selector: 'app-tournament-list',
@@ -26,6 +28,7 @@ import { finalize } from 'rxjs';
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
+    MatMenuModule,
     MatProgressSpinnerModule,
     DatePipe,
   ],
@@ -83,7 +86,8 @@ export class TournamentList implements OnInit {
       const matchesQuery =
         query.length === 0 ||
         tournament.name.toLowerCase().includes(query) ||
-        tournament.status.toLowerCase().includes(query);
+        tournament.status.toLowerCase().includes(query) ||
+        tournamentStatusLabel(tournament.status).toLowerCase().includes(query);
       const matchesStatus = status === 'ALL' || tournament.status === status;
       const matchesBestOf = bestOf === 'ALL' || tournament.matchupBestOf === bestOf;
 
@@ -115,18 +119,13 @@ export class TournamentList implements OnInit {
       this.sortBy() !== 'newest',
   );
 
-  constructor(
-    private api: ApiService,
-    private router: Router,
-  ) {}
+  readonly statusLabel = tournamentStatusLabel;
+
+  constructor(private api: ApiService) {}
 
   ngOnInit() {
     this.api.getTournaments().subscribe((t) => this.tournaments.set(t));
     this.loadSystemStatus();
-  }
-
-  openTournament(id: string): void {
-    this.router.navigate(['/tournaments', id]);
   }
 
   resetFilters(): void {
@@ -176,19 +175,6 @@ export class TournamentList implements OnInit {
           this.deleteError.set(message);
         },
       });
-  }
-
-  statusColor(status: string): string {
-    switch (status) {
-      case 'CREATED':
-        return 'primary';
-      case 'IN_PROGRESS':
-        return 'accent';
-      case 'COMPLETED':
-        return '';
-      default:
-        return 'warn';
-    }
   }
 
   resultCountLabel(): string {
