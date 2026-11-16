@@ -5,11 +5,11 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.time.Duration;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,11 +22,18 @@ public class StockfishService {
     private static final Pattern SCORE_MATE_PATTERN = Pattern.compile("score mate (-?\\d+)");
     private static final Pattern SIDE_TO_MOVE_PATTERN = Pattern.compile("^[^\\s]+\\s+([wb])\\b");
 
-    private Process process;
-    private BufferedReader reader;
-    private BufferedWriter writer;
+    private enum State { STARTING, RECOVERING, READY, UNAVAILABLE, CLOSED }
+
+    @ConfigProperty(name = "stockfish.handshake-timeout", defaultValue = "PT10S")
+    Duration handshakeTimeout = Duration.ofSeconds(10);
+
+    @ConfigProperty(name = "stockfish.evaluation-timeout", defaultValue = "PT30S")
+    Duration evaluationTimeout = Duration.ofSeconds(30);
+
+    private volatile Engine engine;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private volatile boolean available;
+    private volatile State state = State.UNAVAILABLE;
+    private volatile boolean restartPending;
     private volatile String unavailableReason = "Stockfish not initialized";
 
     public record EvalResult(Integer cp, Integer mate) {}
@@ -34,113 +41,242 @@ public class StockfishService {
 
     @PostConstruct
     public void init() {
+        startEngine();
+    }
+
+    // Package-private seam for lifecycle tests without a locally installed engine.
+    Process startProcess() throws IOException {
+        return new ProcessBuilder("stockfish").redirectErrorStream(true).start();
+    }
+
+    private boolean startEngine() {
+        synchronized (this) {
+            if (state == State.CLOSED) return false;
+            state = restartPending ? State.RECOVERING : State.STARTING;
+            unavailableReason = "Stockfish is initializing.";
+        }
         try {
             LOG.info("Starting Stockfish process...");
-            process = new ProcessBuilder("stockfish").start();
-            reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
-
-            sendCommand("uci");
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.equals("uciok")) break;
+            Engine replacement = new Engine(startProcess());
+            synchronized (this) {
+                if (state == State.CLOSED) {
+                    replacement.stop();
+                    return false;
+                }
+                engine = replacement;
+            }
+            replacement.call(() -> {
+                replacement.sendCommand("uci");
+                String line;
+                while ((line = replacement.reader.readLine()) != null) {
+                    if (line.equals("uciok")) {
+                        replacement.sendCommand("setoption name Threads value 1");
+                        replacement.sendCommand("setoption name Hash value 64");
+                        return null;
+                    }
+                }
+                throw new EOFException("Stockfish exited before uciok");
+            }, handshakeTimeout);
+            synchronized (this) {
+                if (state == State.CLOSED) return false;
+                state = State.READY;
+                restartPending = true;
+                unavailableReason = null;
             }
             LOG.info("Stockfish initialized successfully.");
-
-            // Set some default options
-            sendCommand("setoption name Threads value 1");
-            sendCommand("setoption name Hash value 64");
-            available = true;
-            unavailableReason = null;
-
-        } catch (IOException e) {
-            markUnavailable("Stockfish is unavailable: install it locally or use the Docker backend image.");
-            LOG.error("Failed to start Stockfish. Ensure it is installed and in the PATH.", e);
+            return true;
+        } catch (IOException | TimeoutException e) {
+            synchronized (this) {
+                restartPending = false;
+                markUnavailable("Stockfish initialization failed or timed out; restart the backend to retry.");
+            }
+            stopProcess();
+            LOG.error("Failed to initialize Stockfish.", e);
+            return false;
         }
     }
 
     @PreDestroy
     public void cleanup() {
-        LOG.info("Shutting down Stockfish...");
-        try {
-            if (writer != null) {
-                sendCommand("quit");
-            }
-        } catch (Exception ignored) {}
-
-        if (process != null) {
-            process.destroy();
+        synchronized (this) {
+            state = State.CLOSED;
+            restartPending = false;
+            unavailableReason = "Stockfish is shut down.";
         }
+        stopProcess();
+        // Drain queued suppliers: they observe CLOSED and complete with no score.
         executor.shutdown();
     }
 
-    public CompletableFuture<EvalResult> evaluate(String fen, int depth) {
-        if (!isAvailable()) {
-            return CompletableFuture.completedFuture(new EvalResult(null, null));
+    private void stopProcess() {
+        Engine current;
+        synchronized (this) {
+            current = engine;
+            engine = null;
         }
-
-        LOG.debugf("Queuing evaluation for FEN: %s at depth %d", fen, depth);
-        return CompletableFuture.supplyAsync(() -> {
-            synchronized (this) {
-                try {
-                    if (!isEngineReady()) {
-                        markUnavailable("Stockfish process is not running.");
-                        return new EvalResult(null, null);
-                    }
-
-                    LOG.debugf("Starting Stockfish evaluation for FEN: %s", fen);
-                    sendCommand("position fen " + fen);
-                    sendCommand("go depth " + depth);
-
-                    String line;
-                    EvalResult result = new EvalResult(0, null);
-                    while ((line = reader.readLine()) != null) {
-                        LOG.tracef("Stockfish output: %s", line);
-                        if (line.startsWith("info") && line.contains("score")) {
-                            EvalResult parsed = parseScore(line);
-                            if (parsed != null) {
-                                result = parsed;
-                            }
-                        }
-                        if (line.startsWith("bestmove")) {
-                            break;
-                        }
-                    }
-                    result = normalizeToWhitePerspective(result, fen);
-                    LOG.debugf("Evaluation finished: cp=%d, mate=%d", result.cp(), result.mate());
-                    return result;
-                } catch (IOException e) {
-                    markUnavailable("Stockfish process communication failed.");
-                    LOG.error("Error communicating with Stockfish", e);
-                    return new EvalResult(null, null);
-                }
-            }
-        }, executor);
+        if (current != null) current.stop();
     }
 
-    private void sendCommand(String cmd) throws IOException {
-        if (writer == null) {
-            throw new IOException("Stockfish writer is not initialized");
+    public CompletableFuture<EvalResult> evaluate(String fen, int depth) {
+        if (state == State.CLOSED || (state != State.READY && !restartPending)) {
+            return CompletableFuture.completedFuture(new EvalResult(null, null));
         }
-        writer.write(cmd + "\n");
-        writer.flush();
+        try {
+            return CompletableFuture.supplyAsync(() -> evaluatePosition(fen, depth), executor);
+        } catch (RejectedExecutionException e) {
+            // Shutdown may race with submission.
+            return CompletableFuture.completedFuture(new EvalResult(null, null));
+        }
+    }
+
+    private EvalResult evaluatePosition(String fen, int depth) {
+        try {
+            if (state == State.CLOSED) return new EvalResult(null, null);
+            if (!isEngineReady()) {
+                if (!restartPending) return new EvalResult(null, null);
+                // Clear readiness before spawning, including exits between evaluations.
+                synchronized (this) {
+                    if (state == State.CLOSED) return new EvalResult(null, null);
+                    state = State.RECOVERING;
+                    unavailableReason = "Stockfish is recovering.";
+                }
+                stopProcess();
+                if (!startEngine()) return new EvalResult(null, null);
+            }
+            Engine current = engine;
+            if (current == null) return new EvalResult(null, null);
+            return current.call(() -> {
+                current.sendCommand("position fen " + fen);
+                current.sendCommand("go depth " + depth);
+                String line;
+                EvalResult result = new EvalResult(null, null);
+                while ((line = current.reader.readLine()) != null) {
+                    if (line.startsWith("info") && line.contains("score")) {
+                        EvalResult parsed = parseScore(line);
+                        if (parsed != null) result = parsed;
+                    }
+                    if (line.startsWith("bestmove")) {
+                        return normalizeToWhitePerspective(result, fen);
+                    }
+                }
+                throw new EOFException("Stockfish output ended before bestmove");
+            }, evaluationTimeout);
+        } catch (TimeoutException e) {
+            synchronized (this) {
+                restartPending = false;
+                markUnavailable("Stockfish evaluation timed out; restart the backend to retry.");
+            }
+            stopProcess();
+            LOG.warn("Stockfish evaluation timed out; returning no score.", e);
+        } catch (IOException e) {
+            markUnavailable("Stockfish process communication failed.");
+            stopProcess();
+            LOG.warn("Stockfish evaluation failed; returning no score.", e);
+        }
+        return new EvalResult(null, null);
     }
 
     public Status status() {
-        return new Status(isAvailable(), unavailableReason);
+        boolean ready = isAvailable();
+        return new Status(ready, ready ? null
+                : state == State.READY ? "Stockfish process is not running." : unavailableReason);
     }
 
     boolean isAvailable() {
-        return available && isEngineReady();
+        return isEngineReady();
     }
 
-    void markUnavailable(String reason) {
-        available = false;
+    synchronized void markUnavailable(String reason) {
+        if (state == State.CLOSED) return;
         unavailableReason = reason;
+        state = State.UNAVAILABLE;
     }
 
     private boolean isEngineReady() {
-        return process != null && process.isAlive() && reader != null && writer != null;
+        Engine current = engine;
+        return state == State.READY && current != null && current.process.isAlive();
+    }
+
+    /** Isolates blocking protocol I/O so deadlines and shutdown can cancel the waiting worker. */
+    private static final class Engine {
+        final Process process;
+        final BufferedReader reader;
+        final BufferedWriter writer;
+        final ExecutorService io = Executors.newSingleThreadExecutor(Thread.ofPlatform()
+                .daemon().name("stockfish-io").factory());
+        private Future<?> active;
+        private boolean stopped;
+
+        Engine(Process process) {
+            this.process = process;
+            reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
+        }
+
+        <T> T call(Callable<T> operation, Duration timeout) throws IOException, TimeoutException {
+            Future<T> task;
+            synchronized (this) {
+                if (stopped) throw new IOException("Stockfish stopped");
+                task = io.submit(operation);
+                active = task;
+            }
+            try {
+                return task.get(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Stockfish operation interrupted", e);
+            } catch (ExecutionException | CancellationException e) {
+                throw new IOException("Stockfish operation failed or cancelled", e);
+            }
+        }
+
+        void sendCommand(String command) throws IOException {
+            writer.write(command + "\n");
+            writer.flush();
+        }
+
+        void stop() {
+            synchronized (this) {
+                if (stopped) return;
+                stopped = true;
+                if (active != null) active.cancel(true);
+                io.shutdownNow();
+            }
+            // Descendants may inherit stdout and keep the protocol read blocked after the engine exits.
+            // BufferedReader.close() shares that read lock, so keep all closing off the caller.
+            Thread.ofPlatform().daemon().name("stockfish-close").start(() -> {
+                try {
+                    terminateDescendants();
+                } finally {
+                    process.destroyForcibly();
+                    close(process.getInputStream());
+                    close(process.getOutputStream());
+                    close(process.getErrorStream());
+                    close(reader);
+                    close(writer);
+                }
+            });
+        }
+
+        private void terminateDescendants() {
+            var descendants = process.descendants().toList();
+            descendants.reversed().forEach(ProcessHandle::destroyForcibly);
+            try {
+                // Keep the parent alive briefly so it can reap its children before it is killed.
+                CompletableFuture.allOf(descendants.stream().map(ProcessHandle::onExit)
+                        .toArray(CompletableFuture<?>[]::new)).get(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | TimeoutException e) {
+                LOG.debug("Stockfish descendants did not finish exiting before engine termination.", e);
+            }
+        }
+
+        private static void close(Closeable stream) {
+            try {
+                stream.close();
+            } catch (IOException ignored) {}
+        }
     }
 
     static EvalResult parseScore(String line) {

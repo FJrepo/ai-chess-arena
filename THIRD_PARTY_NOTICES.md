@@ -7,21 +7,28 @@ This project distributes third-party software as part of its released artifacts.
 - Component: Stockfish chess engine
 - Upstream project: https://stockfishchess.org/
 - Source repository: https://github.com/official-stockfish/Stockfish
-- License: GNU General Public License v3.0
+- License: GNU General Public License v3.0 or any later version (SPDX: GPL-3.0-or-later)
 - Included in:
   - released backend Docker image
   - local backend Docker builds
 
 ### Bundled version
 
-The backend Docker image currently bundles the official unmodified Stockfish 18 release asset:
+The backend Docker image currently bundles the official unmodified Stockfish 19 release assets, selected by image architecture:
 
-- Release tag: `sf_18`
-- Release page: https://github.com/official-stockfish/Stockfish/releases/tag/sf_18
-- Source tree for that release: https://github.com/official-stockfish/Stockfish/tree/sf_18
-- Bundled binary asset: `stockfish-ubuntu-x86-64-avx2.tar`
-- Asset download URL: https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar
-- Asset SHA256: `536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964`
+- Release tag: `sf_19`
+- Release page: https://github.com/official-stockfish/Stockfish/releases/tag/sf_19
+- Source tree for that release: https://github.com/official-stockfish/Stockfish/tree/sf_19
+- amd64 asset: `stockfish-linux-x86-64-universal.tar.gz`
+- amd64 download: https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz
+- amd64 SHA256: `9defc0d4e55d49c65a6d042f3e571a39fcea499ade6dbe741b53b8c65e03611f`
+- arm64 asset: `stockfish-linux-arm64-universal.tar.gz`
+- arm64 download: https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-arm64-universal.tar.gz
+- arm64 SHA256: `fe26cfd1d9db4c8af3d21e24d9ff34cacb31c1f940085a7583da11796f2bac01`
+- Attribution: Copyright (C) 2004-2026 The Stockfish developers (see upstream AUTHORS).
+- Corresponding source archive (including upstream build instructions): https://github.com/official-stockfish/Stockfish/archive/refs/tags/sf_19.tar.gz
+
+Published images remain amd64-only; the Dockerfile also supports selecting the arm64 asset for source builds. Each image contains only its selected binary. Both upstream release assets include corresponding source and build instructions.
 
 ### Distribution note
 

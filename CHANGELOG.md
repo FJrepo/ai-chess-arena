@@ -7,16 +7,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-### Fixed
-- Concurrent catalog lookups now check freshness and return model data from the same snapshot, rechecking after acquiring the refresh lock. A caller no longer returns an earlier empty or expired catalog when another caller has published a fresh one; the 60-second failure back-off and stale-data reuse are preserved.
-- Analytics comparisons use one cached catalog price snapshot for all model rows and refresh prices in the background, avoiding repeated synchronous OpenRouter timeouts. Failed catalog refreshes back off for 60 seconds and keep stale prices when available; missing prices leave estimated prompt caching savings as n/a.
+### Upgrade notes
+- Flyway migration `V17__cache_tokens.sql` adds nullable `cached_prompt_tokens` and `cache_write_tokens` columns to `move_attempts` on backend startup. Back up before upgrading. Existing rows and costs remain unchanged; historical cache usage is not backfilled.
 
 ### Added
 - Prompt caching metrics: nullable OpenRouter cache-read and cache-write tokens persisted for every attempt with usage, exposed in the attempts API, and a compact per-model *Prompt caching* analytics table for finished, non-bye games. The table shows prompt tokens, cache reads, hit rate, writes and estimated USD read savings using current catalog prices; incomplete counters and unknown prices show n/a. OpenRouter's reported cost remains authoritative. Measurement only: no prompt changes or `cache_control`.
 - Bracket draw choice on the tournament page: Random draw (UI default) or In added order, with stored seeds shown after generation. Random draws shuffle once and reassign seeds so byes and Higher seed advances follow the drawn order. The bracket-generation API accepts an optional `drawMode=ORDER|RANDOM` query parameter and defaults to ORDER for existing clients; repeated generation still returns 409. No migration or backfill is required.
 
-### Upgrade notes
-- Flyway migration `V17__cache_tokens.sql` adds nullable `cached_prompt_tokens` and `cache_write_tokens` columns to `move_attempts` on backend startup. Back up before upgrading. Existing rows and costs remain unchanged; historical cache usage is not backfilled.
+### Changed
+- Bundle Stockfish 19 (`sf_19`) using checksum-pinned universal `.tar.gz` assets selected by Docker target architecture (amd64 or arm64). Published releases remain amd64-only. The local installer now defaults to Stockfish 19 on Linux and macOS. Existing stored evaluations are unchanged; no migration or backfill is required.
+
+### Fixed
+- Stockfish cleanup terminates owned child processes before the engine so inherited output pipes do not leave protocol and stream-closing threads blocked after timeout or shutdown. Stream closing stays off callers.
+- Concurrent catalog lookups now check freshness and return model data from the same snapshot, rechecking after acquiring the refresh lock. A caller no longer returns an earlier empty or expired catalog when another caller has published a fresh one; the 60-second failure back-off and stale-data reuse are preserved.
+- Analytics comparisons use one cached catalog price snapshot for all model rows and refresh prices in the background, avoiding repeated synchronous OpenRouter timeouts. Failed catalog refreshes back off for 60 seconds and keep stale prices when available; missing prices leave estimated prompt caching savings as n/a.
+- Bound Stockfish UCI initialization (10 seconds by default) and evaluations (30 seconds) with configurable deadlines, cancellable shutdown and no-score queue draining after timeout. Report recovery as unavailable until `uciok`. Correct Stockfish licensing to `GPL-3.0-or-later` and compare release image version, source and licence labels separately against exact expected values.
+- An engine exit, EOF or broken pipe discards the interrupted evaluation and returns no score. The next queued evaluation attempts one engine restart without replaying the failed input; requests arriving during the replacement handshake wait in the queue and run after recovery. Failed restarts leave evaluation unavailable until backend restart. Mate scores remain normalized to White's perspective for both colors.
 
 ## [1.4.0] - 2026-11-16
 
