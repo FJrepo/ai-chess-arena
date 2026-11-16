@@ -18,17 +18,18 @@
     </button>
     <div
       class="eval-status-chip"
+      role="status"
       [class.online]="stockfishAvailable()"
       [class.offline]="!stockfishAvailable()"
       [attr.title]="evaluationStatusTooltip()"
     >
-      <mat-icon>{{ evaluationStatusIcon() }}</mat-icon>
+      <mat-icon aria-hidden="true">{{ evaluationStatusIcon() }}</mat-icon>
       <span>{{ evaluationStatusLabel() }}</span>
     </div>
     @if (moveTimerSeconds() !== null && !isAwaitingHumanMove()) {
       <div class="move-timer" [class.warning]="moveTimerWarning()">
         <mat-icon>timer</mat-icon>
-        <span class="timer-label">{{ activeColor() }} to move</span>
+        <span class="timer-label">{{ activeColor() === 'BLACK' ? 'Black' : 'White' }} to move</span>
         <span class="timer-value">{{ moveTimerDisplay() }}</span>
       </div>
     } @else if (isAwaitingHumanMove()) {
@@ -41,11 +42,11 @@
   </div>
 
   <div class="game-layout">
-    <div class="moves-column">
+    <div class="feed-column">
       <mat-card class="timeline-card">
         <mat-card-header>
           <div class="timeline-header">
-            <mat-card-title>Game Feed</mat-card-title>
+            <mat-card-title>Game feed</mat-card-title>
             <mat-slide-toggle
               class="timeline-toggle"
               labelPosition="before"
@@ -92,10 +93,10 @@
     <div class="board-section">
       <div class="board-frame">
         <div class="capture-strip top">
-          <span class="capture-label">White Captures</span>
-          <div class="capture-pieces">
+          <span class="capture-label">White captures</span>
+          <div class="capture-pieces" [class.has-pieces]="whiteCapturedGlyphs().length > 0">
             @for (piece of whiteCapturedGlyphs(); track $index) {
-              <span class="captured-piece black-piece">{{ piece }}</span>
+              <span class="captured-piece chess-piece black-piece">{{ piece }}</span>
             } @empty {
               <span class="capture-empty">None</span>
             }
@@ -134,27 +135,39 @@
           <div class="promotion-picker">
             <span class="promotion-label">Promote to:</span>
             <button mat-raised-button class="promotion-btn" (click)="selectPromotion('Q')">
-              <span class="promotion-piece">{{
-                activeColor() === 'WHITE' ? '\u2655' : '\u265B'
-              }}</span>
+              <span
+                class="promotion-piece chess-piece"
+                [class.white-piece]="activeColor() === 'WHITE'"
+                [class.black-piece]="activeColor() !== 'WHITE'"
+                >&#x265B;</span
+              >
               Queen
             </button>
             <button mat-raised-button class="promotion-btn" (click)="selectPromotion('R')">
-              <span class="promotion-piece">{{
-                activeColor() === 'WHITE' ? '\u2656' : '\u265C'
-              }}</span>
+              <span
+                class="promotion-piece chess-piece"
+                [class.white-piece]="activeColor() === 'WHITE'"
+                [class.black-piece]="activeColor() !== 'WHITE'"
+                >&#x265C;</span
+              >
               Rook
             </button>
             <button mat-raised-button class="promotion-btn" (click)="selectPromotion('B')">
-              <span class="promotion-piece">{{
-                activeColor() === 'WHITE' ? '\u2657' : '\u265D'
-              }}</span>
+              <span
+                class="promotion-piece chess-piece"
+                [class.white-piece]="activeColor() === 'WHITE'"
+                [class.black-piece]="activeColor() !== 'WHITE'"
+                >&#x265D;</span
+              >
               Bishop
             </button>
             <button mat-raised-button class="promotion-btn" (click)="selectPromotion('N')">
-              <span class="promotion-piece">{{
-                activeColor() === 'WHITE' ? '\u2658' : '\u265E'
-              }}</span>
+              <span
+                class="promotion-piece chess-piece"
+                [class.white-piece]="activeColor() === 'WHITE'"
+                [class.black-piece]="activeColor() !== 'WHITE'"
+                >&#x265E;</span
+              >
               Knight
             </button>
             <button mat-button class="promotion-cancel" (click)="cancelPromotion()">Cancel</button>
@@ -162,31 +175,51 @@
         }
 
         <div class="board-controls">
-          <button mat-icon-button (click)="goFirst()" matTooltip="First move">
+          <button
+            mat-icon-button
+            (click)="goFirst()"
+            matTooltip="First move"
+            aria-label="First move"
+          >
             <mat-icon>first_page</mat-icon>
           </button>
-          <button mat-icon-button (click)="goPrev()" matTooltip="Previous move">
+          <button
+            mat-icon-button
+            (click)="goPrev()"
+            matTooltip="Previous move"
+            aria-label="Previous move"
+          >
             <mat-icon>chevron_left</mat-icon>
           </button>
-          <button mat-icon-button (click)="goNext()" matTooltip="Next move">
+          <button mat-icon-button (click)="goNext()" matTooltip="Next move" aria-label="Next move">
             <mat-icon>chevron_right</mat-icon>
           </button>
-          <button mat-icon-button (click)="goLast()" matTooltip="Last move">
+          <button mat-icon-button (click)="goLast()" matTooltip="Last move" aria-label="Last move">
             <mat-icon>last_page</mat-icon>
           </button>
-          <button mat-icon-button (click)="flipBoard()" matTooltip="Flip board">
+          <button
+            mat-icon-button
+            (click)="flipBoard()"
+            matTooltip="Flip board"
+            aria-label="Flip board"
+          >
             <mat-icon>swap_vert</mat-icon>
           </button>
-          <button mat-icon-button (click)="exportPgn()" matTooltip="Export PGN">
+          <button
+            mat-icon-button
+            (click)="exportPgn()"
+            matTooltip="Export PGN"
+            aria-label="Export PGN"
+          >
             <mat-icon>download</mat-icon>
           </button>
         </div>
 
         <div class="capture-strip bottom">
-          <span class="capture-label">Black Captures</span>
-          <div class="capture-pieces">
+          <span class="capture-label">Black captures</span>
+          <div class="capture-pieces" [class.has-pieces]="blackCapturedGlyphs().length > 0">
             @for (piece of blackCapturedGlyphs(); track $index) {
-              <span class="captured-piece white-piece">{{ piece }}</span>
+              <span class="captured-piece chess-piece white-piece">{{ piece }}</span>
             } @empty {
               <span class="capture-empty">None</span>
             }
@@ -198,7 +231,7 @@
       </div>
     </div>
 
-    <div class="move-list-row">
+    <div class="moves-area">
       <app-move-list
         [moves]="moves()"
         [currentIndex]="currentMoveIndex()"

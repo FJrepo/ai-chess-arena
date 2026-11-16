@@ -77,3 +77,18 @@ describe('GameInfoBar raise-limit control', () => {
     expect(emitted).toEqual([8192]);
   });
 });
+
+describe('GameInfoBar result text', () => {
+  it('names the winner with a readable result reason', () => {
+    const bar = new GameInfoBar();
+    bar.game = {
+      ...pausedGame(),
+      status: 'COMPLETED',
+      result: 'BLACK_WINS',
+      resultReason: 'RESIGNATION',
+    };
+
+    expect(bar.getResultText()).toBe(`${bar.game.blackPlayerName} wins by resignation`);
+    expect(bar.statusLabel(bar.game.status)).toBe('Completed');
+  });
+});

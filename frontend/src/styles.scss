@@ -34,6 +34,19 @@ html {
   );
   /* Light: a soft lift, so hero surfaces don't look smudged on the pale page. */
   --app-surface-shadow: 0 8px 24px color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent);
+  // Board squares, shared by the board and the captured-pieces trays (same in both themes).
+  --app-board-light-square: #f0d9b5;
+  --app-board-dark-square: #b58863;
+  // Last move: a translucent yellow wash over either square colour.
+  --app-board-last-move: rgb(246 214 72 / 0.5);
+  // Inner edge of the selection and drop-target rings: keeps them >= 3:1 against both square
+  // colours, with or without the last-move wash.
+  --app-board-ring-edge: #23262d;
+  // Pieces (same in both themes, like the squares): solid glyphs, white ones with a dark edge.
+  --app-piece-white: #f7f5f0;
+  --app-piece-white-edge: #23262d;
+  --app-piece-black: #1b1e25;
+  --app-piece-black-edge: color-mix(in srgb, #ffffff 30%, transparent);
 }
 
 :root[data-theme='dark'],
@@ -170,5 +183,23 @@ mat-chip {
 
   .page-actions {
     justify-content: flex-start;
+  }
+}
+
+// Solid chess glyphs (board, capture trays, promotion picker). Kept as text, never colour emoji,
+// so the colours apply; white pieces get a dark edge drawn outside the fill, black pieces a faint
+// light edge that lifts them off the dark squares.
+.chess-piece {
+  font-variant-emoji: text;
+  paint-order: stroke fill;
+
+  &.white-piece {
+    color: var(--app-piece-white);
+    -webkit-text-stroke: 0.07em var(--app-piece-white-edge);
+  }
+
+  &.black-piece {
+    color: var(--app-piece-black);
+    -webkit-text-stroke: 0.04em var(--app-piece-black-edge);
   }
 }
