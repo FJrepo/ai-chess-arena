@@ -14,10 +14,14 @@ import dev.aichessarena.dto.ModelCostBreakdownDto;
 import dev.aichessarena.dto.ModelReliabilityDetailDto;
 import dev.aichessarena.dto.ModelReliabilityDto;
 import dev.aichessarena.dto.ModelReliabilityResponseDto;
+import dev.aichessarena.dto.TalkativenessDto;
 import dev.aichessarena.dto.TournamentCostSummaryDto;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.TournamentParticipant;
+import dev.aichessarena.repository.ChatMessageRepository;
+import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
@@ -375,6 +379,138 @@ class AnalyticsServiceTest {
         assertNull(alpha.blundersPerGame());
     }
 
+    @Test
+    void talkativenessIsReportedPerChatModeForModelMovesOfFinishedGames() {
+        Game game1 = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        Game game2 = finishedGame("model.beta", "model.alpha", Game.GameResult.DRAW, null, YESTERDAY);
+        Game running = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.IN_PROGRESS);
+        Move override = chatMove(game1, null, 3, "WHITE", ChatMode.OPTIONAL);
+        override.isOverride = true;
+
+        AnalyticsService service = service(
+                List.of(game1, game2, running),
+                List.of(
+                        // game 1 (OPTIONAL, then MANDATORY after a mode change): alpha is White, beta is Black.
+                        chatMove(game1, "model.alpha", 1, "WHITE", ChatMode.OPTIONAL), // talks, 10 chars
+                        chatMove(game1, "model.beta", 1, "BLACK", ChatMode.OPTIONAL), // silent
+                        chatMove(game1, "model.alpha", 2, "WHITE", ChatMode.MANDATORY), // talks, 30 chars
+                        chatMove(game1, "model.beta", 2, "BLACK", ChatMode.MANDATORY), // talks, 40 chars
+                        override, // has a message, but is not a model move
+                        // game 2 (OFF): excluded, even with a message.
+                        chatMove(game2, "model.beta", 1, "WHITE", ChatMode.OFF),
+                        chatMove(game2, "model.alpha", 1, "BLACK", ChatMode.OFF),
+                        // A human move has no chat mode.
+                        chatMove(game2, null, 2, "WHITE", null),
+                        // game 3 is still running: excluded.
+                        chatMove(running, "model.alpha", 1, "WHITE", ChatMode.MANDATORY)
+                ),
+                List.of(),
+                List.of(
+                        new PlyMessage(game1.id, 1, "WHITE", 10),
+                        new PlyMessage(game1.id, 2, "WHITE", 30),
+                        new PlyMessage(game1.id, 2, "BLACK", 40),
+                        new PlyMessage(game1.id, 3, "WHITE", 99),
+                        new PlyMessage(game2.id, 1, "WHITE", 50),
+                        new PlyMessage(game2.id, 2, "WHITE", 50),
+                        new PlyMessage(running.id, 1, "WHITE", 70)
+                )
+        );
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        AnalyticsModelComparisonRowDto alpha = row(response, "model.alpha");
+        assertEquals(new TalkativenessDto(1, 1, new BigDecimal("1.0000"), new BigDecimal("10.0")),
+                alpha.optionalChat());
+        assertEquals(new TalkativenessDto(1, 1, new BigDecimal("1.0000"), new BigDecimal("30.0")),
+                alpha.mandatoryChat());
+
+        AnalyticsModelComparisonRowDto beta = row(response, "model.beta");
+        assertEquals(new TalkativenessDto(1, 0, new BigDecimal("0.0000"), null), beta.optionalChat());
+        assertEquals(new TalkativenessDto(1, 1, new BigDecimal("1.0000"), new BigDecimal("40.0")),
+                beta.mandatoryChat());
+    }
+
+    @Test
+    void talkativenessWithoutMovesInAModeHasNoRate() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        AnalyticsService service = service(
+                List.of(game),
+                List.of(
+                        chatMove(game, "model.alpha", 1, "WHITE", ChatMode.OPTIONAL),
+                        chatMove(game, "model.beta", 1, "BLACK", ChatMode.OPTIONAL),
+                        chatMove(game, "model.alpha", 2, "WHITE", ChatMode.OPTIONAL)
+                ),
+                List.of(),
+                List.of(new PlyMessage(game.id, 1, "WHITE", 12), new PlyMessage(game.id, 1, "BLACK", 0))
+        );
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        AnalyticsModelComparisonRowDto alpha = row(response, "model.alpha");
+        assertEquals(new TalkativenessDto(2, 1, new BigDecimal("0.5000"), new BigDecimal("12.0")),
+                alpha.optionalChat());
+        assertEquals(new TalkativenessDto(0, 0, null, null), alpha.mandatoryChat());
+        // An empty message is not talking.
+        assertEquals(new TalkativenessDto(1, 0, new BigDecimal("0.0000"), null),
+                row(response, "model.beta").optionalChat());
+    }
+
+    @Test
+    void talkativenessCountsADuplicatedPlyOnceWithItsFirstMoveAndFirstMessage() {
+        // Databases from before V8 may hold duplicate plies (see docs/deployment.md).
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        Move talking = chatMove(game, "model.alpha", 1, "WHITE", ChatMode.OPTIONAL);
+        Move duplicate = chatMove(game, "model.alpha", 1, "WHITE", ChatMode.MANDATORY);
+        duplicate.createdAt = talking.createdAt.plusSeconds(1);
+        Move silent = chatMove(game, "model.alpha", 2, "WHITE", ChatMode.OPTIONAL);
+        AnalyticsService service = service(
+                List.of(game),
+                // The later duplicate comes first: the choice must not depend on load order.
+                List.of(duplicate, silent, talking),
+                List.of(),
+                List.of(
+                        new PlyMessage(game.id, 1, "WHITE", 10),
+                        new PlyMessage(game.id, 1, "WHITE", 30)
+                )
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+
+        assertEquals(new TalkativenessDto(2, 1, new BigDecimal("0.5000"), new BigDecimal("10.0")),
+                alpha.optionalChat());
+        assertEquals(new TalkativenessDto(0, 0, null, null), alpha.mandatoryChat(),
+                "the later duplicate's mode is not counted");
+    }
+
+    @Test
+    void talkativenessTakesTheFirstNonEmptyMessageOfADuplicatedPly() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        AnalyticsService service = service(
+                List.of(game),
+                List.of(chatMove(game, "model.alpha", 1, "WHITE", ChatMode.OPTIONAL)),
+                List.of(),
+                // Oldest first: an empty (whitespace-only, length 0 after trimming) message, then a real one.
+                List.of(
+                        new PlyMessage(game.id, 1, "WHITE", 0),
+                        new PlyMessage(game.id, 1, "WHITE", 24),
+                        new PlyMessage(game.id, 1, "WHITE", 50)
+                )
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+
+        assertEquals(new TalkativenessDto(1, 1, new BigDecimal("1.0000"), new BigDecimal("24.0")),
+                alpha.optionalChat());
+    }
+
+    private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
+        Move move = move(game, modelId, 1000L, null);
+        move.moveNumber = number;
+        move.color = color;
+        move.chatMode = chatMode;
+        return move;
+    }
+
     private Move evaluatedMove(Game game, String modelId, int number, String color, Integer cp) {
         Move move = move(game, modelId, 1000L, null);
         move.moveNumber = number;
@@ -386,6 +522,11 @@ class AnalyticsServiceTest {
     }
 
     private AnalyticsService service(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts) {
+        return service(games, moves, attemptCosts, List.of());
+    }
+
+    private AnalyticsService service(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
+                                     List<PlyMessage> messages) {
         AnalyticsService service = new AnalyticsService();
         service.gameRepository = new FakeGameRepository(games);
         service.moveRepository = new FakeMoveRepository(moves);
@@ -394,6 +535,12 @@ class AnalyticsServiceTest {
         loader.gameRepository = service.gameRepository;
         loader.moveRepository = service.moveRepository;
         loader.moveAttemptRepository = service.moveAttemptRepository;
+        loader.chatMessageRepository = new ChatMessageRepository() {
+            @Override
+            public List<PlyMessage> findPlyMessagesInWindow(LocalDateTime cutoff, UUID tournamentId) {
+                return messages;
+            }
+        };
         service.windowLoader = loader;
         service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
         return service;

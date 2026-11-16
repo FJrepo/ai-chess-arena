@@ -287,6 +287,31 @@ class GameWebSocketTest {
         assertEquals("admin-override", moves.get(1).get("modelId").asText());
     }
 
+    @Test
+    void turnStatusUpdatesCarryTheChatModeAndOtherStatusUpdatesDoNot() throws Exception {
+        UUID gameId = gameRepository.addGame();
+        java.util.List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        WebSocketConnection spectator = recordingConnection("spectator", sent);
+        endpoint.onMessage(spectator, subscribeMessage(gameId));
+
+        java.time.Instant now = java.time.Instant.now();
+        endpoint.broadcastGameStatus(gameId, "IN_PROGRESS", null, null, 3, java.math.BigDecimal.ZERO,
+                "WHITE", now, null, null, "MANDATORY");
+        endpoint.broadcastGameStatus(gameId, "PAUSED", null, null, 3, java.math.BigDecimal.ZERO);
+
+        ObjectMapper mapper = new ObjectMapper();
+        java.util.List<com.fasterxml.jackson.databind.JsonNode> statuses = new java.util.ArrayList<>();
+        for (String message : sent) {
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(message);
+            if ("gameStatus".equals(node.path("type").asText())) {
+                statuses.add(node);
+            }
+        }
+        assertEquals(2, statuses.size());
+        assertEquals("MANDATORY", statuses.get(0).get("tournamentChatMode").asText());
+        assertFalse(statuses.get(1).has("tournamentChatMode"));
+    }
+
     /** An open connection that records every text frame sent to it. */
     private WebSocketConnection recordingConnection(String id, java.util.List<String> sent) {
         WebSocketConnection connection = (WebSocketConnection) Proxy.newProxyInstance(

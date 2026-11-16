@@ -1,6 +1,7 @@
 package dev.aichessarena.resource;
 
 import dev.aichessarena.dto.*;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
@@ -51,7 +52,8 @@ public class TournamentResource {
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
-        if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
+        ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
+        if (chatMode != null) t.chatMode = chatMode;
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
 
@@ -102,7 +104,8 @@ public class TournamentResource {
         if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
-        if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
+        ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
+        if (chatMode != null) t.chatMode = chatMode;
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         t.updatedAt = LocalDateTime.now();
@@ -176,6 +179,25 @@ public class TournamentResource {
                     .formatted(Tournament.MIN_MAX_OUTPUT_TOKENS, Tournament.MAX_MAX_OUTPUT_TOKENS));
         }
         return value;
+    }
+
+    /**
+     * The chat mode a request asks for, or null to keep the default (create) or the current mode (update).
+     * {@code chatMode} wins over the older {@code trashTalkEnabled} (false → OFF, true → OPTIONAL).
+     */
+    static ChatMode resolveChatMode(String chatMode, Boolean trashTalkEnabled) {
+        if (chatMode != null) {
+            if (chatMode.isBlank()) {
+                throw new IllegalArgumentException("chatMode must be one of OFF, OPTIONAL or MANDATORY");
+            }
+            try {
+                return ChatMode.valueOf(chatMode.trim().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Invalid chatMode: " + chatMode + " (must be one of OFF, OPTIONAL or MANDATORY)");
+            }
+        }
+        return trashTalkEnabled != null ? ChatMode.fromTrashTalkEnabled(trashTalkEnabled) : null;
     }
 
     private Tournament.DrawPolicy parseDrawPolicy(String value) {

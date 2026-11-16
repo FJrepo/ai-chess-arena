@@ -2,6 +2,8 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.repository.ChatMessageRepository;
+import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
@@ -16,7 +18,7 @@ import java.util.stream.Collectors;
 
 /**
  * Loads the games of an analytics window: finished games by completion time, unfinished ones by creation time.
- * Byes are never part of a window. Moves and rejected attempts follow the selected games.
+ * Byes are never part of a window. Moves, rejected attempts and chat messages follow the selected games.
  */
 @ApplicationScoped
 public class AnalyticsWindowLoader {
@@ -30,6 +32,9 @@ public class AnalyticsWindowLoader {
     @Inject
     MoveAttemptRepository moveAttemptRepository;
 
+    @Inject
+    ChatMessageRepository chatMessageRepository;
+
     AnalyticsScope loadScope(int days, UUID tournamentId) {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
         List<Game> games = gameRepository.findInWindow(cutoff, tournamentId).stream()
@@ -38,7 +43,8 @@ public class AnalyticsWindowLoader {
         return scopeFor(
                 games,
                 moveRepository.findInWindow(cutoff, tournamentId),
-                moveAttemptRepository.findRejectedCostsInWindow(cutoff, tournamentId)
+                moveAttemptRepository.findRejectedCostsInWindow(cutoff, tournamentId),
+                chatMessageRepository.findPlyMessagesInWindow(cutoff, tournamentId)
         );
     }
 
@@ -47,11 +53,12 @@ public class AnalyticsWindowLoader {
         List<Game> terminalGames = scope.games().stream()
                 .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status))
                 .toList();
-        return scopeFor(terminalGames, scope.moves(), scope.rejectedAttemptCosts());
+        return scopeFor(terminalGames, scope.moves(), scope.rejectedAttemptCosts(), scope.messages());
     }
 
-    /** Keeps only the moves and attempt costs that belong to {@code games}. */
-    static AnalyticsScope scopeFor(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts) {
+    /** Keeps only the moves, attempt costs and messages that belong to {@code games}. */
+    static AnalyticsScope scopeFor(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
+                                   List<PlyMessage> messages) {
         Set<UUID> gameIds = games.stream().map(game -> game.id).collect(Collectors.toSet());
         List<Move> gameMoves = moves.stream()
                 .filter(move -> move.game != null && gameIds.contains(move.game.id))
@@ -59,9 +66,13 @@ public class AnalyticsWindowLoader {
         List<RejectedAttemptCost> gameAttemptCosts = attemptCosts.stream()
                 .filter(cost -> gameIds.contains(cost.gameId()))
                 .toList();
-        return new AnalyticsScope(games, gameMoves, gameAttemptCosts);
+        List<PlyMessage> gameMessages = messages.stream()
+                .filter(message -> gameIds.contains(message.gameId()))
+                .toList();
+        return new AnalyticsScope(games, gameMoves, gameAttemptCosts, gameMessages);
     }
 
-    record AnalyticsScope(List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts) {
+    record AnalyticsScope(List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
+                          List<PlyMessage> messages) {
     }
 }

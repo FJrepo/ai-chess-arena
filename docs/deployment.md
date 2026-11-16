@@ -124,6 +124,7 @@ docker compose -f docker-compose.prod.yml exec db \
 If the backend is already failing to connect, start only the database with the temporary compatibility value, perform the rotation above, and immediately replace that value before recreating the stack. Never use the former fallback for a new deployment.
 
 ## Upgrading To A New Release
+0. Back up the database (see [Backups and rollback](#backups-and-rollback)).
 1. Update `IMAGE_TAG` in `.env`
    - recommended: move from one pinned tag to another pinned tag
 2. Pull the new images:
@@ -145,6 +146,24 @@ docker compose -f docker-compose.prod.yml logs --tail=120 backend
 ```
 
 Flyway migrations run automatically on backend startup.
+
+## Backups and rollback
+Migrations only run forward: there are no down-migrations, and an older backend is not guaranteed to keep a migrated database consistent. To roll back to an older release, restore the database backup taken before the upgrade; the data written since then is lost. Since 1.4 (migration V12, chat modes) this is required: an older backend still starts, but it only writes `trash_talk_enabled` and stores moves without a chat mode, which leaves the data inconsistent when you upgrade again.
+
+Back up before every upgrade (the stack keeps running):
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > chess-backup-$(date +%F).dump
+```
+
+Roll back: set `IMAGE_TAG` in `.env` back to the previous release, then restore the backup with the backend stopped and start everything again:
+
+```bash
+docker compose -f docker-compose.prod.yml stop backend
+docker compose -f docker-compose.prod.yml exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < chess-backup-YYYY-MM-DD.dump
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
 
 ## Persistence
 - Postgres data is stored in the named Docker volume `pgdata_prod`.

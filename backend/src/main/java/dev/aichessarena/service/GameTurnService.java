@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
@@ -71,7 +72,8 @@ public class GameTurnService {
                 request.opponentName(),
                 request.lastMoveSan(),
                 request.lastMessage(),
-                request.isFirstMove()
+                request.isFirstMove(),
+                request.chatMode()
         );
 
         int turnStart = request.history().size();
@@ -91,7 +93,8 @@ public class GameTurnService {
                     Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
         }
 
-        broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt);
+        broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
+                request.tournamentChatMode());
 
         int providerFailures = 0;
         String lastProviderFailure = null;
@@ -247,8 +250,12 @@ public class GameTurnService {
             }
 
             request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-            // With trash talk disabled, messages are neither stored, broadcast nor relayed to the opponent.
-            String message = request.trashTalkEnabled() ? parseResult.message() : null;
+            // With chat OFF, messages are neither stored, broadcast nor relayed to the opponent. A missing message never
+            // rejects a legal move, not even with chat MANDATORY: the move is recorded with its chat mode and without a
+            // chat message, which the talkativeness metric counts as a silent move.
+            ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
+            String message = chatMode.allowsMessages() && parseResult.message() != null
+                    && !parseResult.message().isBlank() ? parseResult.message() : null;
             try {
                 gameMoveService.recordModelMove(
                         request.gameId(),
@@ -263,7 +270,8 @@ public class GameTurnService {
                         attempt - 1,
                         request.promptVersion(),
                         request.promptHash(),
-                        request.fen()
+                        request.fen(),
+                        chatMode
                 );
             } catch (GameStateConflictException e) {
                 LOG.warnf("Game %s: discarding %s move %s: %s",
@@ -354,8 +362,13 @@ public class GameTurnService {
         );
     }
 
+    /**
+     * Also tells open game views the tournament's configured chat mode, so a mode changed during play shows up live.
+     * The configured mode, not this side's effective one: a legacy template makes MANDATORY effectively OPTIONAL
+     * for one side only, and the label must not flip from turn to turn.
+     */
     private void broadcastTurnTiming(UUID gameId, BigDecimal totalCostUsd, String activeColor,
-                                     Instant turnStartedAt, Instant turnDeadlineAt) {
+                                     Instant turnStartedAt, Instant turnDeadlineAt, ChatMode tournamentChatMode) {
         int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));
         gameWebSocket.broadcastGameStatus(
                 gameId,
@@ -366,7 +379,9 @@ public class GameTurnService {
                 totalCostUsd,
                 activeColor,
                 turnStartedAt,
-                turnDeadlineAt
+                turnDeadlineAt,
+                null,
+                tournamentChatMode != null ? tournamentChatMode.name() : null
         );
     }
 
@@ -393,7 +408,11 @@ public class GameTurnService {
             BigDecimal totalCostUsd,
             BooleanSupplier shouldContinue,
             int maxOutputTokens,
-            boolean trashTalkEnabled
+            // The chat mode that applies to this side's answer (see GameConversationService.PromptContext); it decides
+            // the prompt, whether the message is kept and the mode recorded on the move.
+            ChatMode chatMode,
+            // The tournament's configured chat mode, shown live in the game view.
+            ChatMode tournamentChatMode
     ) {
     }
 

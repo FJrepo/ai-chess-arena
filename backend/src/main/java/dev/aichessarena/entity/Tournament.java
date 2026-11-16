@@ -53,8 +53,18 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "finals_best_of")
     public Integer finalsBestOf;
 
+    /** Whether and how models talk (see {@link ChatMode}); a change applies from the next turn of running games. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "chat_mode", nullable = false, length = 16)
+    public ChatMode chatMode = ChatMode.OPTIONAL;
+
+    /**
+     * The pre-1.4 column {@code trash_talk_enabled}, kept in sync with {@link #chatMode} (false only for OFF). Not
+     * read by this version; to be dropped in a later release. Rolling back to an older version requires restoring
+     * the pre-upgrade database backup (see docs/deployment.md).
+     */
     @Column(name = "trash_talk_enabled", nullable = false)
-    public boolean trashTalkEnabled = true;
+    boolean legacyTrashTalkEnabled = true;
 
     /** Cap on generated tokens per model answer (OpenRouter max_tokens; includes reasoning tokens). */
     @Column(name = "max_output_tokens", nullable = false)
@@ -79,6 +89,21 @@ public class Tournament extends PanacheEntityBase {
 
     @OneToMany(mappedBy = "tournament")
     public List<Game> games = new ArrayList<>();
+
+    /** Panache routes writes of {@code chatMode} through this setter, which keeps the legacy column in sync. */
+    public void setChatMode(ChatMode chatMode) {
+        this.chatMode = chatMode;
+        this.legacyTrashTalkEnabled = chatMode != ChatMode.OFF;
+    }
+
+    public ChatMode getChatMode() {
+        return chatMode;
+    }
+
+    /** True unless chat is OFF; the API still reports this as {@code trashTalkEnabled}. */
+    public boolean isTrashTalkEnabled() {
+        return chatMode != ChatMode.OFF;
+    }
 
     public enum TournamentStatus {
         CREATED, IN_PROGRESS, COMPLETED, CANCELLED

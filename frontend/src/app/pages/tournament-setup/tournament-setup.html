@@ -89,19 +89,31 @@
                 </mat-select>
               </mat-form-field>
             </div>
+          </section>
 
-            <div class="toggle-row">
-              <mat-slide-toggle [(ngModel)]="trashTalkEnabled">
-                Trash Talk Enabled
-              </mat-slide-toggle>
+          <section class="field-group" aria-labelledby="setup-chat-heading">
+            <h3 class="group-heading" id="setup-chat-heading">Chat</h3>
+            <div class="chat-mode-row">
+              <mat-button-toggle-group
+                class="chat-mode-toggle"
+                [(ngModel)]="chatMode"
+                [hideSingleSelectionIndicator]="true"
+                aria-labelledby="setup-chat-heading"
+                aria-describedby="chat-mode-hint"
+              >
+                @for (option of chatModeOptions; track option.value) {
+                  <mat-button-toggle [value]="option.value">{{ option.label }}</mat-button-toggle>
+                }
+              </mat-button-toggle-group>
+              <span class="caption chat-mode-hint" id="chat-mode-hint">{{ chatModeHint() }}</span>
             </div>
           </section>
 
           <section class="field-group rules-block" aria-labelledby="setup-rules-heading">
             <div class="group-heading-row">
               <h3 class="group-heading" id="setup-rules-heading">System Rules</h3>
-              @if (promptTemplateVersion()) {
-                <span class="caption">Template version: {{ promptTemplateVersion() }}</span>
+              @if (systemRulesVersion()) {
+                <span class="caption">Template version: {{ systemRulesVersion() }}</span>
               }
             </div>
             @if (promptTemplateLoadError()) {

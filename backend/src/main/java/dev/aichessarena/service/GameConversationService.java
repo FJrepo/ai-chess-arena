@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.TournamentParticipant;
@@ -30,22 +31,53 @@ public class GameConversationService {
     public ConversationState initializeConversation(UUID gameId) {
         Game game = gameRepository.findById(gameId);
         Board board = initializeBoard(gameId, game);
+        ConversationState empty = new ConversationState(board, new ArrayList<>(), new ArrayList<>(), null, null, null);
+        return refreshSystemPrompts(game, empty);
+    }
 
-        PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE");
-        PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK");
+    /**
+     * Builds both system prompts for the game's current chat mode and puts them at the start of the histories,
+     * replacing earlier ones. The game loop calls this again when the tournament's chat mode changes, so a side's
+     * prompt, the handling of its messages and the mode recorded on its moves always agree.
+     */
+    public ConversationState refreshSystemPrompts(Game game, ConversationState state) {
+        return refreshSystemPrompts(game, state, configuredChatMode(game));
+    }
 
-        List<OpenRouterService.ChatMsg> whiteHistory = new ArrayList<>();
-        List<OpenRouterService.ChatMsg> blackHistory = new ArrayList<>();
-        whiteHistory.add(new OpenRouterService.ChatMsg("system", whitePrompt.prompt()));
-        blackHistory.add(new OpenRouterService.ChatMsg("system", blackPrompt.prompt()));
-
+    /** As {@link #refreshSystemPrompts(Game, ConversationState)}, for a chat mode the caller read itself. */
+    public ConversationState refreshSystemPrompts(Game game, ConversationState state, ChatMode chatMode) {
+        PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE", chatMode);
+        PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK", chatMode);
+        setSystemPrompt(state.whiteHistory(), whitePrompt.prompt());
+        setSystemPrompt(state.blackHistory(), blackPrompt.prompt());
         return new ConversationState(
-                board,
-                whiteHistory,
-                blackHistory,
-                new PromptContext(whitePrompt.version(), promptService.computePromptHash(whitePrompt.prompt())),
-                new PromptContext(blackPrompt.version(), promptService.computePromptHash(blackPrompt.prompt()))
+                state.board(),
+                state.whiteHistory(),
+                state.blackHistory(),
+                promptContext(whitePrompt),
+                promptContext(blackPrompt),
+                chatMode
         );
+    }
+
+    /** The tournament's chat mode; games outside a tournament allow optional chat. */
+    static ChatMode configuredChatMode(Game game) {
+        return game.tournament != null && game.tournament.chatMode != null
+                ? game.tournament.chatMode
+                : ChatMode.OPTIONAL;
+    }
+
+    private PromptContext promptContext(PromptService.ResolvedPrompt prompt) {
+        return new PromptContext(prompt.version(), promptService.computePromptHash(prompt.prompt()), prompt.chatMode());
+    }
+
+    private static void setSystemPrompt(List<OpenRouterService.ChatMsg> history, String prompt) {
+        OpenRouterService.ChatMsg system = new OpenRouterService.ChatMsg("system", prompt);
+        if (!history.isEmpty() && "system".equals(history.getFirst().role())) {
+            history.set(0, system);
+        } else {
+            history.addFirst(system);
+        }
     }
 
     private Board initializeBoard(UUID gameId, Game game) {
@@ -63,7 +95,10 @@ public class GameConversationService {
     }
 
     PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color) {
-        boolean trashTalkEnabled = game.tournament == null || game.tournament.trashTalkEnabled;
+        return resolveSystemPrompt(game, color, configuredChatMode(game));
+    }
+
+    private PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color, ChatMode chatMode) {
         if (game.tournament == null) {
             return promptService.buildSystemPrompt(
                     null,
@@ -74,7 +109,7 @@ public class GameConversationService {
                             "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
                             "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
                     ),
-                    trashTalkEnabled
+                    chatMode
             );
         }
 
@@ -106,7 +141,7 @@ public class GameConversationService {
                 color,
                 opponentName,
                 opponentModel,
-                trashTalkEnabled
+                chatMode
         );
     }
 
@@ -117,15 +152,29 @@ public class GameConversationService {
         return modelId != null && !modelId.isBlank() ? modelId : "unknown model";
     }
 
+    /**
+     * The game loop's conversation. {@code chatMode} is the tournament's chat mode the prompts were built for; each
+     * side's {@link PromptContext#chatMode()} is the mode that applies to that side's answers.
+     */
     public record ConversationState(
             Board board,
             List<OpenRouterService.ChatMsg> whiteHistory,
             List<OpenRouterService.ChatMsg> blackHistory,
             PromptContext whitePrompt,
-            PromptContext blackPrompt
+            PromptContext blackPrompt,
+            ChatMode chatMode
     ) {
+        public ConversationState(Board board, List<OpenRouterService.ChatMsg> whiteHistory,
+                                 List<OpenRouterService.ChatMsg> blackHistory, PromptContext whitePrompt,
+                                 PromptContext blackPrompt) {
+            this(board, whiteHistory, blackHistory, whitePrompt, blackPrompt, ChatMode.OPTIONAL);
+        }
     }
 
-    public record PromptContext(String version, String hash) {
+    /** A side's system prompt: version, hash and the chat mode that applies to its answers. */
+    public record PromptContext(String version, String hash, ChatMode chatMode) {
+        public PromptContext(String version, String hash) {
+            this(version, hash, ChatMode.OPTIONAL);
+        }
     }
 }

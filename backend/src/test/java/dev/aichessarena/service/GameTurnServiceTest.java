@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.bhlangonijr.chesslib.Board;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
@@ -314,16 +315,74 @@ class GameTurnServiceTest {
     }
 
     @Test
-    void disabledTrashTalkDropsTheModelsMessage() {
+    void chatOffDropsTheModelsMessage() {
         Fixture fixture = new Fixture(VALID_MOVE);
 
         GameTurnService.TurnResult result =
-                fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, false));
+                fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.OFF));
 
         assertTrue(result.moveRecorded());
         assertEquals("e4", fixture.moves.lastRecordedSan);
         assertNull(fixture.moves.lastRecordedMessage);
+        assertEquals(ChatMode.OFF, fixture.moves.lastChatMode);
         assertNull(result.message());
+    }
+
+    @Test
+    void optionalChatKeepsTheMessageAndRecordsTheMode() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertEquals("Hi", fixture.moves.lastRecordedMessage);
+        assertEquals(ChatMode.OPTIONAL, fixture.moves.lastChatMode);
+        assertEquals("Hi", result.message());
+    }
+
+    @Test
+    void mandatoryChatWithoutAMessageAcceptsTheMoveOnTheFirstAttemptAndRecordsItAsSilent() {
+        for (String answer : new String[] {
+                "{\"move\":\"e4\"}", "{\"move\":\"e4\",\"message\":\"\"}", "{\"move\":\"e4\",\"message\":\"   \"}",
+                "{\"move\":\"e4\",\"message\":null}"}) {
+            Fixture fixture = new Fixture(answer(answer));
+
+            GameTurnService.TurnResult result =
+                    fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.MANDATORY));
+
+            assertTrue(result.moveRecorded(), answer);
+            assertEquals("e4", fixture.moves.lastRecordedSan);
+            assertEquals(0, fixture.moves.lastRetryCount, "no retry for a missing message: " + answer);
+            assertNull(fixture.moves.lastRecordedMessage, answer);
+            assertEquals(ChatMode.MANDATORY, fixture.moves.lastChatMode);
+            assertEquals(List.of(Outcome.ACCEPTED), fixture.attempts.outcomes());
+            assertEquals(1, fixture.openRouter.sentMessages.size(), "one model call only");
+            assertTrue(fixture.websocket.retryReasons.isEmpty());
+            assertFalse(fixture.lifecycle.invalidMovesForfeited);
+        }
+    }
+
+    @Test
+    void mandatoryChatAsksForAMessageInTheTurnPrompt() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+
+        fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.MANDATORY));
+
+        String turnPrompt = fixture.openRouter.sentMessages.getFirst().getLast().content();
+        assertTrue(turnPrompt.endsWith(PromptService.REQUIRED_MESSAGE_ANSWER_LINE));
+        assertEquals("Hi", fixture.moves.lastRecordedMessage);
+    }
+
+    @Test
+    void theTurnStartUpdateCarriesTheConfiguredTournamentModeNotTheSidesEffectiveOne() {
+        // The request's tournament mode is MANDATORY; this side has a legacy template, so its effective mode is
+        // OPTIONAL. The live label shows the configured mode, the move records the effective one.
+        Fixture fixture = new Fixture(VALID_MOVE);
+
+        fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.OPTIONAL));
+
+        assertTrue(fixture.websocket.turnTimingBroadcast);
+        assertEquals("MANDATORY", fixture.websocket.lastTurnChatMode);
+        assertEquals(ChatMode.OPTIONAL, fixture.moves.lastChatMode);
     }
 
     @Test
@@ -524,13 +583,13 @@ class GameTurnServiceTest {
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
                                                        int maxRetries, Integer moveTimeoutSeconds,
                                                        java.util.function.BooleanSupplier shouldContinue) {
-        return request(history, maxRetries, moveTimeoutSeconds, shouldContinue, true);
+        return request(history, maxRetries, moveTimeoutSeconds, shouldContinue, ChatMode.OPTIONAL);
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
                                                        int maxRetries, Integer moveTimeoutSeconds,
                                                        java.util.function.BooleanSupplier shouldContinue,
-                                                       boolean trashTalkEnabled) {
+                                                       ChatMode chatMode) {
         Board board = new Board();
         return new GameTurnService.TurnRequest(
                 UUID.randomUUID(),
@@ -554,7 +613,8 @@ class GameTurnServiceTest {
                 BigDecimal.ZERO,
                 shouldContinue,
                 MAX_OUTPUT_TOKENS,
-                trashTalkEnabled
+                chatMode,
+                ChatMode.MANDATORY
         );
     }
 
@@ -686,6 +746,7 @@ class GameTurnServiceTest {
     private static final class RecordingGameMoveService extends GameMoveService {
         private String lastRecordedSan;
         private String lastRecordedMessage;
+        private ChatMode lastChatMode;
         private String lastExpectedFen;
         private int lastRetryCount = -1;
         private GameStateConflictException conflict;
@@ -704,13 +765,15 @@ class GameTurnServiceTest {
                 int retryCount,
                 String promptVersion,
                 String promptHash,
-                String expectedFen
+                String expectedFen,
+                ChatMode chatMode
         ) {
             if (conflict != null) {
                 throw conflict;
             }
             lastRecordedSan = san;
             lastRecordedMessage = message;
+            lastChatMode = chatMode;
             lastExpectedFen = expectedFen;
             lastRetryCount = retryCount;
         }
@@ -736,16 +799,20 @@ class GameTurnServiceTest {
                 BigDecimal totalCostUsd,
                 String activeColor,
                 java.time.Instant turnStartedAt,
-                java.time.Instant turnDeadlineAt
+                java.time.Instant turnDeadlineAt,
+                String detail,
+                String chatMode
         ) {
             if (turnStartedAt != null) {
                 turnTimingBroadcast = true;
                 lastTurnStartedAt = turnStartedAt;
                 lastTurnDeadlineAt = turnDeadlineAt;
+                lastTurnChatMode = chatMode;
             }
         }
 
         private boolean turnTimingBroadcast;
+        private String lastTurnChatMode;
         private java.time.Instant lastTurnStartedAt;
         private java.time.Instant lastTurnDeadlineAt;
 

@@ -1,5 +1,6 @@
 package dev.aichessarena.repository;
 
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
@@ -17,6 +18,19 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
 
     public List<Game> findByTournamentId(UUID tournamentId) {
         return list("tournament.id = ?1", tournamentId);
+    }
+
+    /**
+     * The current chat mode of the game's tournament, read from the database (a game loop's session keeps the
+     * entities it loaded, so a setting changed meanwhile is not visible on them); OPTIONAL for a game outside a
+     * tournament.
+     */
+    public ChatMode findChatMode(UUID gameId) {
+        List<ChatMode> modes = getEntityManager().createQuery(
+                        "select t.chatMode from Game g join g.tournament t where g.id = :gameId", ChatMode.class)
+                .setParameter("gameId", gameId)
+                .getResultList();
+        return modes.isEmpty() || modes.getFirst() == null ? ChatMode.OPTIONAL : modes.getFirst();
     }
 
     /**

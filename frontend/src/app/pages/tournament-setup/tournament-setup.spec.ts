@@ -1,4 +1,5 @@
-import { convertToParamMap } from '@angular/router';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
@@ -436,6 +437,116 @@ describe('TournamentSetup', () => {
     component.name = 'Ready Arena';
     component.create();
     expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
+  });
+
+  it('sends chat mode Optional by default and the chosen mode otherwise, without the old flag', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Chat Arena';
+
+    expect(component.chatMode).toBe('OPTIONAL');
+    component.create();
+    expect(api.createTournamentPayload?.['chatMode']).toBe('OPTIONAL');
+    expect(api.createTournamentPayload).not.toHaveProperty('trashTalkEnabled');
+
+    for (const mode of ['OFF', 'MANDATORY'] as const) {
+      component.chatMode = mode;
+      component.create();
+      expect(api.createTournamentPayload?.['chatMode']).toBe(mode);
+    }
+  });
+
+  it('offers Off, Optional and Mandatory with a one-line hint for the selected mode', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+
+    expect(component.chatModeOptions.map((option) => option.label)).toEqual([
+      'Off',
+      'Optional',
+      'Mandatory',
+    ]);
+    expect(component.chatModeHint()).toContain('may send a message');
+    component.chatMode = 'OFF';
+    expect(component.chatModeHint()).toContain('stay silent');
+    component.chatMode = 'MANDATORY';
+    expect(component.chatModeHint()).toContain('never penalized');
+  });
+
+  it('presets reset the chat mode to Optional', () => {
+    const component = new TournamentSetup(
+      createApiService(),
+      createRouter(),
+      createRoute({ preset: 'balanced' }),
+    );
+    component.chatMode = 'OFF';
+
+    component.ngOnInit();
+
+    expect(component.chatMode).toBe('OPTIONAL');
+  });
+
+  it('shows the system rules and version of the selected chat mode', () => {
+    const api = createApiService();
+    api.getPromptTemplate = () =>
+      of({
+        template: 'Rules optional',
+        version: 'v2',
+        hash: 'h',
+        chatModes: {
+          OFF: { template: 'Rules off', version: 'v2-silent', hash: 'h0' },
+          OPTIONAL: { template: 'Rules optional', version: 'v2', hash: 'h1' },
+          MANDATORY: { template: 'Rules mandatory', version: 'v2-chat-required', hash: 'h2' },
+        },
+      });
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+
+    expect(component.systemRulesTemplate).toBe('Rules optional');
+    expect(component.systemRulesVersion()).toBe('v2');
+    component.chatMode = 'MANDATORY';
+    expect(component.systemRulesTemplate).toBe('Rules mandatory');
+    expect(component.systemRulesVersion()).toBe('v2-chat-required');
+  });
+
+  it('falls back to the default rules from a backend without chat modes', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.ngOnInit();
+    component.chatMode = 'OFF';
+
+    expect(component.systemRulesTemplate).toBe('Rules');
+    expect(component.systemRulesVersion()).toBe('v2');
+  });
+
+  it('renders the chat-mode control and selects a mode on click', async () => {
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: createApiService() },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element: HTMLElement = fixture.nativeElement;
+
+    const buttons = Array.from(
+      element.querySelectorAll<HTMLButtonElement>('.chat-mode-toggle button'),
+    );
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      'Off',
+      'Optional',
+      'Mandatory',
+    ]);
+    expect(element.textContent).not.toContain('Trash Talk Enabled');
+    expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('may send a message');
+
+    buttons[2].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.chatMode).toBe('MANDATORY');
+    expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
   });
 });
 

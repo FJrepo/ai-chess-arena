@@ -66,6 +66,14 @@ public class Move extends PanacheEntityBase {
     @Column(name = "evaluation_mate")
     public Integer evaluationMate;
 
+    /**
+     * The chat mode that applied to this model move (the one its prompt was built for and that decided whether its
+     * message was kept). Null for human moves and operator overrides.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "chat_mode", length = 16)
+    public ChatMode chatMode;
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt = LocalDateTime.now();
 }

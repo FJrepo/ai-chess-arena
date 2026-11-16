@@ -270,6 +270,18 @@ public class GameWebSocket {
                                      String resultReason, int totalMoves, BigDecimal totalCostUsd,
                                      String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
                                      String detail) {
+        broadcastGameStatus(gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                activeColor, turnStartedAt, turnDeadlineAt, detail, null);
+    }
+
+    /**
+     * {@code tournamentChatMode} is the tournament's configured chat mode, sent with the turn updates of model turns
+     * only (not the effective mode of the side to move, which a legacy template can lower to OPTIONAL).
+     */
+    public void broadcastGameStatus(UUID gameId, String status, String result,
+                                     String resultReason, int totalMoves, BigDecimal totalCostUsd,
+                                     String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
+                                     String detail, String tournamentChatMode) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "gameStatus");
         msg.put("gameId", gameId.toString());
@@ -280,6 +292,7 @@ public class GameWebSocket {
         if (turnStartedAt != null) msg.put("turnStartedAt", turnStartedAt.toString());
         if (turnDeadlineAt != null) msg.put("turnDeadlineAt", turnDeadlineAt.toString());
         if (detail != null) msg.put("detail", detail);
+        if (tournamentChatMode != null) msg.put("tournamentChatMode", tournamentChatMode);
         msg.put("totalMoves", totalMoves);
         msg.put("totalCostUsd", totalCostUsd != null ? totalCostUsd.doubleValue() : 0);
         broadcast(gameId, msg.toString());

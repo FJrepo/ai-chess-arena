@@ -1,6 +1,7 @@
 package dev.aichessarena.resource;
 
 import dev.aichessarena.dto.PromptTemplateDto;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.service.OpenRouterService;
 import dev.aichessarena.service.PromptService;
 import dev.aichessarena.service.StockfishService;
@@ -57,10 +58,19 @@ public class ModelResource {
     @Path("/config/prompt-template")
     public Response getPromptTemplate() {
         String template = promptService.getDefaultSystemPromptTemplate();
+        java.util.Map<String, PromptTemplateDto.Variant> chatModes = new java.util.LinkedHashMap<>();
+        for (ChatMode mode : ChatMode.values()) {
+            String modeTemplate = promptService.getSystemPromptTemplate(mode);
+            chatModes.put(mode.name(), new PromptTemplateDto.Variant(
+                    modeTemplate,
+                    promptService.getSystemPromptVersion(mode),
+                    promptService.computePromptHash(modeTemplate)));
+        }
         PromptTemplateDto dto = new PromptTemplateDto(
                 template,
                 promptService.getDefaultSystemPromptVersion(),
-                promptService.computePromptHash(template)
+                promptService.computePromptHash(template),
+                chatModes
         );
         return Response.ok(dto).build();
     }

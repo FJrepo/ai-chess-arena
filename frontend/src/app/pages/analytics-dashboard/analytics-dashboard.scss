@@ -428,6 +428,12 @@ $warning: mat.$orange-palette;
   }
 }
 
+// Talkativeness: the chat-mode group headers sit centred over their two columns.
+.talk-table th.group-head {
+  text-align: center;
+  border-left: 1px solid var(--analytics-divider);
+}
+
 // ?! / ? / ?? markers in the move-quality header, in the game view's tones.
 .quality-glyph {
   font-weight: 800;

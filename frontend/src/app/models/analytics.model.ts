@@ -74,6 +74,20 @@ export interface AnalyticsComparisonModel {
   blunders?: number;
   /** Blunders per analyzed game; null without analyzed games. */
   blundersPerGame?: number | null;
+  /** Talkativeness of the model's moves made with chat OPTIONAL. Absent from older backends. */
+  optionalChat?: AnalyticsTalkativeness;
+  /** Talkativeness of the model's moves made with chat MANDATORY (a compliance rate). */
+  mandatoryChat?: AnalyticsTalkativeness;
+}
+
+/** Of a model's moves in one chat mode, how many came with a non-empty message. */
+export interface AnalyticsTalkativeness {
+  moves: number;
+  messages: number;
+  /** messages / moves (0-1); absent or null without moves. */
+  talkRate?: number | null;
+  /** Average message length in characters; absent or null without messages. */
+  averageMessageLength?: number | null;
 }
 
 export interface AnalyticsComparisonResponse {

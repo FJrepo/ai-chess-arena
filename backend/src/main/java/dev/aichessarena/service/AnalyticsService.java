@@ -10,9 +10,12 @@ import dev.aichessarena.dto.ModelReliabilityDetailDto;
 import dev.aichessarena.dto.ModelReliabilityDto;
 import dev.aichessarena.dto.ModelReliabilityResponseDto;
 import dev.aichessarena.dto.TournamentCostSummaryDto;
+import dev.aichessarena.dto.TalkativenessDto;
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
@@ -439,6 +442,7 @@ public class AnalyticsService {
             accumulator.rejectedAttemptsCosted = true;
         });
         registerMoveQuality(byModel, moves);
+        registerTalkativeness(byModel, moves, scope.messages());
 
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
@@ -523,7 +527,9 @@ public class AnalyticsService {
                     accumulator.blunders,
                     accumulator.analyzedGameIds.isEmpty()
                             ? null
-                            : decimal((double) accumulator.blunders / accumulator.analyzedGameIds.size(), 2)
+                            : decimal((double) accumulator.blunders / accumulator.analyzedGameIds.size(), 2),
+                    talkativeness(accumulator.optionalChat),
+                    talkativeness(accumulator.mandatoryChat)
             ));
         }
 
@@ -643,6 +649,67 @@ public class AnalyticsService {
                 }
             }
         });
+    }
+
+    /**
+     * Counts each model move per chat mode that applied to it ({@link Move#chatMode}) and whether a non-empty chat
+     * message was stored for the same ply (game, move number, colour). Moves without a mode (humans, overrides) and
+     * moves made with chat OFF are left out. Databases from before migration V8 may hold several moves or messages
+     * for one ply; each ply counts once, with its first stored move and first non-empty message (the duplicates are
+     * the later rows, see docs/deployment.md).
+     */
+    private void registerTalkativeness(Map<String, ComparisonAccumulator> byModel, List<Move> moves,
+                                       List<PlyMessage> messages) {
+        Map<PlyKey, Integer> messageLengths = new HashMap<>();
+        for (PlyMessage message : messages) {
+            if (message.length() > 0) {
+                messageLengths.putIfAbsent(new PlyKey(message.gameId(), message.moveNumber(), message.color()),
+                        message.length());
+            }
+        }
+        Map<PlyKey, Move> firstMovePerPly = new HashMap<>();
+        for (Move move : moves) {
+            if (move.game == null) {
+                continue;
+            }
+            firstMovePerPly.merge(new PlyKey(move.game.id, move.moveNumber, move.color), move,
+                    (kept, other) -> FIRST_STORED.compare(other, kept) < 0 ? other : kept);
+        }
+        for (Map.Entry<PlyKey, Move> ply : firstMovePerPly.entrySet()) {
+            Move move = ply.getValue();
+            if (move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
+                    || !hasTrackedModelId(move.modelId)) {
+                continue;
+            }
+            ComparisonAccumulator accumulator =
+                    byModel.computeIfAbsent(normalizeModelId(move.modelId), ignored -> new ComparisonAccumulator());
+            TalkAccumulator talk = move.chatMode == ChatMode.MANDATORY
+                    ? accumulator.mandatoryChat
+                    : accumulator.optionalChat;
+            talk.moves++;
+            Integer length = messageLengths.get(ply.getKey());
+            if (length != null) {
+                talk.messages++;
+                talk.messageLengthTotal += length;
+            }
+        }
+    }
+
+    /** Earliest stored first; the id only breaks ties so the choice does not depend on load order. */
+    private static final Comparator<Move> FIRST_STORED = Comparator
+            .comparing((Move move) -> move.createdAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(move -> move.id, Comparator.nullsLast(Comparator.naturalOrder()));
+
+    private TalkativenessDto talkativeness(TalkAccumulator talk) {
+        return new TalkativenessDto(
+                talk.moves,
+                talk.messages,
+                talk.moves == 0 ? null : decimal((double) talk.messages / talk.moves, 4),
+                talk.messages == 0 ? null : decimal((double) talk.messageLengthTotal / talk.messages, 1)
+        );
+    }
+
+    private record PlyKey(UUID gameId, int moveNumber, String color) {
     }
 
     private Long percentile95(List<Long> sortedValues) {
@@ -796,6 +863,14 @@ public class AnalyticsService {
         private long inaccuracies;
         private long mistakes;
         private long blunders;
+        private final TalkAccumulator optionalChat = new TalkAccumulator();
+        private final TalkAccumulator mandatoryChat = new TalkAccumulator();
+    }
+
+    private static final class TalkAccumulator {
+        private long moves;
+        private long messages;
+        private long messageLengthTotal;
     }
 
     private static final class ReliabilityAccumulator {

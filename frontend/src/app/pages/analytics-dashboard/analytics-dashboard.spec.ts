@@ -168,6 +168,64 @@ describe('AnalyticsDashboard', () => {
     expect(component.formatPerGame(undefined)).toBe('n/a');
   });
 
+  it('lists talkativeness per chat mode, most talkative first, with n/a for modes without moves', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 4,
+      models: [
+        comparisonRow('openai.quiet', {
+          optionalChat: { moves: 40, messages: 0, talkRate: 0 },
+          mandatoryChat: { moves: 0, messages: 0 },
+        }),
+        comparisonRow('anthropic.chatty', {
+          optionalChat: { moves: 38, messages: 38, talkRate: 1, averageMessageLength: 87.4 },
+          mandatoryChat: { moves: 20, messages: 19, talkRate: 0.95, averageMessageLength: 64 },
+        }),
+        comparisonRow('model.mandatory-only', {
+          optionalChat: { moves: 0, messages: 0 },
+          mandatoryChat: { moves: 10, messages: 7, talkRate: 0.7, averageMessageLength: 120 },
+        }),
+        // Only moves with chat Off, and an older backend without the fields: not listed.
+        comparisonRow('model.silent', {
+          optionalChat: { moves: 0, messages: 0 },
+          mandatoryChat: { moves: 0, messages: 0 },
+        }),
+        comparisonRow('model.legacy'),
+      ],
+    });
+
+    const rows = component.talkRows();
+    expect(rows.map((row) => row.modelId)).toEqual([
+      'anthropic.chatty',
+      'openai.quiet',
+      'model.mandatory-only',
+    ]);
+
+    const [chatty, quiet, mandatoryOnly] = rows;
+    expect(component.formatTalkRate(chatty.optionalChat)).toBe('100.0%');
+    expect(component.talkSample(chatty.optionalChat)).toBe('38 of 38 moves');
+    expect(component.formatMessageLength(chatty.optionalChat)).toBe('87 chars');
+    expect(component.formatTalkRate(chatty.mandatoryChat)).toBe('95.0%');
+    expect(component.formatTalkRate(quiet.optionalChat)).toBe('0.0%');
+    expect(component.formatMessageLength(quiet.optionalChat)).toBe('n/a');
+    expect(component.formatTalkRate(quiet.mandatoryChat)).toBe('n/a');
+    expect(component.talkSample(quiet.mandatoryChat)).toBe('');
+    expect(component.formatTalkRate(mandatoryOnly.optionalChat)).toBe('n/a');
+    expect(component.talkSample({ moves: 1, messages: 1, talkRate: 1 })).toBe('1 of 1 move');
+    expect(component.formatTalkRate(undefined)).toBe('n/a');
+  });
+
+  it('explains talkativeness in one line', () => {
+    const component = new AnalyticsDashboard({} as any);
+
+    expect(component.talkExplanation).toContain('non-empty message');
+    expect(component.talkExplanation).toContain('Mandatory');
+    expect(component.talkExplanation).toContain('chat Off are left out');
+  });
+
   it('explains the move-quality metrics in one line', () => {
     const component = new AnalyticsDashboard({} as any);
 
