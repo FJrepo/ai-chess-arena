@@ -104,7 +104,8 @@ public class GameMoveService {
                 game.pgn,
                 modelId,
                 llmResponse.responseTimeMs(),
-                retryCount
+                retryCount,
+                false
         );
     }
 
@@ -146,7 +147,7 @@ public class GameMoveService {
             gameWebSocket.broadcastChat(gameId, moveNumber, color, null, playerName, message);
         }
 
-        gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, game.pgn, null, 0, 0);
+        gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, game.pgn, null, 0, 0, false);
     }
 
     @Transactional
@@ -201,7 +202,9 @@ public class GameMoveService {
         moveRepository.persistAndFlush(move);
 
         updateGameState(game, result.fen(), normalizedSan, moveNumber, sideToMove);
-        gameWebSocket.broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), game.pgn, "admin-override", 0, 0);
+        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, sideToMove, result.fen()));
+        gameWebSocket.broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), game.pgn,
+                "admin-override", 0, 0, true);
     }
 
     /** Compares piece placement, side to move and castling rights; ignores clocks and en-passant formatting. */

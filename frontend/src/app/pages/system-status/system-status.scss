@@ -1,34 +1,94 @@
+@use 'sass:map';
+@use '@angular/material' as mat;
+
+// Status tones come from Material's tonal palettes (M3 has no success role); the card
+// surfaces and text use the theme's system tokens. Dark is the app default.
+$success: mat.$green-palette;
+$warning: mat.$orange-palette;
+
+:host {
+  --system-card-bg: var(--mat-sys-surface-container);
+  --system-card-border: var(--mat-sys-outline-variant);
+  --system-card-shadow: none;
+  --system-divider: var(--mat-sys-outline-variant);
+
+  --system-success-text: color-mix(
+    in srgb,
+    #{map.get($success, 80)} 55%,
+    var(--mat-sys-on-surface)
+  );
+  --system-success-border: color-mix(in srgb, var(--system-success-text) 60%, transparent);
+  --system-success-fill: color-mix(in srgb, var(--system-success-text) 14%, transparent);
+
+  --system-warning-text: #{map.get($warning, 80)};
+  --system-warning-border: color-mix(in srgb, var(--system-warning-text) 60%, transparent);
+  --system-warning-fill: color-mix(in srgb, var(--system-warning-text) 14%, transparent);
+
+  display: block;
+}
+
+:host-context([data-theme='light']) {
+  --system-card-bg: var(--mat-sys-surface-container-lowest);
+  --system-card-border: color-mix(in srgb, var(--mat-sys-outline-variant) 80%, transparent);
+  --system-card-shadow:
+    0 1px 2px color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent),
+    0 4px 14px color-mix(in srgb, var(--mat-sys-shadow) 4%, transparent);
+  --system-divider: color-mix(in srgb, var(--mat-sys-outline-variant) 80%, transparent);
+
+  --system-success-text: #{map.get($success, 30)};
+  --system-success-border: #{map.get($success, 40)};
+  --system-success-fill: color-mix(in srgb, #{map.get($success, 40)} 8%, transparent);
+
+  --system-warning-text: #{map.get($warning, 30)};
+  --system-warning-border: #{map.get($warning, 40)};
+  --system-warning-fill: color-mix(in srgb, #{map.get($warning, 40)} 8%, transparent);
+}
+
 .system-page {
   display: grid;
-  gap: 22px;
+  gap: 20px;
 }
 
-.hero-card {
-  display: flex;
-  justify-content: space-between;
+// Compact operator header: title block left, Refresh right.
+.system-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 24px;
+  padding: 4px 4px 0;
 }
 
-.hero-copy {
-  max-width: 720px;
+.system-header-copy {
+  display: grid;
+  gap: 4px;
 }
 
-.eyebrow {
-  color: color-mix(in srgb, var(--mat-sys-primary) 78%, white);
+.system-kicker {
+  font: var(--mat-sys-label-medium);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mat-sys-primary);
 }
 
-.hero-actions {
+.system-title {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.system-subtitle {
+  margin: 2px 0 0;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface-variant);
+  text-wrap: balance;
+}
+
+.system-header-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 180px;
-}
-
-.last-checked {
-  font-size: 0.88rem;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 65%, transparent);
+  align-items: center;
+  gap: 16px;
 }
 
 .loading-state,
@@ -36,123 +96,230 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px 20px;
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 88%, transparent);
+  padding: 16px 20px;
+  border-radius: var(--app-surface-radius-md);
+  border: 1px solid var(--system-card-border);
+  background: var(--system-card-bg);
 }
 
 .error-card {
   color: var(--mat-sys-error);
-  border: 1px solid color-mix(in srgb, var(--mat-sys-error) 35%, transparent);
+  border-color: color-mix(in srgb, var(--mat-sys-error) 45%, transparent);
 }
 
-.status-grid,
-.guidance-grid {
+// Shared card surface for the status cards and the troubleshooting card.
+.status-card {
+  @include mat.card-overrides(
+    (
+      outlined-container-color: var(--system-card-bg),
+      outlined-outline-color: var(--system-card-border),
+      outlined-container-shape: var(--app-surface-radius-md),
+    )
+  );
+  box-shadow: var(--system-card-shadow);
+
+  mat-card-content {
+    padding: 20px 22px;
+  }
+}
+
+// Three status cards share one structure: header / summary / footer rows aligned
+// across the cards through subgrid, the footer always below a divider.
+.status-grid {
   display: grid;
-  gap: 18px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
+  column-gap: 18px;
+  row-gap: 0;
 
-.status-card,
-.guide-card {
-  border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 18%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-surface-container-high) 84%, transparent);
-}
+  .status-card {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
 
-.status-card mat-card-content,
-.guide-card mat-card-content {
-  padding: 22px;
+  mat-card-content {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 12px;
+  }
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
   align-items: flex-start;
-  margin-bottom: 12px;
+  gap: 16px;
 
   h2 {
     margin: 4px 0 0;
-    font-size: 1.35rem;
+    font: var(--mat-sys-title-large);
+    font-weight: 500;
+    letter-spacing: 0;
   }
 }
 
 .card-kicker {
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font: var(--mat-sys-label-medium);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 56%, transparent);
+  color: var(--mat-sys-on-surface-variant);
 }
 
-mat-chip {
-  text-transform: capitalize;
+.card-summary {
+  margin: 0;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface);
+}
 
-  &.healthy {
-    background: color-mix(in srgb, #22c55e 22%, transparent);
-    color: color-mix(in srgb, #22c55e 88%, white);
-  }
+.card-footer {
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--system-divider);
+}
 
-  &.degraded {
-    background: color-mix(in srgb, #f59e0b 22%, transparent);
-    color: color-mix(in srgb, #f59e0b 92%, white);
-  }
+.operator-note {
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .meta-list {
   display: grid;
-  gap: 10px;
-  margin-top: 18px;
+  align-content: start;
+  gap: 8px;
 }
 
 .meta-row {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  font-size: 0.95rem;
+  font: var(--mat-sys-body-medium);
 
   span {
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   strong {
+    font-weight: 500;
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 }
 
-.operator-note {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid color-mix(in srgb, var(--mat-sys-outline) 16%, transparent);
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 68%, transparent);
+mat-chip {
+  flex: none;
+  height: 26px;
+  text-transform: capitalize;
+  letter-spacing: 0;
+
+  @include mat.chips-overrides(
+    (
+      container-shape-radius: 999px,
+      outline-width: 1px,
+      label-text-size: 0.75rem,
+      label-text-weight: 600,
+      label-text-tracking: 0.01em,
+    )
+  );
+
+  &.healthy {
+    background: var(--system-success-fill);
+
+    @include mat.chips-overrides(
+      (
+        outline-color: var(--system-success-border),
+        label-text-color: var(--system-success-text),
+      )
+    );
+  }
+
+  &.degraded {
+    background: var(--system-warning-fill);
+
+    @include mat.chips-overrides(
+      (
+        outline-color: var(--system-warning-border),
+        label-text-color: var(--system-warning-text),
+      )
+    );
+  }
 }
 
-.guide-card h3 {
-  margin: 0 0 10px;
+// Troubleshooting spans the page as one card with the two cases side by side.
+.troubleshooting-title {
+  margin: 0 0 14px;
+  font: var(--mat-sys-title-medium);
+  letter-spacing: 0;
 }
 
-.guide-card p {
-  margin: 0;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+.troubleshooting-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+
+.troubleshooting-item {
+  h3 {
+    margin: 0 0 6px;
+    font: var(--mat-sys-title-small);
+    letter-spacing: 0;
+    color: var(--mat-sys-on-surface);
+  }
+
+  p {
+    margin: 0;
+    font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  & + & {
+    padding-left: 32px;
+    border-left: 1px solid var(--system-divider);
+  }
+}
+
+code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--system-divider);
+  background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
+  color: var(--mat-sys-on-surface);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.86em;
+  white-space: nowrap;
 }
 
 @media (max-width: 1100px) {
-  .status-grid,
-  .guidance-grid {
+  .status-grid {
     grid-template-columns: 1fr;
+    row-gap: 18px;
+
+    .status-card,
+    mat-card-content {
+      grid-row: auto;
+      grid-template-rows: none;
+    }
+  }
+
+  .troubleshooting-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .troubleshooting-item + .troubleshooting-item {
+    padding-left: 0;
+    padding-top: 20px;
+    border-left: 0;
+    border-top: 1px solid var(--system-divider);
   }
 }
 
 @media (max-width: 760px) {
-  .hero-card {
-    flex-direction: column;
-    padding: 22px;
-  }
-
-  .hero-actions {
-    align-items: stretch;
-    min-width: 0;
+  .system-header {
+    grid-template-columns: 1fr;
   }
 
   .meta-row {

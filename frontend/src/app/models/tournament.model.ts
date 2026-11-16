@@ -137,6 +137,7 @@ export interface MoveWsMessage {
   pgn?: string | null;
   responseTimeMs?: number;
   retryCount?: number;
+  isOverride?: boolean;
   evaluationCp?: number | null;
   evaluationMate?: number | null;
 }

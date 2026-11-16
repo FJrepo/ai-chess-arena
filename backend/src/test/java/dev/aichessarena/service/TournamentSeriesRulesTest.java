@@ -8,9 +8,7 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.Tournament.DrawPolicy;
 import dev.aichessarena.entity.TournamentParticipant;
-import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import jakarta.ws.rs.WebApplicationException;
@@ -54,6 +52,9 @@ class TournamentSeriesRulesTest {
             // REPLAY_GAME: sudden death until a decisive game
             "3, REPLAY_GAME,          DDDB, Seed 2, 4",
             "3, REPLAY_GAME,          ABDDDA, Seed 1, 6",
+            // a single game under REPLAY_GAME is a best-of-1 series: tiebreak games until one is decisive
+            "1, REPLAY_GAME,          DA,   Seed 1, 2",
+            "1, REPLAY_GAME,          DDB,  Seed 2, 3",
     })
     void seriesIsDecidedByTheBestOfRules(int bestOf, DrawPolicy policy, String outcomes, String winner, int games) {
         Fixture fixture = new Fixture(bestOf, policy);
@@ -92,6 +93,68 @@ class TournamentSeriesRulesTest {
         assertNull(fixture.advanced());
         assertEquals(6, fixture.seriesGames().size());
         assertEquals(1, fixture.pendingSeriesGames());
+    }
+
+    @Test
+    void aDrawnSingleGameUnderReplayKeepsItsHistoryAndGetsATiebreakGameWithSwappedColors() {
+        Fixture fixture = new Fixture(1, DrawPolicy.REPLAY_GAME);
+        Game drawn = fixture.slot("Semifinal", 0);
+
+        fixture.play('D');
+
+        assertNull(fixture.advanced());
+        assertEquals(Game.GameStatus.COMPLETED, drawn.status);
+        assertEquals(Game.GameResult.DRAW, drawn.result);
+        List<Game> games = fixture.seriesGames();
+        assertEquals(2, games.size());
+        Game tiebreak = games.getLast();
+        assertEquals(2, tiebreak.seriesGameNumber);
+        assertEquals(1, tiebreak.seriesBestOf);
+        assertEquals(Game.GameStatus.WAITING, tiebreak.status);
+        assertEquals(drawn.blackPlayerName, tiebreak.whitePlayerName);
+        assertEquals(drawn.whitePlayerName, tiebreak.blackPlayerName);
+
+        fixture.play('B');
+
+        assertEquals("Seed 2", fixture.advanced());
+        assertEquals("Seed 2", tiebreak.advancedParticipant.playerName);
+        assertNull(drawn.advancedParticipant);
+        assertEquals(Game.GameResult.DRAW, drawn.result);
+    }
+
+    @ParameterizedTest(name = "legacy single game without series id: draw, then {0} -> {1}")
+    @CsvSource({
+            "WHITE_WINS,    Seed 2",
+            "BLACK_WINS,    Seed 1",
+            "BLACK_FORFEIT, Seed 2",
+            "WHITE_FORFEIT, Seed 1",
+    })
+    void aDrawnSingleGameWithoutSeriesIdIsDecidedByItsFirstTiebreak(Game.GameResult tiebreakResult, String winner) {
+        Fixture fixture = new Fixture(1, DrawPolicy.REPLAY_GAME);
+        Game drawn = fixture.slot("Semifinal", 0);
+        drawn.seriesId = null; // rows from before series support
+
+        drawn.status = Game.GameStatus.COMPLETED;
+        drawn.result = Game.GameResult.DRAW;
+        fixture.service.advanceWinner(drawn.id);
+
+        assertEquals(drawn.id, drawn.seriesId);
+        List<Game> series = fixture.gameRepository.findBySeriesId(drawn.id);
+        assertEquals(2, series.size());
+        Game tiebreak = series.getLast();
+        assertEquals("Seed 2", tiebreak.whitePlayerName);
+
+        boolean forfeit = tiebreakResult == Game.GameResult.WHITE_FORFEIT
+                || tiebreakResult == Game.GameResult.BLACK_FORFEIT;
+        tiebreak.status = forfeit ? Game.GameStatus.FORFEIT : Game.GameStatus.COMPLETED;
+        tiebreak.result = tiebreakResult;
+        fixture.service.advanceWinner(tiebreak.id);
+
+        assertEquals(winner, fixture.advanced());
+        assertEquals(winner, tiebreak.advancedParticipant.playerName);
+        List<Game> after = fixture.gameRepository.findBySeriesId(drawn.id);
+        assertEquals(2, after.size(), "no third game after a decisive tiebreak");
+        assertEquals(0, after.stream().filter(g -> g.status == Game.GameStatus.WAITING).count());
     }
 
     @Test
@@ -189,8 +252,6 @@ class TournamentSeriesRulesTest {
             service.tournamentRepository = new SingleTournamentRepository(tournament);
             service.participantRepository = new FixedParticipantRepository(participants);
             service.gameRepository = gameRepository;
-            service.moveRepository = new MoveRepository();
-            service.chatMessageRepository = new ChatMessageRepository();
             service.generateBracket(tournament.id);
             seriesId = slot("Semifinal", 0).seriesId;
         }

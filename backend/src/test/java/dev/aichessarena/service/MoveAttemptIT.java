@@ -10,8 +10,10 @@ import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.Tournament;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
 import dev.aichessarena.service.OpenRouterService.ProviderOutcome;
@@ -38,6 +40,9 @@ class MoveAttemptIT {
 
     @Inject
     TournamentRepository tournamentRepository;
+
+    @Inject
+    TournamentParticipantRepository participantRepository;
 
     @Inject
     TournamentService tournaments;
@@ -93,18 +98,26 @@ class MoveAttemptIT {
     }
 
     @Test
-    void replayingADrawnSingleGameDiscardsItsAttempts() {
+    void aDrawnSingleGameUnderReplayKeepsItsAttemptsAndTheTiebreakStartsEmpty() {
         UUID id = QuarkusTransaction.requiringNew().call(() -> {
             Tournament tournament = new Tournament();
             tournament.name = "Replay " + UUID.randomUUID();
             tournament.drawPolicy = Tournament.DrawPolicy.REPLAY_GAME;
             tournamentRepository.persist(tournament);
+            TournamentParticipant white = participant(tournament, "White", 0);
+            TournamentParticipant black = participant(tournament, "Black", 1);
             Game game = new Game();
             game.tournament = tournament;
             game.status = GameStatus.COMPLETED;
             game.result = Game.GameResult.DRAW;
-            game.whitePlayerName = "White";
-            game.blackPlayerName = "Black";
+            game.bracketRound = "Final";
+            game.bracketPosition = 0;
+            game.whiteParticipant = white;
+            game.whitePlayerName = white.playerName;
+            game.whiteModelId = white.modelId;
+            game.blackParticipant = black;
+            game.blackPlayerName = black.playerName;
+            game.blackModelId = black.modelId;
             games.persist(game);
             return game.id;
         });
@@ -113,11 +126,27 @@ class MoveAttemptIT {
 
         tournaments.advanceWinner(id);
 
-        long remaining = QuarkusTransaction.requiringNew().call(() -> attemptRepository.count("game.id", id));
-        assertEquals(0, remaining);
-        Game replay = QuarkusTransaction.requiringNew().call(() -> games.findById(id));
-        assertEquals(GameStatus.WAITING, replay.status);
-        assertEquals(0, BigDecimal.ZERO.compareTo(replay.totalCostUsd));
+        long kept = QuarkusTransaction.requiringNew().call(() -> attemptRepository.count("game.id", id));
+        assertEquals(1, kept);
+        Game drawn = QuarkusTransaction.requiringNew().call(() -> games.findById(id));
+        assertEquals(0, new BigDecimal("0.001").compareTo(drawn.totalCostUsd), drawn.totalCostUsd.toPlainString());
+        List<Game> series = QuarkusTransaction.requiringNew().call(() -> games.findBySeriesId(drawn.seriesId));
+        assertEquals(2, series.size(), "a tiebreak game is added");
+        UUID tiebreakId = series.get(1).id;
+        long tiebreakAttempts = QuarkusTransaction.requiringNew()
+                .call(() -> attemptRepository.count("game.id", tiebreakId));
+        assertEquals(0, tiebreakAttempts);
+    }
+
+    private TournamentParticipant participant(Tournament tournament, String name, int seed) {
+        TournamentParticipant participant = new TournamentParticipant();
+        participant.tournament = tournament;
+        participant.playerName = name;
+        participant.controlType = TournamentParticipant.ControlType.AI;
+        participant.modelId = "model-" + name.toLowerCase();
+        participant.seed = seed;
+        participantRepository.persist(participant);
+        return participant;
     }
 
     private UUID newGame(BigDecimal totalCost) {

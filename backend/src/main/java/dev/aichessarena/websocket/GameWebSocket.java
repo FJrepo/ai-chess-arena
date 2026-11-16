@@ -213,7 +213,7 @@ public class GameWebSocket {
 
     public void broadcastMove(UUID gameId, int moveNumber, String color, String san,
                                String fen, String pgn, String modelId,
-                               long responseTimeMs, int retryCount) {
+                               long responseTimeMs, int retryCount, boolean isOverride) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "move");
         msg.put("gameId", gameId.toString());
@@ -229,6 +229,7 @@ public class GameWebSocket {
         }
         msg.put("responseTimeMs", responseTimeMs);
         msg.put("retryCount", retryCount);
+        msg.put("isOverride", isOverride);
         broadcast(gameId, msg.toString());
     }
 
