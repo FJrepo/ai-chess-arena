@@ -1,300 +1,551 @@
-.tournament-setup {
-  max-width: 980px;
-  margin: 0 auto;
+@use '@angular/material' as mat;
+
+// Card surfaces follow the list and system pages: the lowest container on the pale light
+// page (with a soft lift), the low container in dark mode.
+:host {
+  --setup-card-bg: light-dark(
+    var(--mat-sys-surface-container-lowest),
+    var(--mat-sys-surface-container-low)
+  );
+  --setup-line: color-mix(in srgb, var(--mat-sys-outline-variant) 80%, transparent);
+  // A soft lift on the pale light page only.
+  --setup-card-shadow: 0 2px 10px
+    light-dark(color-mix(in srgb, var(--mat-sys-shadow) 7%, transparent), transparent);
+  --setup-inset-bg: light-dark(
+    var(--mat-sys-surface-container-low),
+    var(--mat-sys-surface-container)
+  );
+  --setup-caption: var(--mat-sys-on-surface-variant);
+  // Placeholders and disabled labels: clearly quieter than values, still 4.5:1 on the card
+  // in both themes (every label floats, so placeholders stay visible).
+  --setup-muted: color-mix(in srgb, var(--mat-sys-on-surface) 62%, transparent);
+  --setup-mono: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
+  @include mat.form-field-overrides(
+    (
+      outlined-input-text-placeholder-color: var(--setup-muted),
+    )
+  );
+  @include mat.select-overrides(
+    (
+      placeholder-text-color: var(--setup-muted),
+    )
+  );
+
+  // Space below the sticky toolbar for the sticky preview column.
+  --setup-sticky-top: 88px;
+
+  display: block;
+}
+
+// The global kicker tint drops below 4.5:1 on the light hero; the primary role clears it
+// on the hero surface in both themes.
+.setup-hero {
+  padding: 22px 28px;
+
+  .page-kicker {
+    color: var(--mat-sys-primary);
+  }
+
+  .page-subtitle {
+    color: var(--setup-caption);
+  }
+}
+
+.setup-layout {
+  display: grid;
+  gap: 24px;
+  align-items: start;
+}
+
+.setup-main,
+.setup-aside {
   display: grid;
   gap: 20px;
+  min-width: 0;
+}
 
-  .setup-hero {
-    border-radius: 18px;
-    padding: 24px;
-    background:
-      radial-gradient(
-        110% 120% at 10% 0%,
-        color-mix(in srgb, var(--mat-sys-primary) 28%, transparent),
-        transparent 60%
-      ),
-      linear-gradient(
-        130deg,
-        color-mix(in srgb, var(--mat-sys-primary-container) 65%, white),
-        color-mix(in srgb, var(--mat-sys-surface) 88%, white)
-      );
-    border: 1px solid color-mix(in srgb, var(--mat-sys-primary) 14%, transparent);
-
-    h1 {
-      margin: 0 0 8px;
-      font-size: 1.9rem;
-      line-height: 1.2;
-    }
-
-    p {
-      margin: 0;
-      color: color-mix(in srgb, var(--mat-sys-on-surface) 75%, black);
-    }
+@media (min-width: 1200px) {
+  .setup-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 28vw, 420px);
   }
 
-  .panel {
-    border-radius: 16px;
-    border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 26%, transparent);
-    box-shadow: 0 6px 24px rgba(15, 32, 64, 0.08);
-  }
-
-  .full-width {
-    width: 100%;
-  }
-
-  .settings-grid {
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-  }
-
-  .prompt-meta-row {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: -6px;
-    margin-bottom: 4px;
-  }
-
-  .prompt-version {
-    font-size: 0.8rem;
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 64%, transparent);
-  }
-
-  .prompt-warning {
-    font-size: 0.8rem;
-    color: color-mix(in srgb, #ff8a80 78%, var(--mat-sys-on-surface));
+  // The preview card, with the launch action in its footer, stays in view; a tall preview
+  // scrolls inside the card so the action never leaves the viewport.
+  .setup-aside {
+    position: sticky;
+    top: var(--setup-sticky-top);
   }
 
   .confidence-panel {
-    .confidence-band-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
+    max-height: calc(100vh - var(--setup-sticky-top) - 16px);
+  }
 
-    .confidence-band {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 92px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+  .preview-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
 
-      &.safe {
-        background: color-mix(in srgb, #22a06b 18%, transparent);
-        color: #0e8b58;
-      }
+// ----- Cards and type scale -----
 
-      &.moderate {
-        background: color-mix(in srgb, #f0a202 18%, transparent);
-        color: #c07d00;
-      }
+.panel {
+  @include mat.card-overrides(
+    (
+      elevated-container-color: var(--setup-card-bg),
+      elevated-container-shape: var(--app-surface-radius-md),
+      elevated-container-elevation: none,
+      title-text-weight: 500,
+    )
+  );
+  border: 1px solid var(--setup-line);
+  box-shadow: var(--setup-card-shadow);
 
-      &.expensive {
-        background: color-mix(in srgb, #d14343 18%, transparent);
-        color: #c34a4a;
-      }
-    }
+  mat-card-header {
+    padding: 20px 24px 0;
+  }
 
-    .confidence-note {
-      color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-    }
+  mat-card-subtitle {
+    margin-top: 4px;
+    font: var(--mat-sys-body-medium);
+    color: var(--setup-caption);
+  }
 
-    .confidence-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-    }
+  // The first floating label sits on the field's outline, so the header gets real space.
+  mat-card-content {
+    padding: 20px 24px 24px;
+  }
+}
 
-    .confidence-metric {
-      display: grid;
-      gap: 4px;
-      padding: 14px 16px;
-      border-radius: 14px;
-      background: color-mix(in srgb, var(--mat-sys-primary-container) 24%, transparent);
-      border: 1px solid color-mix(in srgb, var(--mat-sys-primary) 12%, transparent);
+// The scrolling preview is keyboard-reachable; its ring sits inside the card edge.
+.preview-scroll:focus-visible,
+.rules-toggle:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+  outline-offset: -2px;
+}
 
-      strong {
-        font-size: 1.2rem;
-      }
+.full-width {
+  width: 100%;
+}
 
-      span:not(.metric-label) {
-        color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-        font-size: 0.84rem;
-      }
-    }
+.caption,
+.selected-model-meta,
+.participant-meta,
+.participant-empty,
+.confidence-empty p,
+.launch-checklist li,
+.prompt-warning,
+.create-error {
+  font: var(--mat-sys-body-medium);
+  color: var(--setup-caption);
+}
 
-    .metric-label {
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+.model-option-meta,
+.confidence-note,
+.confidence-metric span:not(.metric-label),
+.confidence-footnotes p {
+  font: var(--mat-sys-body-small);
+  color: var(--setup-caption);
+}
+
+.prompt-warning,
+.create-error,
+.confidence-footnotes .confidence-warning {
+  margin: 0;
+  color: var(--mat-sys-error);
+}
+
+.mono {
+  font-family: var(--setup-mono);
+  font-size: 0.92em;
+}
+
+.group-heading,
+.selected-model-title,
+.participant-name,
+.confidence-empty strong {
+  margin: 0;
+  font: var(--mat-sys-title-small);
+  letter-spacing: var(--mat-sys-title-small-tracking);
+}
+
+// Inset surfaces inside the cards.
+.rules-preview,
+.selected-model,
+.participant-seed,
+.confidence-metric {
+  border: 1px solid var(--setup-line);
+  border-radius: 12px;
+  background: var(--setup-inset-bg);
+}
+
+.group-heading-row,
+.participants-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-group,
+.participants-list-head,
+.launch-footer {
+  border-top: 1px solid var(--setup-line);
+}
+
+.field-group {
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+  margin-top: 6px;
+
+  & + .field-group {
+    margin-top: 18px;
+  }
+}
+
+// Equal columns that always reach the card edge.
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  column-gap: 16px;
+  align-items: start;
+}
+
+.toggle-row,
+.openrouter-status,
+.add-row,
+.add-action,
+.confidence-band-row,
+.launch-checklist li {
+  display: flex;
+  align-items: center;
+}
+
+.toggle-row {
+  min-height: 40px;
+}
+
+// ----- System rules: a monospace preview, the full read-only text on demand -----
+
+.rules-preview {
+  margin: 0;
+  max-height: calc(6 * 1.55em + 24px);
+  overflow: hidden;
+  padding: 12px 16px;
+  font: 400 0.84rem/1.55 var(--setup-mono);
+  white-space: pre-wrap;
+  mask-image: linear-gradient(to bottom, black 62%, transparent);
+}
+
+.rules-block:has(> [open]) > .rules-preview,
+.rules-details:not([open]) .when-open,
+[open] .when-closed {
+  display: none;
+}
+
+.rules-details {
+  display: grid;
+  gap: 12px;
+}
+
+.rules-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 6px 12px 6px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  list-style: none;
+  font: var(--mat-sys-label-large);
+  letter-spacing: var(--mat-sys-label-large-tracking);
+  color: var(--mat-sys-primary);
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--mat-sys-primary) 8%, transparent);
+  }
+}
+
+[open] > .rules-toggle mat-icon {
+  transform: rotate(180deg);
+}
+
+.rules-field {
+  @include mat.form-field-overrides(
+    (
+      container-text-font: var(--setup-mono),
+      container-text-size: 0.84rem,
+    )
+  );
+}
+
+// ----- Participants -----
+
+.openrouter-status {
+  gap: 10px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: var(--setup-inset-bg);
+
+  &.fail {
+    background: var(--mat-sys-error-container);
+    color: var(--mat-sys-on-error-container);
+  }
+
+  &.warn {
+    background: color-mix(in srgb, var(--mat-sys-tertiary-container) 70%, transparent);
+    color: var(--mat-sys-on-tertiary-container);
+  }
+}
+
+// Two by two on narrower desktops, one row of four on wide ones.
+.add-participant {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 1600px) {
+  .add-participant.is-ai {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+}
+
+.model-option-row,
+.selected-model {
+  display: flex;
+  align-items: flex-start;
+}
+
+.model-option-row {
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.model-option-title {
+  font-weight: 600;
+}
+
+.selected-model {
+  gap: 10px;
+  margin: 2px 0 18px;
+  padding: 12px 14px;
+}
+
+.model-option-content,
+.selected-model-text,
+.participant-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.add-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-bottom: 20px;
+}
+
+.add-action {
+  gap: 14px;
+  margin-left: auto;
+}
+
+// Outlined secondary action; its disabled outline keeps 3:1 against the card.
+.add-button {
+  @include mat.button-overrides(
+    (
+      outlined-disabled-outline-color: var(--mat-sys-outline),
+      outlined-disabled-label-text-color: var(--setup-muted),
+    )
+  );
+}
+
+.participants-list-head {
+  padding-top: 16px;
+}
+
+.participant-list,
+.launch-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.participant-list {
+  margin-top: 8px;
+}
+
+.participant-row {
+  display: grid;
+  grid-template-columns: 28px 24px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 14px;
+  padding: 12px 4px;
+
+  & + & {
+    border-top: 1px solid var(--setup-line);
+  }
+}
+
+.participant-seed {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font: var(--mat-sys-label-medium);
+  color: var(--setup-caption);
+}
+
+// Long unbroken names and model ids wrap inside the row.
+.participant-name,
+.participant-meta {
+  overflow-wrap: anywhere;
+}
+
+.meta-sep {
+  margin: 0 6px;
+}
+
+.participant-empty {
+  padding: 14px 4px;
+}
+
+// ----- Preview column -----
+
+.confidence-band-row {
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.confidence-band {
+  flex: none;
+  min-width: 84px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  text-align: center;
+  font: var(--mat-sys-label-large);
+  letter-spacing: var(--mat-sys-label-large-tracking);
+
+  &.safe {
+    background: #22a06b2e;
+    color: light-dark(#0b6b44, #6fd6a4);
+  }
+
+  &.moderate {
+    background: #f0a2022e;
+    color: light-dark(#8a5a00, #f3c25a);
+  }
+
+  &.expensive {
+    background: #d143432e;
+    color: light-dark(#a32f2f, #ff9d9d);
+  }
+}
+
+.confidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.confidence-metric {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 10px 12px;
+
+  strong {
+    font: var(--mat-sys-title-medium);
+    font-weight: 600;
+  }
+}
+
+.metric-label {
+  font: var(--mat-sys-label-medium);
+  letter-spacing: var(--mat-sys-label-medium-tracking);
+  color: var(--setup-caption);
+}
+
+.confidence-footnotes {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.confidence-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 4px 0;
+
+  mat-icon {
+    flex: none;
+    color: var(--mat-sys-primary);
+  }
+
+  p {
+    margin: 4px 0 0;
+  }
+}
+
+.launch-footer {
+  flex: none;
+  display: grid;
+  gap: 12px;
+  padding: 16px 24px 20px;
+}
+
+.launch-checklist {
+  display: grid;
+  gap: 6px;
+
+  li {
+    gap: 8px;
+  }
+
+  mat-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+  }
+
+  .done {
+    color: var(--mat-sys-on-surface);
+
+    mat-icon {
       color: var(--mat-sys-primary);
-    }
-
-    .confidence-footnotes {
-      margin-top: 14px;
-      display: grid;
-      gap: 8px;
-
-      p {
-        margin: 0;
-        color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-      }
-    }
-
-    .confidence-warning {
-      color: color-mix(in srgb, #ff8a80 78%, var(--mat-sys-on-surface));
-    }
-
-    .confidence-empty {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 8px 0;
-
-      mat-icon {
-        transform: scale(1.2);
-        color: var(--mat-sys-primary);
-      }
-
-      strong,
-      p {
-        display: block;
-        margin: 0;
-      }
-
-      p {
-        margin-top: 4px;
-        color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-      }
-    }
-  }
-
-  .participants-card {
-    mat-card-subtitle {
-      margin-top: 6px;
-    }
-  }
-
-  .openrouter-status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border-radius: 12px;
-    padding: 10px 12px;
-    margin-bottom: 16px;
-    background: color-mix(in srgb, var(--mat-sys-primary-container) 45%, transparent);
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 80%, black);
-
-    &.ok {
-      background: color-mix(in srgb, #22a06b 14%, transparent);
-    }
-
-    &.fail {
-      background: color-mix(in srgb, #d14343 14%, transparent);
-    }
-  }
-
-  .add-participant {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px;
-    margin-bottom: 16px;
-
-    .model-select {
-      min-width: 0;
-    }
-
-    .model-option-title {
-      font-weight: 600;
-    }
-
-    .model-option-meta {
-      font-size: 0.78rem;
-      opacity: 0.75;
-    }
-  }
-
-  .model-option-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 2px 0;
-  }
-
-  .model-option-content {
-    min-width: 0;
-  }
-
-  .model-controls {
-    margin: 4px 0 12px;
-  }
-
-  .selected-model {
-    margin-bottom: 14px;
-    border-radius: 12px;
-    padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--mat-sys-primary) 20%, transparent);
-    background: color-mix(in srgb, var(--mat-sys-surface) 82%, white);
-
-    .selected-model-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 600;
-    }
-
-    .selected-model-meta {
-      margin-top: 6px;
-      font-size: 0.84rem;
-      opacity: 0.8;
-    }
-  }
-
-  .add-action {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 14px;
-  }
-
-  .provider-line {
-    font-size: 0.8rem;
-    opacity: 0.72;
-  }
-
-  .participant-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  @media (max-width: 900px) {
-    .confidence-panel .confidence-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .add-participant {
-      grid-template-columns: 1fr;
     }
   }
 }
 
-.create-error {
-  margin: 8px 0 0;
-  color: var(--mat-sys-error);
+// Filled primary action; disabled keeps a visible outline and a readable label.
+.create-button {
+  @include mat.button-overrides(
+    (
+      filled-container-height: 48px,
+      filled-label-text-size: var(--mat-sys-title-small-size),
+      filled-disabled-container-color: transparent,
+      filled-disabled-label-text-color: var(--setup-muted),
+    )
+  );
+  width: 100%;
+
+  &:disabled {
+    border: 1px solid var(--mat-sys-outline);
+  }
 }

@@ -227,6 +227,47 @@ describe('TournamentSetup', () => {
     expect(component.participants()[0].controlType).toBe('HUMAN');
     expect(component.participants()[0].modelId).toBeNull();
   });
+
+  it('derives launch readiness from the name, the participant count and the submitting state', () => {
+    const api = createApiService();
+    api.createTournament = (() => new Subject()) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+
+    expect(component.readiness()).toEqual({
+      named: false,
+      count: 0,
+      participantsOk: false,
+      creating: false,
+      canCreate: false,
+    });
+
+    component.participants.set([pricedParticipant('Alpha', 'model-alpha', 1, 2)]);
+    component.name = 'Ready Arena';
+    expect(component.readiness()).toMatchObject({
+      named: true,
+      count: 1,
+      participantsOk: false,
+      canCreate: false,
+    });
+
+    component.participants.update((list) => [
+      ...list,
+      pricedParticipant('Beta', 'model-beta', 1, 2),
+    ]);
+    expect(component.readiness()).toMatchObject({
+      count: 2,
+      participantsOk: true,
+      creating: false,
+      canCreate: true,
+    });
+
+    component.name = '';
+    expect(component.readiness()).toMatchObject({ named: false, canCreate: false });
+
+    component.name = 'Ready Arena';
+    component.create();
+    expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
+  });
 });
 
 type FakeTournamentSetupApi = ApiService & {

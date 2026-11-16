@@ -1,385 +1,485 @@
-<div class="tournament-setup">
-  <section class="setup-hero">
-    <h1>Create Tournament</h1>
-    <p>Pick OpenRouter models, configure rules, and launch a bracket in minutes.</p>
+<div class="tournament-setup desktop-page">
+  <section class="page-hero-surface page-hero setup-hero">
+    <div class="page-title-block">
+      <span class="page-kicker">New bracket</span>
+      <h1 class="page-title">Create Tournament</h1>
+      <p class="page-subtitle">
+        Pick OpenRouter models, configure rules, and launch a bracket in minutes.
+      </p>
+    </div>
   </section>
 
-  <mat-card class="panel">
-    <mat-card-header>
-      <mat-card-title>Tournament Settings</mat-card-title>
-    </mat-card-header>
-    <mat-card-content>
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Tournament Name</mat-label>
-        <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
-      </mat-form-field>
+  <div class="setup-layout">
+    <div class="setup-main">
+      <mat-card class="panel settings-card">
+        <mat-card-header>
+          <h2 mat-card-title>Tournament Settings</h2>
+          <mat-card-subtitle>Name, move limits and match format.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <mat-form-field appearance="outline" floatLabel="always" class="full-width">
+            <mat-label>Tournament Name</mat-label>
+            <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
+          </mat-form-field>
 
-      <div class="settings-grid">
-        <mat-form-field appearance="outline">
-          <mat-label>Move Timeout (seconds)</mat-label>
-          <input matInput type="number" [(ngModel)]="moveTimeout" />
-        </mat-form-field>
+          <section class="field-group" aria-labelledby="setup-moves-heading">
+            <h3 class="group-heading" id="setup-moves-heading">Moves</h3>
+            <div class="settings-grid">
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Move Timeout (seconds)</mat-label>
+                <input matInput type="number" [(ngModel)]="moveTimeout" />
+              </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Max attempts per move</mat-label>
-          <input matInput type="number" [(ngModel)]="maxRetries" />
-        </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Max attempts per move</mat-label>
+                <input matInput type="number" [(ngModel)]="maxRetries" />
+              </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Max output tokens per answer</mat-label>
-          <input
-            matInput
-            type="number"
-            min="128"
-            max="32768"
-            step="128"
-            [(ngModel)]="maxOutputTokens"
-          />
-          <mat-hint
-            >Includes reasoning tokens; answers cut off at this limit pause the game</mat-hint
-          >
-        </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Max output tokens per answer</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  min="128"
+                  max="32768"
+                  step="128"
+                  [(ngModel)]="maxOutputTokens"
+                />
+                <mat-hint
+                  >Includes reasoning tokens; answers cut off at this limit pause the game</mat-hint
+                >
+              </mat-form-field>
+            </div>
+          </section>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Draw Policy</mat-label>
-          <mat-select [(ngModel)]="drawPolicy">
-            @for (option of drawPolicyOptions; track option.value) {
-              <mat-option [value]="option.value">{{ option.label }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+          <section class="field-group" aria-labelledby="setup-matches-heading">
+            <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
+            <div class="settings-grid">
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Draw Policy</mat-label>
+                <mat-select [(ngModel)]="drawPolicy">
+                  @for (option of drawPolicyOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Matchups</mat-label>
-          <mat-select [(ngModel)]="matchupBestOf">
-            @for (bestOf of bestOfOptions; track bestOf) {
-              <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Matchups</mat-label>
+                <mat-select [(ngModel)]="matchupBestOf">
+                  @for (bestOf of bestOfOptions; track bestOf) {
+                    <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Final</mat-label>
-          <mat-select [(ngModel)]="finalsBestOf">
-            <mat-option [value]="null">Same as matchups</mat-option>
-            @for (bestOf of bestOfOptions; track bestOf) {
-              <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Final round</mat-label>
+                <mat-select [(ngModel)]="finalsBestOf" placeholder="Same as matchups">
+                  <mat-option [value]="null">Same as matchups</mat-option>
+                  @for (bestOf of bestOfOptions; track bestOf) {
+                    <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            </div>
 
-        <mat-slide-toggle [(ngModel)]="trashTalkEnabled"> Trash Talk Enabled </mat-slide-toggle>
-      </div>
+            <div class="toggle-row">
+              <mat-slide-toggle [(ngModel)]="trashTalkEnabled">
+                Trash Talk Enabled
+              </mat-slide-toggle>
+            </div>
+          </section>
 
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>System Rules</mat-label>
-        <textarea matInput [ngModel]="systemRulesTemplate" rows="11" readonly></textarea>
-      </mat-form-field>
-      <div class="prompt-meta-row">
-        @if (promptTemplateVersion()) {
-          <span class="prompt-version">Template version: {{ promptTemplateVersion() }}</span>
-        }
-        @if (promptTemplateLoadError()) {
-          <span class="prompt-warning">{{ promptTemplateLoadError() }}</span>
-        }
-      </div>
-
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Shared Custom Instructions</mat-label>
-        <textarea
-          matInput
-          [(ngModel)]="sharedCustomInstructions"
-          rows="5"
-          placeholder="Optional guidance for all participants, e.g. prefer tactical play or avoid draws."
-        ></textarea>
-      </mat-form-field>
-      <div class="prompt-meta-row">
-        <span class="prompt-version">
-          These instructions are appended after the fixed system rules. They cannot override the
-          required JSON/SAN format.
-        </span>
-      </div>
-    </mat-card-content>
-  </mat-card>
-
-  <mat-card class="panel confidence-panel">
-    <mat-card-header>
-      <mat-card-title>Tournament Confidence</mat-card-title>
-      <mat-card-subtitle>Heuristic runtime and cost preview before launch.</mat-card-subtitle>
-    </mat-card-header>
-    <mat-card-content>
-      @if (confidenceSummary(); as summary) {
-        <div class="confidence-band-row">
-          <span
-            class="confidence-band"
-            [class.safe]="summary.riskBand === 'Safe'"
-            [class.moderate]="summary.riskBand === 'Moderate'"
-            [class.expensive]="summary.riskBand === 'Expensive'"
-          >
-            {{ summary.riskBand }}
-          </span>
-          <span class="confidence-note">{{ summary.riskReason }}</span>
-        </div>
-
-        <div class="confidence-grid">
-          <div class="confidence-metric">
-            <span class="metric-label">Series</span>
-            <strong>{{ summary.totalSeries }}</strong>
-            <span>{{ summary.participantCount }} participants</span>
-          </div>
-          <div class="confidence-metric">
-            <span class="metric-label">Projected Games</span>
-            <strong>{{ summary.likelyGames }}</strong>
-            <span
-              >{{ summary.minGames }} min · {{ summary.maxGames
-              }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
-            >
-          </div>
-          <div class="confidence-metric">
-            <span class="metric-label">Estimated Runtime</span>
-            <strong>{{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
-            <span
-              >{{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
-              {{ formatDuration(summary.maxRuntimeMinutes) }}</span
-            >
-          </div>
-          <div class="confidence-metric">
-            <span class="metric-label">Move Pace</span>
-            <strong>{{ summary.paceLabel }}</strong>
-            <span>{{ moveTimeout }}s timeout</span>
-          </div>
-          <div class="confidence-metric">
-            <span class="metric-label">Estimated Spend</span>
-            <strong>
-              @if (summary.likelyCostUsd !== null) {
-                {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
-              } @else {
-                n/a
+          <section class="field-group rules-block" aria-labelledby="setup-rules-heading">
+            <div class="group-heading-row">
+              <h3 class="group-heading" id="setup-rules-heading">System Rules</h3>
+              @if (promptTemplateVersion()) {
+                <span class="caption">Template version: {{ promptTemplateVersion() }}</span>
               }
-            </strong>
-            <span>
-              @if (summary.maxCostUsd !== null) {
-                {{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
-                {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
-              } @else {
-                add priced models for an estimate
-              }
-            </span>
-          </div>
-          <div class="confidence-metric">
-            <span class="metric-label">Pricing Coverage</span>
-            <strong>{{ pricingCoverageLabel(summary) }}</strong>
-            <span>based on OpenRouter list prices</span>
-          </div>
-        </div>
+            </div>
+            @if (promptTemplateLoadError()) {
+              <p class="prompt-warning" role="alert">{{ promptTemplateLoadError() }}</p>
+            }
+            <pre class="rules-preview" aria-hidden="true">{{ systemRulesTemplate }}</pre>
+            <details class="rules-details">
+              <summary class="rules-toggle">
+                <mat-icon aria-hidden="true">expand_more</mat-icon>
+                <span class="when-closed">Show full system rules</span>
+                <span class="when-open">Hide full system rules</span>
+              </summary>
+              <mat-form-field
+                appearance="outline"
+                floatLabel="always"
+                class="full-width rules-field"
+              >
+                <mat-label>System Rules (read-only)</mat-label>
+                <textarea matInput [ngModel]="systemRulesTemplate" rows="16" readonly></textarea>
+              </mat-form-field>
+            </details>
+          </section>
 
-        <div class="confidence-footnotes">
-          <p>
-            Estimates assume roughly 70 moves per game, about 1,400 prompt and 140 output tokens per
-            move, and current OpenRouter list pricing. Actual usage depends on model behavior and
-            retries.
-          </p>
-          <p>
-            Reasoning models can use far more output tokens per answer, up to the tournament's max
-            output tokens ({{ maxOutputTokens }}), so their cost can be many times higher.
-          </p>
-          @if (summary.drawCanExtendSeries) {
-            <p class="confidence-warning">
-              With `Replay Game`, a match that is still level after its regular games continues with
-              extra games until one is decisive, so there is no fixed maximum for games, runtime or
-              cost. Other draw policies end every match after at most its best-of games.
-            </p>
+          <section class="field-group" aria-labelledby="setup-shared-heading">
+            <h3 class="group-heading" id="setup-shared-heading">Shared Custom Instructions</h3>
+            <mat-form-field
+              appearance="outline"
+              floatLabel="always"
+              subscriptSizing="dynamic"
+              class="full-width"
+            >
+              <mat-label>Instructions for all participants</mat-label>
+              <textarea
+                matInput
+                [(ngModel)]="sharedCustomInstructions"
+                rows="4"
+                placeholder="Optional guidance for all participants, e.g. prefer tactical play or avoid draws."
+              ></textarea>
+              <mat-hint>
+                These instructions are appended after the fixed system rules. They cannot override
+                the required JSON/SAN format.
+              </mat-hint>
+            </mat-form-field>
+          </section>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="panel participants-card">
+        <mat-card-header>
+          <h2 mat-card-title>Participants</h2>
+          <mat-card-subtitle
+            >Choose from OpenRouter models instead of typing model IDs manually.</mat-card-subtitle
+          >
+        </mat-card-header>
+        <mat-card-content>
+          @if (modelsLoading()) {
+            <div class="openrouter-status" role="status">
+              <mat-spinner diameter="18"></mat-spinner>
+              <span>Loading models from OpenRouter...</span>
+            </div>
+          } @else if (openRouterReady() === false) {
+            <div class="openrouter-status fail" role="alert">
+              <mat-icon>error</mat-icon>
+              <span>OpenRouter API key is invalid or unavailable.</span>
+            </div>
+          } @else if (modelsError()) {
+            <div class="openrouter-status warn" role="alert">
+              <mat-icon>warning</mat-icon>
+              <span>{{ modelsError() }}</span>
+            </div>
+          }
+
+          <div class="add-participant" [class.is-ai]="newControlType === 'AI'">
+            <mat-form-field appearance="outline" floatLabel="always">
+              <mat-label>Display Name</mat-label>
+              <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" floatLabel="always">
+              <mat-label>Control Type</mat-label>
+              <mat-select [(ngModel)]="newControlType">
+                <mat-option value="AI">AI Model</mat-option>
+                <mat-option value="HUMAN" [disabled]="hasHumanParticipant()"
+                  >Human Player</mat-option
+                >
+              </mat-select>
+            </mat-form-field>
+
+            @if (newControlType === 'AI') {
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Search Models</mat-label>
+                <input
+                  matInput
+                  [(ngModel)]="modelSearch"
+                  (ngModelChange)="onSearchChanged()"
+                  placeholder="Name or provider"
+                />
+                @if (!modelsLoading() && !modelsError() && openRouterReady() !== false) {
+                  <mat-hint>{{ totalMatched() }} models</mat-hint>
+                }
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" floatLabel="always" class="model-select">
+                <mat-label>OpenRouter Model</mat-label>
+                <mat-select
+                  [ngModel]="newModelId"
+                  (ngModelChange)="onModelChanged($event)"
+                  [disabled]="modelsLoading() || visibleModels().length === 0"
+                  placeholder="Choose a model"
+                  panelWidth=""
+                >
+                  @for (model of visibleModels(); track model.id) {
+                    <mat-option [value]="model.id">
+                      <div class="model-option-row">
+                        <app-provider-logo [provider]="model.provider" [size]="20" />
+                        <div class="model-option-content">
+                          <div class="model-option-title">{{ model.name }}</div>
+                          <div class="model-option-meta">
+                            {{ model.id }} · {{ providerDisplayName(model.provider) }} ·
+                            {{ formatContextLength(model.contextLength) }} context ·
+                            {{ formatPrice(model.promptPricePerMillion) }} prompt
+                          </div>
+                        </div>
+                      </div>
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+          </div>
+
+          @if (newControlType === 'AI' && selectedModel(); as model) {
+            <div class="selected-model">
+              <app-provider-logo [provider]="model.provider" [size]="22" />
+              <div class="selected-model-text">
+                <span class="selected-model-title">{{ model.name }}</span>
+                <span class="selected-model-meta">
+                  <span class="mono">{{ model.id }}</span> ·
+                  {{ providerDisplayName(model.provider) }} ·
+                  {{ formatContextLength(model.contextLength) }} context ·
+                  {{ formatPrice(model.promptPricePerMillion) }} prompt ·
+                  {{ formatPrice(model.completionPricePerMillion) }} completion
+                </span>
+              </div>
+            </div>
+          }
+
+          @if (newControlType === 'AI') {
+            <mat-form-field appearance="outline" floatLabel="always" class="full-width">
+              <mat-label>Participant Custom Instructions</mat-label>
+              <textarea
+                matInput
+                [(ngModel)]="newCustomInstructions"
+                rows="3"
+                placeholder="Optional override for this participant only. Leave blank to use shared tournament instructions."
+              ></textarea>
+            </mat-form-field>
+          }
+
+          <div class="add-row">
+            @if (newControlType === 'AI') {
+              <mat-slide-toggle
+                [(ngModel)]="showAllModels"
+                (ngModelChange)="onShowAllModelsChanged()"
+              >
+                Show all models (disable to keep only main models)
+              </mat-slide-toggle>
+            }
+            <div class="add-action">
+              @if (!canAddParticipant()) {
+                <span class="caption" id="add-participant-reason">
+                  @if (newPlayerName.trim().length === 0) {
+                    Enter a display name to add a participant.
+                  } @else if (newControlType === 'HUMAN') {
+                    Only one human player per tournament.
+                  } @else {
+                    Choose a model to add this participant.
+                  }
+                </span>
+              }
+              <button
+                mat-stroked-button
+                class="add-button"
+                (click)="addParticipant()"
+                [disabled]="!canAddParticipant()"
+                [attr.aria-describedby]="canAddParticipant() ? null : 'add-participant-reason'"
+              >
+                <mat-icon>add</mat-icon>
+                <span>Add Participant</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="participants-list-head">
+            <h3 class="group-heading">Added</h3>
+            <span class="caption">{{ participants().length }} of at least 2</span>
+          </div>
+
+          <ul class="participant-list">
+            @for (p of participants(); track $index) {
+              <li class="participant-row">
+                <span class="participant-seed" [attr.aria-label]="'Seed ' + ($index + 1)">{{
+                  $index + 1
+                }}</span>
+                <app-provider-logo [modelId]="p.modelId || null" [size]="24" />
+                <div class="participant-text">
+                  <span class="participant-name">{{ p.playerName }}</span>
+                  <span class="participant-meta">
+                    @if (p.controlType === 'HUMAN') {
+                      Human-controlled
+                    } @else {
+                      <span class="mono">{{ p.modelId }}</span>
+                      <span class="meta-sep" aria-hidden="true">·</span>
+                      {{ providerDisplayName(null, p.modelId || null) }}
+                    }
+                  </span>
+                  <span class="participant-meta">{{ participantInstructionLabel(p) }}</span>
+                </div>
+                <button
+                  mat-icon-button
+                  class="remove-button"
+                  (click)="removeParticipant($index)"
+                  [attr.aria-label]="'Remove ' + p.playerName"
+                >
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </li>
+            } @empty {
+              <li class="participant-empty">No participants added yet.</li>
+            }
+          </ul>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <aside class="setup-aside" aria-label="Tournament preview and launch">
+      <mat-card class="panel confidence-panel">
+        <mat-card-header>
+          <h2 mat-card-title>Tournament Confidence</h2>
+          <mat-card-subtitle>Heuristic runtime and cost preview before launch.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content
+          class="preview-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="Tournament preview"
+        >
+          @if (confidenceSummary(); as summary) {
+            <div class="confidence-band-row">
+              <span
+                class="confidence-band"
+                [class.safe]="summary.riskBand === 'Safe'"
+                [class.moderate]="summary.riskBand === 'Moderate'"
+                [class.expensive]="summary.riskBand === 'Expensive'"
+              >
+                {{ summary.riskBand }}
+              </span>
+              <span class="confidence-note">{{ summary.riskReason }}</span>
+            </div>
+
+            <div class="confidence-grid">
+              <div class="confidence-metric">
+                <span class="metric-label">Series</span>
+                <strong>{{ summary.totalSeries }}</strong>
+                <span>{{ summary.participantCount }} participants</span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Projected Games</span>
+                <strong>{{ summary.likelyGames }}</strong>
+                <span
+                  >{{ summary.minGames }} min · {{ summary.maxGames
+                  }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
+                >
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Estimated Runtime</span>
+                <strong>{{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
+                <span
+                  >{{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
+                  {{ formatDuration(summary.maxRuntimeMinutes) }}</span
+                >
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Move Pace</span>
+                <strong>{{ summary.paceLabel }}</strong>
+                <span>{{ moveTimeout }}s timeout</span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Estimated Spend</span>
+                <strong>
+                  @if (summary.likelyCostUsd !== null) {
+                    {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                  } @else {
+                    n/a
+                  }
+                </strong>
+                <span>
+                  @if (summary.maxCostUsd !== null) {
+                    {{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
+                    {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                  } @else {
+                    add priced models for an estimate
+                  }
+                </span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Pricing Coverage</span>
+                <strong>{{ pricingCoverageLabel(summary) }}</strong>
+                <span>based on OpenRouter list prices</span>
+              </div>
+            </div>
+
+            <div class="confidence-footnotes">
+              <p>
+                Estimates assume roughly 70 moves per game, about 1,400 prompt and 140 output tokens
+                per move, and current OpenRouter list pricing. Actual usage depends on model
+                behavior and retries.
+              </p>
+              <p>
+                Reasoning models can use far more output tokens per answer, up to the tournament's
+                max output tokens ({{ maxOutputTokens }}), so their cost can be many times higher.
+              </p>
+              @if (summary.drawCanExtendSeries) {
+                <p class="confidence-warning">
+                  With `Replay Game`, a match that is still level after its regular games continues
+                  with extra games until one is decisive, so there is no fixed maximum for games,
+                  runtime or cost. Other draw policies end every match after at most its best-of
+                  games.
+                </p>
+              }
+            </div>
+          } @else {
+            <div class="confidence-empty">
+              <mat-icon>insights</mat-icon>
+              <div>
+                <strong>Add at least two participants</strong>
+                <p>
+                  Once the bracket is viable, this panel will estimate series count, runtime, and
+                  rough spend.
+                </p>
+              </div>
+            </div>
+          }
+        </mat-card-content>
+        <div class="launch-footer">
+          @let ready = readiness();
+          <ul class="launch-checklist">
+            <li [class.done]="ready.named">
+              <mat-icon aria-hidden="true">{{
+                ready.named ? 'check_circle' : 'radio_button_unchecked'
+              }}</mat-icon>
+              <span>{{ ready.named ? 'Tournament named' : 'Name the tournament' }}</span>
+            </li>
+            <li [class.done]="ready.participantsOk">
+              <mat-icon aria-hidden="true">{{
+                ready.participantsOk ? 'check_circle' : 'radio_button_unchecked'
+              }}</mat-icon>
+              <span>
+                {{ ready.count }}
+                {{ ready.count === 1 ? 'participant' : 'participants' }}
+                {{ ready.participantsOk ? 'added' : '(at least 2 needed)' }}
+              </span>
+            </li>
+            @if (ready.creating) {
+              <li class="pending">
+                <mat-spinner diameter="18" aria-hidden="true"></mat-spinner>
+                <span>Creating…</span>
+              </li>
+            }
+          </ul>
+          <button
+            mat-flat-button
+            class="create-button"
+            (click)="create()"
+            [disabled]="!ready.canCreate"
+          >
+            <mat-icon>emoji_events</mat-icon>
+            <span>{{ ready.creating ? 'Creating…' : 'Create Tournament' }}</span>
+          </button>
+          @if (createError(); as error) {
+            <p class="create-error" role="alert">{{ error }}</p>
           }
         </div>
-      } @else {
-        <div class="confidence-empty">
-          <mat-icon>insights</mat-icon>
-          <div>
-            <strong>Add at least two participants</strong>
-            <p>
-              Once the bracket is viable, this panel will estimate series count, runtime, and rough
-              spend.
-            </p>
-          </div>
-        </div>
-      }
-    </mat-card-content>
-  </mat-card>
-
-  <mat-card class="panel participants-card">
-    <mat-card-header>
-      <mat-card-title>Participants</mat-card-title>
-      <mat-card-subtitle
-        >Choose from OpenRouter models instead of typing model IDs manually.</mat-card-subtitle
-      >
-    </mat-card-header>
-    <mat-card-content>
-      <div
-        class="openrouter-status"
-        [class.ok]="openRouterReady() === true"
-        [class.fail]="openRouterReady() === false"
-      >
-        @if (modelsLoading()) {
-          <mat-spinner diameter="18"></mat-spinner>
-          <span>Loading models from OpenRouter...</span>
-        } @else if (openRouterReady() === false) {
-          <mat-icon>error</mat-icon>
-          <span>OpenRouter API key is invalid or unavailable.</span>
-        } @else if (modelsError()) {
-          <mat-icon>warning</mat-icon>
-          <span>{{ modelsError() }}</span>
-        } @else {
-          <mat-icon>check_circle</mat-icon>
-          <span
-            >{{ totalMatched() }} models matched ({{ featuredModelCount() }} featured total).</span
-          >
-        }
-      </div>
-
-      <div class="add-participant">
-        <mat-form-field appearance="outline">
-          <mat-label>Display Name</mat-label>
-          <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Control Type</mat-label>
-          <mat-select [(ngModel)]="newControlType">
-            <mat-option value="AI">AI Model</mat-option>
-            <mat-option value="HUMAN" [disabled]="hasHumanParticipant()">Human Player</mat-option>
-          </mat-select>
-        </mat-form-field>
-
-        @if (newControlType === 'AI') {
-          <mat-form-field appearance="outline">
-            <mat-label>Search Models</mat-label>
-            <input
-              matInput
-              [(ngModel)]="modelSearch"
-              (ngModelChange)="onSearchChanged()"
-              placeholder="Search by provider or model name"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="model-select">
-            <mat-label>OpenRouter Model</mat-label>
-            <mat-select
-              [ngModel]="newModelId"
-              (ngModelChange)="onModelChanged($event)"
-              [disabled]="modelsLoading() || visibleModels().length === 0"
-            >
-              @for (model of visibleModels(); track model.id) {
-                <mat-option [value]="model.id">
-                  <div class="model-option-row">
-                    <app-provider-logo [provider]="model.provider" [size]="20" />
-                    <div class="model-option-content">
-                      <div class="model-option-title">{{ model.name }}</div>
-                      <div class="model-option-meta">
-                        {{ model.id }} · {{ providerDisplayName(model.provider) }} ·
-                        {{ formatContextLength(model.contextLength) }} context ·
-                        {{ formatPrice(model.promptPricePerMillion) }} prompt
-                      </div>
-                    </div>
-                  </div>
-                </mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
-        }
-      </div>
-
-      @if (newControlType === 'AI') {
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Participant Custom Instructions</mat-label>
-          <textarea
-            matInput
-            [(ngModel)]="newCustomInstructions"
-            rows="4"
-            placeholder="Optional override for this participant only. Leave blank to use shared tournament instructions."
-          ></textarea>
-        </mat-form-field>
-      }
-
-      @if (newControlType === 'AI') {
-        <div class="model-controls">
-          <mat-slide-toggle [(ngModel)]="showAllModels" (ngModelChange)="onShowAllModelsChanged()">
-            Show all models (disable to keep only main models)
-          </mat-slide-toggle>
-        </div>
-      }
-
-      @if (newControlType === 'AI' && selectedModel(); as model) {
-        <div class="selected-model">
-          <div class="selected-model-title">
-            <app-provider-logo [provider]="model.provider" [size]="22" />
-            <span>{{ model.name }}</span>
-          </div>
-          <div class="selected-model-meta">
-            {{ model.id }} · {{ providerDisplayName(model.provider) }} ·
-            {{ formatContextLength(model.contextLength) }} context ·
-            {{ formatPrice(model.promptPricePerMillion) }} prompt ·
-            {{ formatPrice(model.completionPricePerMillion) }} completion
-          </div>
-        </div>
-      }
-
-      <div class="add-action">
-        <button
-          mat-raised-button
-          color="accent"
-          (click)="addParticipant()"
-          [disabled]="!canAddParticipant()"
-        >
-          <mat-icon>add</mat-icon>
-          <span>Add Participant</span>
-        </button>
-      </div>
-
-      <mat-divider></mat-divider>
-
-      <mat-list>
-        @for (p of participants(); track $index) {
-          <mat-list-item>
-            <span matListItemTitle class="participant-title">
-              <app-provider-logo [modelId]="p.modelId || null" [size]="18" />
-              <span>{{ p.playerName }}</span>
-            </span>
-            <span matListItemLine>{{
-              p.controlType === 'HUMAN' ? 'Human-controlled' : p.modelId
-            }}</span>
-            @if (p.controlType === 'AI') {
-              <span matListItemLine class="provider-line">
-                Provider: {{ providerDisplayName(null, p.modelId || null) }}
-              </span>
-            }
-            <span matListItemLine class="provider-line">
-              {{ participantInstructionLabel(p) }}
-            </span>
-            <button matListItemMeta mat-icon-button (click)="removeParticipant($index)">
-              <mat-icon>delete</mat-icon>
-            </button>
-          </mat-list-item>
-        } @empty {
-          <mat-list-item>
-            <span matListItemTitle>No participants added yet</span>
-          </mat-list-item>
-        }
-      </mat-list>
-    </mat-card-content>
-  </mat-card>
-
-  <div class="actions">
-    <button
-      mat-raised-button
-      color="primary"
-      (click)="create()"
-      [disabled]="!name || participants().length < 2 || creating()"
-    >
-      <mat-icon>emoji_events</mat-icon>
-      <span>{{ creating() ? 'Creating…' : 'Create Tournament' }}</span>
-    </button>
-    @if (createError(); as error) {
-      <p class="create-error" role="alert">{{ error }}</p>
-    }
+      </mat-card>
+    </aside>
   </div>
 </div>
