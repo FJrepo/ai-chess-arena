@@ -14,6 +14,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
 - When a game is paused because an answer was cut off at the output-token limit, the game view offers a *Max output tokens per answer* field (prefilled with double the current limit) and a *Save and resume* button that updates the tournament and resumes the game.
 - Analytics: a *First-try legal* column (share of turns answered with a legal move on the first attempt) in the reliability and comparison tables, a matching sort option, and a one-line explanation of the score under the reliability table. The reliability and comparison API rows carry `firstTryLegalRate`.
+- Game view: the board marks the squares of the move being viewed with the classes `last-move-from` and `last-move-to` (derived from the stored positions, including castling, en passant and promotion, and only when the two positions are exactly one legal-looking move apart); there is no mark before the first move. The squares are not styled yet.
 - Games in the API (`GameDto`) carry `whiteParticipantId`, `blackParticipantId` and `advancedParticipantId` (null for a side without a participant, such as a bye).
 
 ### Changed
@@ -28,6 +29,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - *Max Retries* is labelled *Max attempts per move* in the setup page and README; the API field stays `maxRetries` for compatibility.
 - The setup estimate prices a move with about 1,400 prompt tokens (system prompt, last six prior messages and the current turn, measured by a backend test) instead of 900, and its footnote warns that reasoning models can use far more output tokens, up to the tournament's max output tokens.
 - Deleting a tournament asks for confirmation first; for a tournament in progress the prompt warns that all its games, moves, chat and history are deleted.
+- Game feed: a ply's failed or cut-off answers are shown on their own line (class `feed-attempts`) instead of being appended to the player name.
+- The pause reason for a cut-off answer is short and user-facing ("…'s answer was cut off at the 4096-token output limit (3900 of them reasoning). Raise the limit and resume"); it no longer names the API route or field, which stay documented in the README.
 
 ### Fixed
 - Reasoning models no longer lose games because a 500-token limit cut off their answer: an answer cut off at the limit without a usable legal move pauses the game with a hint instead of counting as a failed attempt; a cut-off answer with a legal move is played.
@@ -50,6 +53,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Bracket: a pending card shows "Waiting for the previous round." instead of "Waiting for an opponent" or "Waiting for both players".
 - System status: a failed refresh no longer leaves the page loading, and while the backend is unreachable the OpenRouter and Stockfish cards show *Unknown* instead of a failure.
 - Moves that share a move number are ordered White first everywhere (`Game.moves`, the moves and attempts endpoints (attempts of a ply by time, since attempt numbers restart after a resume), the board rebuild on resume, and the game view), also when they were stored Black-first or with equal timestamps.
+- Game view: the evaluation bar no longer shows 0.0 for positions without a Stockfish evaluation (not evaluated yet, Stockfish unavailable, or the start position); it shows a dash on a neutral bar instead, titled "Evaluation unavailable". The bar is exposed to screen readers as an image named after its state (for example "Evaluation: +0.4"). The final position of a game won by checkmate shows the result (1-0 or 0-1) with the bar fully on the winner's side and the label "White wins by checkmate" or "Black wins by checkmate", also when Stockfish reported it as an unsigned "mate 0"; a final stalemate or insufficient-material position shows 0.0, also when a different score was stored for it.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
 
 ## [1.2.0] - 2026-11-16
