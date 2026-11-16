@@ -47,6 +47,14 @@ $warning: mat.$orange-palette;
 
 .analytics-page {
   font-variant-numeric: tabular-nums;
+  // One column that may shrink below its content: a wide table scrolls in its own
+  // wrapper instead of widening the page.
+  grid-template-columns: minmax(0, 1fr);
+
+  > *,
+  mat-tab-group {
+    min-width: 0;
+  }
 }
 
 // Compact page header: title block left, sync state and action right.
@@ -167,8 +175,13 @@ $warning: mat.$orange-palette;
 
 .tab-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 20px 0;
+
+  > * {
+    min-width: 0;
+  }
 }
 
 .loading-state {
@@ -308,6 +321,8 @@ $warning: mat.$orange-palette;
   li {
     display: grid;
     gap: 4px;
+    min-width: 0;
+    overflow-wrap: anywhere;
     padding-top: 12px;
     border-top: 1px solid var(--analytics-divider);
 
@@ -366,6 +381,18 @@ $warning: mat.$orange-palette;
     white-space: nowrap;
   }
 
+  // Model ids keep one line up to a bounded width (sized to the id, so the 1% column
+  // does not squeeze it); longer ones wrap inside it instead of setting the table's width.
+
+  .model-id {
+    display: block;
+    width: max-content;
+    max-width: 13rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
   .col-score {
     padding-right: 24px;
   }
@@ -378,8 +405,9 @@ $warning: mat.$orange-palette;
     vertical-align: middle;
   }
 
+  // Annotations sit on their own line under the number, so they never widen the column.
   .table-note {
-    margin-right: 6px;
+    display: block;
     font-size: 0.8125rem;
     color: var(--analytics-caption);
   }

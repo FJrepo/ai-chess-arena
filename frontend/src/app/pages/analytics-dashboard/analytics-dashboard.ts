@@ -9,7 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
-import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, DecimalPipe, formatNumber } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import {
@@ -115,7 +115,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
           true,
         ),
         showsGrade: true,
-        value: (row: AnalyticsComparisonModel) => row.reliabilityScore.toFixed(1),
+        value: (row: AnalyticsComparisonModel) => this.formatScore(row.reliabilityScore),
         detail: (row: AnalyticsComparisonModel) =>
           `Out of 100, over ${row.gamesPlayed} ${row.gamesPlayed === 1 ? 'game' : 'games'}`,
       },
@@ -208,6 +208,11 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
 
   manualRefresh(): void {
     this.refreshAll();
+  }
+
+  /** One formatter for every reliability score, so the leader card and the tables agree. */
+  formatScore(value: number): string {
+    return formatNumber(value, 'en-US', '1.1-1');
   }
 
   formatMs(value: number | null): string {

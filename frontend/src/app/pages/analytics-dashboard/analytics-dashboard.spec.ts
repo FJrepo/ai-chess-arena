@@ -101,6 +101,22 @@ describe('AnalyticsDashboard', () => {
     ]);
   });
 
+  it('rounds the most reliable card and the table score the same way', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 5,
+      models: [comparisonRow('model.alpha', { reliabilityScore: 86.55 })],
+    });
+
+    const mostReliable = component.leaderCards().find((card) => card.label === 'Most Reliable');
+
+    expect(mostReliable?.value(mostReliable.row!)).toBe('86.6');
+    expect(component.formatScore(86.55)).toBe('86.6');
+  });
+
   it('formats latency with thousands separators', () => {
     const component = new AnalyticsDashboard({} as any);
 
