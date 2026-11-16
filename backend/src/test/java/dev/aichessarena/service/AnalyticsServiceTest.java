@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import dev.aichessarena.dto.AnalyticsHealthDto;
 import dev.aichessarena.dto.AnalyticsHealthModelRowDto;
 import dev.aichessarena.dto.AnalyticsModelComparisonDto;
@@ -28,10 +31,21 @@ import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveRepository;
 import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
 
 class AnalyticsServiceTest {
@@ -617,6 +631,190 @@ class AnalyticsServiceTest {
         assertEquals(0.5, ResignationAnalysis.winChanceAtResignation(List.of(), "WHITE"));
     }
 
+    @Test
+    void promptCachingAggregatesAttemptsInFinishedNonByeGamesAndUsesTokenWeightedRate() {
+        Game recent = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        Game unfinished = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.PAUSED);
+        Game old = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY.minusDays(40));
+        Game bye = finishedGame("model.alpha", null, Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        bye.blackPlayerName = "BYE";
+        bye.blackParticipant = null;
+        AnalyticsService service = service(List.of(recent, unfinished, old, bye), List.of(), List.of());
+        FakeMoveAttemptRepository attempts = (FakeMoveAttemptRepository) service.moveAttemptRepository;
+        attempts.usage = List.of(
+                usage(recent, " model.alpha ", 100, 80, 20),
+                usage(recent, "model.alpha", 300, 0, 100),
+                usage(recent, "model.beta", 0, 0, 0),
+                usage(unfinished, "model.alpha", 10000, 10000, 0),
+                usage(old, "model.alpha", 10000, 10000, 0),
+                usage(bye, "model.alpha", 10000, 10000, 0));
+        var response = service.getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").promptCaching();
+        assertEquals(400L, alpha.promptTokens());
+        assertEquals(80L, alpha.cachedPromptTokens());
+        assertEquals(0.2, alpha.cacheHitRate().doubleValue(), 0.000001);
+        assertEquals(120L, alpha.cacheWriteTokens());
+        assertEquals(0, new BigDecimal("0.000216").compareTo(alpha.estimatedSavingsUsd()));
+        var beta = row(response, "model.beta").promptCaching();
+        assertEquals(0L, beta.cachedPromptTokens());
+        assertEquals(0L, beta.cacheWriteTokens());
+        assertNull(beta.cacheHitRate(), "zero denominator is unknown");
+        assertNull(beta.estimatedSavingsUsd(), "unknown catalog prices, even with zero cache reads");
+    }
+
+    @Test
+    void promptCachingDoesNotTreatLegacyOrPartiallyReportedCountersAsZero() {
+        Game game = finishedGame("model.alpha", "model.legacy", Game.GameResult.DRAW, null, YESTERDAY);
+        AnalyticsService service = service(List.of(game), List.of(), List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                usage(game, "model.alpha", 100, 80, 10),
+                usage(game, "model.alpha", 200, null, null));
+        var response = service.getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").promptCaching();
+        assertEquals(300L, alpha.promptTokens());
+        assertNull(alpha.cachedPromptTokens());
+        assertNull(alpha.cacheWriteTokens());
+        assertNull(alpha.cacheHitRate());
+        assertNull(alpha.estimatedSavingsUsd());
+        var legacy = row(response, "model.legacy").promptCaching();
+        assertNull(legacy.promptTokens());
+        assertNull(legacy.cachedPromptTokens());
+        assertNull(legacy.cacheWriteTokens());
+        assertNull(legacy.cacheHitRate());
+        assertNull(legacy.estimatedSavingsUsd());
+    }
+
+    @Test
+    void promptCachingKeepsReadAndWriteCompletenessIndependentAndDoesNotOverflowIntegerTotals() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        AnalyticsService service = service(List.of(game), List.of(), List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                usage(game, "model.alpha", Integer.MAX_VALUE, 0, null),
+                usage(game, "model.alpha", Integer.MAX_VALUE, 0, 1),
+                usage(game, "model.beta", null, null, 20));
+        var response = service.getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").promptCaching();
+        assertEquals(4294967294L, alpha.promptTokens());
+        assertEquals(0L, alpha.cachedPromptTokens());
+        assertEquals(0, alpha.cacheHitRate().signum());
+        assertEquals(0, alpha.estimatedSavingsUsd().signum());
+        assertNull(alpha.cacheWriteTokens());
+        var beta = row(response, "model.beta").promptCaching();
+        assertNull(beta.promptTokens());
+        assertNull(beta.cacheHitRate());
+        assertEquals(20L, beta.cacheWriteTokens());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void comparisonDoesNotWaitForFailingCatalogAndTakesOnlyOneSnapshot(boolean stale) throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger snapshots = new AtomicInteger();
+        AtomicLong now = new AtomicLong(1_000_000L);
+        CountDownLatch refreshStarted = new CountDownLatch(1);
+        CountDownLatch failRefresh = new CountDownLatch(1);
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/models", exchange -> {
+            int request = requests.incrementAndGet();
+            boolean warmup = stale && request == 1;
+            try {
+                if (!warmup) {
+                    refreshStarted.countDown();
+                    if (!failRefresh.await(10, TimeUnit.SECONDS)) {
+                        throw new AssertionError("test did not release the failed refresh");
+                    }
+                }
+                byte[] body = (warmup ? """
+                        {"data":[{"id":"model.alpha","pricing":{"prompt":"0.000003",
+                        "input_cache_read":"0.0000003"}}]}
+                        """ : "catalog unavailable").getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(warmup ? 200 : 503, body.length);
+                exchange.getResponseBody().write(body);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            OpenRouterService catalog = new OpenRouterService() {
+                @Override
+                Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+                    snapshots.incrementAndGet();
+                    return super.cacheReadSavingsSnapshot();
+                }
+            };
+            catalog.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            catalog.apiKey = "test-key";
+            catalog.objectMapper = new ObjectMapper();
+            catalog.modelsClock = now::get;
+            if (stale) {
+                catalog.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+                now.addAndGet(300_001L);
+            }
+            Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+            Game other = finishedGame("model.gamma", "model.alpha", Game.GameResult.DRAW, null, YESTERDAY);
+            AnalyticsService service = service(List.of(game, other), List.of(), List.of());
+            service.openRouterService = catalog;
+            ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                    usage(game, "model.alpha", 100, 80, 0),
+                    usage(game, "model.beta", 100, 80, 0),
+                    usage(other, "model.gamma", 100, 80, 0));
+
+            // The client cannot finish until released below: even one synchronous fetch fails this bound.
+            var response = assertTimeoutPreemptively(Duration.ofSeconds(2),
+                    () -> service.getComparison(30, null, 0));
+            assertTrue(refreshStarted.await(2, TimeUnit.SECONDS));
+            assertEquals(1, snapshots.get(), "all three rows share one price snapshot");
+            assertEquals(stale ? 2 : 1, requests.get(), "only one refresh, excluding warm-up");
+            assertEquals(3, response.models().size());
+            assertEquals(stale ? new BigDecimal("0.0002160") : null,
+                    row(response, "model.alpha").promptCaching().estimatedSavingsUsd());
+            assertNull(row(response, "model.beta").promptCaching().estimatedSavingsUsd());
+            assertNull(row(response, "model.gamma").promptCaching().estimatedSavingsUsd());
+
+            assertTimeoutPreemptively(Duration.ofSeconds(2), () -> service.getComparison(31, null, 0));
+            assertEquals(2, snapshots.get());
+            // Simulate a slow failure: the full back-off starts when it finishes, not when it began.
+            now.addAndGet(30_000L);
+            failRefresh.countDown();
+            assertTimeoutPreemptively(Duration.ofSeconds(2), () -> catalog.listModels(false, null, OpenRouterService.NO_LIMIT, null));
+            now.addAndGet(59_999L);
+            catalog.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+            assertTimeoutPreemptively(Duration.ofSeconds(2), () -> service.getComparison(32, null, 0));
+            assertEquals(stale ? 2 : 1, requests.get(), "in-flight refresh and back-off suppress extra fetches");
+        } finally {
+            failRefresh.countDown();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void comparisonReusesItsSnapshotEvenWhenLaterSnapshotsHaveDifferentPrices() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        AnalyticsService service = service(List.of(game), List.of(), List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                usage(game, "model.alpha", 100, 80, 0), usage(game, "model.beta", 100, 80, 0));
+        AtomicInteger snapshots = new AtomicInteger();
+        service.openRouterService = new OpenRouterService() {
+            @Override
+            Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+                BigDecimal price = BigDecimal.valueOf(snapshots.incrementAndGet());
+                return Map.of("model.alpha", price, "model.beta", price);
+            }
+        };
+        var response = service.getComparison(30, null, 0);
+        assertEquals(1, snapshots.get());
+        assertEquals(new BigDecimal("80"), row(response, "model.alpha").promptCaching().estimatedSavingsUsd());
+        assertEquals(new BigDecimal("80"), row(response, "model.beta").promptCaching().estimatedSavingsUsd());
+    }
+
+    private MoveAttemptRepository.AttemptUsage usage(Game game, String model, Integer prompt,
+                                                    Integer cached, Integer writes) {
+        return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes);
+    }
+
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
         Move move = move(game, modelId, 1000L, null);
         move.moveNumber = number;
@@ -657,6 +855,12 @@ class AnalyticsServiceTest {
         };
         service.windowLoader = loader;
         service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
+        service.openRouterService = new OpenRouterService() {
+            @Override
+            Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+                return Map.of("model.alpha", new BigDecimal("0.0000027"));
+            }
+        };
         return service;
     }
 
@@ -784,6 +988,13 @@ class AnalyticsServiceTest {
         @Override
         public List<RejectedAttemptCost> findRejectedCostsByTournamentId(UUID tournamentId) {
             return costs;
+        }
+
+        private List<AttemptUsage> usage = List.of();
+
+        @Override
+        public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            return usage;
         }
 
         private List<MoveAttemptRepository.ResignationTurnAttempt> resignationAttempts = List.of();

@@ -33,7 +33,18 @@ export interface AnalyticsHealthModelRow {
   averageCostPerMoveUsd: number;
 }
 
+/** Unknown counters may be omitted by the API; reported zeros remain meaningful. */
+export interface AnalyticsPromptCaching {
+  promptTokens?: number | null;
+  cachedPromptTokens?: number | null;
+  cacheHitRate?: number | null;
+  cacheWriteTokens?: number | null;
+  estimatedSavingsUsd?: number | null;
+}
+
 export interface AnalyticsComparisonModel {
+  promptCaching?: AnalyticsPromptCaching;
+
   modelId: string;
   gamesPlayed: number;
   wins: number;

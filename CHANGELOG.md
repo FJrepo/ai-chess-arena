@@ -7,9 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-### Added
+### Fixed
+- Concurrent catalog lookups now check freshness and return model data from the same snapshot, rechecking after acquiring the refresh lock. A caller no longer returns an earlier empty or expired catalog when another caller has published a fresh one; the 60-second failure back-off and stale-data reuse are preserved.
+- Analytics comparisons use one cached catalog price snapshot for all model rows and refresh prices in the background, avoiding repeated synchronous OpenRouter timeouts. Failed catalog refreshes back off for 60 seconds and keep stale prices when available; missing prices leave estimated prompt caching savings as n/a.
 
+### Added
+- Prompt caching metrics: nullable OpenRouter cache-read and cache-write tokens persisted for every attempt with usage, exposed in the attempts API, and a compact per-model *Prompt caching* analytics table for finished, non-bye games. The table shows prompt tokens, cache reads, hit rate, writes and estimated USD read savings using current catalog prices; incomplete counters and unknown prices show n/a. OpenRouter's reported cost remains authoritative. Measurement only: no prompt changes or `cache_control`.
 - Bracket draw choice on the tournament page: Random draw (UI default) or In added order, with stored seeds shown after generation. Random draws shuffle once and reassign seeds so byes and Higher seed advances follow the drawn order. The bracket-generation API accepts an optional `drawMode=ORDER|RANDOM` query parameter and defaults to ORDER for existing clients; repeated generation still returns 409. No migration or backfill is required.
+
+### Upgrade notes
+- Flyway migration `V17__cache_tokens.sql` adds nullable `cached_prompt_tokens` and `cache_write_tokens` columns to `move_attempts` on backend startup. Back up before upgrading. Existing rows and costs remain unchanged; historical cache usage is not backfilled.
 
 ## [1.4.0] - 2026-11-16
 

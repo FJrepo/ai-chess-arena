@@ -27,6 +27,28 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
         return list("game.id = ?1 order by moveNumber, color desc, createdAt, attemptNumber", gameId);
     }
 
+    /** Lightweight usage projection for every outcome, without loading raw responses. */
+    public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        TypedQuery<Object[]> query = getEntityManager().createQuery(
+                "select a.game.id, a.modelId, a.promptTokens, a.cachedPromptTokens, a.cacheWriteTokens "
+                        + "from MoveAttempt a where (a.promptTokens is not null or a.completionTokens is not null "
+                        + "or a.costUsd is not null or a.cachedPromptTokens is not null or a.cacheWriteTokens is not null) "
+                        + "and " + GameRepository.windowPredicate("a.game")
+                        + GameRepository.tournamentPredicate("a.game", tournamentId), Object[].class);
+        for (Map.Entry<String, Object> parameter : GameRepository.windowParameters(cutoff, tournamentId).map()
+                .entrySet()) {
+            query.setParameter(parameter.getKey(), parameter.getValue());
+        }
+        return query.getResultList().stream()
+                .map(row -> new AttemptUsage((UUID) row[0], (String) row[1], (Integer) row[2],
+                        (Integer) row[3], (Integer) row[4]))
+                .toList();
+    }
+
+    public record AttemptUsage(UUID gameId, String modelId, Integer promptTokens,
+                               Integer cachedPromptTokens, Integer cacheWriteTokens) {
+    }
+
     /**
      * Cost of the attempts that did not become a move, per game and model, for the games in an analytics window
      * (see {@link GameRepository#findInWindow}). Accepted attempts are left out: their cost is on the move.

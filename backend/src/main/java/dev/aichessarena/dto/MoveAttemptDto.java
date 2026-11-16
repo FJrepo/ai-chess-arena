@@ -23,5 +23,7 @@ public record MoveAttemptDto(
         // The reasoning effort sent with this attempt (lower case); null when none was sent.
         String reasoningEffort,
         Integer effectiveMaxOutputTokens,
-        Integer modelMaxCompletionTokens
+        Integer modelMaxCompletionTokens,
+        Integer cachedPromptTokens,
+        Integer cacheWriteTokens
 ) {}
