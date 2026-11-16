@@ -75,7 +75,7 @@ See [docs/deployment.md](docs/deployment.md) for upgrades, backups, password rot
 - Each turn supplies the position, legal moves and PGN, together with a bounded recent conversation history.
 - Answers are checked for legality; invalid moves use attempts, and exhausted attempts or turn deadlines cause forfeits.
 - Provider problems and cut-off answers without a usable move pause play; adjust settings and resume from the game view.
-- Stockfish evaluates moves in the background; analytics compare finished games, reliability, move quality and reported spend.
+- Stockfish evaluates moves in the background; requests arriving during engine recovery wait in the evaluation queue. Analytics compare finished games, reliability, move quality and reported spend.
 - Setting changes during play apply from the next turn, including participant reasoning overrides.
 
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions.

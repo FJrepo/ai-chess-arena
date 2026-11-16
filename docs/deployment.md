@@ -25,7 +25,7 @@ Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 net
 - Published images remain `amd64` only, using the upstream universal x86-64 binary. The backend Dockerfile also selects the official ARM64 universal asset for `TARGETARCH=arm64`; ARM64 publication and runtime validation remain future work.
 - Stockfish source/license details are documented in `THIRD_PARTY_NOTICES.md`.
 - The backend image includes Stockfish notice/license files under `/usr/share/licenses/stockfish/`.
-- If Stockfish is unavailable, the backend stays up and the frontend disables the eval bar. After process exit or EOF, the failed evaluation has no score and the next queued evaluation gets one restart attempt. A failed restart requires restarting the backend to restore evaluation. See [evaluation behavior](how-it-works.md#move-quality).
+- If Stockfish is unavailable, the backend stays up and the frontend disables the eval bar. After process exit or EOF, the failed evaluation has no score and the next queued evaluation gets one restart attempt. Requests arriving during the replacement handshake wait in the queue and run after recovery. A failed restart requires restarting the backend to restore evaluation. See [evaluation behavior](how-it-works.md#move-quality).
 - For native development, `make install-stockfish` installs checksum-verified Stockfish 19 for Linux (x86-64 or ARM64) or macOS (universal). An explicit `--version sf_18` selection remains supported on the previously supported platforms.
 - Rebuild/recreate the backend to use the upgraded binary. No migration or backfill is needed; existing evaluations remain unchanged.
 

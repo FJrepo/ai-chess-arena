@@ -127,7 +127,8 @@ public class StockfishService {
                             return new EvalResult(null, null);
                         }
                         // One attempt for this failure; never replay the input that killed the engine.
-                        restartPending = false;
+                        // Keep accepting queued requests through the handshake. This worker serializes
+                        // restarts, and startEngine clears restartPending if the attempt fails.
                         LOG.warn("Stockfish process stopped; restarting for the next evaluation.");
                         stopProcess();
                         if (!startEngine()) {

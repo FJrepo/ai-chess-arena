@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -15,10 +16,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StockfishServiceTest {
 
@@ -149,6 +152,66 @@ class StockfishServiceTest {
                     .get(2, TimeUnit.SECONDS).mate());
             assertEquals(2, service.starts);
         } finally {
+            service.cleanup();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void requestsDuringRestartHandshakeWaitForRecovery(boolean restartSucceeds) throws Exception {
+        var handshakeStarted = new CountDownLatch(1);
+        var releaseHandshake = new CountDownLatch(1);
+        var replacement = new FakeProcess(restartSucceeds
+                ? "uciok\ninfo score cp 42\nbestmove e2e4\ninfo score cp 47\nbestmove d2d4\n"
+                : "Stockfish 19\n", false) {
+            @Override
+            public InputStream getInputStream() {
+                return new FilterInputStream(super.getInputStream()) {
+                    @Override
+                    public int read(byte[] bytes, int off, int len) throws IOException {
+                        handshakeStarted.countDown();
+                        try {
+                            if (!releaseHandshake.await(5, TimeUnit.SECONDS)) {
+                                throw new IOException("Timed out waiting to release fake handshake");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("Fake handshake interrupted", e);
+                        }
+                        return super.read(bytes, off, len);
+                    }
+                };
+            }
+        };
+        var service = new TestService(new FakeProcess("uciok\ninfo score cp 999\n", true), replacement);
+        try {
+            service.init();
+            assertNoEvaluation(service.evaluate("invalid", 12).get(2, TimeUnit.SECONDS));
+            var restarting = service.evaluate("8/8/8/8/8/8/8/8 w - - 0 1", 12);
+            assertTrue(handshakeStarted.await(2, TimeUnit.SECONDS));
+            assertFalse(service.status().available());
+
+            var concurrent = service.evaluate("8/8/8/8/8/8/8/8 b - - 0 1", 12);
+            assertFalse(restarting.isDone());
+            assertFalse(concurrent.isDone(), "Requests during recovery must join the evaluation queue");
+            releaseHandshake.countDown();
+
+            if (restartSucceeds) {
+                assertEquals(42, restarting.get(2, TimeUnit.SECONDS).cp());
+                assertEquals(-47, concurrent.get(2, TimeUnit.SECONDS).cp());
+                assertTrue(service.status().available());
+            } else {
+                assertNoEvaluation(restarting.get(2, TimeUnit.SECONDS));
+                assertNoEvaluation(concurrent.get(2, TimeUnit.SECONDS));
+                var unavailable = service.evaluate("valid", 12);
+                assertTrue(unavailable.isDone(), "A failed restart must return no score immediately");
+                assertNoEvaluation(unavailable.join());
+                assertFalse(service.status().available());
+            }
+            assertEquals(2, service.starts);
+            assertFalse(replacement.commands.toString(StandardCharsets.UTF_8).contains("invalid"));
+        } finally {
+            releaseHandshake.countDown();
             service.cleanup();
         }
     }

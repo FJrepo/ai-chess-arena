@@ -15,7 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Bundle Stockfish 19 (`sf_19`) using checksum-pinned universal `.tar.gz` assets selected by Docker target architecture (amd64 or arm64). Published releases remain amd64-only. The local installer now defaults to Stockfish 19 on Linux and macOS. Existing stored evaluations are unchanged; no migration or backfill is required.
 
 ### Fixed
-- An engine exit, EOF or broken pipe discards the interrupted evaluation and returns no score. The next queued evaluation attempts one engine restart without replaying the failed input; failed restarts leave evaluation unavailable until backend restart. Mate scores remain normalized to White's perspective for both colors.
+- An engine exit, EOF or broken pipe discards the interrupted evaluation and returns no score. The next queued evaluation attempts one engine restart without replaying the failed input; requests arriving during the replacement handshake wait in the queue and run after recovery. Failed restarts leave evaluation unavailable until backend restart. Mate scores remain normalized to White's perspective for both colors.
 
 ## [1.4.0] - 2026-11-16
 
