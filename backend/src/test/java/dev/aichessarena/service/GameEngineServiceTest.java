@@ -163,6 +163,35 @@ class GameEngineServiceTest {
         assertEquals("v1", unchanged.promptVersion(), "the mode did not change, so the prompt is kept");
     }
 
+    @Test
+    void allowingResignationRebuildsThePromptsAndOffersItToBothSides() {
+        // The conversation was built without resignation (see runOneTurnFor); the tournament allows it by now.
+        Tournament tournament = tournamentWithTimeout(45);
+        tournament.resignationAllowed = true;
+
+        List<GameTurnService.TurnRequest> turns = runTurnsFor(tournament, null, 2);
+
+        for (GameTurnService.TurnRequest request : turns) {
+            assertTrue(request.resignationAllowed(), request.sideToMove());
+            assertEquals("v2-resign", request.promptVersion());
+            assertTrue(request.history().getFirst().content().contains("9. Resigning is allowed"));
+        }
+        assertEquals(false, runOneTurnFor(tournamentWithTimeout(45)).resignationAllowed());
+    }
+
+    @Test
+    void aLegacyTemplateSideIsNeverOfferedResignation() {
+        Tournament tournament = tournamentWithTimeout(45);
+        tournament.resignationAllowed = true;
+        TournamentParticipant white = new TournamentParticipant();
+        white.customSystemPrompt = "Play as %s against %s (%s). Answer with JSON.";
+
+        List<GameTurnService.TurnRequest> turns = runTurnsFor(tournament, white, 2);
+
+        assertEquals(List.of(false, true), turns.stream().map(GameTurnService.TurnRequest::resignationAllowed).toList());
+        assertEquals("legacy-custom-template", turns.getFirst().promptVersion());
+    }
+
     /** Runs the real game loop for one turn of a fresh game and returns the request it passed to the turn. */
     private static GameTurnService.TurnRequest runOneTurnFor(Tournament tournament) {
         return runTurnsFor(tournament, null, 1).getFirst();

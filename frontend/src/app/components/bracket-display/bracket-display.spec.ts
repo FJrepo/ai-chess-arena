@@ -133,6 +133,29 @@ describe('BracketDisplay', () => {
     expect(component.getResultText(card)).toBe('Black wins 1-0');
   });
 
+  it('says who resigned in the last result of a series', () => {
+    const component = new BracketDisplay();
+    const first = game('semi-1', 'Semifinal', 0, {
+      seriesId: 'series-semi',
+      seriesBestOf: 3,
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'RESIGNATION',
+    });
+    const second = game('semi-2', 'Semifinal', 0, {
+      ...swapped(),
+      seriesId: 'series-semi',
+      seriesBestOf: 3,
+      seriesGameNumber: 2,
+    });
+
+    component.games = [first, second];
+
+    const card = component.rounds()[0].games[0];
+    // A win by resignation counts like any other win in the series score.
+    expect(component.getResultText(card)).toBe('White wins 1-0 (Black resigned)');
+  });
+
   it('has nothing to review before the first game of a series is finished', () => {
     const component = new BracketDisplay();
 

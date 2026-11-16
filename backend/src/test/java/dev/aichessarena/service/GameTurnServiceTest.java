@@ -562,6 +562,147 @@ class GameTurnServiceTest {
         assertNull(fixture.lifecycle.lastForfeitColor);
     }
 
+    @Test
+    void anAllowedResignationEndsTheGameWithLastWordsAndIgnoresAMoveSentAlong() {
+        LlmResponse resigning = answer("{\"resign\":true,\"move\":\"Nf6\",\"message\":\"Well played.\"}");
+        Fixture fixture = new Fixture(resigning);
+        List<OpenRouterService.ChatMsg> history = new ArrayList<>();
+
+        GameTurnService.TurnRequest request = resignationRequest(history, 3, 10, true, ChatMode.OPTIONAL);
+        GameTurnService.TurnResult result = fixture.service.playTurn(request);
+
+        assertTrue(result.isTerminal());
+        assertNull(fixture.moves.lastRecordedSan, "the move sent along is ignored");
+        GameLifecycleService.Resignation resignation = fixture.lifecycle.resignation;
+        assertEquals("BLACK", resignation.color());
+        assertEquals(10, resignation.moveNumber());
+        assertEquals("model-b", resignation.modelId());
+        assertEquals("Model B", resignation.playerName());
+        assertEquals("Well played.", resignation.message());
+        assertEquals(0, new BigDecimal("0.001").compareTo(resignation.costUsd()));
+        assertEquals(request.fen(), resignation.expectedFen());
+        assertEquals(List.of(Outcome.RESIGNED), fixture.attempts.outcomes());
+        MoveAttemptService.AttemptRecord recorded = fixture.attempts.recorded.getFirst();
+        assertEquals("Nf6", recorded.proposedMove(), "the ignored move is kept for the record");
+        assertEquals(resigning, recorded.response(), "tokens and cost are recorded with the attempt");
+        assertEquals(1, fixture.openRouter.calls);
+        assertTrue(history.getLast().content().contains("\"resign\":true"));
+        // The turn prompt told the model it may resign.
+        assertTrue(fixture.openRouter.sentMessages.getFirst().getLast().content()
+                .contains(PromptService.MAY_RESIGN_LINE));
+    }
+
+    @Test
+    void lastWordsAreDroppedWithChatOff() {
+        Fixture fixture = new Fixture(answer("{\"resign\":true,\"message\":\"Bye.\"}"));
+
+        fixture.service.playTurn(resignationRequest(new ArrayList<>(), 3, 12, true, ChatMode.OFF));
+
+        assertNull(fixture.lifecycle.resignation.message());
+        assertEquals(List.of(Outcome.RESIGNED), fixture.attempts.outcomes());
+    }
+
+    @Test
+    void aResignationBeforeMoveTenIsRetriedLikeAnInvalidMove() {
+        Fixture fixture = new Fixture(answer("{\"resign\":true,\"message\":\"I give up\"}"), answer("{\"move\":\"Nf6\"}"));
+        List<OpenRouterService.ChatMsg> history = new ArrayList<>();
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                resignationRequest(history, 3, 9, true, ChatMode.OPTIONAL));
+
+        assertTrue(result.moveRecorded());
+        assertNull(fixture.lifecycle.resignation);
+        assertEquals("Nf6", fixture.moves.lastRecordedSan);
+        assertEquals(1, fixture.moves.lastRetryCount, "the rejected resignation counts as a retry");
+        assertNull(fixture.moves.lastRecordedMessage, "the message of a rejected answer is not kept");
+        assertEquals(List.of(Outcome.RESIGN_NOT_ALLOWED, Outcome.ACCEPTED), fixture.attempts.outcomes());
+        assertEquals("Resigning is not allowed before move 10; send a legal move.",
+                fixture.attempts.recorded.getFirst().errorMessage());
+        assertEquals(List.of("RESIGN_NOT_ALLOWED"), fixture.websocket.retryOutcomes);
+        String retryPrompt = fixture.openRouter.sentMessages.get(1).getLast().content();
+        assertTrue(retryPrompt.contains("Resigning is not allowed before move 10; send a legal move."), retryPrompt);
+        assertTrue(retryPrompt.contains("Attempt 2 of 3"), retryPrompt);
+        assertFalse(fixture.openRouter.sentMessages.getFirst().getLast().content().contains("You may resign"));
+    }
+
+    @Test
+    void aResignationThatIsNotOfferedIsRetriedAndForfeitsWhenRepeated() {
+        Fixture fixture = new Fixture(answer("{\"resign\":true}"));
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                resignationRequest(new ArrayList<>(), 2, 30, false, ChatMode.MANDATORY));
+
+        assertTrue(result.isTerminal());
+        assertNull(fixture.lifecycle.resignation);
+        assertTrue(fixture.lifecycle.invalidMovesForfeited, "repeated attempts use up the attempts like illegal moves");
+        assertEquals(List.of(Outcome.RESIGN_NOT_ALLOWED, Outcome.RESIGN_NOT_ALLOWED), fixture.attempts.outcomes());
+        assertEquals("Resigning is not allowed in this game; send a legal move.",
+                fixture.attempts.recorded.getFirst().errorMessage());
+        assertFalse(fixture.openRouter.sentMessages.getFirst().getLast().content().contains("resign"));
+    }
+
+    @Test
+    void aLegalMoveSentWithAResignationThatIsNotAllowedIsPlayed() {
+        Fixture fixture = new Fixture(answer("{\"resign\":true,\"move\":\"Bc5\",\"message\":\"Just kidding\"}"));
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                resignationRequest(new ArrayList<>(), 3, 5, true, ChatMode.OPTIONAL));
+
+        assertTrue(result.moveRecorded());
+        assertEquals("Bc5", fixture.moves.lastRecordedSan);
+        assertEquals("Just kidding", fixture.moves.lastRecordedMessage);
+        assertEquals(0, fixture.moves.lastRetryCount);
+        assertNull(fixture.lifecycle.resignation);
+        assertEquals(List.of(Outcome.ACCEPTED), fixture.attempts.outcomes());
+    }
+
+    @Test
+    void anIllegalMoveSentWithAResignationThatIsNotAllowedIsAnIllegalMove() {
+        Fixture fixture = new Fixture(answer("{\"resign\":true,\"move\":\"Qxf7\"}"), answer("{\"move\":\"Nf6\"}"));
+
+        fixture.service.playTurn(resignationRequest(new ArrayList<>(), 3, 4, false, ChatMode.OPTIONAL));
+
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.ACCEPTED), fixture.attempts.outcomes());
+        assertEquals("Nf6", fixture.moves.lastRecordedSan);
+    }
+
+    @Test
+    void aResignationAfterEarlierInvalidAttemptsKeepsThemOnRecord() {
+        Fixture fixture = new Fixture(answer("{\"move\":\"Qxf7\"}"), answer("{\"resign\":true}"));
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                resignationRequest(new ArrayList<>(), 3, 15, true, ChatMode.OPTIONAL));
+
+        assertTrue(result.isTerminal());
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.RESIGNED), fixture.attempts.outcomes());
+        assertEquals(2, fixture.attempts.recorded.getLast().attemptNumber());
+    }
+
+    @Test
+    void aResignationIntoAChangedGameIsDiscardedWithoutEndingIt() {
+        Fixture fixture = new Fixture(answer("{\"resign\":true}"));
+        fixture.lifecycle.resignConflict = new GameStateConflictException("Game is no longer in progress");
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                resignationRequest(new ArrayList<>(), 3, 20, true, ChatMode.OPTIONAL));
+
+        assertEquals(GameTurnService.Status.STOPPED, result.status());
+        assertEquals(List.of(Outcome.DISCARDED), fixture.attempts.outcomes());
+        assertEquals("Game is no longer in progress", fixture.attempts.recorded.getFirst().errorMessage());
+    }
+
+    @Test
+    void aCutOffResignationThatIsNotAllowedPausesLikeOtherCutOffAnswers() {
+        Fixture fixture = new Fixture(truncated("{\"resign\":true}", null));
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                resignationRequest(new ArrayList<>(), 3, 3, true, ChatMode.OPTIONAL));
+
+        assertTrue(result.pausedGame());
+        assertEquals(List.of(Outcome.TRUNCATED), fixture.attempts.outcomes());
+        assertFalse(fixture.lifecycle.invalidMovesForfeited);
+    }
+
     private static LlmResponse answer(String content) {
         return new LlmResponse(content, 10, 6, 0.001, 400, "{}", false, null);
     }
@@ -615,6 +756,44 @@ class GameTurnServiceTest {
                 MAX_OUTPUT_TOKENS,
                 chatMode,
                 ChatMode.MANDATORY
+        );
+    }
+
+    /**
+     * Black's turn at {@code moveNumber} in an Italian-game position, with resignation offered or not. White's last move
+     * was Bc4, so Black has legal moves like Nf6 and Bc5.
+     */
+    private static GameTurnService.TurnRequest resignationRequest(List<OpenRouterService.ChatMsg> history,
+                                                                  int maxRetries, int moveNumber,
+                                                                  boolean resignationAllowed, ChatMode chatMode) {
+        Board board = new Board();
+        board.loadFromFen("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 " + moveNumber);
+        ChessService chess = new ChessService();
+        return new GameTurnService.TurnRequest(
+                UUID.randomUUID(),
+                "1. e4 e5 2. Nf3 Nc6 3. Bc4",
+                board.getFen(),
+                board,
+                "BLACK",
+                moveNumber,
+                chess.getLegalMovesAsSan(board),
+                "model-b",
+                "Model B",
+                "Model A",
+                history,
+                "Bc4",
+                "Your move.",
+                false,
+                maxRetries,
+                null,
+                resignationAllowed ? "v2-resign" : "v2",
+                "hash-1",
+                BigDecimal.ZERO,
+                () -> true,
+                MAX_OUTPUT_TOKENS,
+                chatMode,
+                chatMode,
+                resignationAllowed
         );
     }
 
@@ -727,6 +906,17 @@ class GameTurnServiceTest {
         @Override
         public void pauseWithReason(UUID gameId, String detail) {
             pauseDetail = detail;
+        }
+
+        private Resignation resignation;
+        private GameStateConflictException resignConflict;
+
+        @Override
+        public void resign(Resignation resignation) {
+            if (resignConflict != null) {
+                throw resignConflict;
+            }
+            this.resignation = resignation;
         }
     }
 

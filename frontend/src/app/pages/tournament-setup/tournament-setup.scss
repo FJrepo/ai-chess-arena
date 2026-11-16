@@ -240,6 +240,23 @@
   min-width: 0;
 }
 
+.resignation-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+.resignation-toggle {
+  flex: none;
+}
+
+.resignation-hint {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
 // ----- System rules: a monospace preview, the full read-only text on demand -----
 
 .rules-preview {

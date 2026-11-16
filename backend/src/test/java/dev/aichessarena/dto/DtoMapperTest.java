@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
@@ -114,6 +115,72 @@ class DtoMapperTest {
         assertEquals("OVERRIDE", quality.excluded());
         assertNull(quality.judgement());
         assertNull(quality.centipawnLoss());
+    }
+
+    @Test
+    void aResignedGameCarriesTheWinningChanceLastWordsAndTheOpponentsLastMessage() {
+        Game game = resignedGame(Game.GameResult.WHITE_WINS);
+        game.moves.add(move(game, 1, "WHITE", 30));
+        game.moves.add(move(game, 1, "BLACK", 20));
+        game.moves.add(move(game, 2, "WHITE", -150));
+        game.chatMessages.add(chat(game, 1, "WHITE", "Old taunt"));
+        game.chatMessages.add(chat(game, 2, "WHITE", "Give up already."));
+        game.chatMessages.add(chat(game, 1, "BLACK", "Not yet"));
+        game.chatMessages.add(chat(game, 2, "BLACK", "Fine, you win."));
+
+        ResignationDto resignation = DtoMapper.toDto(game, true).resignation();
+
+        assertEquals("BLACK", resignation.color());
+        assertEquals(2, resignation.moveNumber());
+        // White's -1.50 is Black's advantage: Black resigned with about 63% winning chances.
+        assertEquals(0.6347, resignation.winChance());
+        assertTrue(resignation.notLosing());
+        assertEquals("Fine, you win.", resignation.lastWords());
+        assertEquals("Give up already.", resignation.opponentMessage());
+        assertEquals(2, resignation.opponentMessageMoveNumber());
+    }
+
+    @Test
+    void aResignationWithoutEvaluationOrChatHasNoWinningChance() {
+        Game game = resignedGame(Game.GameResult.BLACK_WINS);
+        game.moves.add(move(game, 1, "WHITE", 30));
+        game.moves.add(move(game, 1, "BLACK", null));
+
+        ResignationDto resignation = DtoMapper.toDto(game, true).resignation();
+
+        assertEquals("WHITE", resignation.color());
+        assertEquals(2, resignation.moveNumber());
+        assertNull(resignation.winChance());
+        assertEquals(false, resignation.notLosing());
+        assertNull(resignation.lastWords());
+        assertNull(resignation.opponentMessage());
+        assertNull(resignation.opponentMessageMoveNumber());
+    }
+
+    @Test
+    void onlyAResignationHasResignationDetails() {
+        Game game = resignedGame(Game.GameResult.WHITE_WINS);
+        game.resultReason = Game.ResultReason.CHECKMATE;
+        assertNull(DtoMapper.toDto(game, true).resignation());
+        game.resultReason = Game.ResultReason.RESIGNATION;
+        assertNull(DtoMapper.toDto(game, false).resignation(), "only with the moves");
+    }
+
+    private static Game resignedGame(Game.GameResult result) {
+        Game game = game(null, "Final", null);
+        game.status = Game.GameStatus.COMPLETED;
+        game.result = result;
+        game.resultReason = Game.ResultReason.RESIGNATION;
+        return game;
+    }
+
+    private static ChatMessage chat(Game game, int number, String color, String text) {
+        ChatMessage chat = new ChatMessage();
+        chat.game = game;
+        chat.moveNumber = number;
+        chat.senderColor = color;
+        chat.message = text;
+        return chat;
     }
 
     private static Move move(Game game, int number, String color, Integer cp) {

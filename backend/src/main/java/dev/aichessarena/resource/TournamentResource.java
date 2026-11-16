@@ -54,6 +54,7 @@ public class TournamentResource {
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
         if (chatMode != null) t.chatMode = chatMode;
+        if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
 
@@ -106,6 +107,8 @@ public class TournamentResource {
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
         if (chatMode != null) t.chatMode = chatMode;
+        // A change applies to running games from their next turn.
+        if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         t.updatedAt = LocalDateTime.now();

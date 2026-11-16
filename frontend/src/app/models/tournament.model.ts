@@ -28,6 +28,11 @@ export interface Tournament {
   /** Whether models talk: OFF, OPTIONAL (default) or MANDATORY. Absent from backends before 1.4. */
   chatMode?: ChatMode;
   /**
+   * Whether models may resign instead of moving, from their 10th move on (default false). Absent from
+   * backends before 1.4.
+   */
+  resignationAllowed?: boolean;
+  /**
    * Cap on generated tokens per model answer (includes reasoning tokens); cut-off answers pause the game.
    * Always sent by the backend (default 4096); optional only so existing test fixtures stay valid.
    */
@@ -85,6 +90,28 @@ export interface Game {
   chatMessages: ChatMessage[];
   /** Per-side move quality; sent with a single game (with its moves), otherwise null or absent. */
   qualitySummary?: GameQualitySummary | null;
+  /** How the game ended by resignation; sent with a single game that ended so, otherwise null or absent. */
+  resignation?: GameResignation | null;
+  /**
+   * Grows with every status change (start, pause, game over); status-change updates carry it too, so an older
+   * update that arrives late can be ignored. Absent from older backends.
+   */
+  statusRevision?: number;
+}
+
+/** A resignation: who resigned instead of playing which move, and how the position looked. */
+export interface GameResignation {
+  color: 'WHITE' | 'BLACK';
+  moveNumber: number;
+  /** The resigning side's winning chance (0–1) from Stockfish's evaluation; null while unknown. */
+  winChance: number | null;
+  /** Winning chance of at least 35%: resigned while not losing. */
+  notLosing: boolean;
+  /** The message sent with the resignation, if any. */
+  lastWords: string | null;
+  /** The opponent's most recent message before the resignation, and its move number. */
+  opponentMessage: string | null;
+  opponentMessageMoveNumber: number | null;
 }
 
 export type MoveJudgement = 'INACCURACY' | 'MISTAKE' | 'BLUNDER';
@@ -158,7 +185,11 @@ export type MoveAttemptOutcome =
   | 'TIMEOUT'
   | 'PROVIDER_RETRYABLE'
   | 'PROVIDER_FATAL'
-  | 'DISCARDED';
+  | 'DISCARDED'
+  /** Tried to resign without a move while resigning was not allowed: an invalid answer. */
+  | 'RESIGN_NOT_ALLOWED'
+  /** An allowed resignation that ended the game. */
+  | 'RESIGNED';
 
 /** One model answer for a ply, including rejected ones (GET /api/games/{id}/attempts). */
 export interface MoveAttempt {
@@ -240,6 +271,8 @@ export interface GameStatusWsMessage {
   detail?: string | null;
   /** The tournament's configured chat mode; sent with turn updates of model turns only. */
   tournamentChatMode?: ChatMode;
+  /** The game's status revision after a status change (start, pause, game over); absent on turn updates. */
+  statusRevision?: number;
 }
 
 export interface RetryWsMessage {

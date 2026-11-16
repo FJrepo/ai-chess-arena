@@ -6,7 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
-import { Game, SideQuality } from '../../models/tournament.model';
+import { Game, GameResignation, SideQuality } from '../../models/tournament.model';
 import { CurrencyPipe } from '@angular/common';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
 import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
@@ -110,8 +110,50 @@ export class GameInfoBar {
     }
   }
 
+  /** The name of a side, falling back to its colour. */
+  private sideName(color: 'WHITE' | 'BLACK'): string {
+    return color === 'WHITE'
+      ? this.game.whitePlayerName || 'White'
+      : this.game.blackPlayerName || 'Black';
+  }
+
+  /** The resignation details of a game that ended by one; null otherwise. */
+  resignation(): GameResignation | null {
+    return this.game?.resultReason === 'RESIGNATION' ? (this.game.resignation ?? null) : null;
+  }
+
+  /**
+   * E.g. "Black Bot resigned instead of playing move 23, at 46% winning chances (not losing)". The winning
+   * chance is left out while Stockfish's evaluation of the position is unknown.
+   */
+  resignationText(resignation: GameResignation): string {
+    const who = `${this.sideName(resignation.color)} resigned instead of playing move ${resignation.moveNumber}`;
+    if (resignation.winChance == null) {
+      return who;
+    }
+    const chance = `${Math.round(resignation.winChance * 100)}% winning chances`;
+    return `${who}, at ${chance}${resignation.notLosing ? ' (not losing)' : ''}`;
+  }
+
+  /** E.g. "Last message from White Bot (move 22)". */
+  opponentMessageLabel(resignation: GameResignation): string {
+    const opponent = this.sideName(resignation.color === 'WHITE' ? 'BLACK' : 'WHITE');
+    return resignation.opponentMessageMoveNumber != null
+      ? `Last message from ${opponent} (move ${resignation.opponentMessageMoveNumber})`
+      : `Last message from ${opponent}`;
+  }
+
   getResultText(): string {
     if (!this.game.result) return '';
+    if (this.game.resultReason === 'RESIGNATION') {
+      // "Black Bot resigned; White Bot wins"
+      if (this.game.result === 'WHITE_WINS') {
+        return `${this.sideName('BLACK')} resigned; ${this.sideName('WHITE')} wins`;
+      }
+      if (this.game.result === 'BLACK_WINS') {
+        return `${this.sideName('WHITE')} resigned; ${this.sideName('BLACK')} wins`;
+      }
+    }
     const phrase = resultReasonLabel(this.game.resultReason);
     const reason = phrase ? ` ${phrase}` : '';
     switch (this.game.result) {

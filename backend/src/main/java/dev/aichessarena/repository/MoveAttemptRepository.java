@@ -1,5 +1,6 @@
 package dev.aichessarena.repository;
 
+import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
@@ -55,6 +56,41 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
         return query.getResultList().stream()
                 .map(row -> new RejectedAttemptCost((UUID) row[0], (String) row[1], (BigDecimal) row[2]))
                 .toList();
+    }
+
+    /**
+     * The attempts that matter for a resigned turn, for the games in an analytics window that ended by resignation:
+     * the RESIGNED attempts and the model's own failures (see {@link Outcome#isModelFailure()}). A resigned turn has
+     * no move, so its failed attempts are not counted as retries anywhere else.
+     */
+    public List<ResignationTurnAttempt> findResignationTurnAttemptsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        List<Outcome> outcomes = new java.util.ArrayList<>();
+        for (Outcome outcome : Outcome.values()) {
+            if (outcome == Outcome.RESIGNED || outcome.isModelFailure()) {
+                outcomes.add(outcome);
+            }
+        }
+        TypedQuery<Object[]> query = getEntityManager().createQuery(
+                "select a.game.id, a.moveNumber, a.color, a.modelId, a.outcome from MoveAttempt a "
+                        + "where a.game.resultReason = :resignation and a.outcome in :outcomes and "
+                        + GameRepository.windowPredicate("a.game")
+                        + GameRepository.tournamentPredicate("a.game", tournamentId),
+                Object[].class
+        );
+        query.setParameter("resignation", Game.ResultReason.RESIGNATION);
+        query.setParameter("outcomes", outcomes);
+        for (Map.Entry<String, Object> parameter : GameRepository.windowParameters(cutoff, tournamentId).map()
+                .entrySet()) {
+            query.setParameter(parameter.getKey(), parameter.getValue());
+        }
+        return query.getResultList().stream()
+                .map(row -> new ResignationTurnAttempt((UUID) row[0], (Integer) row[1], (String) row[2],
+                        (String) row[3], (Outcome) row[4]))
+                .toList();
+    }
+
+    /** One attempt of a ply in a game that ended by resignation (see {@link #findResignationTurnAttemptsInWindow}). */
+    public record ResignationTurnAttempt(UUID gameId, int moveNumber, String color, String modelId, Outcome outcome) {
     }
 
     /** Summed cost of one model's rejected attempts in one game. */

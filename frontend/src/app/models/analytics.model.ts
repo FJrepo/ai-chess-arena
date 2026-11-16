@@ -78,6 +78,14 @@ export interface AnalyticsComparisonModel {
   optionalChat?: AnalyticsTalkativeness;
   /** Talkativeness of the model's moves made with chat MANDATORY (a compliance rate). */
   mandatoryChat?: AnalyticsTalkativeness;
+  /** Games the model resigned. Absent from backends before 1.4. */
+  resignations?: number;
+  /** Of those, resignations whose position Stockfish had evaluated. */
+  resignationsEvaluated?: number;
+  /** Of those, resignations with at least 35% winning chances ("resigned while not losing"). */
+  resignationsWhileNotLosing?: number;
+  /** Games the model won because its opponent resigned. */
+  wonByResignation?: number;
 }
 
 /** Of a model's moves in one chat mode, how many came with a non-empty message. */

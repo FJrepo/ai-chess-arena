@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,5 +55,98 @@ class ResponseParserServiceTest {
         assertFalse(result.isFailure());
         assertEquals("Qh5", result.move());
         assertEquals("PLAIN_TEXT_EXTRACTION", result.parseMethod());
+    }
+
+    @Test
+    void aResignationNeedsNoMove() {
+        ResponseParserService.ParseResult result = parser.parse("{\"resign\": true, \"message\": \"Well played.\"}");
+
+        assertFalse(result.isFailure());
+        assertTrue(result.resign());
+        assertNull(result.move());
+        assertEquals("Well played.", result.message());
+        assertEquals("JSON", result.parseMethod());
+
+        ResponseParserService.ParseResult bare = parser.parse("{\"resign\":true}");
+        assertTrue(bare.resign());
+        assertNull(bare.message());
+    }
+
+    @Test
+    void aResignationKeepsAMoveSentAlongForTheCallerToDecide() {
+        ResponseParserService.ParseResult result = parser.parse("{\"move\":\"Qxf7\",\"resign\":true,\"message\":\"gg\"}");
+
+        assertTrue(result.resign());
+        assertEquals("Qxf7", result.move());
+        assertEquals("gg", result.message());
+    }
+
+    @Test
+    void aResignationIsFoundInMarkdownAndInSurroundingText() {
+        ResponseParserService.ParseResult block = parser.parse("```json\n{\"resign\": true}\n```");
+        assertTrue(block.resign());
+
+        ResponseParserService.ParseResult text =
+                parser.parse("The position is lost. {\"resign\": \"true\", \"message\": \"You win.\"} Thanks!");
+        assertTrue(text.resign());
+        assertNull(text.move());
+        assertEquals("You win.", text.message());
+
+        ResponseParserService.ParseResult withMove =
+                parser.parse("Thinking... {\"resign\": true, \"move\": \"e5\"}");
+        assertTrue(withMove.resign());
+        assertEquals("e5", withMove.move());
+    }
+
+    @Test
+    void onlyTrueResigns() {
+        ResponseParserService.ParseResult notResigning = parser.parse("{\"move\":\"e4\",\"resign\":false}");
+        assertFalse(notResigning.resign());
+        assertEquals("e4", notResigning.move());
+
+        for (String malformed : new String[] {"{\"resign\":false}", "{\"resign\":\"yes\"}", "{\"resign\":1}",
+                "{\"resign\":null}", "{\"resign\":true", "{\"Resign\":true}"}) {
+            ResponseParserService.ParseResult result = parser.parse(malformed);
+            assertFalse(result.resign(), malformed);
+            assertTrue(result.isFailure(), malformed);
+        }
+    }
+
+    /**
+     * Regression: wrapped in text, only a lowercase, unpadded "true" was recognised, so
+     * {@code Answer: {"resign":"TRUE","message":"e4"}} played e4 from the message instead of resigning.
+     */
+    @Test
+    void theResignFlagIsRecognisedTheSameWayRawInACodeBlockAndWrappedInText() {
+        for (String value : new String[] {"true", "\"true\"", "\"TRUE\"", "\"True\"", "\" true \"", "\"  TRUE\""}) {
+            String json = "{\"resign\":" + value + ",\"message\":\"e4\"}";
+            for (String answer : new String[] {json, "```json\n" + json + "\n```", "Answer: " + json,
+                    "I resign. " + json + " Good game."}) {
+                ResponseParserService.ParseResult result = parser.parse(answer);
+                assertTrue(result.resign(), answer);
+                assertNull(result.move(), answer);
+                assertEquals("e4", result.message(), answer);
+            }
+        }
+    }
+
+    @Test
+    void aWrappedNonResigningObjectFallsBackLikeARawOne() {
+        for (String json : new String[] {"{\"resign\":\"no\",\"message\":\"e4\"}", "{\"resign\":false,\"message\":\"e4\"}"}) {
+            ResponseParserService.ParseResult raw = parser.parse(json);
+            ResponseParserService.ParseResult wrapped = parser.parse("Answer: " + json);
+            assertFalse(raw.resign(), json);
+            assertFalse(wrapped.resign(), json);
+            assertEquals(raw.move(), wrapped.move(), json);
+        }
+        // A later object in the text that does resign is still found.
+        assertTrue(parser.parse("Draft {\"resign\":false} final {\"resign\":\"TRUE\"}").resign());
+    }
+
+    @Test
+    void aResignationWithANullOrBlankMoveHasNoMove() {
+        assertNull(parser.parse("{\"resign\":true,\"move\":null}").move());
+        assertNull(parser.parse("{\"resign\":true,\"move\":\"  \"}").move());
+        assertTrue(parser.parse("{\"resign\":true,\"move\":\"  \"}").resign());
     }
 }

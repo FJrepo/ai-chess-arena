@@ -33,6 +33,17 @@ describe('move attempts summary', () => {
     ).toBe('2 failed attempts: illegal Qxh7, unparseable answer');
   });
 
+  it('counts a resignation that was not allowed as a failed attempt, an accepted one not', () => {
+    expect(
+      summarizeAttempts([
+        attempt({ outcome: 'RESIGN_NOT_ALLOWED' }),
+        attempt({ outcome: 'ILLEGAL_MOVE', attemptNumber: 2, proposedMove: 'Ke9' }),
+        attempt({ outcome: 'RESIGNED', attemptNumber: 3 }),
+      ]),
+    ).toBe('2 failed attempts: resignation not allowed, illegal Ke9');
+    expect(summarizeAttempts([attempt({ outcome: 'RESIGNED' })])).toBeNull();
+  });
+
   it('lists cut-off answers separately and never counts them as failed attempts', () => {
     expect(summarizeAttempts([attempt({ outcome: 'TRUNCATED' })])).toBe(
       'answer cut off at the token limit',

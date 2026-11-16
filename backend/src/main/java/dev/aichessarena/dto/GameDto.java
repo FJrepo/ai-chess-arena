@@ -36,5 +36,9 @@ public record GameDto(
         List<MoveDto> moves,
         List<ChatMessageDto> chatMessages,
         /** Per-side move quality; only with the moves (single game), otherwise null. */
-        GameQualitySummaryDto qualitySummary
+        GameQualitySummaryDto qualitySummary,
+        /** How the game ended by resignation; only with the moves and only for a resignation, otherwise null. */
+        ResignationDto resignation,
+        /** Grows with every status change; live status updates carry it too (see Game.statusRevision). */
+        long statusRevision
 ) {}

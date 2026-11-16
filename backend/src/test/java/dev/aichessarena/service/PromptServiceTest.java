@@ -187,11 +187,133 @@ class PromptServiceTest {
                 "171c092872fb212f996158d6a11b45e60b606c11aa9e7c8b175fedb61a27b993");
     }
 
+    /** The MANDATORY prompts as 1.4 introduced them (#38); resignation must not change them either. */
+    @Test
+    void mandatoryPromptsAndVersionsAreUnchanged() {
+        assertPrompt(ChatMode.MANDATORY, null, "v2-chat-required",
+                "818eb691f98294ccd6ac69b211f214381f7b67a329e63941b075c18f31e1f631");
+        assertPrompt(ChatMode.MANDATORY, "Play the London.", "v2+custom-instructions-chat-required",
+                "5dc363397e26a42d0ad30559ffb89cd41258e093529c0c08883a5d6f69089822");
+    }
+
     private void assertPrompt(ChatMode mode, String customInstructions, String version, String hash) {
         PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
                 null, customInstructions, "WHITE", "Opponent Bot", "model/opponent", mode);
         assertEquals(version, prompt.version());
         assertEquals(hash, promptService.computePromptHash(prompt.prompt()), mode + " prompt text changed");
+        // Without resignation the explicit overload renders exactly the same prompt.
+        PromptService.ResolvedPrompt withoutResignation = promptService.buildSystemPrompt(
+                null, customInstructions, "WHITE", "Opponent Bot", "model/opponent", mode, false);
+        assertEquals(prompt.prompt(), withoutResignation.prompt());
+        assertEquals(version, withoutResignation.version());
+        assertFalse(withoutResignation.resignationOffered());
+        assertFalse(prompt.prompt().contains("resign"), mode + " prompt mentions resignation");
+    }
+
+    /** The resignation variants, pinned like the others so a text change shows up as a new hash. */
+    @Test
+    void resignationPromptsHaveTheirOwnVersionsAndHashes() {
+        assertResignationPrompt(ChatMode.OPTIONAL, null, "v2-resign",
+                "09a8a3fb57767e8e1731999b489ad634be770cc92ab212ca9671ea30362db367");
+        assertResignationPrompt(ChatMode.OPTIONAL, "Play the London.", "v2+custom-instructions-resign",
+                "dcbb3797eef942a621ea44700c367eb932b30b8523ee367c8c4db75dc4e005dc");
+        assertResignationPrompt(ChatMode.OFF, null, "v2-silent-resign",
+                "8b0e737791f92fd06a225822b811065dec59ca5af39bace427840b43c7d2f14a");
+        assertResignationPrompt(ChatMode.OFF, "Play the London.", "v2+custom-instructions-silent-resign",
+                "ba1c405a710f745876ab6e98e95d12b19607a364f92780cf823777283d10b2f6");
+        assertResignationPrompt(ChatMode.MANDATORY, null, "v2-chat-required-resign",
+                "8e019481d37dedc11f9c11c01bb5427c1e28148b71e70c488d731cd9144b5fd4");
+        assertResignationPrompt(ChatMode.MANDATORY, "Play the London.",
+                "v2+custom-instructions-chat-required-resign",
+                "fdc2d237179bd08262d8d92d6e843647077ce9dc41d381da38c98c1732dfbd79");
+    }
+
+    private void assertResignationPrompt(ChatMode mode, String customInstructions, String version, String hash) {
+        PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                null, customInstructions, "WHITE", "Opponent Bot", "model/opponent", mode, true);
+        assertEquals(version, prompt.version());
+        assertTrue(prompt.resignationOffered());
+        assertEquals(mode, prompt.chatMode());
+        assertEquals(hash, promptService.computePromptHash(prompt.prompt()), mode + " resignation prompt changed");
+    }
+
+    @Test
+    void resignationAddsRuleNineAfterRuleEightAndChangesNothingElse() {
+        for (ChatMode mode : ChatMode.values()) {
+            String base = promptService.buildSystemPrompt(
+                    null, null, "BLACK", "Opponent Bot", "model/opponent", mode, false).prompt();
+            String resign = promptService.buildSystemPrompt(
+                    null, null, "BLACK", "Opponent Bot", "model/opponent", mode, true).prompt();
+
+            List<String> added = new ArrayList<>(resign.lines().toList());
+            int ruleNine = added.indexOf(added.stream().filter(line -> line.startsWith("9. ")).findFirst().orElseThrow());
+            assertEquals(PromptService.LAST_RULE, added.get(ruleNine - 1), mode.name());
+            String rule = added.remove(ruleNine);
+            assertEquals(base.lines().toList(), added, mode + ": only rule 9 is added");
+
+            assertEquals(mode == ChatMode.OFF ? SILENT_RESIGNATION_RULE : RESIGNATION_RULE_WITH_LAST_WORDS, rule,
+                    mode.name());
+        }
+    }
+
+    /** Rule 9 word for word: both players may resign (the opponent too), stated as a fact, no advice either way. */
+    private static final String RESIGNATION_RULE_WITH_LAST_WORDS = "9. Resigning is allowed in this tournament: both "
+            + "players may resign from their move 10 on, so your opponent can resign too. Instead of a move you may "
+            + "then answer {\"resign\": true, \"message\": \"<optional last words to your opponent>\"} and the game "
+            + "ends at once: your opponent wins. This is the only exception to rule 3. If you resign, any \"move\" in "
+            + "the same answer is ignored.";
+
+    /** With chat OFF the resigning answer has no message. */
+    private static final String SILENT_RESIGNATION_RULE = "9. Resigning is allowed in this tournament: both players "
+            + "may resign from their move 10 on, so your opponent can resign too. Instead of a move you may then "
+            + "answer {\"resign\": true} and the game ends at once: your opponent wins. This is the only exception to "
+            + "rule 3. If you resign, any \"move\" in the same answer is ignored.";
+
+    @Test
+    void theTemplatesForTheSetupPageFollowTheResignationSetting() {
+        for (ChatMode mode : ChatMode.values()) {
+            assertEquals(promptService.getSystemPromptTemplate(mode), promptService.getSystemPromptTemplate(mode, false));
+            assertEquals(promptService.getSystemPromptVersion(mode), promptService.getSystemPromptVersion(mode, false));
+            assertTrue(promptService.getSystemPromptTemplate(mode, true).contains("9. Resigning is allowed"));
+            assertEquals(promptService.getSystemPromptVersion(mode) + "-resign",
+                    promptService.getSystemPromptVersion(mode, true));
+        }
+    }
+
+    @Test
+    void legacyCustomTemplatesNeverOfferResignation() {
+        for (ChatMode mode : ChatMode.values()) {
+            PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                    "Play as %s against %s (%s).", null, "WHITE", "Opponent Bot", "model/opponent", mode, true);
+
+            assertEquals("Play as WHITE against Opponent Bot (model/opponent).", prompt.prompt());
+            assertEquals("legacy-custom-template", prompt.version());
+            assertFalse(prompt.resignationOffered(), mode.name());
+        }
+    }
+
+    @Test
+    void turnPromptMentionsResignationOnlyWhenTheSideMayResign() {
+        Board board = new Board();
+        String plain = promptService.buildTurnPrompt("1. e4 e5", board.getFen(), "board", "WHITE", 10,
+                List.of("e4"), "Opponent", "e5", null, false, ChatMode.MANDATORY);
+        String notYet = promptService.buildTurnPrompt("1. e4 e5", board.getFen(), "board", "WHITE", 10,
+                List.of("e4"), "Opponent", "e5", null, false, ChatMode.MANDATORY, false);
+        String mayResign = promptService.buildTurnPrompt("1. e4 e5", board.getFen(), "board", "WHITE", 10,
+                List.of("e4"), "Opponent", "e5", null, false, ChatMode.MANDATORY, true);
+
+        assertEquals(plain, notYet);
+        assertFalse(plain.contains("resign"));
+        assertEquals(plain.replace(PromptService.REQUIRED_MESSAGE_ANSWER_LINE,
+                "You may resign instead of moving (rule 9).\n" + PromptService.REQUIRED_MESSAGE_ANSWER_LINE), mayResign);
+    }
+
+    @Test
+    void theCorrectiveMessageSaysWhyResigningIsNotAllowed() {
+        assertEquals("Resigning is not allowed in this game; send a legal move.",
+                promptService.getResignationNotAllowedError(false));
+        assertEquals("Resigning is not allowed before move 10; send a legal move.",
+                promptService.getResignationNotAllowedError(true));
     }
 
     @Test

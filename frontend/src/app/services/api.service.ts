@@ -24,6 +24,10 @@ export interface PromptTemplateResponse {
   hash: string;
   /** The rules of every chat mode by name; absent from backends before 1.4. */
   chatModes?: Partial<Record<ChatMode, { template: string; version: string; hash: string }>>;
+  /** The same rules for a tournament that allows resignation (rule 9 added); absent before 1.4. */
+  resignationChatModes?: Partial<
+    Record<ChatMode, { template: string; version: string; hash: string }>
+  >;
 }
 
 export interface SystemStatusResponse {

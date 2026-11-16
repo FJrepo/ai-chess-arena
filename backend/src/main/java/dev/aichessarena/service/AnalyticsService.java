@@ -15,10 +15,13 @@ import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.MoveAttempt;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
+import dev.aichessarena.repository.MoveAttemptRepository.ResignationTurnAttempt;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -343,6 +346,11 @@ public class AnalyticsService {
             ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
             accumulator.costTotalUsd = accumulator.costTotalUsd.add(cost);
         });
+        resignedTurnFailures(scope.resignationAttempts()).forEach((modelId, failures) -> {
+            ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
+            accumulator.resignedTurnsWithFailures += failures.turns();
+            accumulator.resignedTurnFailures += failures.failures();
+        });
 
         List<ModelReliabilityDto> rows = new ArrayList<>();
         for (Map.Entry<String, ReliabilityAccumulator> entry : byModel.entrySet()) {
@@ -351,9 +359,11 @@ public class AnalyticsService {
                 continue;
             }
 
+            // Turns: moves plus resigned turns that needed retries (see resignedTurnFailures).
+            long turns = accumulator.movesSampled + accumulator.resignedTurnsWithFailures;
             double firstTryLegalRate = AnalyticsReliabilityScorer.firstTryLegalRate(
                     accumulator.firstTryMoves,
-                    accumulator.movesSampled,
+                    turns,
                     accumulator.invalidMoveForfeitCount
             );
             double forfeitRate = accumulator.gamesPlayed == 0
@@ -362,9 +372,9 @@ public class AnalyticsService {
             double timeoutForfeitRate = accumulator.gamesPlayed == 0
                     ? 0
                     : (double) accumulator.timeoutForfeitCount / (double) accumulator.gamesPlayed;
-            double avgRetriesPerMove = accumulator.movesSampled == 0
+            double avgRetriesPerMove = turns == 0
                     ? 0
-                    : (double) accumulator.retriesTotal / (double) accumulator.movesSampled;
+                    : (double) (accumulator.retriesTotal + accumulator.resignedTurnFailures) / (double) turns;
             Long avgResponseTimeMs = accumulator.responseTimeCount == 0
                     ? null
                     : Math.round((double) accumulator.responseTimeTotal / (double) accumulator.responseTimeCount);
@@ -443,6 +453,12 @@ public class AnalyticsService {
         });
         registerMoveQuality(byModel, moves);
         registerTalkativeness(byModel, moves, scope.messages());
+        registerResignations(byModel, terminalGames, moves);
+        resignedTurnFailures(scope.resignationAttempts()).forEach((modelId, failures) -> {
+            ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
+            accumulator.resignedTurnsWithFailures += failures.turns();
+            accumulator.resignedTurnFailures += failures.failures();
+        });
 
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
@@ -455,7 +471,10 @@ public class AnalyticsService {
             Long averageResponseTimeMs = accumulator.responseTimeCount == 0
                     ? null
                     : Math.round((double) accumulator.responseTimeTotal / (double) accumulator.responseTimeCount);
-            BigDecimal averageRetriesPerMove = divide(accumulator.retriesTotal, accumulator.movesSampled);
+            // Turns: moves plus resigned turns that needed retries (see resignedTurnFailures).
+            long turns = accumulator.movesSampled + accumulator.resignedTurnsWithFailures;
+            BigDecimal averageRetriesPerMove =
+                    divide(accumulator.retriesTotal + accumulator.resignedTurnFailures, turns);
             BigDecimal winRate = divide(accumulator.wins, accumulator.gamesPlayed);
             BigDecimal drawRate = divide(accumulator.draws, accumulator.gamesPlayed);
             BigDecimal lossRate = divide(losses, accumulator.gamesPlayed);
@@ -478,7 +497,7 @@ public class AnalyticsService {
 
             double firstTryLegalRate = AnalyticsReliabilityScorer.firstTryLegalRate(
                     accumulator.firstTryMoves,
-                    accumulator.movesSampled,
+                    turns,
                     accumulator.invalidMoveForfeits
             );
             AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
@@ -529,7 +548,11 @@ public class AnalyticsService {
                             ? null
                             : decimal((double) accumulator.blunders / accumulator.analyzedGameIds.size(), 2),
                     talkativeness(accumulator.optionalChat),
-                    talkativeness(accumulator.mandatoryChat)
+                    talkativeness(accumulator.mandatoryChat),
+                    accumulator.resignations,
+                    accumulator.resignationsEvaluated,
+                    accumulator.resignationsWhileNotLosing,
+                    accumulator.wonByResignation
             ));
         }
 
@@ -693,6 +716,92 @@ public class AnalyticsService {
                 talk.messageLengthTotal += length;
             }
         }
+    }
+
+    /**
+     * Counts resignations in finished, non-bye games (see {@link ResignationAnalysis}): for the model that resigned,
+     * the resignation, whether the position it resigned in was evaluated and whether its winning chance there was at
+     * least 35% ("resigned while not losing"); for the model on the other side, a win by resignation. Human sides
+     * are skipped.
+     */
+    private void registerResignations(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
+        Map<UUID, List<Move>> movesByGame = new HashMap<>();
+        for (Move move : moves) {
+            if (move.game != null) {
+                movesByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(move);
+            }
+        }
+        for (Game game : games) {
+            String color = ResignationAnalysis.resigningColor(game);
+            if (color == null || !countsAsPlayed(game)) {
+                continue;
+            }
+            boolean whiteResigned = "WHITE".equals(color);
+            String resignedModel = modelSide(game, whiteResigned);
+            if (resignedModel != null) {
+                List<Move> gameMoves = new ArrayList<>(movesByGame.getOrDefault(game.id, List.of()));
+                gameMoves.sort(MoveQualityClassifier.PLAY_ORDER);
+                Double winChance = ResignationAnalysis.winChanceAtResignation(gameMoves, color);
+                ComparisonAccumulator accumulator =
+                        byModel.computeIfAbsent(resignedModel, ignored -> new ComparisonAccumulator());
+                accumulator.resignations++;
+                if (winChance != null) {
+                    accumulator.resignationsEvaluated++;
+                }
+                if (ResignationAnalysis.notLosing(winChance)) {
+                    accumulator.resignationsWhileNotLosing++;
+                }
+            }
+            String winnerModel = modelSide(game, !whiteResigned);
+            if (winnerModel != null) {
+                byModel.computeIfAbsent(winnerModel, ignored -> new ComparisonAccumulator()).wonByResignation++;
+            }
+        }
+    }
+
+    /** Per model: resigned turns with failed attempts before the resignation, and those failed attempts. */
+    record ResignedTurnFailures(long turns, long failures) {
+    }
+
+    /**
+     * Failed attempts before an accepted resignation. A resigned turn has no move, so the failures before it would
+     * otherwise vanish from reliability (it is computed from the moves' retry counts). A resigned turn with failures
+     * counts like a move that needed that many retries: one more turn, not first-try legal, plus its failures as
+     * retries. A resignation on the first attempt is left out entirely, so resigning itself is never penalised. Only
+     * plies with a RESIGNED attempt count; games stored without attempts (before 1.3) have none, like before.
+     */
+    static Map<String, ResignedTurnFailures> resignedTurnFailures(List<ResignationTurnAttempt> attempts) {
+        Map<PlyKey, List<ResignationTurnAttempt>> byPly = new HashMap<>();
+        for (ResignationTurnAttempt attempt : attempts) {
+            byPly.computeIfAbsent(new PlyKey(attempt.gameId(), attempt.moveNumber(), attempt.color()),
+                    ignored -> new ArrayList<>()).add(attempt);
+        }
+        Map<String, ResignedTurnFailures> byModel = new HashMap<>();
+        for (List<ResignationTurnAttempt> ply : byPly.values()) {
+            String modelId = ply.stream()
+                    .filter(attempt -> attempt.outcome() == MoveAttempt.Outcome.RESIGNED)
+                    .map(ResignationTurnAttempt::modelId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .findFirst()
+                    .orElse(null);
+            long failures = ply.stream().filter(attempt -> attempt.outcome().isModelFailure()).count();
+            if (modelId == null || failures == 0) {
+                continue;
+            }
+            byModel.merge(modelId.trim(), new ResignedTurnFailures(1, failures),
+                    (a, b) -> new ResignedTurnFailures(a.turns() + b.turns(), a.failures() + b.failures()));
+        }
+        return byModel;
+    }
+
+    /** The model id of a side played by a model; null for a human side or a side without a model. */
+    private String modelSide(Game game, boolean white) {
+        var participant = white ? game.whiteParticipant : game.blackParticipant;
+        if (participant != null && participant.controlType == TournamentParticipant.ControlType.HUMAN) {
+            return null;
+        }
+        String modelId = white ? game.whiteModelId : game.blackModelId;
+        return hasTrackedModelId(modelId) ? normalizeModelId(modelId) : null;
     }
 
     /** Earliest stored first; the id only breaks ties so the choice does not depend on load order. */
@@ -865,6 +974,12 @@ public class AnalyticsService {
         private long blunders;
         private final TalkAccumulator optionalChat = new TalkAccumulator();
         private final TalkAccumulator mandatoryChat = new TalkAccumulator();
+        private long resignedTurnsWithFailures;
+        private long resignedTurnFailures;
+        private long resignations;
+        private long resignationsEvaluated;
+        private long resignationsWhileNotLosing;
+        private long wonByResignation;
     }
 
     private static final class TalkAccumulator {
@@ -879,6 +994,8 @@ public class AnalyticsService {
         private long forfeitCount;
         private long timeoutForfeitCount;
         private long invalidMoveForfeitCount;
+        private long resignedTurnsWithFailures;
+        private long resignedTurnFailures;
 
         private long movesSampled;
         private long firstTryMoves;

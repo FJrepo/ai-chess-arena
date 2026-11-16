@@ -12,6 +12,8 @@ public class ResponseParserService {
 
     private static final Pattern JSON_BLOCK = Pattern.compile("```(?:json)?\\s*(\\{.*?})\\s*```", Pattern.DOTALL);
     private static final Pattern JSON_OBJECT = Pattern.compile("\\{[^{}]*\"move\"\\s*:\\s*\"[^\"]+\"[^{}]*}");
+    /** Any flat JSON object with a "resign" field; its value is judged by {@link #isResignation}. */
+    private static final Pattern RESIGN_OBJECT = Pattern.compile("\\{[^{}]*\"resign\"\\s*:[^{}]*}");
     private static final Pattern MOVE_PATTERN = Pattern.compile(
             "\\b([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?)\\b"
     );
@@ -42,6 +44,14 @@ public class ResponseParserService {
             if (result != null) return result;
         }
 
+        // 3b. Try every JSON object with a "resign" field (it may have no "move" field). Whether it resigns is
+        // decided by the same rule as for a raw answer (isResignation), before any move is taken from plain text.
+        Matcher resignMatcher = RESIGN_OBJECT.matcher(rawResponse);
+        while (resignMatcher.find()) {
+            result = tryParseJson(resignMatcher.group().trim());
+            if (result != null) return result;
+        }
+
         // 4. Try extracting a move from plain text
         Matcher moveMatcher = MOVE_PATTERN.matcher(rawResponse);
         if (moveMatcher.find()) {
@@ -54,10 +64,19 @@ public class ResponseParserService {
     private ParseResult tryParseJson(String json) {
         try {
             JsonNode node = objectMapper.readTree(json);
+            if (node == null || !node.isObject()) {
+                return null;
+            }
+            // "message": null means no message (asText() would turn it into the text "null").
+            String message = node.hasNonNull("message") ? node.get("message").asText() : null;
+            if (isResignation(node.get("resign"))) {
+                // "move" may be omitted when resigning; one sent along is kept so the caller can play it when
+                // resigning is not allowed (an allowed resignation ignores it).
+                String move = node.hasNonNull("move") ? node.get("move").asText().trim() : null;
+                return new ParseResult(move == null || move.isBlank() ? null : move, message, "JSON", true);
+            }
             if (node.has("move")) {
                 String move = node.get("move").asText();
-                // "message": null means no message (asText() would turn it into the text "null").
-                String message = node.hasNonNull("message") ? node.get("message").asText() : null;
                 if (move != null && !move.isBlank()) {
                     return new ParseResult(move.trim(), message, "JSON");
                 }
@@ -68,9 +87,28 @@ public class ResponseParserService {
         }
     }
 
-    public record ParseResult(String move, String message, String parseMethod) {
+    /** Only {@code "resign": true} (or the string "true") resigns; false, null, numbers or other text do not. */
+    private static boolean isResignation(JsonNode resign) {
+        if (resign == null) {
+            return false;
+        }
+        if (resign.isBoolean()) {
+            return resign.booleanValue();
+        }
+        return resign.isTextual() && "true".equalsIgnoreCase(resign.textValue().trim());
+    }
+
+    /**
+     * A parsed answer. {@code resign} is true for an answer with {@code "resign": true}; {@code move} is then the move
+     * sent along with it, if any. A failure has neither a move nor a resignation, and {@code message} is the reason.
+     */
+    public record ParseResult(String move, String message, String parseMethod, boolean resign) {
+        public ParseResult(String move, String message, String parseMethod) {
+            this(move, message, parseMethod, false);
+        }
+
         public boolean isFailure() {
-            return move == null;
+            return move == null && !resign;
         }
 
         public static ParseResult failure(String reason) {

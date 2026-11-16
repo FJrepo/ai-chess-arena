@@ -88,8 +88,36 @@ class MoveAttemptServiceTest {
 
     @Test
     void onlyTheModelsOwnFailuresCountAgainstIt() {
-        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.PARSE_FAILURE, Outcome.EMPTY_RESPONSE, Outcome.TIMEOUT),
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.PARSE_FAILURE, Outcome.EMPTY_RESPONSE, Outcome.TIMEOUT,
+                        Outcome.RESIGN_NOT_ALLOWED),
                 java.util.Arrays.stream(Outcome.values()).filter(Outcome::isModelFailure).toList());
+    }
+
+    @Test
+    void anAcceptedResignationIsStoredWithItsTokensButCostedWithTheGameResult() {
+        Fixture fixture = new Fixture(new BigDecimal("0.10"));
+
+        fixture.service.record(attempt(fixture.game.id, Outcome.RESIGNED, null,
+                new LlmResponse("{\"resign\":true}", 300, 12, 0.006, 700, "{}", false, null)));
+
+        MoveAttempt row = fixture.attempts.persisted.getFirst();
+        assertEquals(Outcome.RESIGNED, row.outcome);
+        assertEquals(300, row.promptTokens);
+        assertEquals(12, row.completionTokens);
+        assertEquals(0, new BigDecimal("0.006").compareTo(row.costUsd));
+        // GameLifecycleService.resign added it to the game together with the result.
+        assertEquals(0, new BigDecimal("0.10").compareTo(fixture.game.totalCostUsd));
+    }
+
+    @Test
+    void aResignationThatWasNotAllowedAddsItsCostLikeOtherInvalidAnswers() {
+        Fixture fixture = new Fixture(new BigDecimal("0.10"));
+
+        fixture.service.record(attempt(fixture.game.id, Outcome.RESIGN_NOT_ALLOWED, null,
+                new LlmResponse("{\"resign\":true}", 300, 12, 0.006, 700, "{}", false, null)));
+
+        assertEquals(0, new BigDecimal("0.106").compareTo(fixture.game.totalCostUsd));
+        assertTrue(fixture.games.lockedForUpdate);
     }
 
     @Test

@@ -20,6 +20,8 @@ public record TournamentDto(
         // True unless chatMode is OFF; kept for older clients.
         boolean trashTalkEnabled,
         String chatMode,
+        // Models may resign instead of moving from their 10th move on (Tournament.MIN_RESIGNATION_MOVE).
+        boolean resignationAllowed,
         int maxOutputTokens,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,

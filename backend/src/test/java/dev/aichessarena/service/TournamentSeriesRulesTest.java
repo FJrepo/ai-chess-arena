@@ -69,6 +69,32 @@ class TournamentSeriesRulesTest {
         assertEquals(0, fixture.pendingSeriesGames(), "no extra game after the series is decided");
     }
 
+    /** A win by resignation (lower case: a = Seed 1's opponent resigned) counts exactly like a checkmate win. */
+    @ParameterizedTest(name = "best of {0}, {1}, games {2} -> {3} after {4} games")
+    @CsvSource({
+            "1, WHITE_ADVANCES, a,    Seed 1, 1",
+            "1, WHITE_ADVANCES, b,    Seed 2, 1",
+            "3, WHITE_ADVANCES, ab,   ,       2",
+            "3, WHITE_ADVANCES, abB,  Seed 2, 3",
+            "3, BLACK_ADVANCES, Aa,   Seed 1, 2",
+            "3, WHITE_ADVANCES, bDA,  Seed 1, 3",
+            // sudden-death tiebreaks are decided by a resignation too
+            "1, REPLAY_GAME,    Db,   Seed 2, 2",
+            "3, REPLAY_GAME,    aBDa, Seed 1, 4",
+    })
+    void aWinByResignationCountsLikeAnyOtherWin(int bestOf, DrawPolicy policy, String outcomes, String winner,
+                                                int games) {
+        Fixture fixture = new Fixture(bestOf, policy);
+
+        for (char outcome : outcomes.toCharArray()) {
+            assertNull(fixture.advanced(), "series decided too early");
+            fixture.play(outcome);
+        }
+
+        assertEquals(winner, fixture.advanced());
+        assertEquals(games, fixture.seriesGames().size() - (int) fixture.pendingSeriesGames());
+    }
+
     @Test
     void randomPolicyPicksOneOfTheTwoAfterALevelSeries() {
         Fixture fixture = new Fixture(3, DrawPolicy.RANDOM_ADVANCES);
@@ -263,7 +289,10 @@ class TournamentSeriesRulesTest {
                     .orElseThrow(() -> new AssertionError("no pending game in the series"));
             boolean seedOneIsWhite = "Seed 1".equals(game.whitePlayerName);
             game.status = Game.GameStatus.COMPLETED;
-            game.result = switch (outcome) {
+            // Lower case: the same win, by the opponent's resignation instead of checkmate.
+            game.resultReason = Character.isLowerCase(outcome) ? Game.ResultReason.RESIGNATION
+                    : outcome == 'D' ? Game.ResultReason.REPETITION : Game.ResultReason.CHECKMATE;
+            game.result = switch (Character.toUpperCase(outcome)) {
                 case 'A' -> seedOneIsWhite ? Game.GameResult.WHITE_WINS : Game.GameResult.BLACK_WINS;
                 case 'B' -> seedOneIsWhite ? Game.GameResult.BLACK_WINS : Game.GameResult.WHITE_WINS;
                 case 'D' -> Game.GameResult.DRAW;

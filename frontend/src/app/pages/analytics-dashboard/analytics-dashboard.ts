@@ -57,6 +57,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     "ACPL is the average centipawn loss per move (lower is better). A move is ?! / ? / ?? when it drops the mover's winning chances by at least 5 / 10 / 15 percentage points (Lichess-style win-probability model); forced moves, overrides and moves without an evaluation are not judged.";
   readonly talkExplanation =
     "Talk rate is the share of a model's moves in finished games that came with a non-empty message: with chat Optional it is the model's own choice, with chat Mandatory it shows how often it complied. Average length is in characters per message; moves made with chat Off are left out.";
+  readonly resignationExplanation =
+    "Resignations in finished games (tournaments with resignation allowed, from a side's 10th move on). Resigned while not losing: the resigning side still had at least 35% winning chances by Stockfish's evaluation of the position it gave up, i.e. roughly level or better; resignations without an evaluation are not judged.";
   readonly comparisonSortOptions = [
     { value: 'winRate', label: 'Win Rate' },
     { value: 'reliabilityScore', label: 'Reliability' },
@@ -178,6 +180,20 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       ),
   );
 
+  /** Models that resigned or won by resignation, most resignations first. */
+  resignationRows = computed(() =>
+    (this.comparison()?.models ?? [])
+      .filter((row) => (row.resignations ?? 0) > 0 || (row.wonByResignation ?? 0) > 0)
+      .slice()
+      .sort(
+        (a, b) =>
+          (b.resignations ?? 0) - (a.resignations ?? 0) ||
+          (b.resignationsWhileNotLosing ?? 0) - (a.resignationsWhileNotLosing ?? 0) ||
+          (b.wonByResignation ?? 0) - (a.wonByResignation ?? 0) ||
+          a.modelId.localeCompare(b.modelId),
+      ),
+  );
+
   colorSplitHighlights = computed(() =>
     this.comparisonRows()
       .filter((row) => row.gamesPlayed > 0)
@@ -255,6 +271,32 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   /** Share of moves with a message; n/a without moves in that chat mode. */
+  /**
+   * "Resigned while not losing" for a model: "1 of 2" over its resignations with an evaluation, "n/a" when
+   * none of them was evaluated, "–" without resignations.
+   */
+  formatNotLosing(row: AnalyticsComparisonModel): string {
+    if ((row.resignations ?? 0) === 0) {
+      return '–';
+    }
+    const evaluated = row.resignationsEvaluated ?? 0;
+    return evaluated === 0 ? 'n/a' : `${row.resignationsWhileNotLosing ?? 0} of ${evaluated}`;
+  }
+
+  /** Note under "not losing" when some resignations had no evaluation, e.g. "1 not evaluated". */
+  notEvaluatedNote(row: AnalyticsComparisonModel): string {
+    const missing = (row.resignations ?? 0) - (row.resignationsEvaluated ?? 0);
+    return missing > 0 ? `${missing} not evaluated` : '';
+  }
+
+  /** Resignations per game played, e.g. "2 (10%)". */
+  formatResignations(row: AnalyticsComparisonModel): string {
+    const resignations = row.resignations ?? 0;
+    return resignations === 0 || row.gamesPlayed === 0
+      ? `${resignations}`
+      : `${resignations} (${this.percent(resignations / row.gamesPlayed)})`;
+  }
+
   formatTalkRate(talk: AnalyticsTalkativeness | null | undefined): string {
     return !talk || talk.moves === 0 || talk.talkRate == null ? 'n/a' : this.percent(talk.talkRate);
   }

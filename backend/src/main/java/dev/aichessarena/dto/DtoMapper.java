@@ -5,6 +5,7 @@ import dev.aichessarena.service.MoveQualityClassifier;
 import dev.aichessarena.service.MoveQualityClassifier.GameSummary;
 import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
 import dev.aichessarena.service.MoveQualityClassifier.SideSummary;
+import dev.aichessarena.service.ResignationAnalysis;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,7 @@ public final class DtoMapper {
                 t.drawPolicy.name(),
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
+                t.resignationAllowed,
                 t.maxOutputTokens,
                 t.createdAt, t.updatedAt,
                 t.participants.stream().map(DtoMapper::toDto).toList(),
@@ -49,6 +51,7 @@ public final class DtoMapper {
     public static GameDto toDto(Game g, boolean includeMoves) {
         List<MoveDto> moves = List.of();
         GameQualitySummaryDto qualitySummary = null;
+        ResignationDto resignation = null;
         if (includeMoves) {
             List<Move> played = g.moves;
             List<MoveQuality> qualities = MoveQualityClassifier.analyze(played);
@@ -58,6 +61,7 @@ public final class DtoMapper {
             }
             moves = mapped;
             qualitySummary = toDto(MoveQualityClassifier.summarize(played, qualities));
+            resignation = resignation(g, played);
         }
         return new GameDto(
                 g.id,
@@ -81,7 +85,47 @@ public final class DtoMapper {
                 g.totalCostUsd, g.createdAt, g.startedAt, g.completedAt,
                 moves,
                 includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of(),
-                qualitySummary
+                qualitySummary,
+                resignation,
+                g.statusRevision
+        );
+    }
+
+    /**
+     * The resignation of a game that ended by one, from its moves in play order and its chat; null otherwise. Last
+     * words are the resigning side's message for the ply it did not play; the opponent's message is its most recent
+     * one before the resignation.
+     */
+    static ResignationDto resignation(Game g, List<Move> movesInPlayOrder) {
+        String color = ResignationAnalysis.resigningColor(g);
+        if (color == null) {
+            return null;
+        }
+        int moveNumber = ResignationAnalysis.resignationMoveNumber(movesInPlayOrder, color);
+        Double winChance = ResignationAnalysis.winChanceAtResignation(movesInPlayOrder, color);
+        String lastWords = null;
+        ChatMessage opponentMessage = null;
+        for (ChatMessage chat : g.chatMessages) {
+            if (chat.message == null || chat.message.isBlank()) {
+                continue;
+            }
+            if (color.equals(chat.senderColor)) {
+                if (chat.moveNumber == moveNumber) {
+                    lastWords = chat.message;
+                }
+            } else {
+                // Chat messages are in creation order; the last one wins.
+                opponentMessage = chat;
+            }
+        }
+        return new ResignationDto(
+                color,
+                moveNumber,
+                winChance != null ? round4(winChance) : null,
+                ResignationAnalysis.notLosing(winChance),
+                lastWords,
+                opponentMessage != null ? opponentMessage.message : null,
+                opponentMessage != null ? opponentMessage.moveNumber : null
         );
     }
 

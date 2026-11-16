@@ -70,6 +70,26 @@
       </span>
     </div>
   </div>
+  @if (resignation(); as r) {
+    <div class="resignation-panel" role="status">
+      <mat-icon class="resignation-icon" aria-hidden="true">flag</mat-icon>
+      <div class="resignation-copy">
+        <span class="resignation-title">{{ resignationText(r) }}</span>
+        @if (r.lastWords) {
+          <span class="resignation-line"
+            ><span class="resignation-label">Last words:</span> “{{ r.lastWords }}”</span
+          >
+        }
+        @if (r.opponentMessage) {
+          <span class="resignation-line"
+            ><span class="resignation-label">{{ opponentMessageLabel(r) }}:</span> “{{
+              r.opponentMessage
+            }}”</span
+          >
+        }
+      </div>
+    </div>
+  }
   @if (game.status === 'PAUSED' && game.statusDetail) {
     <div class="pause-panel" role="status">
       <div class="pause-head">

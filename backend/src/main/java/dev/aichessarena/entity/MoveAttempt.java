@@ -86,7 +86,14 @@ public class MoveAttempt extends PanacheEntityBase {
         PROVIDER_RETRYABLE(false),
         PROVIDER_FATAL(false),
         /** A legal answer that was not played because the position or game status changed meanwhile. */
-        DISCARDED(false);
+        DISCARDED(false),
+        /**
+         * The model tried to resign without a move although resigning was not allowed (not offered in the game, or
+         * before its 10th move): an invalid answer like an illegal move, retried and counted the same way.
+         */
+        RESIGN_NOT_ALLOWED(true),
+        /** An allowed resignation: the game ended with the opponent winning. Costed with the game result. */
+        RESIGNED(false);
 
         private final boolean modelFailure;
 
@@ -100,6 +107,14 @@ public class MoveAttempt extends PanacheEntityBase {
          */
         public boolean isModelFailure() {
             return modelFailure;
+        }
+
+        /**
+         * Whether the answer's cost reaches the game total elsewhere: an accepted move with the move, a resignation
+         * with the game result. All other attempts add their cost when they are recorded.
+         */
+        public boolean isCostedElsewhere() {
+            return this == ACCEPTED || this == RESIGNED;
         }
     }
 }

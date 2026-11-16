@@ -191,6 +191,44 @@ $warning: mat.$orange-palette;
   overflow-wrap: anywhere;
 }
 
+// Resignation: who gave up, at what winning chances, last words and the opponent's last message.
+.resignation-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container-low);
+}
+
+.resignation-icon {
+  color: var(--mat-sys-on-surface-variant);
+  flex: 0 0 auto;
+}
+
+.resignation-copy {
+  display: grid;
+  gap: 2px;
+  padding-top: 1px;
+  min-width: 0;
+}
+
+.resignation-title {
+  font: var(--mat-sys-title-small);
+  color: var(--mat-sys-on-surface);
+}
+
+.resignation-line {
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface-variant);
+  overflow-wrap: anywhere;
+}
+
+.resignation-label {
+  font-weight: 500;
+}
+
 // The field's floating label needs room above it; the button lines up with the input box.
 .raise-limit {
   grid-area: form;

@@ -211,9 +211,11 @@ public class GameEngineService {
             Integer moveTimeoutSeconds = moveTimeoutSecondsFor(game);
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
-            // A changed chat mode applies from this turn on: rebuild both prompts so prompt, message handling and the
-            // mode recorded on the move agree.
-            if (GameConversationService.configuredChatMode(game) != conversation.chatMode()) {
+            // A changed chat mode or resignation setting applies from this turn on: rebuild both prompts so prompt,
+            // answer handling and the mode and prompt version recorded on the move agree.
+            if (GameConversationService.configuredChatMode(game) != conversation.chatMode()
+                    || GameConversationService.configuredResignationAllowed(game)
+                    != conversation.resignationAllowed()) {
                 conversation = gameConversationService.refreshSystemPrompts(game, conversation);
             }
             GameConversationService.PromptContext prompt =
@@ -241,7 +243,8 @@ public class GameEngineService {
                     loop::shouldContinue,
                     maxOutputTokens,
                     prompt.chatMode(),
-                    conversation.chatMode()
+                    conversation.chatMode(),
+                    prompt.resignationOffered()
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

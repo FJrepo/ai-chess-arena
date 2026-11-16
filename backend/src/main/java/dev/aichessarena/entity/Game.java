@@ -44,6 +44,14 @@ public class Game extends PanacheEntityBase {
     @Column(nullable = false)
     public GameStatus status = GameStatus.WAITING;
 
+    /**
+     * Grows by one with every status change made by GameLifecycleService (start, pause, game over), in the same
+     * transaction and under the row lock. Live status updates carry it so clients can ignore an older update that
+     * arrives after a newer one.
+     */
+    @Column(name = "status_revision", nullable = false)
+    public long statusRevision;
+
     @Enumerated(EnumType.STRING)
     public GameResult result;
 
