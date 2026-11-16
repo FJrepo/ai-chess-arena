@@ -1,5 +1,12 @@
 import { Component, input, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import {
+  PositionEvaluation,
+  Side,
+  evaluationLabel,
+  hasEvaluation,
+  whiteBarShare,
+} from '../../utils/position-evaluation';
 
 @Component({
   selector: 'app-advantage-bar',
@@ -9,34 +16,23 @@ import { CommonModule } from '@angular/common';
   styleUrl: './advantage-bar.scss',
 })
 export class AdvantageBar {
-  cp = input<number | null>(0);
+  /** Centipawns from White's view; null when unknown. */
+  cp = input<number | null>(null);
+  /** Moves until mate from White's view; null when there is none or it is unknown. */
   mate = input<number | null>(null);
+  /** The side checkmated in the shown position, if any. */
+  checkmated = input<Side | null>(null);
 
-  displayScore = computed(() => {
-    const cpVal = this.cp();
-    const mateVal = this.mate();
+  private evaluation = computed<PositionEvaluation>(() => ({
+    cp: this.cp(),
+    mate: this.mate(),
+    checkmated: this.checkmated(),
+  }));
 
-    if (mateVal != null) {
-      return mateVal > 0 ? `M${mateVal}` : `-M${Math.abs(mateVal)}`;
-    }
-    if (cpVal != null) {
-      const val = cpVal / 100;
-      return val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1);
-    }
-    return '0.0';
-  });
+  /** False when the position has no evaluation; the bar then shows a neutral, unknown state. */
+  known = computed(() => hasEvaluation(this.evaluation()));
 
-  barHeight = computed(() => {
-    const cpVal = this.cp();
-    const mateVal = this.mate();
+  displayScore = computed(() => evaluationLabel(this.evaluation()));
 
-    if (mateVal != null) {
-      return mateVal > 0 ? 100 : 0;
-    }
-    if (cpVal == null) return 50;
-
-    const val = cpVal / 100;
-    const percentage = 50 + 50 * (Math.atan(val / 1.5) / (Math.PI / 2));
-    return Math.max(5, Math.min(95, percentage));
-  });
+  barHeight = computed(() => whiteBarShare(this.evaluation()));
 }

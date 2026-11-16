@@ -13,6 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `GET /api/games/{id}/attempts` returns a game's attempts ordered by move number; the game feed shows failed attempts per move, and plies that ended without a move.
 - Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
 - When a game is paused because an answer was cut off at the output-token limit, the game view offers a *Max output tokens per answer* field (prefilled with double the current limit) and a *Save and resume* button that updates the tournament and resumes the game.
+- Game view: the board marks the squares of the move being viewed with the classes `last-move-from` and `last-move-to` (derived from the stored positions, including castling, en passant and promotion); there is no mark before the first move. The squares are not styled yet.
 
 ### Changed
 - The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).
@@ -21,6 +22,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `games.total_cost_usd` now has 8 decimal places (`NUMERIC(12,8)`, migration V10), like per-attempt costs, so small rejected charges are no longer rounded away.
 - *Replay game* for a single-game match (best of 1) no longer wipes and replays the drawn game. The drawn game is kept with its moves, chat and cost, and a tiebreak game with swapped colors is added to the match; the first decisive tiebreak game decides, as in longer series.
 - Live move updates now carry an `isOverride` flag, and moves set by an operator override are evaluated by Stockfish like regular moves.
+- Game feed: a ply's failed or cut-off answers are shown on their own line (class `feed-attempts`) instead of being appended to the player name.
+- The pause reason for a cut-off answer is short and user-facing ("…'s answer was cut off at the 4096-token output limit (3900 of them reasoning). Raise the limit and resume"); it no longer names the API route or field, which stay documented in the README.
 
 ### Fixed
 - Reasoning models no longer lose games because a 500-token limit cut off their answer: an answer cut off at the limit without a usable legal move pauses the game with a hint instead of counting as a failed attempt; a cut-off answer with a legal move is played.
@@ -30,6 +33,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Game view: moves that arrive over the live connection while the game is still loading are merged into the loaded move list instead of being lost or shown twice; a live move that is already listed is ignored.
 - Game view: live override moves are marked as overrides immediately instead of only after a reload.
 - Game view: reviewing earlier moves no longer changes whose turn the page shows when the server has not reported it.
+- Game view: the evaluation bar no longer shows 0.0 for positions without a Stockfish evaluation (not evaluated yet, Stockfish unavailable, or the start position); it shows a dash on a neutral bar instead. The final position of a game won by checkmate shows the result (1-0 or 0-1) with the bar fully on the winner's side, also when Stockfish reported it as an unsigned "mate 0"; a final stalemate or insufficient-material position shows 0.0.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
 
 ## [1.2.0] - 2026-11-16

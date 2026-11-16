@@ -30,6 +30,8 @@ import { Subscription, switchMap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import { LastMove, lastMoveSquares } from '../../utils/last-move';
+import { PositionEvaluation, evaluationAt } from '../../utils/position-evaluation';
 import {
   latestAttemptFor,
   nextPly,
@@ -43,6 +45,8 @@ type TimelineEvent = {
   type: 'start' | 'move' | 'attempts' | 'chat' | 'result';
   label: string;
   detail: string;
+  /** Failed or cut-off answers for the ply, shown as their own line; null when there were none. */
+  attemptSummary: string | null;
   tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
   icon: string;
   createdAtMs: number;
@@ -169,21 +173,24 @@ export class GameView implements OnInit, OnDestroy {
     return moveList[idx]?.fen || this.game()?.currentFen || START_FEN;
   });
 
-  currentEvaluation = computed(() => {
+  /**
+   * The stored evaluation of the position being viewed; unknown (not 0.0) when that move has not been
+   * evaluated, and for the start position. A final checkmate is shown as a win for the mating side.
+   */
+  currentEvaluation = computed<PositionEvaluation>(() =>
+    evaluationAt(this.moves(), this.currentMoveIndex(), this.game()),
+  );
+
+  /** From/to squares of the move being viewed, for the board's last-move highlight. */
+  lastMove = computed<LastMove | null>(() => {
     const idx = this.currentMoveIndex();
     const moveList = this.moves();
-
-    if (idx < 0) {
-      return { cp: 0, mate: null };
+    const move = idx >= 0 ? moveList[idx] : undefined;
+    if (!move) {
+      return null;
     }
-
-    const move = moveList[idx];
-    if (!move) return { cp: 0, mate: null };
-
-    return {
-      cp: move.evaluationCp ?? null,
-      mate: move.evaluationMate ?? null,
-    };
+    const previousFen = idx === 0 ? START_FEN : moveList[idx - 1].fen;
+    return lastMoveSquares(previousFen, move.fen);
   });
 
   isLive!: () => boolean;
@@ -253,6 +260,7 @@ export class GameView implements OnInit, OnDestroy {
         detail: `${game.whitePlayerName || 'White'} vs ${game.blackPlayerName || 'Black'}`,
         tone: 'neutral',
         icon: 'flag',
+        attemptSummary: null,
         createdAtMs: Date.parse(game.startedAt),
         createdAtLabel: game.startedAt,
         moveIndex: moves.length > 0 ? 0 : null,
@@ -264,17 +272,19 @@ export class GameView implements OnInit, OnDestroy {
         attemptsByPly.get(plyKey(move.moveNumber, move.color)) ?? [],
       );
       attemptsByPly.delete(plyKey(move.moveNumber, move.color));
-      const retrySuffix = attemptsSummary
-        ? `: ${attemptsSummary}`
-        : move.retryCount > 0
-          ? ` after ${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
-          : '';
+      // Without loaded attempts, fall back to the retry count stored with the move.
+      const attemptSummary =
+        attemptsSummary ??
+        (move.retryCount > 0
+          ? `${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
+          : null);
       const overrideSuffix = move.isOverride ? ' (override)' : '';
       events.push({
         id: `move-${move.id || `${move.moveNumber}-${move.color}`}`,
         type: 'move',
         label: `${move.color === 'WHITE' ? 'White' : 'Black'} played ${move.san}`,
-        detail: `${this.timelinePlayerName(move.color, move.modelId)}${retrySuffix}${overrideSuffix}`,
+        detail: `${this.timelinePlayerName(move.color, move.modelId)}${overrideSuffix}`,
+        attemptSummary,
         tone: move.isOverride ? 'warning' : 'move',
         icon: move.isOverride ? 'edit' : 'arrow_right_alt',
         createdAtMs: Date.parse(move.createdAt),
@@ -290,7 +300,8 @@ export class GameView implements OnInit, OnDestroy {
         id: `attempts-${plyKey(last.moveNumber, last.color)}`,
         type: 'attempts',
         label: `${last.color === 'WHITE' ? 'White' : 'Black'} move ${last.moveNumber} not played`,
-        detail: `${this.timelinePlayerName(last.color, last.modelId)}: ${summarizeAttempts(plyAttempts)}`,
+        detail: this.timelinePlayerName(last.color, last.modelId),
+        attemptSummary: summarizeAttempts(plyAttempts),
         tone: 'warning',
         icon: 'error_outline',
         createdAtMs: Date.parse(last.createdAt),
@@ -308,6 +319,7 @@ export class GameView implements OnInit, OnDestroy {
         detail: `${this.timelinePlayerName(message.senderColor, message.senderModel)}: ${message.message}`,
         tone: 'chat',
         icon: 'chat',
+        attemptSummary: null,
         createdAtMs: Date.parse(message.createdAt),
         createdAtLabel: message.createdAt,
         moveIndex: relatedMoveIndex,
@@ -325,6 +337,7 @@ export class GameView implements OnInit, OnDestroy {
         label: game.status === 'FORFEIT' ? 'Game Forfeit' : 'Game Complete',
         detail: resultLabel.charAt(0).toUpperCase() + resultLabel.slice(1),
         tone: game.status === 'FORFEIT' ? 'warning' : 'success',
+        attemptSummary: null,
         icon: game.status === 'FORFEIT' ? 'gpp_bad' : 'emoji_events',
         createdAtMs: game.completedAt ? Date.parse(game.completedAt) : Date.now(),
         createdAtLabel: game.completedAt || new Date().toISOString(),

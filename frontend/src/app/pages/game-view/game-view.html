@@ -75,6 +75,9 @@
                 <span class="timeline-copy">
                   <span class="timeline-label">{{ event.label }}</span>
                   <span class="timeline-detail">{{ event.detail }}</span>
+                  @if (event.attemptSummary) {
+                    <span class="feed-attempts">{{ event.attemptSummary }}</span>
+                  }
                 </span>
                 <span class="timeline-time">{{ event.createdAtLabel | date: 'shortTime' }}</span>
               </button>
@@ -104,7 +107,11 @@
 
         <div class="board-container">
           @if (showEvaluationBar()) {
-            <app-advantage-bar [cp]="currentEvaluation().cp" [mate]="currentEvaluation().mate" />
+            <app-advantage-bar
+              [cp]="currentEvaluation().cp"
+              [mate]="currentEvaluation().mate"
+              [checkmated]="currentEvaluation().checkmated"
+            />
           } @else {
             <div
               class="eval-unavailable"
@@ -118,6 +125,7 @@
             [fen]="currentFen()"
             [flipped]="flipped()"
             [interactiveColor]="boardInteractiveColor()"
+            [lastMove]="lastMove()"
             (moveAttempt)="onBoardMoveAttempt($event)"
           />
         </div>
