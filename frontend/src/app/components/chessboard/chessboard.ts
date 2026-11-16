@@ -1,13 +1,15 @@
 import { Component, EventEmitter, Input, OnChanges, Output, signal } from '@angular/core';
 import { LastMove } from '../../utils/last-move';
 
+// Both colours use the solid glyphs; the stylesheet colours them, so white pieces read as
+// solid pieces rather than outlines.
 const PIECE_UNICODE: Record<string, string> = {
-  K: '\u2654',
-  Q: '\u2655',
-  R: '\u2656',
-  B: '\u2657',
-  N: '\u2658',
-  P: '\u2659',
+  K: '\u265A',
+  Q: '\u265B',
+  R: '\u265C',
+  B: '\u265D',
+  N: '\u265E',
+  P: '\u265F',
   k: '\u265A',
   q: '\u265B',
   r: '\u265C',

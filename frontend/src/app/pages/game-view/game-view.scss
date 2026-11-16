@@ -76,8 +76,6 @@ $warning: mat.$orange-palette;
 
 .timer-label {
   color: var(--mat-sys-on-surface-variant);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .timer-value {
@@ -110,8 +108,10 @@ $warning: mat.$orange-palette;
 .game-layout {
   --board-chrome-v: 384px;
   --board-max: 680px;
+  // Moves column minimum: two full notation cells (see the move list's --move-cell-min).
+  --moves-col-min: 19rem;
   // Width the side columns, gaps, eval bar and page padding need next to the board.
-  --board-side-reserve: 714px;
+  --board-side-reserve: 798px;
   --board-size: clamp(
     340px,
     min(100dvh - var(--board-chrome-v), min(100vw, 1720px) - var(--board-side-reserve)),
@@ -119,7 +119,7 @@ $warning: mat.$orange-palette;
   );
 
   display: grid;
-  grid-template-columns: max-content minmax(220px, 0.7fr) minmax(0, 1.3fr);
+  grid-template-columns: max-content minmax(var(--moves-col-min), 0.7fr) minmax(0, 1.3fr);
   grid-template-areas:
     'board moves feed'
     'chat chat chat';
@@ -398,20 +398,6 @@ app-advantage-bar {
   line-height: 26px;
 }
 
-.captured-piece.white-piece {
-  color: #f4f6fb;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.58),
-    1px -1px 0 rgba(0, 0, 0, 0.58),
-    -1px 1px 0 rgba(0, 0, 0, 0.58),
-    1px 1px 0 rgba(0, 0, 0, 0.58);
-}
-
-// On the light tray the black glyph needs no halo.
-.captured-piece.black-piece {
-  color: #171b22;
-}
-
 .capture-empty {
   font: var(--mat-sys-body-medium);
   color: var(--mat-sys-on-surface-variant);
@@ -450,6 +436,10 @@ app-advantage-bar {
   font-size: 1.3rem;
   line-height: 1;
   margin-right: 4px;
+  // A light-square chip, like the capture trays, so both piece colours read on the button.
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: var(--app-board-light-square);
 }
 
 .promotion-cancel {
@@ -505,7 +495,10 @@ app-advantage-bar {
   .game-layout {
     --board-side-reserve: 754px;
 
-    grid-template-columns: minmax(320px, 1fr) max-content minmax(320px, 1fr);
+    grid-template-columns: minmax(320px, 1fr) max-content minmax(
+        max(320px, var(--moves-col-min)),
+        1fr
+      );
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       'feed board moves'

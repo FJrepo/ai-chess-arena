@@ -19,7 +19,7 @@
         >
           @if (sq.piece) {
             <span
-              class="piece"
+              class="piece chess-piece"
               [class.white-piece]="sq.pieceColor === 'white'"
               [class.black-piece]="sq.pieceColor === 'black'"
               [attr.draggable]="canDrag(sq)"

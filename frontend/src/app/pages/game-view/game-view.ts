@@ -60,15 +60,9 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
-const WHITE_PIECE_GLYPHS: Record<CapturablePiece, string> = {
-  Q: '\u2655',
-  R: '\u2656',
-  B: '\u2657',
-  N: '\u2658',
-  P: '\u2659',
-};
-
-const BLACK_PIECE_GLYPHS: Record<CapturablePiece, string> = {
+// Solid glyphs for both colours; the stylesheet colours them (white pieces get a light fill
+// and a dark edge).
+const PIECE_GLYPHS: Record<CapturablePiece, string> = {
   Q: '\u265B',
   R: '\u265C',
   B: '\u265D',
@@ -237,11 +231,11 @@ export class GameView implements OnInit, OnDestroy {
   );
 
   whiteCapturedGlyphs = computed(() =>
-    this.capturedMaterial().whiteCaptured.map((piece) => BLACK_PIECE_GLYPHS[piece]),
+    this.capturedMaterial().whiteCaptured.map((piece) => PIECE_GLYPHS[piece]),
   );
 
   blackCapturedGlyphs = computed(() =>
-    this.capturedMaterial().blackCaptured.map((piece) => WHITE_PIECE_GLYPHS[piece]),
+    this.capturedMaterial().blackCaptured.map((piece) => PIECE_GLYPHS[piece]),
   );
 
   whiteMaterialEdge = computed(() => Math.max(0, this.capturedMaterial().materialDelta));

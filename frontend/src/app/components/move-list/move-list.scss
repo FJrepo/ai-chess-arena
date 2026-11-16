@@ -1,6 +1,10 @@
 // Sizes to its content; the host caps the height (100% of a sized host, or
 // --move-list-max-height) and the list scrolls inside.
+// --move-cell-min fits the longest SAN (7 characters, e.g. `exd8=Q+`) plus a retry badge, so a
+// notation cell never shrinks below its content and runs into the next move.
 :host {
+  --move-cell-min: 6.75rem;
+
   display: block;
 }
 
@@ -28,14 +32,15 @@
   overflow-y: auto;
   padding-right: 4px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 2px 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
   align-content: start;
 }
 
+// One move pair per row, read top to bottom.
 .move-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 2rem minmax(var(--move-cell-min), 1fr) minmax(var(--move-cell-min), 1fr);
   gap: 4px;
   padding: 2px 4px;
   align-items: center;
@@ -74,12 +79,14 @@
 
 .retry-badge {
   display: inline-block;
+  box-sizing: border-box;
   background: var(--mat-sys-tertiary-container);
   color: var(--mat-sys-on-tertiary-container);
   font-family: var(--mat-sys-label-small-font);
-  border-radius: 50%;
-  width: 16px;
+  border-radius: 999px;
+  min-width: 16px;
   height: 16px;
+  padding: 0 3px;
   font-size: 0.7em;
   text-align: center;
   line-height: 16px;

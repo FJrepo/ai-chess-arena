@@ -92,21 +92,3 @@
     cursor: grabbing;
   }
 }
-
-.piece.white-piece {
-  color: #f4f6fb;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.58),
-    1px -1px 0 rgba(0, 0, 0, 0.58),
-    -1px 1px 0 rgba(0, 0, 0, 0.58),
-    1px 1px 0 rgba(0, 0, 0, 0.58);
-}
-
-.piece.black-piece {
-  color: #171b22;
-  text-shadow:
-    -1px -1px 0 rgba(255, 255, 255, 0.35),
-    1px -1px 0 rgba(255, 255, 255, 0.35),
-    -1px 1px 0 rgba(255, 255, 255, 0.35),
-    1px 1px 0 rgba(255, 255, 255, 0.35);
-}
