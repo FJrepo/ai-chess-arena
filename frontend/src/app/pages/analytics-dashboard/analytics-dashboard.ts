@@ -20,7 +20,12 @@ import {
 } from '../../models/analytics.model';
 
 type ComparisonSortOption =
-  'winRate' | 'reliabilityScore' | 'averageResponseTimeMs' | 'costPerWinUsd' | 'forfeits';
+  | 'winRate'
+  | 'reliabilityScore'
+  | 'firstTryLegalRate'
+  | 'averageResponseTimeMs'
+  | 'costPerWinUsd'
+  | 'forfeits';
 
 @Component({
   selector: 'app-analytics-dashboard',
@@ -45,9 +50,12 @@ type ComparisonSortOption =
 })
 export class AnalyticsDashboard implements OnInit, OnDestroy {
   readonly dayOptions = [7, 30, 90];
+  readonly scoreExplanation =
+    'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
   readonly comparisonSortOptions = [
     { value: 'winRate', label: 'Win Rate' },
     { value: 'reliabilityScore', label: 'Reliability' },
+    { value: 'firstTryLegalRate', label: 'First-try legal' },
     { value: 'averageResponseTimeMs', label: 'Latency' },
     { value: 'costPerWinUsd', label: 'Cost / Win' },
     { value: 'forfeits', label: 'Fewest Forfeits' },
@@ -98,7 +106,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       },
       {
         label: 'Most Reliable',
-        description: 'Best completion and lowest failure profile',
+        description: 'Most first-try legal moves, fewest forfeits and retries',
         row: this.pickBest(
           rows,
           (row) => row.reliabilityScore,
@@ -323,6 +331,12 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         return (
           b.reliabilityScore - a.reliabilityScore ||
           b.gamesPlayed - a.gamesPlayed ||
+          b.winRate - a.winRate
+        );
+      case 'firstTryLegalRate':
+        return (
+          b.firstTryLegalRate - a.firstTryLegalRate ||
+          b.movesSampled - a.movesSampled ||
           b.winRate - a.winRate
         );
       case 'averageResponseTimeMs':

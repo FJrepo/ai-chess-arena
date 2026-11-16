@@ -17,6 +17,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { Game } from '../../models/tournament.model';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
+import { gameStatusLabel } from '../../utils/status-labels';
 
 interface ConnectorPath {
   id: string;
@@ -55,6 +56,8 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     this._games.set(value);
     this.scheduleConnectorLayout();
   }
+  /** Champion of a completed tournament; shown as the bracket's closing element. */
+  @Input() champion: string | null = null;
   @Output() battle = new EventEmitter<Game>();
   @Output() view = new EventEmitter<Game>();
   @ViewChild('bracketContent') bracketContent?: ElementRef<HTMLElement>;
@@ -234,8 +237,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
         const toX = toRect.left - hostRect.left;
         const toY = toRect.top + toRect.height / 2 - hostRect.top;
 
-        const travel = Math.max(24, (toX - fromX) * 0.45);
-        const midX = Math.min(toX - 12, fromX + travel);
+        const midX = fromX + (toX - fromX) / 2;
         const d = `M ${fromX} ${fromY} L ${midX} ${fromY} L ${midX} ${toY} L ${toX} ${toY}`;
         paths.push({ id: `${game.id}-${targetGame.id}`, d });
       }
@@ -362,7 +364,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     switch (currentGame.status) {
       case 'IN_PROGRESS':
         return {
-          stateLabel: 'Live',
+          stateLabel: gameStatusLabel(currentGame.status),
           stateTone: 'live',
           detailLabel: sideToMove
             ? `${sideToMove} to move in Game ${currentGame.seriesGameNumber}.`
@@ -370,7 +372,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
         };
       case 'PAUSED':
         return {
-          stateLabel: 'Paused',
+          stateLabel: gameStatusLabel(currentGame.status),
           stateTone: 'paused',
           detailLabel: sideToMove
             ? `${sideToMove} to move when resumed.`
@@ -390,14 +392,14 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
         };
       case 'FORFEIT':
         return {
-          stateLabel: 'Forfeit',
+          stateLabel: gameStatusLabel(currentGame.status),
           stateTone: 'forfeit',
           detailLabel: currentGame.resultReason || 'Series ended by forfeit.',
         };
       case 'COMPLETED':
       default:
         return {
-          stateLabel: 'Complete',
+          stateLabel: gameStatusLabel('COMPLETED'),
           stateTone: 'complete',
           detailLabel:
             this.completedDetailLabel(

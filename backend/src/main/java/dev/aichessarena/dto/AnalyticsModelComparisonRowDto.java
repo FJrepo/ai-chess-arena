@@ -2,6 +2,7 @@ package dev.aichessarena.dto;
 
 import java.math.BigDecimal;
 
+/** One model's results in finished, non-bye games. Costs include rejected attempts. */
 public record AnalyticsModelComparisonRowDto(
         String modelId,
         long gamesPlayed,
@@ -22,6 +23,7 @@ public record AnalyticsModelComparisonRowDto(
         long movesSampled,
         Long averageResponseTimeMs,
         BigDecimal averageRetriesPerMove,
+        BigDecimal firstTryLegalRate,
         BigDecimal totalCostUsd,
         BigDecimal averageCostPerMoveUsd,
         BigDecimal costPerWinUsd,

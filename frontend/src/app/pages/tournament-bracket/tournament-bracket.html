@@ -8,8 +8,13 @@
           <h2>{{ t.name }}</h2>
         </div>
         <div class="meta-row">
-          <span class="status-badge" [class.active]="t.status === 'IN_PROGRESS'">
-            {{ t.status }}
+          <span class="status-badge" [attr.data-status]="t.status">
+            @if (t.status === 'COMPLETED') {
+              <mat-icon class="status-icon" aria-hidden="true">check</mat-icon>
+            } @else {
+              <span class="status-dot" aria-hidden="true"></span>
+            }
+            {{ statusLabel(t.status) }}
           </span>
           @if (t.winnerName) {
             <span class="dot-separator"></span>
@@ -22,10 +27,10 @@
           <span class="dot-separator"></span>
           <span class="count-tag">{{ t.games.length }} Games</span>
           <span class="dot-separator"></span>
-          <span class="count-tag">Matchups: Bo{{ t.matchupBestOf }}</span>
+          <span class="count-tag">Best of {{ t.matchupBestOf }}</span>
           @if (t.finalsBestOf) {
             <span class="dot-separator"></span>
-            <span class="count-tag">Final: Bo{{ t.finalsBestOf }}</span>
+            <span class="count-tag">Final best of {{ t.finalsBestOf }}</span>
           }
         </div>
       </div>
@@ -113,6 +118,7 @@
       <div class="bracket-container">
         <app-bracket-display
           [games]="t.games"
+          [champion]="t.status === 'COMPLETED' ? (t.winnerName ?? null) : null"
           (battle)="startGame($event)"
           (view)="viewGame($event)"
         />

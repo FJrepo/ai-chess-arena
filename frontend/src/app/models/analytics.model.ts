@@ -53,6 +53,9 @@ export interface AnalyticsComparisonModel {
   movesSampled: number;
   averageResponseTimeMs: number | null;
   averageRetriesPerMove: number;
+  /** Share of turns answered with a legal move on the first attempt (0–1). */
+  firstTryLegalRate: number;
+  /** Includes the cost of rejected attempts. */
   totalCostUsd: number | null;
   averageCostPerMoveUsd: number | null;
   costPerWinUsd: number | null;
@@ -96,7 +99,10 @@ export interface ModelReliability {
   forfeitRate: number;
   timeoutForfeitRate: number;
   averageRetriesPerMove: number;
+  /** Share of turns answered with a legal move on the first attempt (0–1). */
+  firstTryLegalRate: number;
   averageResponseTimeMs: number | null;
+  /** Includes the cost of rejected attempts. */
   averageCostPerMoveUsd: number;
   movesSampled: number;
   finalScore: number;
@@ -115,10 +121,9 @@ export interface ModelReliabilityDetail {
   windowDays: number;
   tournamentId: string | null;
   model: ModelReliability;
-  completionScore: number;
+  firstTryLegalScore: number;
   forfeitScore: number;
   retryScore: number;
-  latencyScore: number;
   rawScore: number;
   sampleWeight: number;
 }

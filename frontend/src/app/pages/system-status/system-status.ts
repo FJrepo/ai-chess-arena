@@ -5,7 +5,11 @@ import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { finalize } from 'rxjs';
 import { ApiService, SystemStatusResponse } from '../../services/api.service';
+
+/** Health of a dependency; `unknown` when the backend could not be asked. */
+export type StatusTone = 'healthy' | 'degraded' | 'unknown';
 
 @Component({
   selector: 'app-system-status',
@@ -25,10 +29,13 @@ export class SystemStatus implements OnInit {
   status = signal<SystemStatusResponse | null>(null);
   loading = signal(false);
   error = signal<string | null>(null);
-  lastCheckedAt = signal<Date | null>(null);
 
   backendReachable = computed(() => this.status() !== null && !this.error());
   backendVersion = computed(() => this.status()?.backendVersion ?? 'unknown');
+
+  /** OpenRouter and Stockfish are checked by the backend, so without it their state is unknown. */
+  openRouterTone = computed(() => this.dependencyTone(this.status()?.openRouterValid));
+  stockfishTone = computed(() => this.dependencyTone(this.status()?.stockfishAvailable));
 
   constructor(private api: ApiService) {}
 
@@ -40,21 +47,19 @@ export class SystemStatus implements OnInit {
     this.loading.set(true);
     this.error.set(null);
 
-    this.api.getSystemStatus().subscribe({
-      next: (status) => {
-        this.status.set(status);
-        this.lastCheckedAt.set(new Date(status.checkedAt));
-      },
-      error: () => {
-        this.status.set(null);
-        this.error.set('Backend system status is unavailable.');
-        this.lastCheckedAt.set(new Date());
-      },
-      complete: () => this.loading.set(false),
-    });
+    this.api
+      .getSystemStatus()
+      .pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: (status) => this.status.set(status),
+        error: () => {
+          this.status.set(null);
+          this.error.set('Backend system status is unavailable.');
+        },
+      });
   }
 
-  statusTone(ok: boolean): 'healthy' | 'degraded' {
+  statusTone(ok: boolean): StatusTone {
     return ok ? 'healthy' : 'degraded';
   }
 
@@ -62,18 +67,29 @@ export class SystemStatus implements OnInit {
     return ok ? positiveLabel : negativeLabel;
   }
 
+  /** Card heading for a backend-checked dependency: "Unknown" while the backend is unreachable. */
+  dependencyLabel(tone: StatusTone, positiveLabel: string, negativeLabel: string): string {
+    if (tone === 'unknown') return 'Unknown';
+    return tone === 'healthy' ? positiveLabel : negativeLabel;
+  }
+
   stockfishSummary(): string {
     const status = this.status();
-    if (!status) return 'Evaluation status unavailable.';
+    if (!status) return 'Evaluation status unknown: the backend is unreachable.';
     if (status.stockfishAvailable) return 'Stockfish is ready for live evaluations.';
     return status.stockfishReason || 'Stockfish evaluation is unavailable.';
   }
 
   openRouterSummary(): string {
     const status = this.status();
-    if (!status) return 'Provider validation status unavailable.';
+    if (!status) return 'Provider status unknown: the backend is unreachable.';
     return status.openRouterValid
       ? 'OpenRouter API key validated successfully.'
       : 'OpenRouter API key is invalid or unavailable.';
+  }
+
+  private dependencyTone(ok: boolean | undefined): StatusTone {
+    if (this.status() === null || ok === undefined) return 'unknown';
+    return ok ? 'healthy' : 'degraded';
   }
 }

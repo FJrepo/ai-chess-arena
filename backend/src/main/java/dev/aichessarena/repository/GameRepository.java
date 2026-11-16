@@ -3,6 +3,7 @@ package dev.aichessarena.repository;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
@@ -12,16 +13,42 @@ import java.util.UUID;
 @ApplicationScoped
 public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
 
+    private static final List<GameStatus> TERMINAL_STATUSES = List.of(GameStatus.COMPLETED, GameStatus.FORFEIT);
+
     public List<Game> findByTournamentId(UUID tournamentId) {
         return list("tournament.id = ?1", tournamentId);
     }
 
-    public List<Game> findCreatedAfter(LocalDateTime cutoff) {
-        return list("createdAt >= ?1", cutoff);
+    /**
+     * Games in an analytics window: finished games by their completion time, unfinished ones by their creation
+     * time.
+     *
+     * @param tournamentId restricts the window to one tournament, or {@code null} for all tournaments
+     */
+    public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        return list(
+                "from Game g where " + windowPredicate("g") + tournamentPredicate("g", tournamentId),
+                windowParameters(cutoff, tournamentId)
+        );
     }
 
-    public List<Game> findByTournamentIdAndCreatedAfter(UUID tournamentId, LocalDateTime cutoff) {
-        return list("tournament.id = ?1 and createdAt >= ?2", tournamentId, cutoff);
+    /**
+     * HQL condition selecting the games of an analytics window, for a game path such as {@code g} or
+     * {@code m.game}. Bind it with {@link #windowParameters}.
+     */
+    public static String windowPredicate(String game) {
+        return ("((%1$s.status in :terminalStatuses and %1$s.completedAt >= :cutoff)"
+                + " or (%1$s.status not in :terminalStatuses and %1$s.createdAt >= :cutoff))").formatted(game);
+    }
+
+    /** Restricts {@link #windowPredicate} to one tournament when {@code tournamentId} is not null. */
+    public static String tournamentPredicate(String game, UUID tournamentId) {
+        return tournamentId == null ? "" : " and " + game + ".tournament.id = :tournamentId";
+    }
+
+    public static Parameters windowParameters(LocalDateTime cutoff, UUID tournamentId) {
+        Parameters parameters = Parameters.with("cutoff", cutoff).and("terminalStatuses", TERMINAL_STATUSES);
+        return tournamentId == null ? parameters : parameters.and("tournamentId", tournamentId);
     }
 
     /** Loads the game with a row lock held until the surrounding transaction ends. */

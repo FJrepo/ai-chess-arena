@@ -28,6 +28,7 @@ import { ChatPanel } from '../../components/chat-panel/chat-panel';
 import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
 import { Subscription, switchMap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
+import { sortMovesInPlayOrder } from '../../utils/move-order';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
 import { LastMove, lastMoveSquares } from '../../utils/last-move';
@@ -407,10 +408,11 @@ export class GameView implements OnInit, OnDestroy {
         }
         this.loadInFlight = false;
         this.game.set(game);
-        this.moves.set(game.moves || []);
+        const moves = sortMovesInPlayOrder(game.moves || []);
+        this.moves.set(moves);
         this.chatMessages.set(game.chatMessages || []);
-        if (game.moves?.length) {
-          this.currentMoveIndex.set(game.moves.length - 1);
+        if (moves.length) {
+          this.currentMoveIndex.set(moves.length - 1);
         }
         this.replayBufferedLiveMessages();
         this.loadAttempts();

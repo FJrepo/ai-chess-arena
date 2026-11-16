@@ -3,7 +3,6 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { CurrencyPipe } from '@angular/common';
@@ -11,6 +10,7 @@ import { ApiService } from '../../services/api.service';
 import { Tournament, Game } from '../../models/tournament.model';
 import { TournamentCostSummary } from '../../models/analytics.model';
 import { BracketDisplay } from '../../components/bracket-display/bracket-display';
+import { tournamentStatusLabel } from '../../utils/status-labels';
 
 @Component({
   selector: 'app-tournament-bracket',
@@ -18,7 +18,6 @@ import { BracketDisplay } from '../../components/bracket-display/bracket-display
     MatCardModule,
     MatButtonModule,
     MatIconModule,
-    MatChipsModule,
     MatExpansionModule,
     CurrencyPipe,
     BracketDisplay,
@@ -33,6 +32,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   costSummaryError = signal<string | null>(null);
   tournamentId = '';
   generating = signal(false);
+  readonly statusLabel = tournamentStatusLabel;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(

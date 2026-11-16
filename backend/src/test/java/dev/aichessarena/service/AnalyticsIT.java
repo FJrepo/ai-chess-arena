@@ -1,0 +1,209 @@
+package dev.aichessarena.service;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasSize;
+
+import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.MoveAttempt;
+import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.Tournament;
+import dev.aichessarena.entity.TournamentParticipant;
+import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.MoveRepository;
+import dev.aichessarena.repository.TournamentParticipantRepository;
+import dev.aichessarena.repository.TournamentRepository;
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+/** Analytics windows and per-model cost against a real PostgreSQL via Dev Services. */
+@QuarkusTest
+class AnalyticsIT {
+
+    private static final String START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    @Inject
+    TournamentRepository tournamentRepository;
+
+    @Inject
+    TournamentParticipantRepository participantRepository;
+
+    @Inject
+    GameRepository gameRepository;
+
+    @Inject
+    MoveRepository moveRepository;
+
+    @Inject
+    MoveAttemptRepository attemptRepository;
+
+    private UUID tournamentId;
+
+    /**
+     * One tournament with:
+     * <ul>
+     *   <li>a game created 40 days ago and finished yesterday (in the 30-day window), with rejected and accepted
+     *       attempts;</li>
+     *   <li>a game finished 35 days ago (outside the window);</li>
+     *   <li>a bye and a game that has not started.</li>
+     * </ul>
+     */
+    @BeforeEach
+    void seed() {
+        tournamentId = QuarkusTransaction.requiringNew().call(() -> {
+            Tournament tournament = new Tournament();
+            tournament.name = "Analytics " + UUID.randomUUID();
+            tournament.status = Tournament.TournamentStatus.IN_PROGRESS;
+            tournamentRepository.persist(tournament);
+            TournamentParticipant alpha = participant(tournament, "Alpha", 0);
+            TournamentParticipant beta = participant(tournament, "Beta", 1);
+            LocalDateTime now = LocalDateTime.now();
+
+            Game recent = game(tournament, alpha, beta, 0, GameStatus.COMPLETED, now.minusDays(40), now.minusDays(1));
+            recent.result = Game.GameResult.WHITE_WINS;
+            recent.resultReason = Game.ResultReason.CHECKMATE;
+            gameRepository.persist(recent);
+            move(recent, 1, "WHITE", "model-alpha", "0.01", 1);
+            move(recent, 1, "BLACK", "model-beta", "0.02", 0);
+            attempt(recent, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0.003");
+            attempt(recent, 1, "WHITE", 2, "model-alpha", Outcome.ACCEPTED, "0.01");
+            attempt(recent, 1, "BLACK", 1, "model-beta", Outcome.ACCEPTED, "0.02");
+            attempt(recent, 2, "WHITE", 1, "model-alpha", Outcome.TRUNCATED, "0.001");
+
+            Game old = game(tournament, beta, alpha, 1, GameStatus.COMPLETED, now.minusDays(50), now.minusDays(35));
+            old.result = Game.GameResult.WHITE_WINS;
+            gameRepository.persist(old);
+            move(old, 1, "BLACK", "model-alpha", "1.00", 0);
+            attempt(old, 1, "BLACK", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "1.00");
+
+            Game bye = game(tournament, alpha, null, 2, GameStatus.COMPLETED, now.minusDays(2), null);
+            bye.result = Game.GameResult.WHITE_WINS;
+            bye.blackPlayerName = "BYE";
+            gameRepository.persist(bye);
+
+            gameRepository.persist(game(tournament, alpha, beta, 3, GameStatus.WAITING, now.minusDays(1), null));
+            return tournament.id;
+        });
+    }
+
+    @Test
+    void comparisonCountsFinishedGamesInTheWindowAndRejectedAttemptCost() {
+        given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("gamesCount", equalTo(1))
+                .body("models", hasSize(2))
+                .body("models.find { it.modelId == 'model-alpha' }.gamesPlayed", equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.movesSampled", equalTo(1))
+                // 0.01 accepted move + 0.003 illegal + 0.001 cut off; the accepted attempt is not counted again.
+                .body("models.find { it.modelId == 'model-alpha' }.totalCostUsd", equalTo(0.014f))
+                .body("models.find { it.modelId == 'model-alpha' }.firstTryLegalRate", equalTo(0.0f))
+                .body("models.find { it.modelId == 'model-beta' }.totalCostUsd", equalTo(0.02f))
+                .body("models.find { it.modelId == 'model-beta' }.firstTryLegalRate", equalTo(1.0f));
+    }
+
+    @Test
+    void reliabilityAndHealthIgnoreByesAndUnstartedGames() {
+        given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
+                .when().get("/api/analytics/reliability")
+                .then().statusCode(200)
+                .body("models.find { it.modelId == 'model-alpha' }.gamesPlayed", equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.gamesCompleted", equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.averageCostPerMoveUsd", equalTo(0.014f));
+
+        given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
+                .when().get("/api/analytics/health")
+                .then().statusCode(200)
+                .body("gamesCount", equalTo(2))
+                .body("completedGamesCount", equalTo(1))
+                .body("movesCount", equalTo(2))
+                .body("costTotalUsd", equalTo(0.034f));
+    }
+
+    @Test
+    void tournamentCostSummaryAddsRejectedAttemptsPerModel() {
+        given().when().get("/api/tournaments/{id}/cost-summary", tournamentId)
+                .then().statusCode(200)
+                .body("topModels[0].modelId", equalTo("model-alpha"))
+                // Moves 0.01 + 1.00, rejected attempts 0.003 + 0.001 + 1.00.
+                .body("topModels[0].totalCostUsd", equalTo(2.014f))
+                .body("topModels[1].totalCostUsd", equalTo(0.02f));
+    }
+
+    private TournamentParticipant participant(Tournament tournament, String name, int seed) {
+        TournamentParticipant participant = new TournamentParticipant();
+        participant.tournament = tournament;
+        participant.playerName = name;
+        participant.controlType = TournamentParticipant.ControlType.AI;
+        participant.modelId = "model-" + name.toLowerCase();
+        participant.seed = seed;
+        participantRepository.persist(participant);
+        return participant;
+    }
+
+    private Game game(
+            Tournament tournament,
+            TournamentParticipant white,
+            TournamentParticipant black,
+            int position,
+            GameStatus status,
+            LocalDateTime createdAt,
+            LocalDateTime completedAt
+    ) {
+        Game game = new Game();
+        game.tournament = tournament;
+        game.bracketRound = "Semifinal";
+        game.bracketPosition = position;
+        game.status = status;
+        game.createdAt = createdAt;
+        game.completedAt = completedAt;
+        if (white != null) {
+            game.whiteParticipant = white;
+            game.whitePlayerName = white.playerName;
+            game.whiteModelId = white.modelId;
+        }
+        if (black != null) {
+            game.blackParticipant = black;
+            game.blackPlayerName = black.playerName;
+            game.blackModelId = black.modelId;
+        }
+        return game;
+    }
+
+    private void move(Game game, int moveNumber, String color, String modelId, String cost, int retryCount) {
+        Move move = new Move();
+        move.game = game;
+        move.moveNumber = moveNumber;
+        move.color = color;
+        move.san = "WHITE".equals(color) ? "e4" : "e5";
+        move.fen = START_FEN;
+        move.modelId = modelId;
+        move.costUsd = new BigDecimal(cost);
+        move.retryCount = retryCount;
+        move.createdAt = game.createdAt;
+        moveRepository.persist(move);
+    }
+
+    private void attempt(Game game, int moveNumber, String color, int number, String modelId, Outcome outcome,
+            String cost) {
+        MoveAttempt attempt = new MoveAttempt();
+        attempt.game = game;
+        attempt.moveNumber = moveNumber;
+        attempt.color = color;
+        attempt.attemptNumber = number;
+        attempt.modelId = modelId;
+        attempt.outcome = outcome;
+        attempt.costUsd = new BigDecimal(cost);
+        attempt.createdAt = game.createdAt;
+        attemptRepository.persist(attempt);
+    }
+}

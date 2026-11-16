@@ -1,5 +1,7 @@
+import { of } from 'rxjs';
 import { TournamentList } from './tournament-list';
 import { Tournament } from '../../models/tournament.model';
+import { ApiService } from '../../services/api.service';
 
 describe('TournamentList', () => {
   it('filters tournaments by search, status, and best-of', () => {
@@ -45,6 +47,51 @@ describe('TournamentList', () => {
       'Bravo Finals',
       'Alpha Cup',
     ]);
+  });
+
+  describe('deleting a tournament', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('asks for confirmation and keeps the tournament when it is declined', () => {
+      const deleted: string[] = [];
+      const component = new TournamentList(deleteApi(deleted));
+      const alpha = tournament('Alpha Cup', 'COMPLETED', 1, 4, 2, '2026-03-01T10:00:00Z');
+      component.tournaments.set([alpha]);
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+      component.deleteTournament(alpha);
+
+      expect(confirm).toHaveBeenCalledWith(
+        'Delete "Alpha Cup" with all its games and history? This cannot be undone.',
+      );
+      expect(deleted).toEqual([]);
+      expect(component.tournaments()).toHaveLength(1);
+    });
+
+    it('deletes the tournament once confirmed', () => {
+      const deleted: string[] = [];
+      const component = new TournamentList(deleteApi(deleted));
+      const alpha = tournament('Alpha Cup', 'CREATED', 1, 4, 2, '2026-03-01T10:00:00Z');
+      component.tournaments.set([alpha]);
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+      component.deleteTournament(alpha);
+
+      expect(deleted).toEqual(['Alpha Cup']);
+      expect(component.tournaments()).toEqual([]);
+    });
+
+    it('warns that games and history are lost for a running tournament', () => {
+      const component = new TournamentList(deleteApi([]));
+      const running = tournament('Bravo Finals', 'IN_PROGRESS', 3, 8, 6, '2026-03-03T10:00:00Z');
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+      component.deleteTournament(running);
+
+      const message = confirm.mock.calls[0][0] as string;
+      expect(message).toContain('"Bravo Finals" is in progress');
+      expect(message).toContain('deletes all its games, moves, chat and history');
+    });
   });
 
   it('describes onboarding as ready when system status is healthy', () => {
@@ -120,4 +167,13 @@ function tournament(
       chatMessages: [],
     })),
   };
+}
+
+function deleteApi(deleted: string[]): ApiService {
+  return {
+    deleteTournament: (id: string) => {
+      deleted.push(id);
+      return of(undefined);
+    },
+  } as unknown as ApiService;
 }

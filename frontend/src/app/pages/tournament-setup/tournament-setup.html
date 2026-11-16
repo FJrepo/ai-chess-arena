@@ -21,7 +21,7 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
-          <mat-label>Max Retries</mat-label>
+          <mat-label>Max attempts per move</mat-label>
           <input matInput type="number" [(ngModel)]="maxRetries" />
         </mat-form-field>
 
@@ -175,8 +175,13 @@
 
         <div class="confidence-footnotes">
           <p>
-            Estimates assume roughly 70 moves per game and current OpenRouter list pricing. Actual
-            usage depends on model behavior and retries.
+            Estimates assume roughly 70 moves per game, about 1,400 prompt and 140 output tokens per
+            move, and current OpenRouter list pricing. Actual usage depends on model behavior and
+            retries.
+          </p>
+          <p>
+            Reasoning models can use far more output tokens per answer, up to the tournament's max
+            output tokens ({{ maxOutputTokens }}), so their cost can be many times higher.
           </p>
           @if (summary.drawCanExtendSeries) {
             <p class="confidence-warning">

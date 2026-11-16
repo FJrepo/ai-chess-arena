@@ -92,8 +92,9 @@ public class Game extends PanacheEntityBase {
     @Column(name = "completed_at")
     public LocalDateTime completedAt;
 
+    /** Play order: White and Black share a move number, and "WHITE" sorts after "BLACK", hence color DESC. */
     @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("moveNumber ASC")
+    @OrderBy("moveNumber ASC, color DESC, createdAt ASC")
     public List<Move> moves = new ArrayList<>();
 
     @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)
