@@ -673,7 +673,7 @@ describe('GameView', () => {
     bar.game = component.game()!;
     bar.truncationLimit = component.truncationPauseLimit();
     bar.truncationModelMaximum = component.truncationModelMaximum();
-    expect(bar.newMaxOutputTokens).toBe(8192);
+    expect(bar.newMaxOutputTokens).toBe(16384);
 
     component.attempts.set([attemptFixture({ outcome: 'TRUNCATED' })]);
     expect(component.truncationModelMaximum()).toBeNull();
@@ -1088,6 +1088,88 @@ describe('GameView', () => {
     expect(component.savingLimit()).toBe(false);
     expect(snackbar.open).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, 32768, 8192, 16384])(
+    'preserves 32768 for effort-only recovery at an 8192 model cap, but saves an explicit edit to %s',
+    (explicitLimit) => {
+      const calls: string[] = [];
+      const updateTournament = vi.fn(() => {
+        calls.push('tournament');
+        return of({ id: 't-1', maxOutputTokens: explicitLimit });
+      });
+      const participantSaved = new Subject<{ reasoningEffort: string }>();
+      const updateParticipant = vi.fn(() => {
+        calls.push('participant');
+        return participantSaved;
+      });
+      const startGame = vi.fn(() => {
+        calls.push('start');
+        return of(void 0);
+      });
+      const { component } = createComponent({
+        api: { updateTournament, updateParticipant, startGame },
+      });
+      (component as any).gameId = 'g-1';
+      component.tournamentMaxOutputTokens.set(32768);
+      component.game.set(
+        gameFixture({
+          tournamentId: 't-1',
+          status: 'PAUSED',
+          statusDetail: 'Model maximum reached',
+          blackParticipantId: 'p-2',
+          blackReasoningEffort: 'high',
+        }),
+      );
+      component.moves.set([moveFixture()]);
+      component.attempts.set([
+        attemptFixture({
+          color: 'BLACK',
+          outcome: 'TRUNCATED',
+          effectiveMaxOutputTokens: 8192,
+          modelMaxCompletionTokens: 8192,
+        }),
+      ]);
+      const bar = new GameInfoBar();
+      bar.game = component.game()!;
+      bar.truncationLimit = component.truncationPauseLimit();
+      bar.truncationModelMaximum = component.truncationModelMaximum();
+      bar.truncationEffort = component.truncationEffort();
+      bar.raiseLimitAndResume.subscribe((request) => {
+        if (explicitLimit === undefined || explicitLimit === 32768) {
+          expect(request).toEqual({ reasoningEffort: 'low' });
+        }
+        component.saveTruncationFixAndResume(request);
+      });
+
+      expect(bar.newMaxOutputTokens).toBe(32768);
+      if (explicitLimit !== undefined) {
+        bar.newMaxOutputTokens = explicitLimit;
+      }
+      bar.saveAndResume();
+
+      const changed = explicitLimit !== undefined && explicitLimit !== 32768;
+      if (changed) {
+        expect(updateTournament).toHaveBeenCalledExactlyOnceWith('t-1', {
+          maxOutputTokens: explicitLimit,
+        });
+      } else {
+        expect(updateTournament).not.toHaveBeenCalled();
+      }
+      expect(component.tournamentMaxOutputTokens()).toBe(changed ? explicitLimit : 32768);
+      expect(updateParticipant).toHaveBeenCalledExactlyOnceWith('t-1', 'p-2', {
+        reasoningEffort: 'low',
+      });
+      expect(component.savingLimit()).toBe(true);
+      expect(startGame).not.toHaveBeenCalled();
+      participantSaved.next({ reasoningEffort: 'low' });
+      expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
+      expect(calls).toEqual(
+        changed ? ['tournament', 'participant', 'start'] : ['participant', 'start'],
+      );
+      expect(component.game()?.blackReasoningEffort).toBe('low');
+      expect(component.savingLimit()).toBe(false);
+    },
+  );
 
   it('does not resume when saving the reasoning effort fails, and skips it when none was offered', () => {
     const startGame = vi.fn(() => of(void 0));

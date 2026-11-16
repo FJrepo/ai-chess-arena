@@ -131,10 +131,7 @@
               step="128"
               [(ngModel)]="newMaxOutputTokens"
             />
-            <mat-hint
-              >Currently {{ truncationLimit }}; 128–{{ allowedOutputMaximum() }}, includes reasoning
-              tokens</mat-hint
-            >
+            <mat-hint>{{ outputLimitHint() }}</mat-hint>
           </mat-form-field>
           @if (showEffortSelect()) {
             <mat-form-field appearance="outline" class="effort-field" subscriptSizing="dynamic">

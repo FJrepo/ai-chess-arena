@@ -33,7 +33,7 @@ import {
   RaiseLimitRequest,
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
-import { forkJoin, Subscription, switchMap } from 'rxjs';
+import { forkJoin, Observable, of, Subscription, switchMap, tap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
@@ -973,16 +973,16 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
-  /** The pause banner's "Save and resume": the limit, and the cut-off side's reasoning effort when offered. */
+  /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */
   saveTruncationFixAndResume(request: RaiseLimitRequest) {
     this.saveLimitAndResume(request.maxOutputTokens, request.reasoningEffort);
   }
 
   /**
-   * Saves a raised output-token limit for the game's tournament and, unless `reasoningEffort` is undefined, the
+   * Saves a changed output-token limit for the game's tournament and, unless `reasoningEffort` is undefined, the
    * cut-off side's reasoning-effort override (null follows the tournament's), then resumes the game.
    */
-  saveLimitAndResume(maxOutputTokens: number, reasoningEffort?: ReasoningEffort | null) {
+  saveLimitAndResume(maxOutputTokens?: number, reasoningEffort?: ReasoningEffort | null) {
     const tournamentId = this.game()?.tournamentId;
     if (!tournamentId || this.savingLimit() || this.refreshingPauseSettings()) {
       return;
@@ -990,11 +990,19 @@ export class GameView implements OnInit, OnDestroy {
     const effortChoice = reasoningEffort === undefined ? null : this.truncationEffort();
     const side = this.truncatedSide();
     this.savingLimit.set(true);
-    this.api
-      .updateTournament(tournamentId, { maxOutputTokens })
+    const saveLimit: Observable<unknown> =
+      maxOutputTokens === undefined || maxOutputTokens === this.tournamentMaxOutputTokens()
+        ? of(null)
+        : this.api
+            .updateTournament(tournamentId, { maxOutputTokens })
+            .pipe(
+              tap((tournament) =>
+                this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens),
+              ),
+            );
+    saveLimit
       .pipe(
-        switchMap((tournament) => {
-          this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens);
+        switchMap(() => {
           if (!effortChoice || !side) {
             return this.api.startGame(this.gameId);
           }

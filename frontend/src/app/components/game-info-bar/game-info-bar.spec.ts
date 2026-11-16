@@ -62,17 +62,17 @@ describe('GameInfoBar raise-limit control', () => {
     expect(bar.newMaxOutputTokens).toBeNull();
   });
 
-  it('caps suggestions and submitted values at the model maximum regardless of input arrival order', () => {
+  it('bounds suggestions by the model maximum without lowering the current tournament limit', () => {
     const bar = new GameInfoBar();
     bar.game = pausedGame();
-    bar.truncationLimit = 16384;
+    bar.truncationLimit = 32768;
     bar.truncationModelMaximum = 8192;
-    expect(bar.newMaxOutputTokens).toBe(8192);
-    expect(bar.allowedOutputMaximum()).toBe(8192);
+    expect(bar.newMaxOutputTokens).toBe(32768);
+    expect(bar.allowedOutputMaximum()).toBe(32768);
 
     const emitted: RaiseLimitRequest[] = [];
     bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
-    bar.newMaxOutputTokens = 8193;
+    bar.newMaxOutputTokens = 32769;
     expect(bar.canSaveLimit()).toBe(false);
     bar.saveAndResume();
     bar.newMaxOutputTokens = 8192;
@@ -86,27 +86,53 @@ describe('GameInfoBar raise-limit control', () => {
     bar.truncationModelMaximum = 6000;
     expect(bar.newMaxOutputTokens).toBe(6000);
     bar.truncationLimit = 8192;
-    expect(bar.newMaxOutputTokens).toBe(6000);
+    expect(bar.newMaxOutputTokens).toBe(8192);
   });
 
-  it('renders the model-maximum explanation and bounds the input to that maximum', async () => {
+  it('keeps 32768 visible and explains the 8192 model cap during effort-only recovery', async () => {
     const detail =
       "Alpha's answer was cut off at the model's maximum of 8,192 output tokens. " +
       'Raising the tournament limit cannot help. Lower the reasoning effort and resume.';
     const fixture = TestBed.createComponent(GameInfoBar);
     fixture.componentInstance.game = pausedGame(detail);
-    fixture.componentInstance.truncationLimit = 16384;
     fixture.componentInstance.truncationModelMaximum = 8192;
+    fixture.componentInstance.truncationLimit = 32768;
+    fixture.componentInstance.truncationEffort = {
+      participantId: 'p-1',
+      playerName: 'Alpha',
+      current: 'high',
+      tournamentLevel: null,
+      options: ['low', 'high'],
+      fromCatalog: true,
+    };
+    const emitted: RaiseLimitRequest[] = [];
+    fixture.componentInstance.raiseLimitAndResume.subscribe((value) => emitted.push(value));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
     const element: HTMLElement = fixture.nativeElement;
     const input = element.querySelector<HTMLInputElement>('input[type="number"]');
-    expect(input?.max).toBe('8192');
-    expect(input?.value).toBe('8192');
+    expect(input?.max).toBe('32768');
+    expect(input?.value).toBe('32768');
     expect(element.querySelector('.pause-detail')?.textContent).toBe(detail);
-    expect(element.querySelector('mat-hint')?.textContent).toContain('128–8192');
+    expect(element.querySelector('.limit-field mat-hint')?.textContent).toContain(
+      'This model is capped at 8192',
+    );
+    expect(element.querySelector<HTMLButtonElement>('.save-resume')?.disabled).toBe(false);
+
+    element.querySelector<HTMLButtonElement>('.save-resume')!.click();
+    expect(emitted).toEqual([{ reasoningEffort: 'low' }]);
+
+    input!.value = '8192';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    element.querySelector<HTMLButtonElement>('.save-resume')!.click();
+    expect(emitted).toEqual([
+      { reasoningEffort: 'low' },
+      { maxOutputTokens: 8192, reasoningEffort: 'low' },
+    ]);
   });
 
   it('emits a valid limit and refuses out-of-range values or a save in progress', () => {
