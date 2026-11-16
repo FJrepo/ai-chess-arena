@@ -31,12 +31,29 @@ class TournamentResourceTest {
     }
 
     @Test
-    void createWithoutTimeoutKeepsTheSixtySecondDefault() {
+    void createWithoutTimeoutUsesTheDefaultOf120Seconds() {
         TournamentResource resource = resourceWithCapturingCreation();
 
         TournamentDto dto = (TournamentDto) resource.create(withTimeout("Default", null)).getEntity();
 
+        assertEquals(120, Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS);
+        assertEquals(120, dto.moveTimeoutSeconds());
+        assertEquals(120, new Tournament().moveTimeoutSeconds, "a new entity starts with the default");
+    }
+
+    @Test
+    void updateWithoutTimeoutKeepsAStoredLimitFromBeforeTheNewDefault() {
+        TournamentResource resource = new TournamentResource();
+        Tournament stored = new Tournament();
+        stored.name = "Old";
+        stored.moveTimeoutSeconds = 60;
+        resource.tournamentRepository = repositoryHolding(stored);
+
+        TournamentDto dto = (TournamentDto) resource.update(UUID.randomUUID(), withTimeout("Renamed", null))
+                .getEntity();
+
         assertEquals(60, dto.moveTimeoutSeconds());
+        assertEquals(60, stored.moveTimeoutSeconds);
     }
 
     @Test
@@ -61,7 +78,7 @@ class TournamentResourceTest {
             assertThrows(IllegalArgumentException.class,
                     () -> resource.update(UUID.randomUUID(), withTimeout(null, seconds)));
         }
-        assertEquals(60, stored.moveTimeoutSeconds);
+        assertEquals(120, stored.moveTimeoutSeconds);
     }
 
     @Test

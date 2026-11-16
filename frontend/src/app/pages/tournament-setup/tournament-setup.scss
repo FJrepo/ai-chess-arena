@@ -1,3 +1,4 @@
+@use 'sass:map';
 @use '@angular/material' as mat;
 
 // Card surfaces follow the list and system pages: the lowest container on the pale light
@@ -151,6 +152,12 @@
 .confidence-footnotes .confidence-warning {
   margin: 0;
   color: var(--mat-sys-error);
+}
+
+// A short time limit per move: a warning instead of the range hint under the field, in the warning
+// tone of the other pages (Material's orange palette; M3 has no warning role).
+.timeout-warning {
+  color: light-dark(#{map.get(mat.$orange-palette, 30)}, #{map.get(mat.$orange-palette, 80)});
 }
 
 .mono {

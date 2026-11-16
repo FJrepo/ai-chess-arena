@@ -64,11 +64,22 @@ class MoveTimeoutIT {
     }
 
     @Test
-    void omittedTimeoutDefaultsToSixtySecondsAndOutOfRangeValuesAreRejected() {
-        given().contentType("application/json").body("{\"name\":\"Default " + UUID.randomUUID() + "\"}")
+    void omittedOrNullTimeoutDefaultsTo120SecondsAndOutOfRangeValuesAreRejected() {
+        String omitted = given().contentType("application/json")
+                .body("{\"name\":\"Default " + UUID.randomUUID() + "\"}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
-                .body("moveTimeoutSeconds", equalTo(60));
+                .body("moveTimeoutSeconds", equalTo(120))
+                .extract().path("id");
+        assertEquals(120, storedTimeout(omitted));
+
+        String explicitNull = given().contentType("application/json")
+                .body("{\"name\":\"Null " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":null}")
+                .when().post("/api/tournaments")
+                .then().statusCode(201)
+                .body("moveTimeoutSeconds", equalTo(120))
+                .extract().path("id");
+        assertEquals(120, storedTimeout(explicitNull));
 
         given().contentType("application/json")
                 .body("{\"name\":\"Too short " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":5}")

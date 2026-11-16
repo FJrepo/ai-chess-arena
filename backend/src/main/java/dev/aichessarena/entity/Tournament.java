@@ -40,7 +40,12 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "move_timeout_seconds")
     public Integer moveTimeoutSeconds = DEFAULT_MOVE_TIMEOUT_SECONDS;
 
-    public static final int DEFAULT_MOVE_TIMEOUT_SECONDS = 60;
+    /**
+     * Used when a tournament is created without a limit and for games outside a tournament. Generous because the
+     * limit is a hard deadline (running out of time forfeits) and reasoning models often need more than a minute.
+     * Existing tournaments keep their stored value.
+     */
+    public static final int DEFAULT_MOVE_TIMEOUT_SECONDS = 120;
     public static final int MIN_MOVE_TIMEOUT_SECONDS = 10;
     public static final int MAX_MOVE_TIMEOUT_SECONDS = 3600;
 
