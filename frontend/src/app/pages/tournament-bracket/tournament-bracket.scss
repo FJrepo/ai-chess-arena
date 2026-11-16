@@ -54,7 +54,7 @@
     gap: 10px;
     font-size: 0.8rem;
     font-weight: 600;
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 60%, transparent);
+    color: var(--mat-sys-on-surface-variant);
 
     .dot-separator {
       width: 4px;
@@ -63,18 +63,58 @@
       background: color-mix(in srgb, var(--mat-sys-on-surface) 20%, transparent);
     }
 
+    // Same pill language as the tournament list cards.
     .status-badge {
-      padding: 4px 10px;
-      border-radius: 20px;
-      background: color-mix(in srgb, var(--mat-sys-on-surface) 10%, transparent);
-      text-transform: uppercase;
-      font-size: 0.75rem;
-      letter-spacing: 0.05em;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+      background: var(--mat-sys-surface-container-highest);
+      color: var(--mat-sys-on-surface);
 
-      &.active {
-        background: color-mix(in srgb, #4caf50 15%, transparent);
-        color: #4caf50;
-        animation: pulse-glow 2s infinite ease-in-out;
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .status-icon {
+        width: 16px;
+        height: 16px;
+        font-size: 16px;
+      }
+
+      &[data-status='IN_PROGRESS'] {
+        background: var(--mat-sys-primary-container);
+        color: var(--mat-sys-on-primary-container);
+
+        .status-dot {
+          background: var(--mat-sys-primary);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--mat-sys-primary) 22%, transparent);
+        }
+      }
+
+      &[data-status='CREATED'] {
+        background: transparent;
+        border: 1px dashed var(--mat-sys-outline);
+        color: var(--mat-sys-on-surface-variant);
+
+        .status-dot {
+          background: transparent;
+          border: 2px solid currentColor;
+        }
+      }
+
+      &[data-status='CANCELLED'] {
+        background: var(--mat-sys-error-container);
+        color: var(--mat-sys-on-error-container);
       }
     }
   }
@@ -235,16 +275,6 @@
     border-radius: 14px;
     font-weight: 700;
     letter-spacing: 0.02em;
-  }
-}
-
-@keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0px rgba(76, 175, 80, 0);
-  }
-  50% {
-    box-shadow: 0 0 12px rgba(76, 175, 80, 0.4);
   }
 }
 

@@ -67,6 +67,21 @@ describe('BracketDisplay', () => {
     expect(card.stateTone).toBe('live');
     expect(card.detailLabel).toContain('Black to move');
   });
+
+  it('uses the shared game status labels for finished and paused series', () => {
+    const component = new BracketDisplay();
+
+    component.games = [
+      game('semi-1', 'Semifinal', 0, { status: 'COMPLETED', result: 'WHITE_WINS' }),
+      game('semi-2', 'Semifinal', 1, { status: 'PAUSED' }),
+    ];
+
+    const [completed, paused] = component.rounds()[0].games;
+    expect(completed.stateLabel).toBe('Completed');
+    expect(completed.stateTone).toBe('complete');
+    expect(paused.stateLabel).toBe('Paused');
+    expect(paused.stateTone).toBe('paused');
+  });
 });
 
 function game(

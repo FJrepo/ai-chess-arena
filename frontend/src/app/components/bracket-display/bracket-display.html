@@ -8,10 +8,7 @@
         aria-hidden="true"
       >
         @for (line of connectorPaths(); track line.id) {
-          <path class="connector connector-glow" [attr.d]="line.d"></path>
-        }
-        @for (line of connectorPaths(); track line.id) {
-          <path class="connector connector-core" [attr.d]="line.d"></path>
+          <path class="connector" [attr.d]="line.d"></path>
         }
       </svg>
 
@@ -21,34 +18,40 @@
             <h3 class="round-title">{{ round.name }}</h3>
             <div class="round-matches">
               @for (series of round.games; track series.id) {
+                @let tone = series.stateTone;
+                @let showScore = tone !== 'ready' && tone !== 'pending' && tone !== 'bye';
+                @let showDetail =
+                  tone === 'live' ||
+                  tone === 'paused' ||
+                  tone === 'forfeit' ||
+                  tone === 'bye' ||
+                  (tone === 'ready' && series.currentGame.seriesGameNumber > 1) ||
+                  (tone === 'complete' && series.whiteWins === series.blackWins);
                 <mat-card
                   #matchCard
                   class="match-card"
                   [attr.data-game-id]="series.id"
-                  [class.completed]="series.isComplete"
-                  [class.forfeited]="series.latestGame.status === 'FORFEIT'"
+                  [attr.data-tone]="tone"
                 >
                   <div class="card-header">
-                    <span
-                      class="state-pill"
-                      [class.live]="series.stateTone === 'live'"
-                      [class.paused]="series.stateTone === 'paused'"
-                      [class.ready]="series.stateTone === 'ready'"
-                      [class.pending]="series.stateTone === 'pending'"
-                      [class.complete]="series.stateTone === 'complete'"
-                      [class.forfeit]="series.stateTone === 'forfeit'"
-                      [class.bye]="series.stateTone === 'bye'"
-                    >
+                    <span class="state-pill" [attr.data-tone]="tone">
+                      @if (tone === 'complete') {
+                        <mat-icon class="pill-icon" aria-hidden="true">check</mat-icon>
+                      } @else if (tone === 'paused') {
+                        <mat-icon class="pill-icon" aria-hidden="true">pause</mat-icon>
+                      } @else if (tone === 'live') {
+                        <span class="pill-dot" aria-hidden="true"></span>
+                      }
                       {{ series.stateLabel }}
                     </span>
-                    <span class="series-score">{{ series.whiteWins }}-{{ series.blackWins }}</span>
-                  </div>
-                  <div class="series-meta-line">
-                    Best of {{ series.bestOf }} •
-                    @if (series.currentGame.seriesGameNumber > series.bestOf) {
-                      Tiebreak game {{ series.currentGame.seriesGameNumber - series.bestOf }}
-                    } @else {
-                      Game {{ series.currentGame.seriesGameNumber }} of {{ series.bestOf }}
+                    @if (series.bestOf > 1 || series.currentGame.seriesGameNumber > series.bestOf) {
+                      <span class="series-meta">
+                        @if (series.currentGame.seriesGameNumber > series.bestOf) {
+                          Tiebreak game {{ series.currentGame.seriesGameNumber - series.bestOf }}
+                        } @else {
+                          Game {{ series.currentGame.seriesGameNumber }} of {{ series.bestOf }}
+                        }
+                      </span>
                     }
                   </div>
                   <div class="players-block">
@@ -57,99 +60,134 @@
                       [class.winner]="isSeriesWinner(series, 'white')"
                       [class.loser]="isSeriesLoser(series, 'white')"
                     >
-                      <span class="color-indicator white-indicator"></span>
+                      <span class="color-indicator white-indicator" title="White"></span>
                       @if (series.whiteModelId) {
                         <app-provider-logo [modelId]="series.whiteModelId" [size]="17" />
                       }
                       <span class="player-name">{{ series.whitePlayerName || 'TBD' }}</span>
-                      @if (
-                        round.name === 'Final' &&
-                        series.whiteWins > series.blackWins &&
-                        series.isComplete
-                      ) {
-                        <mat-icon class="crown-icon">emoji_events</mat-icon>
+                      @if (showScore) {
+                        <span class="player-score">{{ series.whiteWins }}</span>
                       }
                     </div>
-                    <div class="players-divider"></div>
                     <div
                       class="player black"
                       [class.winner]="isSeriesWinner(series, 'black')"
                       [class.loser]="isSeriesLoser(series, 'black')"
                     >
-                      <span class="color-indicator black-indicator"></span>
+                      <span class="color-indicator black-indicator" title="Black"></span>
                       @if (series.blackModelId) {
                         <app-provider-logo [modelId]="series.blackModelId" [size]="17" />
                       }
                       <span class="player-name">{{ series.blackPlayerName || 'TBD' }}</span>
-                      @if (
-                        round.name === 'Final' &&
-                        series.blackWins > series.whiteWins &&
-                        series.isComplete
-                      ) {
-                        <mat-icon class="crown-icon">emoji_events</mat-icon>
+                      @if (showScore) {
+                        <span class="player-score">{{ series.blackWins }}</span>
                       }
                     </div>
                   </div>
-                  <div class="series-context">{{ series.detailLabel }}</div>
-                  <div class="card-footer">
-                    @if (canBattle(series)) {
-                      <button
-                        mat-flat-button
-                        color="primary"
-                        (click)="battle.emit(series.currentGame)"
-                      >
-                        <mat-icon>sports_mma</mat-icon>
-                        Battle
-                      </button>
-                    } @else if (series.currentGame.status === 'IN_PROGRESS') {
-                      <button
-                        mat-flat-button
-                        color="primary"
-                        (click)="view.emit(series.currentGame)"
-                      >
-                        <mat-icon>visibility</mat-icon>
-                        Watch Live
-                      </button>
-                    } @else if (
-                      series.currentGame.status === 'COMPLETED' ||
-                      series.currentGame.status === 'FORFEIT'
-                    ) {
-                      <button
-                        mat-flat-button
-                        color="primary"
-                        (click)="view.emit(series.latestGame)"
-                      >
-                        <mat-icon>preview</mat-icon>
-                        Review
-                      </button>
-                    } @else if (series.currentGame.status === 'PAUSED') {
-                      <button
-                        mat-flat-button
-                        color="primary"
-                        (click)="battle.emit(series.currentGame)"
-                      >
-                        <mat-icon>play_arrow</mat-icon>
-                        Resume
-                      </button>
-                    } @else {
-                      <span class="footer-note"
-                        >Waiting for Game {{ series.currentGame.seriesGameNumber }}</span
-                      >
-                    }
 
-                    @if (hasReviewableGame(series) && !series.isComplete) {
-                      <button
-                        mat-button
-                        class="secondary-action"
-                        (click)="view.emit(series.latestGame)"
-                      >
-                        <mat-icon>history</mat-icon>
-                        Review Previous
-                      </button>
-                    }
-                  </div>
+                  @if (tone === 'pending') {
+                    <p class="series-context">
+                      @if (!series.whitePlayerName && !series.blackPlayerName) {
+                        Waiting for both players.
+                      } @else {
+                        Waiting for an opponent.
+                      }
+                    </p>
+                  } @else if (showDetail) {
+                    <p class="series-context">{{ series.detailLabel }}</p>
+                  }
+                  @if (tone === 'paused' && series.currentGame.statusDetail) {
+                    <p class="pause-reason">
+                      <mat-icon aria-hidden="true">warning</mat-icon>
+                      <span>{{ series.currentGame.statusDetail }}</span>
+                    </p>
+                  }
+
+                  @if (tone !== 'pending') {
+                    <div class="card-footer">
+                      @if (canBattle(series)) {
+                        <button
+                          mat-flat-button
+                          color="primary"
+                          (click)="battle.emit(series.currentGame)"
+                        >
+                          <mat-icon>sports_mma</mat-icon>
+                          Battle
+                        </button>
+                      } @else if (series.currentGame.status === 'IN_PROGRESS') {
+                        <button
+                          mat-flat-button
+                          color="primary"
+                          (click)="view.emit(series.currentGame)"
+                        >
+                          <mat-icon>visibility</mat-icon>
+                          Watch Live
+                        </button>
+                      } @else if (
+                        series.currentGame.status === 'COMPLETED' ||
+                        series.currentGame.status === 'FORFEIT'
+                      ) {
+                        <button
+                          mat-flat-button
+                          color="primary"
+                          (click)="view.emit(series.latestGame)"
+                        >
+                          <mat-icon>preview</mat-icon>
+                          Review
+                        </button>
+                      } @else if (series.currentGame.status === 'PAUSED') {
+                        <button
+                          mat-flat-button
+                          color="primary"
+                          (click)="battle.emit(series.currentGame)"
+                        >
+                          <mat-icon>play_arrow</mat-icon>
+                          Resume
+                        </button>
+                      } @else {
+                        <span class="footer-note"
+                          >Waiting for Game {{ series.currentGame.seriesGameNumber }}</span
+                        >
+                      }
+
+                      @if (hasReviewableGame(series) && !series.isComplete) {
+                        <button
+                          mat-button
+                          class="secondary-action"
+                          (click)="view.emit(series.latestGame)"
+                        >
+                          <mat-icon>history</mat-icon>
+                          Review Previous
+                        </button>
+                      }
+                    </div>
+                  }
                 </mat-card>
               }
+            </div>
+          </div>
+        }
+
+        @if (champion) {
+          @let finalSeries = rounds()[rounds().length - 1]?.games?.[0];
+          @let championModelId =
+            finalSeries?.whitePlayerName === champion
+              ? finalSeries?.whiteModelId
+              : finalSeries?.blackPlayerName === champion
+                ? finalSeries?.blackModelId
+                : null;
+          <div class="round champion-round">
+            <h3 class="round-title">Champion</h3>
+            <div class="round-matches">
+              <div class="champion-card">
+                <mat-icon class="champion-trophy" aria-hidden="true">emoji_events</mat-icon>
+                <span class="champion-name">
+                  @if (championModelId) {
+                    <app-provider-logo [modelId]="championModelId" [size]="18" />
+                  }
+                  {{ champion }}
+                </span>
+              </div>
             </div>
           </div>
         }
