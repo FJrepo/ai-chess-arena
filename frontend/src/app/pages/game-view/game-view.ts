@@ -20,6 +20,7 @@ import {
   ChatMode,
   MoveAttempt,
   MoveWsMessage,
+  GameStatusWsMessage,
   RetryWsMessage,
   WsMessage,
 } from '../../models/tournament.model';
@@ -627,13 +628,16 @@ export class GameView implements OnInit, OnDestroy {
         break;
 
       case 'gameStatus':
-        if (msg.statusRevision != null) {
-          // Status changes are sent after their commit and can arrive out of order: ignore an older one.
-          if (this.knownStatusRevision != null && msg.statusRevision < this.knownStatusRevision) {
-            break;
-          }
-          this.knownStatusRevision = msg.statusRevision;
+        if (msg.statusRevision == null) {
+          // A per-turn update (whose turn it is, its deadline, the cost so far): never a status change.
+          this.applyTurnUpdate(msg);
+          break;
         }
+        // Status changes are sent after their commit and can arrive out of order: ignore an older one.
+        if (this.knownStatusRevision != null && msg.statusRevision < this.knownStatusRevision) {
+          break;
+        }
+        this.knownStatusRevision = msg.statusRevision;
         const status = msg.status;
         this.game.update((g) =>
           g
@@ -685,6 +689,40 @@ export class GameView implements OnInit, OnDestroy {
         this.loadAttempts();
         break;
     }
+  }
+
+  /**
+   * A status update without a revision is a per-turn update of a running game (the backend sends every status
+   * change with its revision). It never changes the status: it updates the turn (side to move, timer), the cost
+   * and the chat mode only while the game shown is running, so a delayed one can never turn a paused or finished
+   * game back into a running one. The same rule holds live and when updates buffered during the first load are
+   * replayed onto the snapshot.
+   */
+  private applyTurnUpdate(msg: GameStatusWsMessage) {
+    // The tournament's chat mode is a setting, not part of the game's status: a mode changed during play shows
+    // up with the next model turn.
+    if (msg.tournamentChatMode) {
+      this.tournamentChatMode.set(msg.tournamentChatMode);
+    }
+    const game = this.game();
+    if (!game || game.status !== 'IN_PROGRESS') {
+      return;
+    }
+    this.game.update((g) =>
+      g
+        ? {
+            ...g,
+            totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
+            startedAt: g.startedAt ?? new Date().toISOString(),
+          }
+        : g,
+    );
+    this.turnState.applyStatusUpdate(
+      game.status,
+      msg.activeColor,
+      msg.turnStartedAt,
+      msg.turnDeadlineAt,
+    );
   }
 
   private applyLiveMove(msg: MoveWsMessage) {
