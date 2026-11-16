@@ -280,11 +280,17 @@ $warning: mat.$orange-palette;
   color: var(--mat-sys-on-surface);
 }
 
-.timeline-detail {
+.timeline-detail,
+.feed-attempts {
   font-size: 0.8125rem;
   line-height: 1.35;
   color: var(--mat-sys-on-surface-variant);
   overflow-wrap: anywhere;
+}
+
+// Failed-attempt summary: same quiet size as the detail line, set apart by the warning tone.
+.feed-attempts {
+  color: var(--game-warning-text);
 }
 
 .timeline-time {

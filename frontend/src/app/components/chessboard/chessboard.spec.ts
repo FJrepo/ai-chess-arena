@@ -67,7 +67,7 @@ describe('ChessboardComponent last-move highlight', () => {
     expect(element.querySelectorAll('.square.last-move-from')).toHaveLength(1);
     expect(element.querySelectorAll('.square.last-move-to')).toHaveLength(1);
     expect(element.querySelector('.square.last-move-to .piece')?.textContent?.trim()).toBe(
-      '\u2659',
+      '\u265F',
     );
 
     fixture.componentRef.setInput('lastMove', null);
