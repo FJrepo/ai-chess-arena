@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-16
+
+Personality and honest play: move quality (blunders, mistakes, inaccuracies), chat modes with a talkativeness metric, optional resignation, reasoning effort per model, a new model picker, and no time limit by default. Also fixes models getting an outdated move list in their prompt (all earlier versions), writes and live updates failing on any address but localhost:4200, and a rare game-loop commit failure.
+
 ### Upgrade notes
 - Migration V15 runs automatically: it adds the nullable columns `tournaments.reasoning_effort`, `tournament_participants.reasoning_effort` and `move_attempts.reasoning_effort` (each limited to `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Existing tournaments and participants get no level, so every model keeps its own default and requests stay exactly as before; earlier attempts record no level.
 - Migration V14 runs automatically: it adds `games.status_revision` (0 for existing games), a counter of status changes used to order live updates.
