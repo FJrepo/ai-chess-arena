@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- *Replay game* for a single-game match (best of 1) no longer wipes and replays the drawn game. The drawn game is kept with its moves, chat and cost, and a tiebreak game with swapped colors is added to the match; the first decisive tiebreak game decides, as in longer series.
+- Live move updates now carry an `isOverride` flag, and moves set by an operator override are evaluated by Stockfish like regular moves.
+
+### Fixed
+- Game view: the "First" history button shows the start position instead of the current one.
+- Game view: moves that arrive over the live connection while the game is still loading are merged into the loaded move list instead of being lost or shown twice; a live move that is already listed is ignored.
+- Game view: live override moves are marked as overrides immediately instead of only after a reload.
+- Game view: reviewing earlier moves no longer changes whose turn the page shows when the server has not reported it.
+- Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
+
 ## [1.2.0] - 2026-11-16
 
 Runtime release: the images now run on the current LTS versions of Java and Node.js. No configuration changes are needed; existing `.env` files and databases work as they are.

@@ -13,7 +13,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
-import { Game, Move, ChatMessage, WsMessage } from '../../models/tournament.model';
+import { Game, Move, ChatMessage, MoveWsMessage, WsMessage } from '../../models/tournament.model';
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
@@ -34,6 +34,8 @@ type TimelineEvent = {
   createdAtLabel: string;
   moveIndex: number | null;
 };
+
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 const WHITE_PIECE_GLYPHS: Record<CapturablePiece, string> = {
   Q: '\u2655',
@@ -104,14 +106,21 @@ export class GameView implements OnInit, OnDestroy {
   private wsSub?: Subscription;
 
   private reconnectSub?: Subscription;
+  /** Game loads in flight; live moves that arrive meanwhile are buffered and merged afterwards. */
+  private pendingLoads = 0;
+  private bufferedLiveMessages: WsMessage[] = [];
 
+  /** The position shown on the board: the start position before the first move, else the selected move. */
   currentFen = computed(() => {
     const idx = this.currentMoveIndex();
     const moveList = this.moves();
-    if (idx < 0 || moveList.length === 0) {
-      return this.game()?.currentFen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    if (moveList.length === 0) {
+      return this.game()?.currentFen || START_FEN;
     }
-    return moveList[idx]?.fen || this.game()?.currentFen || '';
+    if (idx < 0) {
+      return START_FEN;
+    }
+    return moveList[idx]?.fen || this.game()?.currentFen || START_FEN;
   });
 
   currentEvaluation = computed(() => {
@@ -279,7 +288,8 @@ export class GameView implements OnInit, OnDestroy {
     this.turnState.bind(
       () => this.game(),
       () => this.moves(),
-      () => this.currentFen(),
+      // The live position, not the one selected in the move history.
+      () => this.game()?.currentFen || START_FEN,
     );
   }
 
@@ -304,14 +314,17 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   loadGame() {
+    this.pendingLoads++;
     this.api.getGame(this.gameId).subscribe({
       next: (game) => {
+        this.pendingLoads--;
         this.game.set(game);
         this.moves.set(game.moves || []);
         this.chatMessages.set(game.chatMessages || []);
         if (game.moves?.length) {
           this.currentMoveIndex.set(game.moves.length - 1);
         }
+        this.replayBufferedLiveMessages();
 
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
@@ -324,6 +337,8 @@ export class GameView implements OnInit, OnDestroy {
         }
       },
       error: () => {
+        this.pendingLoads--;
+        this.replayBufferedLiveMessages();
         this.snackbar.open('Failed to load the game.', 'Dismiss', {
           duration: 4000,
           horizontalPosition: 'right',
@@ -348,34 +363,14 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   handleWsMessage(msg: WsMessage) {
+    if (this.pendingLoads > 0 && (msg.type === 'move' || msg.type === 'evaluationUpdate')) {
+      // The loaded game replaces the move list; apply these on top of it once it arrives.
+      this.bufferedLiveMessages.push(msg);
+      return;
+    }
     switch (msg.type) {
       case 'move':
-        const newMove: Move = {
-          id: '',
-          moveNumber: msg.moveNumber,
-          color: msg.color,
-          san: msg.san,
-          fen: msg.fen,
-          modelId: msg.modelId,
-          promptVersion: null,
-          promptHash: null,
-          promptTokens: null,
-          completionTokens: null,
-          costUsd: null,
-          responseTimeMs: msg.responseTimeMs || 0,
-          retryCount: msg.retryCount || 0,
-          isOverride: false,
-          evaluationCp: msg.evaluationCp,
-          evaluationMate: msg.evaluationMate,
-          createdAt: new Date().toISOString(),
-        };
-        const wasAtLatest = this.currentMoveIndex() === this.moves().length - 1;
-        this.moves.update((list) => [...list, newMove]);
-        if (wasAtLatest) {
-          this.currentMoveIndex.set(this.moves().length - 1);
-        }
-        this.game.update((g) => (g ? { ...g, currentFen: msg.fen, pgn: msg.pgn ?? g.pgn } : g));
-        this.retryInfo.set(null);
+        this.applyLiveMove(msg);
         break;
 
       case 'evaluationUpdate':
@@ -439,6 +434,50 @@ export class GameView implements OnInit, OnDestroy {
         this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
         break;
     }
+  }
+
+  private applyLiveMove(msg: MoveWsMessage) {
+    const known = this.moves().some(
+      (move) => move.moveNumber === msg.moveNumber && move.color === msg.color,
+    );
+    if (known) {
+      return;
+    }
+    const newMove: Move = {
+      id: '',
+      moveNumber: msg.moveNumber,
+      color: msg.color,
+      san: msg.san,
+      fen: msg.fen,
+      modelId: msg.modelId,
+      promptVersion: null,
+      promptHash: null,
+      promptTokens: null,
+      completionTokens: null,
+      costUsd: null,
+      responseTimeMs: msg.responseTimeMs || 0,
+      retryCount: msg.retryCount || 0,
+      isOverride: msg.isOverride ?? msg.modelId === 'admin-override',
+      evaluationCp: msg.evaluationCp,
+      evaluationMate: msg.evaluationMate,
+      createdAt: new Date().toISOString(),
+    };
+    const wasAtLatest = this.currentMoveIndex() === this.moves().length - 1;
+    this.moves.update((list) => [...list, newMove]);
+    if (wasAtLatest) {
+      this.currentMoveIndex.set(this.moves().length - 1);
+    }
+    this.game.update((g) => (g ? { ...g, currentFen: msg.fen, pgn: msg.pgn ?? g.pgn } : g));
+    this.retryInfo.set(null);
+  }
+
+  private replayBufferedLiveMessages() {
+    if (this.pendingLoads > 0) {
+      return;
+    }
+    const buffered = this.bufferedLiveMessages;
+    this.bufferedLiveMessages = [];
+    buffered.forEach((msg) => this.handleWsMessage(msg));
   }
 
   flipBoard() {

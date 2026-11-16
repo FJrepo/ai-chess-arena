@@ -6,9 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
-import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import java.util.ArrayList;
@@ -63,8 +61,6 @@ class TournamentParticipantRulesTest {
         service.tournamentRepository = new FakeTournamentRepository(Map.of(tournament.id, tournament));
         service.participantRepository = new FakeParticipantRepository(existingParticipants);
         service.gameRepository = new GameRepository();
-        service.moveRepository = new MoveRepository();
-        service.chatMessageRepository = new ChatMessageRepository();
         service.openRouterService = new PermissiveOpenRouterService();
         service.validateParticipantModels = false;
         return service;

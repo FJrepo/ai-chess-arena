@@ -7,9 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
-import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import jakarta.ws.rs.WebApplicationException;
@@ -42,8 +40,6 @@ class TournamentServiceFlowTest {
         service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.participantRepository = new FakeParticipantRepository(participants);
         service.gameRepository = gameRepository;
-        service.moveRepository = new MoveRepository();
-        service.chatMessageRepository = new ChatMessageRepository();
 
         List<Game> games = service.generateBracket(tournamentId);
 
@@ -78,8 +74,6 @@ class TournamentServiceFlowTest {
         service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.participantRepository = new FakeParticipantRepository(participants);
         service.gameRepository = gameRepository;
-        service.moveRepository = new MoveRepository();
-        service.chatMessageRepository = new ChatMessageRepository();
 
         service.generateBracket(tournamentId);
 
@@ -107,8 +101,6 @@ class TournamentServiceFlowTest {
         service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.participantRepository = new FakeParticipantRepository(participants);
         service.gameRepository = gameRepository;
-        service.moveRepository = new MoveRepository();
-        service.chatMessageRepository = new ChatMessageRepository();
 
         service.generateBracket(tournamentId);
         Game semifinal = gameRepository.findByRoundAndPosition("Semifinal", 0);
@@ -144,8 +136,6 @@ class TournamentServiceFlowTest {
         service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.participantRepository = new FakeParticipantRepository(participants);
         service.gameRepository = gameRepository;
-        service.moveRepository = new MoveRepository();
-        service.chatMessageRepository = new ChatMessageRepository();
 
         List<Game> games = service.generateBracket(tournamentId);
         Game firstGame = games.getFirst();
@@ -181,8 +171,6 @@ class TournamentServiceFlowTest {
         service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.participantRepository = new FakeParticipantRepository(participants);
         service.gameRepository = gameRepository;
-        service.moveRepository = new MoveRepository();
-        service.chatMessageRepository = new ChatMessageRepository();
 
         List<Game> games = service.generateBracket(tournamentId);
         Game firstGame = games.getFirst();

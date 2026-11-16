@@ -1,12 +1,9 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.entity.Game;
-import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
-import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -37,12 +34,6 @@ public class TournamentService {
 
     @Inject
     GameRepository gameRepository;
-
-    @Inject
-    MoveRepository moveRepository;
-
-    @Inject
-    ChatMessageRepository chatMessageRepository;
 
     @Inject
     OpenRouterService openRouterService;
@@ -240,13 +231,6 @@ public class TournamentService {
         Game completedGame = gameRepository.findById(gameId);
         if (completedGame == null || completedGame.tournament == null) return;
 
-        if (completedGame.result == GameResult.DRAW
-                && completedGame.seriesBestOf <= 1
-                && completedGame.tournament.drawPolicy == Tournament.DrawPolicy.REPLAY_GAME) {
-            resetGameForReplay(completedGame);
-            return;
-        }
-
         List<Game> seriesGames = seriesGamesFor(completedGame);
         TournamentParticipant winner = resolveSeriesWinner(completedGame, seriesGames);
         if (winner == null) {
@@ -297,10 +281,6 @@ public class TournamentService {
         }
     }
 
-    private TournamentParticipant resolveDrawWinner(Game game) {
-        return applyDrawPolicy(game.tournament, game.whiteParticipant, game.blackParticipant);
-    }
-
     /**
      * Who advances from a level match. {@code white}/{@code black} are the single game's colors, or for a
      * series the colors of its first game. Returns null for REPLAY_GAME: another game must be played.
@@ -343,15 +323,6 @@ public class TournamentService {
             return completedGame.whiteParticipant != null ? completedGame.whiteParticipant : completedGame.blackParticipant;
         }
 
-        if (completedGame.seriesBestOf <= 1) {
-            return switch (completedGame.result) {
-                case WHITE_WINS, BLACK_FORFEIT -> completedGame.whiteParticipant;
-                case BLACK_WINS, WHITE_FORFEIT -> completedGame.blackParticipant;
-                case DRAW -> resolveDrawWinner(completedGame);
-                default -> null;
-            };
-        }
-
         Game firstGame = seriesGames.isEmpty() ? completedGame : seriesGames.getFirst();
         TournamentParticipant bracketWhite = firstGame.whiteParticipant;
         TournamentParticipant bracketBlack = firstGame.blackParticipant;
@@ -359,7 +330,7 @@ public class TournamentService {
             return bracketWhite != null ? bracketWhite : bracketBlack;
         }
 
-        // Best of N: at most N regular games. A draw is a game played without a winner. The series is
+        // Best of N (a single game is best of 1): at most N regular games. A draw is a game played without a winner. The series is
         // decided once the lead can no longer be caught in the remaining regular games; if it is level
         // after all N, the draw policy decides (REPLAY_GAME: sudden-death games until one is decisive).
         // Only regular games (number <= N) count toward the series score. Games beyond N are sudden-death
@@ -418,7 +389,9 @@ public class TournamentService {
     }
 
     private void ensureNextSeriesGameExists(Game completedGame, List<Game> seriesGames) {
-        if (completedGame.seriesBestOf <= 1) {
+        boolean suddenDeathAllowed = completedGame.tournament != null
+                && completedGame.tournament.drawPolicy == Tournament.DrawPolicy.REPLAY_GAME;
+        if (completedGame.seriesBestOf <= 1 && !suddenDeathAllowed) {
             return;
         }
         if (completedGame.whiteParticipant == null || completedGame.blackParticipant == null) {
@@ -435,8 +408,6 @@ public class TournamentService {
 
         Game firstGame = seriesGames.isEmpty() ? completedGame : seriesGames.getFirst();
         int nextGameNumber = seriesGames.stream().mapToInt(game -> game.seriesGameNumber).max().orElse(1) + 1;
-        boolean suddenDeathAllowed = completedGame.tournament != null
-                && completedGame.tournament.drawPolicy == Tournament.DrawPolicy.REPLAY_GAME;
         if (nextGameNumber > completedGame.seriesBestOf && !suddenDeathAllowed) {
             LOG.errorf("Not creating game %d of a best-of-%d series %s", nextGameNumber,
                     completedGame.seriesBestOf, completedGame.seriesId);
@@ -482,21 +453,6 @@ public class TournamentService {
         if (white == null) return black;
         if (black == null) return white;
         return ThreadLocalRandom.current().nextBoolean() ? white : black;
-    }
-
-    private void resetGameForReplay(Game game) {
-        moveRepository.delete("game.id", game.id);
-        chatMessageRepository.delete("game.id", game.id);
-
-        game.status = Game.GameStatus.WAITING;
-        game.result = null;
-        game.resultReason = null;
-        game.pgn = null;
-        game.currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        game.totalCostUsd = java.math.BigDecimal.ZERO;
-        game.startedAt = null;
-        game.completedAt = null;
-        gameRepository.persist(game);
     }
 
     private int bestOfForRound(Tournament tournament, String roundName) {

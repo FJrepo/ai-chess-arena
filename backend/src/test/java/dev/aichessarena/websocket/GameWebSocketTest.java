@@ -256,6 +256,53 @@ class GameWebSocketTest {
         assertEquals(0, endpoint.trackedConnectionCount());
     }
 
+    @Test
+    void moveBroadcastsCarryTheOverrideFlag() throws Exception {
+        UUID gameId = gameRepository.addGame();
+        java.util.List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        WebSocketConnection spectator = recordingConnection("spectator", sent);
+        endpoint.onMessage(spectator, subscribeMessage(gameId));
+
+        endpoint.broadcastMove(gameId, 1, "WHITE", "e4", "fen-1", "1. e4", "model-a", 120, 0, false);
+        endpoint.broadcastMove(gameId, 1, "BLACK", "e5", "fen-2", "1. e4 e5", "admin-override", 0, 0, true);
+
+        ObjectMapper mapper = new ObjectMapper();
+        java.util.List<com.fasterxml.jackson.databind.JsonNode> moves = new java.util.ArrayList<>();
+        for (String message : sent) {
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(message);
+            if ("move".equals(node.path("type").asText())) {
+                moves.add(node);
+            }
+        }
+        assertEquals(2, moves.size());
+        assertTrue(moves.get(0).has("isOverride"));
+        assertFalse(moves.get(0).get("isOverride").asBoolean());
+        assertTrue(moves.get(1).get("isOverride").asBoolean());
+        assertEquals("admin-override", moves.get(1).get("modelId").asText());
+    }
+
+    /** An open connection that records every text frame sent to it. */
+    private WebSocketConnection recordingConnection(String id, java.util.List<String> sent) {
+        WebSocketConnection connection = (WebSocketConnection) Proxy.newProxyInstance(
+                WebSocketConnection.class.getClassLoader(),
+                new Class<?>[]{WebSocketConnection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "id" -> id;
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    case "toString" -> "WebSocketConnection[" + id + "]";
+                    case "isOpen" -> true;
+                    case "sendText" -> {
+                        sent.add(String.valueOf(args[0]));
+                        yield io.smallrye.mutiny.Uni.createFrom().voidItem();
+                    }
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
+        endpoint.onOpen(connection);
+        return connection;
+    }
+
     private String subscribeMessage(UUID gameId) {
         return "{\"type\":\"subscribe\",\"gameId\":\"%s\"}".formatted(gameId);
     }
