@@ -15,7 +15,7 @@ This image bundles the official unmodified Stockfish chess engine release asset,
 - arm64 SHA256: `fe26cfd1d9db4c8af3d21e24d9ff34cacb31c1f940085a7583da11796f2bac01`
 - Attribution: Copyright (C) 2004-2026 The Stockfish developers (see upstream AUTHORS).
 - Corresponding source archive (including upstream build instructions): https://github.com/official-stockfish/Stockfish/archive/refs/tags/sf_19.tar.gz
-- License: GNU General Public License v3.0
+- License: GNU General Public License v3.0 or any later version (SPDX: GPL-3.0-or-later)
 
 The GPL v3 license text is provided in COPYING.txt in the same directory.
 

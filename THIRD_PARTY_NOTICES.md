@@ -7,7 +7,7 @@ This project distributes third-party software as part of its released artifacts.
 - Component: Stockfish chess engine
 - Upstream project: https://stockfishchess.org/
 - Source repository: https://github.com/official-stockfish/Stockfish
-- License: GNU General Public License v3.0
+- License: GNU General Public License v3.0 or any later version (SPDX: GPL-3.0-or-later)
 - Included in:
   - released backend Docker image
   - local backend Docker builds

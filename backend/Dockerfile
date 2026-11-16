@@ -34,7 +34,7 @@ FROM stockfish-${TARGETARCH} AS runtime
 ARG STOCKFISH_VERSION=sf_19
 WORKDIR /app
 
-LABEL org.opencontainers.image.licenses="MIT, GPL-3.0-only" \
+LABEL org.opencontainers.image.licenses="MIT, GPL-3.0-or-later" \
       dev.aichessarena.stockfish.version="${STOCKFISH_VERSION}" \
       dev.aichessarena.stockfish.source="https://github.com/official-stockfish/Stockfish/tree/${STOCKFISH_VERSION}" \
       dev.aichessarena.stockfish.asset="${STOCKFISH_TAR}" \

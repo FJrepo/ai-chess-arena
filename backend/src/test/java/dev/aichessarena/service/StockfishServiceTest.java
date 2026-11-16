@@ -9,16 +9,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -135,7 +139,7 @@ class StockfishServiceTest {
         } finally {
             service.cleanup();
         }
-        assertFalse(replacement.isAlive());
+        assertStopped(replacement);
     }
 
     @Test
@@ -146,7 +150,7 @@ class StockfishServiceTest {
         try {
             service.init();
             assertNoEvaluation(service.evaluate("invalid", 12).get(2, TimeUnit.SECONDS));
-            assertFalse(eof.isAlive());
+            assertStopped(eof);
             assertFalse(service.status().available());
             assertEquals(2, service.evaluate("8/8/8/8/8/8/8/8 w - - 0 1", 12)
                     .get(2, TimeUnit.SECONDS).mate());
@@ -276,7 +280,7 @@ class StockfishServiceTest {
             assertNoEvaluation(service.evaluate("valid", 12).get(2, TimeUnit.SECONDS));
             assertEquals(2, service.starts);
             assertFalse(service.status().available());
-            assertFalse(incompleteStartup.isAlive());
+            assertStopped(incompleteStartup);
         } finally {
             service.cleanup();
         }
@@ -293,6 +297,107 @@ class StockfishServiceTest {
         } finally {
             service.cleanup();
         }
+    }
+
+    @Test
+    @Timeout(5)
+    void stalledReplacementHandshakeTimesOutAndDrainsQueue() throws Exception {
+        var original = new FakeProcess("uciok\n", false);
+        var stalled = new StalledProcess("Stockfish 19\n");
+        var service = new TestService(original, stalled);
+        service.handshakeTimeout = Duration.ofMillis(250);
+        try {
+            service.init();
+            original.destroy(); // Exit between evaluations: readiness must be cleared before spawn.
+            var current = service.evaluate("valid", 12);
+            assertTrue(stalled.readStarted.await(2, TimeUnit.SECONDS));
+            assertFalse(service.status().available());
+            assertFalse(service.isAvailable());
+            var queued = service.evaluate("queued", 12);
+            assertNoEvaluation(current.get(2, TimeUnit.SECONDS));
+            assertNoEvaluation(queued.get(2, TimeUnit.SECONDS));
+            assertTrue(stalled.streamsClosed.await(2, TimeUnit.SECONDS));
+            assertStopped(stalled);
+            assertFalse(service.status().available());
+            assertTrue(service.evaluate("later", 12).isDone());
+            assertEquals(2, service.starts);
+        } finally {
+            service.cleanup();
+        }
+    }
+
+    @Test
+    @Timeout(5)
+    void initialHandshakeWithoutUciokIsAlsoBounded() throws Exception {
+        var stalled = new StalledProcess("");
+        var service = new TestService(stalled);
+        service.handshakeTimeout = Duration.ofMillis(100);
+        try {
+            service.init();
+            assertTrue(stalled.streamsClosed.await(2, TimeUnit.SECONDS));
+            assertStopped(stalled);
+            assertFalse(service.status().available());
+            assertNoEvaluation(service.evaluate("valid", 12).get(2, TimeUnit.SECONDS));
+            assertEquals(1, service.starts);
+        } finally {
+            service.cleanup();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @Timeout(5)
+    void shutdownCancelsStalledHandshakeOrEvaluationAndDrainsQueue(boolean handshake) throws Exception {
+        var original = new FakeProcess("uciok\n", false);
+        var stalled = new StalledProcess(handshake ? "" : "uciok\ninfo score cp 999\n");
+        var service = handshake ? new TestService(original, stalled) : new TestService(stalled);
+        service.handshakeTimeout = Duration.ofSeconds(60);
+        service.evaluationTimeout = Duration.ofSeconds(60);
+        try {
+            service.init();
+            if (handshake) original.destroy();
+            var current = service.evaluate("valid", 12);
+            assertTrue(stalled.readStarted.await(2, TimeUnit.SECONDS));
+            var queued = service.evaluate("queued", 12);
+            CompletableFuture.runAsync(service::cleanup).get(1, TimeUnit.SECONDS);
+            assertNoEvaluation(current.get(1, TimeUnit.SECONDS));
+            assertNoEvaluation(queued.get(1, TimeUnit.SECONDS));
+            assertTrue(stalled.streamsClosed.await(1, TimeUnit.SECONDS));
+            assertStopped(stalled);
+            assertFalse(service.status().available());
+            assertEquals("Stockfish is shut down.", service.status().reason());
+            assertNoEvaluation(service.evaluate("after shutdown", 12).join());
+        } finally {
+            service.cleanup();
+        }
+    }
+
+    @Test
+    @Timeout(5)
+    void evaluationWithoutBestmoveTimesOutAndDiscardsPartialScore() throws Exception {
+        var stalled = new StalledProcess("uciok\ninfo score cp 999\n");
+        var service = new TestService(stalled);
+        service.evaluationTimeout = Duration.ofMillis(250);
+        try {
+            service.init();
+            var current = service.evaluate("valid", 12);
+            assertTrue(stalled.readStarted.await(2, TimeUnit.SECONDS));
+            var queued = service.evaluate("queued", 12);
+            assertNoEvaluation(current.get(2, TimeUnit.SECONDS));
+            assertNoEvaluation(queued.get(2, TimeUnit.SECONDS));
+            assertTrue(stalled.streamsClosed.await(2, TimeUnit.SECONDS));
+            assertStopped(stalled);
+            assertFalse(service.status().available());
+            assertTrue(service.evaluate("later", 12).isDone());
+            assertEquals(1, service.starts);
+        } finally {
+            service.cleanup();
+        }
+    }
+
+    private static void assertStopped(FakeProcess process) throws InterruptedException {
+        assertTrue(process.destroyed.await(2, TimeUnit.SECONDS));
+        assertFalse(process.isAlive());
     }
 
     private static void assertNoEvaluation(StockfishService.EvalResult result) {
@@ -317,7 +422,8 @@ class StockfishServiceTest {
     }
 
     private static class FakeProcess extends Process {
-        private boolean alive = true;
+        private volatile boolean alive = true;
+        final CountDownLatch destroyed = new CountDownLatch(1);
         boolean failWrites;
         final ByteArrayOutputStream commands = new ByteArrayOutputStream();
         private final InputStream output;
@@ -363,7 +469,72 @@ class StockfishServiceTest {
         public boolean isAlive() { return alive; }
 
         @Override
-        public void destroy() { alive = false; }
+        public void destroy() { alive = false; destroyed.countDown(); }
+    }
+
+    /** A live engine whose read ignores interruption and only unblocks when its pipe is closed. */
+    private static class StalledProcess extends FakeProcess {
+        final CountDownLatch readStarted = new CountDownLatch(1);
+        final CountDownLatch streamsClosed = new CountDownLatch(3);
+        private final InputStream input;
+        private final OutputStream output = new FilterOutputStream(super.getOutputStream()) {
+            @Override
+            public void close() throws IOException {
+                super.close();
+                streamsClosed.countDown();
+            }
+        };
+        private final InputStream error = new ByteArrayInputStream(new byte[0]) {
+            @Override
+            public void close() {
+                streamsClosed.countDown();
+            }
+        };
+
+        StalledProcess(String prefix) {
+            super("", false);
+            input = new InputStream() {
+                private final ByteArrayInputStream initial = new ByteArrayInputStream(
+                        prefix.getBytes(StandardCharsets.UTF_8));
+                private boolean closed;
+
+                @Override
+                public synchronized int read(byte[] bytes, int off, int len) {
+                    if (initial.available() > 0) return initial.read(bytes, off, len);
+                    readStarted.countDown();
+                    while (!closed) {
+                        try {
+                            wait();
+                        } catch (InterruptedException ignored) {
+                            // Model a blocking pipe: cancelling the future alone is insufficient.
+                        }
+                    }
+                    return -1;
+                }
+
+                @Override
+                public int read() {
+                    byte[] one = new byte[1];
+                    return read(one, 0, 1) == -1 ? -1 : Byte.toUnsignedInt(one[0]);
+                }
+
+                @Override
+                public synchronized void close() {
+                    closed = true;
+                    notifyAll();
+                    streamsClosed.countDown();
+                }
+            };
+        }
+
+        @Override
+        public InputStream getInputStream() { return input; }
+
+        @Override
+        public OutputStream getOutputStream() { return output; }
+
+        @Override
+        public InputStream getErrorStream() { return error; }
     }
 
 }

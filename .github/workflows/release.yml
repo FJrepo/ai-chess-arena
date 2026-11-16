@@ -170,9 +170,12 @@ jobs:
           docker pull "$BACKEND_PINNED"
           docker run --rm --entrypoint sh "$BACKEND_PINNED" -c \
             'test -f /usr/share/licenses/stockfish/COPYING.txt && test -f /usr/share/licenses/stockfish/NOTICE.txt'
-          docker inspect "$BACKEND_PINNED" \
-            --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }} {{ index .Config.Labels "dev.aichessarena.stockfish.source" }} {{ index .Config.Labels "org.opencontainers.image.licenses" }}' \
-            | grep 'sf_19'
+          stockfish_version="$(docker inspect "$BACKEND_PINNED" --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }}')"
+          stockfish_source="$(docker inspect "$BACKEND_PINNED" --format '{{ index .Config.Labels "dev.aichessarena.stockfish.source" }}')"
+          image_licenses="$(docker inspect "$BACKEND_PINNED" --format '{{ index .Config.Labels "org.opencontainers.image.licenses" }}')"
+          test "$stockfish_version" = 'sf_19'
+          test "$stockfish_source" = 'https://github.com/official-stockfish/Stockfish/tree/sf_19'
+          test "$image_licenses" = 'MIT, GPL-3.0-or-later'
 
       - name: Start released-image stack from candidates
         env:

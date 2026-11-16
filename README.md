@@ -75,7 +75,7 @@ See [docs/deployment.md](docs/deployment.md) for upgrades, backups, password rot
 - Each turn supplies the position, legal moves and PGN, together with a bounded recent conversation history.
 - Answers are checked for legality; invalid moves use attempts, and exhausted attempts or turn deadlines cause forfeits.
 - Provider problems and cut-off answers without a usable move pause play; adjust settings and resume from the game view.
-- Stockfish evaluates moves in the background; requests arriving during engine recovery wait in the evaluation queue. Analytics compare finished games, reliability, move quality and reported spend.
+- Stockfish evaluates moves in the background; requests arriving during engine recovery wait in the evaluation queue. The engine reports ready only after its UCI handshake succeeds. Handshakes time out after 10 seconds and evaluations after 30 seconds (configurable with `STOCKFISH_HANDSHAKE_TIMEOUT` and `STOCKFISH_EVALUATION_TIMEOUT`, as durations such as `PT10S`); a timeout returns no score and disables evaluation until backend restart. Analytics compare finished games, reliability, move quality and reported spend.
 - Setting changes during play apply from the next turn, including participant reasoning overrides.
 
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions.
@@ -149,4 +149,4 @@ Move quality is judged using the win-probability model Lichess uses; see the [de
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LOGO-LICENSES.md](LOGO-LICENSES.md).
+MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0-or-later) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LOGO-LICENSES.md](LOGO-LICENSES.md).
