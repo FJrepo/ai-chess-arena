@@ -132,11 +132,7 @@
                         series.currentGame.status === 'COMPLETED' ||
                         series.currentGame.status === 'FORFEIT'
                       ) {
-                        <button
-                          mat-flat-button
-                          color="primary"
-                          (click)="view.emit(series.latestGame)"
-                        >
+                        <button mat-flat-button color="primary" (click)="review(series)">
                           <mat-icon>preview</mat-icon>
                           Review
                         </button>
@@ -156,11 +152,7 @@
                       }
 
                       @if (hasReviewableGame(series) && !series.isComplete) {
-                        <button
-                          mat-button
-                          class="secondary-action"
-                          (click)="view.emit(series.latestGame)"
-                        >
+                        <button mat-button class="secondary-action" (click)="review(series)">
                           <mat-icon>history</mat-icon>
                           Review Previous
                         </button>

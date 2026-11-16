@@ -38,6 +38,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Game view: reviewing earlier moves no longer changes whose turn the page shows when the server has not reported it.
 - Analytics no longer count byes (a side without a participant; a real participant named "BYE" still counts) or waiting, running and paused games as games played, so unfinished games no longer lower completion; finished games are selected by completion time instead of creation time, and moves follow their games.
 - Setup estimate: the final is no longer counted twice when no separate final format is set (4 players, best of 3: 6–9 games instead of 8–12).
+- Bracket: a waiting series with a missing player says "Waiting for the previous round." instead of offering to start the game.
+- Bracket: the Final's result says "*name* wins the tournament" instead of "advances", also when the draw policy decided it ("wins the tournament on the draw policy (1-1)").
+- Bracket: in a best-of series, a ready or running later game can open the previous finished game with *Review Previous*, and the result text and *Review* use the last finished game instead of the next waiting one.
+- Bracket: a series card shows the colours of the current game when a later game swaps them; series wins stay with the right participant.
+- Bracket: the score in draw-policy results, such as "(0-0)", no longer wraps across lines.
 - System status: a failed refresh no longer leaves the page loading, and while the backend is unreachable the OpenRouter and Stockfish cards show *Unknown* instead of a failure.
 - Moves that share a move number are ordered White first everywhere (`Game.moves`, the moves and attempts endpoints (attempts of a ply by time, since attempt numbers restart after a resume), the board rebuild on resume, and the game view), also when they were stored Black-first or with equal timestamps.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
