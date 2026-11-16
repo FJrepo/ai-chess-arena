@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Bracket draw choice on the tournament page: Random draw (UI default) or In added order, with stored seeds shown after generation. Random draws shuffle once and reassign seeds so byes and Higher seed advances follow the drawn order. The bracket-generation API accepts an optional `drawMode=ORDER|RANDOM` query parameter and defaults to ORDER for existing clients; repeated generation still returns 409. No migration or backfill is required.
+
 ## [1.4.0] - 2026-11-16
 
 Personality and honest play: move quality (blunders, mistakes, inaccuracies), chat modes with a talkativeness metric, optional resignation, reasoning effort per model, a new model picker, and no time limit by default. Also fixes models getting an outdated move list in their prompt (all earlier versions), writes and live updates failing on any address but localhost:4200, and a rare game-loop commit failure.

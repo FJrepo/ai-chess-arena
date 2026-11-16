@@ -1,13 +1,16 @@
-import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { CurrencyPipe } from '@angular/common';
 import { ApiService } from '../../services/api.service';
-import { Tournament, Game } from '../../models/tournament.model';
+import { BracketDrawMode, Tournament, Game } from '../../models/tournament.model';
 import { TournamentCostSummary } from '../../models/analytics.model';
 import { BracketDisplay } from '../../components/bracket-display/bracket-display';
 import { tournamentStatusLabel } from '../../utils/status-labels';
@@ -15,6 +18,9 @@ import { tournamentStatusLabel } from '../../utils/status-labels';
 @Component({
   selector: 'app-tournament-bracket',
   imports: [
+    FormsModule,
+    MatFormFieldModule,
+    MatSelectModule,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
@@ -32,6 +38,10 @@ export class TournamentBracket implements OnInit, OnDestroy {
   costSummaryError = signal<string | null>(null);
   tournamentId = '';
   generating = signal(false);
+  drawMode: BracketDrawMode = 'RANDOM';
+  readonly drawnParticipants = computed(() =>
+    [...(this.tournament()?.participants ?? [])].sort((a, b) => a.seed - b.seed),
+  );
   readonly statusLabel = tournamentStatusLabel;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -81,7 +91,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
       return;
     }
     this.generating.set(true);
-    this.api.generateBracket(this.tournamentId).subscribe({
+    this.api.generateBracket(this.tournamentId, this.drawMode).subscribe({
       next: () => {
         this.generating.set(false);
         this.loadTournament();
