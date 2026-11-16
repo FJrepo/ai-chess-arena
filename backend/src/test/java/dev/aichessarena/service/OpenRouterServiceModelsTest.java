@@ -92,6 +92,38 @@ class OpenRouterServiceModelsTest {
     }
 
     @Test
+    void explicitNullEffortsExpandToAllLevelsButMissingEffortsStayEmpty() throws IOException {
+        byte[] body = """
+                {"data": [
+                  {"id": "example/all-levels", "reasoning": {"supported_efforts": null}},
+                  {"id": "example/mandatory", "reasoning": {"mandatory": true, "supported_efforts": null}},
+                  {"id": "example/missing-levels", "reasoning": {"mandatory": true}},
+                  {"id": "example/missing-reasoning", "supported_parameters": ["reasoning"]},
+                  {"id": "example/null-reasoning", "reasoning": null},
+                  {"id": "example/empty-levels", "reasoning": {"supported_efforts": []}}
+                ]}
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        server.removeContext("/models");
+        server.createContext("/models", exchange -> {
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+            exchange.close();
+        });
+
+        Map<String, OpenRouterModelOptionDto> models = allModels();
+        assertEquals(List.of("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+                models.get("example/all-levels").reasoningEfforts());
+        assertEquals(List.of("minimal", "low", "medium", "high", "xhigh", "max"),
+                models.get("example/mandatory").reasoningEfforts());
+        for (String id : List.of("example/missing-levels", "example/missing-reasoning",
+                "example/null-reasoning", "example/empty-levels")) {
+            assertEquals(List.of(), models.get(id).reasoningEfforts(), id);
+        }
+    }
+
+    @Test
     void everyNewFieldIsEmptyWhenMissingOrNull() {
         for (String id : List.of("example/bare-model", "example/null-model")) {
             OpenRouterModelOptionDto model = allModels().get(id);

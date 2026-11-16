@@ -701,7 +701,7 @@ public class OpenRouterService {
                 positiveInt(node.path("top_provider").path("max_completion_tokens")),
                 supportsReasoning(node),
                 mandatory.isBoolean() ? mandatory.booleanValue() : null,
-                parseStringList(reasoning.path("supported_efforts")),
+                catalogReasoningEfforts(reasoning),
                 finiteNumber(node.path("benchmarks").path("artificial_analysis").path("intelligence_index")),
                 trimDescription(node.path("description").asText(null)),
                 textOrNull(reasoning.path("default_effort"))
@@ -851,6 +851,17 @@ public class OpenRouterService {
             return null;
         }
         return node.asText().trim();
+    }
+
+    /** Explicit null accepts every level; a missing field does not expose effort selection. */
+    private static List<String> catalogReasoningEfforts(JsonNode reasoning) {
+        JsonNode efforts = reasoning.path("supported_efforts");
+        List<String> levels = efforts.isNull()
+                ? EnumSet.allOf(ReasoningEffort.class).stream().map(ReasoningEffort::apiValue).toList()
+                : parseStringList(efforts);
+        return reasoning.path("mandatory").asBoolean(false)
+                ? levels.stream().filter(level -> !"none".equals(level)).toList()
+                : levels;
     }
 
     private static List<String> parseStringList(JsonNode node) {

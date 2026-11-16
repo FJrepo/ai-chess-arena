@@ -50,7 +50,9 @@ export function supportedEfforts(
   model: OpenRouterModelOption | null | undefined,
 ): ReasoningEffort[] {
   const listed = new Set(model?.reasoningEfforts ?? []);
-  return REASONING_EFFORTS.filter((effort) => listed.has(effort));
+  return REASONING_EFFORTS.filter(
+    (effort) => listed.has(effort) && !(effort === 'none' && model?.reasoningMandatory),
+  );
 }
 
 /**
@@ -86,13 +88,14 @@ export function suggestedLowerEffort(
   current: ReasoningEffort | null,
   options: readonly ReasoningEffort[],
 ): ReasoningEffort | null {
+  const mappedCurrent = current ? nearestEffort(current, options) : null;
   const suggestion = nearestEffort(SUGGESTED_LOWER_EFFORT, options);
   if (
-    current &&
-    suggestion &&
-    REASONING_EFFORTS.indexOf(current) <= REASONING_EFFORTS.indexOf(suggestion)
+    mappedCurrent &&
+    (!suggestion ||
+      REASONING_EFFORTS.indexOf(mappedCurrent) <= REASONING_EFFORTS.indexOf(suggestion))
   ) {
-    return current;
+    return mappedCurrent;
   }
   return suggestion;
 }

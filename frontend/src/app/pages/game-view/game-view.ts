@@ -33,7 +33,7 @@ import {
   RaiseLimitRequest,
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
-import { Subscription, switchMap } from 'rxjs';
+import { forkJoin, Subscription, switchMap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
@@ -135,6 +135,10 @@ export class GameView implements OnInit, OnDestroy {
    */
   modelEfforts = signal<Record<string, ReasoningEffort[] | null>>({});
   savingLimit = signal(false);
+  /** Keep the pause controls hidden until current participant and tournament settings arrive. */
+  private refreshingPauseSettings = signal(false);
+  private pauseSettingsSub?: Subscription;
+  private settingsGeneration = 0;
   /**
    * The side whose latest answer for the ply to be played was cut off at the output-token limit (outcome
    * TRUNCATED) while the game is paused; null otherwise.
@@ -150,7 +154,9 @@ export class GameView implements OnInit, OnDestroy {
   });
   /** The current output-token limit when the game is paused by a cut-off answer; null otherwise. */
   truncationPauseLimit = computed<number | null>(() =>
-    this.truncatedSide() ? (this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS) : null,
+    !this.refreshingPauseSettings() && this.truncatedSide()
+      ? (this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS)
+      : null,
   );
   /**
    * The cut-off side's reasoning effort for the pause banner: its participant, the level it asks for and the
@@ -160,7 +166,7 @@ export class GameView implements OnInit, OnDestroy {
   truncationEffort = computed<TruncationEffortChoice | null>(() => {
     const side = this.truncatedSide();
     const game = this.game();
-    if (!side || !game) {
+    if (!side || !game || this.refreshingPauseSettings()) {
       return null;
     }
     const white = side === 'WHITE';
@@ -467,12 +473,16 @@ export class GameView implements OnInit, OnDestroy {
     this.reconnectSub?.unsubscribe();
     this.loadSub?.unsubscribe();
     this.attemptsSub?.unsubscribe();
+    this.pauseSettingsSub?.unsubscribe();
     clearTimeout(this.staleReloadTimer);
     this.turnState.stopTicker();
   }
 
   loadGame() {
     const generation = ++this.loadGeneration;
+    const settingsGeneration = ++this.settingsGeneration;
+    this.pauseSettingsSub?.unsubscribe();
+    this.refreshingPauseSettings.set(true);
     this.loadInFlight = true;
     this.loadSub?.unsubscribe();
     this.loadSub = this.api.getGame(this.gameId).subscribe({
@@ -485,7 +495,15 @@ export class GameView implements OnInit, OnDestroy {
         const moves = keepLiveEvaluations(sorted, this.moves());
         const keptLive = moves.some((move, index) => move !== sorted[index]);
         const liveSummary = this.game()?.qualitySummary;
-        const reconciled = this.keepAnnouncedResult(game);
+        let reconciled = this.keepAnnouncedResult(game);
+        if (settingsGeneration !== this.settingsGeneration && this.game()) {
+          // A pause refresh started after this snapshot request: keep its newer effort settings.
+          reconciled = {
+            ...reconciled,
+            whiteReasoningEffort: this.game()?.whiteReasoningEffort,
+            blackReasoningEffort: this.game()?.blackReasoningEffort,
+          };
+        }
         // The live summary belongs to the evaluations kept from live updates.
         this.game.set(
           keptLive && liveSummary ? { ...reconciled, qualitySummary: liveSummary } : reconciled,
@@ -507,6 +525,9 @@ export class GameView implements OnInit, OnDestroy {
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
             next: (tournament) => {
+              if (settingsGeneration !== this.settingsGeneration) {
+                return;
+              }
               // null: the tournament has no time limit per move, so there is no countdown.
               this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
               this.tournamentMaxOutputTokens.set(
@@ -518,11 +539,19 @@ export class GameView implements OnInit, OnDestroy {
               this.tournamentReasoningEffort.set(
                 isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
               );
+              this.refreshingPauseSettings.set(false);
             },
             // Limit unknown: only a deadline sent by the server shows a countdown.
-            error: () => this.turnState.moveTimeoutSeconds.set(null),
+            error: () => {
+              if (settingsGeneration === this.settingsGeneration) {
+                this.turnState.moveTimeoutSeconds.set(null);
+              }
+            },
           });
         } else {
+          if (settingsGeneration === this.settingsGeneration) {
+            this.refreshingPauseSettings.set(false);
+          }
           // Games outside a tournament use the backend's default limit.
           this.turnState.setMoveTimeoutSeconds(DEFAULT_MOVE_TIMEOUT_SECONDS);
         }
@@ -728,6 +757,9 @@ export class GameView implements OnInit, OnDestroy {
           // reload also brings the attempts.
           this.loadGame();
         } else if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
+          if (status === 'PAUSED') {
+            this.refreshPauseSettings();
+          }
           this.loadAttempts();
         }
         break;
@@ -864,6 +896,48 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
+  /** A pause may follow settings changed elsewhere while this view stayed open. */
+  private refreshPauseSettings(): void {
+    const tournamentId = this.game()?.tournamentId;
+    if (!tournamentId) {
+      return;
+    }
+    const revision = this.knownStatusRevision;
+    const settingsGeneration = ++this.settingsGeneration;
+    this.pauseSettingsSub?.unsubscribe();
+    this.refreshingPauseSettings.set(true);
+    this.pauseSettingsSub = forkJoin({
+      game: this.api.getGame(this.gameId),
+      tournament: this.api.getTournament(tournamentId),
+    }).subscribe({
+      next: ({ game, tournament }) => {
+        if (
+          settingsGeneration !== this.settingsGeneration ||
+          this.game()?.status !== 'PAUSED' ||
+          this.knownStatusRevision !== revision
+        ) {
+          return;
+        }
+        this.game.update((current) =>
+          current
+            ? {
+                ...current,
+                whiteReasoningEffort: game.whiteReasoningEffort,
+                blackReasoningEffort: game.blackReasoningEffort,
+              }
+            : current,
+        );
+        this.tournamentReasoningEffort.set(
+          isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
+        );
+        this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
+        this.refreshingPauseSettings.set(false);
+      },
+      // Keep the save controls hidden rather than offer to overwrite settings from a stale snapshot.
+      error: (err) => this.showServerError(err, 'Failed to refresh the paused game settings.'),
+    });
+  }
+
   /**
    * Looks up the levels of the cut-off side's model in the catalog once, so the pause banner offers only those.
    * Until it answers, and if it fails, every level is offered (the backend maps to the nearest supported one).
@@ -900,7 +974,7 @@ export class GameView implements OnInit, OnDestroy {
    */
   saveLimitAndResume(maxOutputTokens: number, reasoningEffort?: ReasoningEffort | null) {
     const tournamentId = this.game()?.tournamentId;
-    if (!tournamentId || this.savingLimit()) {
+    if (!tournamentId || this.savingLimit() || this.refreshingPauseSettings()) {
       return;
     }
     const effortChoice = reasoningEffort === undefined ? null : this.truncationEffort();
@@ -944,6 +1018,9 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   resumeGame() {
+    if (this.savingLimit()) {
+      return;
+    }
     this.api.startGame(this.gameId).subscribe({
       error: (err) => {
         this.showServerError(err, 'Failed to resume the game.');

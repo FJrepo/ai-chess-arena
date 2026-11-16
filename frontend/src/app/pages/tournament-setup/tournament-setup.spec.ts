@@ -882,6 +882,33 @@ describe('TournamentSetup', () => {
     expect(api.createTournamentPayload?.['reasoningEffort']).toBe('medium');
   });
 
+  it('offers every normalized level for an all-level model in the setup override', () => {
+    const api = createApiService();
+    const levels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+    api.getModels = (() =>
+      of({
+        data: [
+          {
+            ...catalogModel('example/all-levels', 'All levels'),
+            reasoningSupported: true,
+            reasoningEfforts: levels,
+          },
+        ],
+      })) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+    component.name = 'All levels arena';
+    component.onModelChanged('example/all-levels');
+    expect(component.selectedModelEfforts()).toEqual(levels);
+    component.newReasoningEffort = 'minimal';
+    component.addParticipant();
+    component.create();
+    const participants = api.createTournamentPayload?.['participants'] as Array<
+      Record<string, unknown>
+    >;
+    expect(participants[0]['reasoningEffort']).toBe('minimal');
+  });
+
   it('presets reset the reasoning effort to the model default', () => {
     const component = new TournamentSetup(
       createApiService(),

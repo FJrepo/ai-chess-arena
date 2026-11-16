@@ -128,6 +128,30 @@ describe('GameInfoBar reasoning effort for a cut-off answer', () => {
     expect(bar.newReasoningEffort).toBe('max');
   });
 
+  it('shows and saves a supported suggestion when the tournament level is not an option', async () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    const bar = fixture.componentInstance;
+    bar.game = pausedGame();
+    bar.truncationLimit = 4096;
+    bar.truncationEffort = choice({
+      current: 'minimal',
+      tournamentLevel: 'minimal',
+      options: ['none', 'low', 'high', 'max'],
+    });
+    const emitted: RaiseLimitRequest[] = [];
+    bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement as HTMLElement)
+        .querySelector('.effort-field .mat-mdc-select-value')
+        ?.textContent?.trim(),
+    ).toBe('Low');
+    bar.saveAndResume();
+    expect(emitted).toEqual([{ maxOutputTokens: 8192, reasoningEffort: 'low' }]);
+  });
+
   it('offers no select for a model without effort levels and sends no effort then', () => {
     const bar = new GameInfoBar();
     bar.game = pausedGame();

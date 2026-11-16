@@ -17,6 +17,7 @@ export interface OpenRouterModelOption {
   reasoningSupported?: boolean;
   /** Null when the catalog does not say. */
   reasoningMandatory?: boolean | null;
+  /** Normalized selectable levels: catalog null expands to all, missing stays empty; mandatory excludes none. */
   reasoningEfforts?: string[];
   /** Artificial Analysis Intelligence Index, as published in the OpenRouter catalog. */
   intelligenceIndex?: number | null;

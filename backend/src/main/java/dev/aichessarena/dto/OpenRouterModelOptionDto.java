@@ -9,6 +9,8 @@ import java.util.List;
  *
  * @param releasedAt ISO date (YYYY-MM-DD, UTC) derived from the catalog's {@code created} timestamp
  * @param reasoningMandatory null when the catalog does not say
+ * @param reasoningEfforts selectable levels; explicit null in the catalog expands to all levels, excluding
+ *        {@code none} for mandatory reasoning; missing levels stay empty
  * @param intelligenceIndex Artificial Analysis Intelligence Index as published in the OpenRouter catalog
  * @param description trimmed to about 400 characters, cut at a word boundary
  * @param defaultEffort the reasoning effort the model uses when none is sent ({@code reasoning.default_effort})
