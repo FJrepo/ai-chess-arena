@@ -1,10 +1,14 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.DtoMapper;
+import dev.aichessarena.dto.GameQualitySummaryDto;
+import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
+import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
 import dev.aichessarena.websocket.GameWebSocket;
 import com.github.bhlangonijr.chesslib.Board;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -14,6 +18,8 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 
@@ -158,10 +164,39 @@ public class GameMoveService {
             move.evaluationCp = result.cp();
             move.evaluationMate = result.mate();
             moveRepository.persist(move);
-            gameWebSocket.broadcastEvaluation(move.game.id, move.moveNumber, move.color, result.cp(), result.mate());
+            broadcastEvaluation(move);
         } else {
             LOG.warnf("Could not find move %s to update evaluation", moveId);
         }
+    }
+
+    /**
+     * Sends the move's evaluation with the qualities it decides: the move's own (this evaluation is its "after")
+     * and the next move's (this evaluation is its "before"; evaluations may finish out of order), plus the game's
+     * updated summary. Quality is derived from the stored evaluations, so a reload shows the same.
+     */
+    private void broadcastEvaluation(dev.aichessarena.entity.Move move) {
+        List<dev.aichessarena.entity.Move> moves = moveRepository.findByGameId(move.game.id);
+        List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
+        List<PlyQualityDto> changed = new ArrayList<>();
+        int index = -1;
+        for (int i = 0; i < moves.size(); i++) {
+            if (moves.get(i).id != null && moves.get(i).id.equals(move.id)) {
+                index = i;
+                break;
+            }
+        }
+        if (index >= 0) {
+            for (int i = index; i <= Math.min(index + 1, moves.size() - 1); i++) {
+                dev.aichessarena.entity.Move affected = moves.get(i);
+                changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i))));
+            }
+        }
+        GameQualitySummaryDto summary = index >= 0
+                ? DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities))
+                : null;
+        gameWebSocket.broadcastEvaluation(move.game.id, move.moveNumber, move.color, move.evaluationCp,
+                move.evaluationMate, changed, summary);
     }
 
     @Transactional

@@ -34,5 +34,7 @@ public record GameDto(
         LocalDateTime startedAt,
         LocalDateTime completedAt,
         List<MoveDto> moves,
-        List<ChatMessageDto> chatMessages
+        List<ChatMessageDto> chatMessages,
+        /** Per-side move quality; only with the moves (single game), otherwise null. */
+        GameQualitySummaryDto qualitySummary
 ) {}

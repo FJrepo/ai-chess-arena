@@ -1,7 +1,12 @@
 package dev.aichessarena.dto;
 
 import dev.aichessarena.entity.*;
+import dev.aichessarena.service.MoveQualityClassifier;
+import dev.aichessarena.service.MoveQualityClassifier.GameSummary;
+import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
+import dev.aichessarena.service.MoveQualityClassifier.SideSummary;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class DtoMapper {
@@ -38,7 +43,20 @@ public final class DtoMapper {
         );
     }
 
+    /** With {@code includeMoves}, the moves carry their quality and the game its per-side quality summary. */
     public static GameDto toDto(Game g, boolean includeMoves) {
+        List<MoveDto> moves = List.of();
+        GameQualitySummaryDto qualitySummary = null;
+        if (includeMoves) {
+            List<Move> played = g.moves;
+            List<MoveQuality> qualities = MoveQualityClassifier.analyze(played);
+            List<MoveDto> mapped = new ArrayList<>(played.size());
+            for (int i = 0; i < played.size(); i++) {
+                mapped.add(toDto(played.get(i), qualities.get(i)));
+            }
+            moves = mapped;
+            qualitySummary = toDto(MoveQualityClassifier.summarize(played, qualities));
+        }
         return new GameDto(
                 g.id,
                 g.tournament != null ? g.tournament.id : null,
@@ -59,8 +77,9 @@ public final class DtoMapper {
                 g.pgn, g.currentFen,
                 g.bracketRound, g.bracketPosition, g.seriesId, g.seriesGameNumber, g.seriesBestOf,
                 g.totalCostUsd, g.createdAt, g.startedAt, g.completedAt,
-                includeMoves ? g.moves.stream().map(DtoMapper::toDto).toList() : List.of(),
-                includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of()
+                moves,
+                includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of(),
+                qualitySummary
         );
     }
 
@@ -73,13 +92,46 @@ public final class DtoMapper {
     }
 
     public static MoveDto toDto(Move m) {
+        return toDto(m, null);
+    }
+
+    public static MoveDto toDto(Move m, MoveQuality quality) {
         return new MoveDto(
                 m.id, m.moveNumber, m.color, m.san, m.fen,
                 m.modelId, m.promptVersion, m.promptHash, m.promptTokens, m.completionTokens,
                 m.costUsd, m.responseTimeMs, m.retryCount,
                 m.isOverride, m.evaluationCp, m.evaluationMate,
-                m.createdAt
+                m.createdAt,
+                toDto(quality)
         );
+    }
+
+    /** Null for a move that is not judged. Winning chances are rounded to four decimals. */
+    public static MoveQualityDto toDto(MoveQuality quality) {
+        if (quality == null) {
+            return null;
+        }
+        return new MoveQualityDto(
+                quality.judgement() != null ? quality.judgement().name() : null,
+                quality.centipawnLoss(),
+                round4(quality.winChanceBefore()),
+                round4(quality.winChanceAfter()),
+                quality.excluded() != null ? quality.excluded().name() : null
+        );
+    }
+
+    public static GameQualitySummaryDto toDto(GameSummary summary) {
+        return new GameQualitySummaryDto(toDto(summary.white()), toDto(summary.black()));
+    }
+
+    public static SideQualityDto toDto(SideSummary side) {
+        return new SideQualityDto(
+                side.analyzedMoves(), side.averageCentipawnLoss(), side.inaccuracies(), side.mistakes(), side.blunders()
+        );
+    }
+
+    private static double round4(double value) {
+        return Math.round(value * 10_000d) / 10_000d;
     }
 
     public static ChatMessageDto toDto(ChatMessage c) {

@@ -77,6 +77,46 @@ export interface Game {
   completedAt: string | null;
   moves: Move[];
   chatMessages: ChatMessage[];
+  /** Per-side move quality; sent with a single game (with its moves), otherwise null or absent. */
+  qualitySummary?: GameQualitySummary | null;
+}
+
+export type MoveJudgement = 'INACCURACY' | 'MISTAKE' | 'BLUNDER';
+
+/**
+ * Quality of one move, derived by the backend from the Stockfish evaluations before and after it
+ * (Lichess-style win-probability model). Winning chances are the mover's, from 0 to 1.
+ */
+export interface MoveQuality {
+  /** Null when the move was not a notable error, or when it is excluded. */
+  judgement: MoveJudgement | null;
+  /** The mover's evaluation drop in centipawns (0–1000); null when excluded. */
+  centipawnLoss: number | null;
+  winChanceBefore: number;
+  winChanceAfter: number;
+  /** Operator overrides and forced moves (the only legal move) are not judged. */
+  excluded: 'OVERRIDE' | 'FORCED' | null;
+}
+
+/** One side's judged moves in a game: average centipawn loss (null without any) and error counts. */
+export interface SideQuality {
+  analyzedMoves: number;
+  averageCentipawnLoss: number | null;
+  inaccuracies: number;
+  mistakes: number;
+  blunders: number;
+}
+
+export interface GameQualitySummary {
+  white: SideQuality;
+  black: SideQuality;
+}
+
+/** The quality of the move with this move number and color; null when it is not judged. */
+export interface PlyQuality {
+  moveNumber: number;
+  color: 'WHITE' | 'BLACK';
+  quality: MoveQuality | null;
 }
 
 export interface Move {
@@ -97,6 +137,8 @@ export interface Move {
   evaluationCp?: number | null;
   evaluationMate?: number | null;
   createdAt: string;
+  /** Null or absent until both evaluations around the move are known. */
+  quality?: MoveQuality | null;
 }
 
 export type MoveAttemptOutcome =
@@ -161,6 +203,10 @@ export interface EvaluationUpdateWsMessage {
   color: 'WHITE' | 'BLACK';
   evaluationCp?: number | null;
   evaluationMate?: number | null;
+  /** Qualities this evaluation decides: the evaluated move's and the next move's, if played. */
+  qualities?: PlyQuality[];
+  /** The game's per-side quality summary after this evaluation. */
+  qualitySummary?: GameQualitySummary | null;
 }
 
 export interface ChatWsMessage {

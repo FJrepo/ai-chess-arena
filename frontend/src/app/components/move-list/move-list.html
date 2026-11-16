@@ -11,9 +11,18 @@
             <span
               class="move white-move"
               [class.active]="currentIndex === pair.whiteIdx"
+              [attr.title]="tooltip(pair.white)"
               (click)="onMoveClick(pair.whiteIdx)"
             >
-              {{ pair.white.san }}
+              <span class="san">{{ pair.white.san }}</span>
+              @if (badge(pair.white); as b) {
+                <span
+                  class="quality-badge"
+                  [class]="'quality-' + b.tone"
+                  [attr.aria-label]="b.label"
+                  >{{ b.glyph }}</span
+                >
+              }
               @if (pair.white.retryCount > 0) {
                 <span class="retry-badge" title="Retries">{{ pair.white.retryCount }}</span>
               }
@@ -23,9 +32,18 @@
             <span
               class="move black-move"
               [class.active]="currentIndex === pair.blackIdx"
+              [attr.title]="tooltip(pair.black)"
               (click)="onMoveClick(pair.blackIdx)"
             >
-              {{ pair.black.san }}
+              <span class="san">{{ pair.black.san }}</span>
+              @if (badge(pair.black); as b) {
+                <span
+                  class="quality-badge"
+                  [class]="'quality-' + b.tone"
+                  [attr.aria-label]="b.label"
+                  >{{ b.glyph }}</span
+                >
+              }
               @if (pair.black.retryCount > 0) {
                 <span class="retry-badge" title="Retries">{{ pair.black.retryCount }}</span>
               }

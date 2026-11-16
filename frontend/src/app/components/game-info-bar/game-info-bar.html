@@ -11,6 +11,20 @@
         <div class="player-meta">
           <span class="name">{{ game.whitePlayerName }}</span>
           <span class="model">{{ game.whiteModelId || 'Human player' }}</span>
+          @if (sideQuality('WHITE'); as q) {
+            <span class="quality-summary" [attr.title]="sideQualityTooltip(q)">
+              <span class="acpl">ACPL {{ q.averageCentipawnLoss }}</span>
+              @for (entry of qualityCounts(q); track entry.glyph) {
+                <span
+                  class="quality-count"
+                  [class]="'quality-' + entry.tone"
+                  [class.none]="entry.count === 0"
+                  [attr.aria-label]="entry.label"
+                  >{{ entry.glyph }} {{ entry.count }}</span
+                >
+              }
+            </span>
+          }
         </div>
       </div>
       <span class="vs-label">vs</span>
@@ -24,6 +38,20 @@
         <div class="player-meta">
           <span class="name">{{ game.blackPlayerName }}</span>
           <span class="model">{{ game.blackModelId || 'Human player' }}</span>
+          @if (sideQuality('BLACK'); as q) {
+            <span class="quality-summary" [attr.title]="sideQualityTooltip(q)">
+              <span class="acpl">ACPL {{ q.averageCentipawnLoss }}</span>
+              @for (entry of qualityCounts(q); track entry.glyph) {
+                <span
+                  class="quality-count"
+                  [class]="'quality-' + entry.tone"
+                  [class.none]="entry.count === 0"
+                  [attr.aria-label]="entry.label"
+                  >{{ entry.glyph }} {{ entry.count }}</span
+                >
+              }
+            </span>
+          }
         </div>
       </div>
     </div>

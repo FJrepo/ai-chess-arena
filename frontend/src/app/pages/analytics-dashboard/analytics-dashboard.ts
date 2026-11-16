@@ -52,6 +52,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   readonly dayOptions = [7, 30, 90];
   readonly scoreExplanation =
     'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
+  readonly qualityExplanation =
+    "ACPL is the average centipawn loss per move (lower is better). A move is ?! / ? / ?? when it drops the mover's winning chances by at least 5 / 10 / 15 percentage points (Lichess-style win-probability model); forced moves, overrides and moves without an evaluation are not judged.";
   readonly comparisonSortOptions = [
     { value: 'winRate', label: 'Win Rate' },
     { value: 'reliabilityScore', label: 'Reliability' },
@@ -148,6 +150,18 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     ];
   });
 
+  /** Models with judged moves, lowest average centipawn loss first. */
+  qualityRows = computed(() =>
+    (this.comparison()?.models ?? [])
+      .filter((row) => (row.analyzedMoves ?? 0) > 0 && row.averageCentipawnLoss != null)
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.averageCentipawnLoss ?? 0) - (b.averageCentipawnLoss ?? 0) ||
+          (b.analyzedMoves ?? 0) - (a.analyzedMoves ?? 0),
+      ),
+  );
+
   colorSplitHighlights = computed(() =>
     this.comparisonRows()
       .filter((row) => row.gamesPlayed > 0)
@@ -213,6 +227,15 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   /** One formatter for every reliability score, so the leader card and the tables agree. */
   formatScore(value: number): string {
     return formatNumber(value, 'en-US', '1.1-1');
+  }
+
+  /** Average centipawn loss, rounded to whole centipawns. */
+  formatAcpl(value: number | null | undefined): string {
+    return value == null ? 'n/a' : formatNumber(value, 'en-US', '1.0-0');
+  }
+
+  formatPerGame(value: number | null | undefined): string {
+    return value == null ? 'n/a' : formatNumber(value, 'en-US', '1.2-2');
   }
 
   formatMs(value: number | null): string {

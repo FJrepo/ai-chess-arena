@@ -828,6 +828,96 @@ describe('GameView', () => {
     expect(initialLoad.observed).toBe(false);
   });
 
+  it('shows the quality an evaluation update decides, for a live move and the summary', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(
+      gameWith({
+        currentFen: AFTER_E5,
+        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
+        qualitySummary: null,
+      }),
+    );
+    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
+    expect(component.moves()[1].quality).toBeUndefined();
+
+    messages.next({
+      type: 'evaluationUpdate',
+      gameId: 'g-1',
+      moveNumber: 1,
+      color: 'BLACK',
+      evaluationCp: 338,
+      qualities: [
+        {
+          moveNumber: 1,
+          color: 'BLACK',
+          quality: {
+            judgement: 'BLUNDER',
+            centipawnLoss: 618,
+            winChanceBefore: 0.7372,
+            winChanceAfter: 0.2236,
+            excluded: null,
+          },
+        },
+      ],
+      qualitySummary: {
+        white: {
+          analyzedMoves: 1,
+          averageCentipawnLoss: 0,
+          inaccuracies: 0,
+          mistakes: 0,
+          blunders: 0,
+        },
+        black: {
+          analyzedMoves: 1,
+          averageCentipawnLoss: 618,
+          inaccuracies: 0,
+          mistakes: 0,
+          blunders: 1,
+        },
+      },
+    });
+
+    expect(component.moves()[1].evaluationCp).toBe(338);
+    expect(component.moves()[1].quality?.judgement).toBe('BLUNDER');
+    expect(component.game()?.qualitySummary?.black.blunders).toBe(1);
+    const feedMove = component.timelineEvents().find((event) => event.label === 'Black played e5');
+    expect(feedMove?.quality?.badge.glyph).toBe('??');
+    expect(feedMove?.quality?.tooltip).toBe('Blunder: winning chances 74% → 22% (−6.2)');
+    const whiteMove = component.timelineEvents().find((event) => event.label === 'White played e4');
+    expect(whiteMove?.quality).toBeNull();
+    component.ngOnDestroy();
+  });
+
+  it('keeps the summary when an evaluation update carries none', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    component.ngOnInit();
+    const summary = {
+      white: {
+        analyzedMoves: 1,
+        averageCentipawnLoss: 12,
+        inaccuracies: 0,
+        mistakes: 0,
+        blunders: 0,
+      },
+      black: {
+        analyzedMoves: 0,
+        averageCentipawnLoss: null,
+        inaccuracies: 0,
+        mistakes: 0,
+        blunders: 0,
+      },
+    };
+    gameLoad.next(
+      gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)], qualitySummary: summary }),
+    );
+
+    messages.next({ type: 'evaluationUpdate', gameId: 'g-1', moveNumber: 1, color: 'WHITE' });
+
+    expect(component.game()?.qualitySummary).toEqual(summary);
+    component.ngOnDestroy();
+  });
+
   it('ignores an older load that answers after a newer one', () => {
     const { component, getGame, reconnected } = createSpectator();
     const olderLoad = new Subject<Game>();

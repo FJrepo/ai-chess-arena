@@ -17,6 +17,7 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveRepository;
+import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
@@ -24,9 +25,11 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -435,6 +438,7 @@ public class AnalyticsService {
             accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
             accumulator.rejectedAttemptsCosted = true;
         });
+        registerMoveQuality(byModel, moves);
 
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
@@ -508,7 +512,18 @@ public class AnalyticsService {
                     pricingAvailable(accumulator),
                     decimal(score.finalScore(), 2),
                     score.band(),
-                    score.insufficientData()
+                    score.insufficientData(),
+                    accumulator.analyzedMoves,
+                    accumulator.analyzedGameIds.size(),
+                    accumulator.analyzedMoves == 0
+                            ? null
+                            : decimal((double) accumulator.centipawnLossTotal / accumulator.analyzedMoves, 1),
+                    accumulator.inaccuracies,
+                    accumulator.mistakes,
+                    accumulator.blunders,
+                    accumulator.analyzedGameIds.isEmpty()
+                            ? null
+                            : decimal((double) accumulator.blunders / accumulator.analyzedGameIds.size(), 2)
             ));
         }
 
@@ -594,6 +609,40 @@ public class AnalyticsService {
         if (outcome.blackWin()) {
             accumulator.blackWins++;
         }
+    }
+
+    /**
+     * Adds each model's judged moves (see {@link MoveQualityClassifier}). Quality depends on the move before, so
+     * every game's moves are put in play order first; only moves with a model id count (not humans or overrides).
+     */
+    private void registerMoveQuality(Map<String, ComparisonAccumulator> byModel, List<Move> moves) {
+        Map<UUID, List<Move>> movesByGame = new HashMap<>();
+        for (Move move : moves) {
+            movesByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(move);
+        }
+        movesByGame.forEach((gameId, gameMoves) -> {
+            gameMoves.sort(MoveQualityClassifier.PLAY_ORDER);
+            List<MoveQuality> qualities = MoveQualityClassifier.analyze(gameMoves);
+            for (int i = 0; i < gameMoves.size(); i++) {
+                Move move = gameMoves.get(i);
+                MoveQuality quality = qualities.get(i);
+                if (!MoveQualityClassifier.counts(quality) || !hasTrackedModelId(move.modelId)) {
+                    continue;
+                }
+                ComparisonAccumulator accumulator =
+                        byModel.computeIfAbsent(normalizeModelId(move.modelId), ignored -> new ComparisonAccumulator());
+                accumulator.analyzedMoves++;
+                accumulator.analyzedGameIds.add(gameId);
+                accumulator.centipawnLossTotal += quality.centipawnLoss();
+                if (quality.judgement() == MoveQualityClassifier.Judgement.INACCURACY) {
+                    accumulator.inaccuracies++;
+                } else if (quality.judgement() == MoveQualityClassifier.Judgement.MISTAKE) {
+                    accumulator.mistakes++;
+                } else if (quality.judgement() == MoveQualityClassifier.Judgement.BLUNDER) {
+                    accumulator.blunders++;
+                }
+            }
+        });
     }
 
     private Long percentile95(List<Long> sortedValues) {
@@ -741,6 +790,12 @@ public class AnalyticsService {
         private BigDecimal totalCostUsd = BigDecimal.ZERO;
         private long pricedMoves;
         private boolean rejectedAttemptsCosted;
+        private long analyzedMoves;
+        private final Set<UUID> analyzedGameIds = new HashSet<>();
+        private long centipawnLossTotal;
+        private long inaccuracies;
+        private long mistakes;
+        private long blunders;
     }
 
     private static final class ReliabilityAccumulator {

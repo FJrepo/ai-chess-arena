@@ -3,9 +3,12 @@ package dev.aichessarena.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.dto.GameQualitySummaryDto;
+import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
@@ -159,6 +162,53 @@ class GameMoveServiceTest {
     }
 
     @Test
+    void evaluationUpdateBroadcastsTheQualitiesItDecidesAndTheSummary() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        Move white = storedMove(game, 1, "WHITE", -280);
+        Move black = storedMove(game, 1, "BLACK", null);
+        Move nextWhite = storedMove(game, 2, "WHITE", -250);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        moveRepository.gameMoves.addAll(List.of(white, black, nextWhite));
+        GameMoveService service = service(game, moveRepository);
+        RecordingGameWebSocket websocket = (RecordingGameWebSocket) service.gameWebSocket;
+
+        // Black's evaluation arrives last (out of order): it decides Black's move and White's next one.
+        service.updateMoveEvaluation(black.id, new StockfishService.EvalResult(338, null));
+
+        assertEquals(338, black.evaluationCp);
+        assertEquals(1, websocket.lastEvaluationMoveNumber);
+        assertEquals(2, websocket.lastQualities.size());
+        PlyQualityDto blackQuality = websocket.lastQualities.get(0);
+        assertEquals("BLACK", blackQuality.color());
+        assertEquals("BLUNDER", blackQuality.quality().judgement());
+        assertEquals(618, blackQuality.quality().centipawnLoss());
+        PlyQualityDto whiteQuality = websocket.lastQualities.get(1);
+        assertEquals(2, whiteQuality.moveNumber());
+        assertEquals("WHITE", whiteQuality.color());
+        assertEquals("BLUNDER", whiteQuality.quality().judgement(), "+3.38 to -2.50 for White");
+        assertEquals(1, websocket.lastSummary.black().blunders());
+        assertEquals(2, websocket.lastSummary.white().blunders(), "1.?? to -2.80, then 2.??");
+        assertEquals(2, websocket.lastSummary.white().analyzedMoves());
+    }
+
+    @Test
+    void evaluationUpdateWithoutAScoreSendsNoQuality() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        Move white = storedMove(game, 1, "WHITE", null);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        moveRepository.gameMoves.add(white);
+        GameMoveService service = service(game, moveRepository);
+        RecordingGameWebSocket websocket = (RecordingGameWebSocket) service.gameWebSocket;
+
+        // Stockfish unavailable: the result carries no score.
+        service.updateMoveEvaluation(white.id, new StockfishService.EvalResult(null, null));
+
+        assertEquals(1, websocket.lastQualities.size());
+        assertNull(websocket.lastQualities.get(0).quality());
+        assertEquals(0, websocket.lastSummary.white().analyzedMoves());
+    }
+
+    @Test
     void samePositionIgnoresMoveClocks() {
         assertTrue(GameMoveService.samePosition(START_FEN, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 3 7"));
         assertFalse(GameMoveService.samePosition(START_FEN, AFTER_E4));
@@ -171,6 +221,18 @@ class GameMoveServiceTest {
         game.status = status;
         game.currentFen = fen;
         return game;
+    }
+
+    private static Move storedMove(Game game, int number, String color, Integer cp) {
+        Move move = new Move();
+        move.id = UUID.randomUUID();
+        move.game = game;
+        move.moveNumber = number;
+        move.color = color;
+        move.san = "x";
+        move.fen = "fen";
+        move.evaluationCp = cp;
+        return move;
     }
 
     private static GameMoveService service(Game game, TrackingMoveRepository moveRepository) {
@@ -210,7 +272,18 @@ class GameMoveServiceTest {
 
     private static final class TrackingMoveRepository extends MoveRepository {
         private final List<Move> persistedMoves = new ArrayList<>();
+        private final List<Move> gameMoves = new ArrayList<>();
         private boolean persistAndFlushCalled;
+
+        @Override
+        public Move findById(UUID id) {
+            return gameMoves.stream().filter(move -> id.equals(move.id)).findFirst().orElse(null);
+        }
+
+        @Override
+        public List<Move> findByGameId(UUID gameId) {
+            return gameMoves.stream().filter(move -> gameId.equals(move.game.id)).toList();
+        }
 
         @Override
         public void persistAndFlush(Move entity) {
@@ -272,6 +345,9 @@ class GameMoveServiceTest {
     }
 
     private static final class RecordingGameWebSocket extends GameWebSocket {
+        private int lastEvaluationMoveNumber;
+        private List<PlyQualityDto> lastQualities;
+        private GameQualitySummaryDto lastSummary;
         private String lastChatSenderName;
         private String lastMoveSan;
         private boolean lastMoveOverride;
@@ -303,6 +379,15 @@ class GameMoveServiceTest {
         ) {
             lastMoveSan = san;
             lastMoveOverride = isOverride;
+        }
+
+        @Override
+        public void broadcastEvaluation(UUID gameId, int moveNumber, String color, Integer evaluationCp,
+                                        Integer evaluationMate, List<PlyQualityDto> qualities,
+                                        GameQualitySummaryDto qualitySummary) {
+            lastEvaluationMoveNumber = moveNumber;
+            lastQualities = qualities;
+            lastSummary = qualitySummary;
         }
     }
 }

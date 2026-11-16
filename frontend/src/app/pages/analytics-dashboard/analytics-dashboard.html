@@ -190,6 +190,66 @@
             </div>
           </div>
 
+          <div class="table-card quality-table-card">
+            <div class="section-header">
+              <div>
+                <h3>Move Quality</h3>
+                <p>
+                  Stockfish's verdict on every judged move in finished games, lowest ACPL first.
+                </p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table quality-table">
+                <thead>
+                  <tr>
+                    <th class="col-model">Model</th>
+                    <th class="num">ACPL</th>
+                    <th class="num">Blunders / game</th>
+                    <th class="num">
+                      <span class="quality-glyph quality-blunder">??</span> Blunders
+                    </th>
+                    <th class="num">
+                      <span class="quality-glyph quality-mistake">?</span> Mistakes
+                    </th>
+                    <th class="num">
+                      <span class="quality-glyph quality-inaccuracy">?!</span> Inaccuracies
+                    </th>
+                    <th class="num">Judged moves</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of qualityRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                      </td>
+                      <td class="num">{{ formatAcpl(row.averageCentipawnLoss) }}</td>
+                      <td class="num">
+                        {{ formatPerGame(row.blundersPerGame) }}
+                        <span class="table-note"
+                          >{{ row.analyzedGames }}
+                          {{ row.analyzedGames === 1 ? 'game' : 'games' }}</span
+                        >
+                      </td>
+                      <td class="num">{{ row.blunders ?? 0 }}</td>
+                      <td class="num">{{ row.mistakes ?? 0 }}</td>
+                      <td class="num">{{ row.inaccuracies ?? 0 }}</td>
+                      <td class="num">{{ row.analyzedMoves ?? 0 }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="7" class="empty">
+                        No moves judged by Stockfish in finished games yet.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ qualityExplanation }}</p>
+          </div>
+
           <div class="breakdown-grid">
             <div class="breakdown-card">
               <h3>Color Split</h3>

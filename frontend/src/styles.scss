@@ -3,6 +3,7 @@
 // components according to the Material 3 design spec.
 // Learn more about theming and how to use it for your application's
 // custom components at https://material.angular.dev/guide/theming
+@use 'sass:map';
 @use '@angular/material' as mat;
 
 html {
@@ -47,6 +48,11 @@ html {
   --app-piece-white-edge: #23262d;
   --app-piece-black: #1b1e25;
   --app-piece-black-edge: color-mix(in srgb, #ffffff 30%, transparent);
+  // Move-quality annotations (?! inaccuracy, ? mistake, ?? blunder): the tertiary role, the warning
+  // orange used for status tones, and the error role.
+  --app-quality-inaccuracy: var(--mat-sys-tertiary);
+  --app-quality-mistake: #{map.get(mat.$orange-palette, 40)};
+  --app-quality-blunder: var(--mat-sys-error);
 }
 
 :root[data-theme='dark'],
@@ -65,6 +71,7 @@ body.dark-theme {
   );
 
   --app-surface-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+  --app-quality-mistake: #{map.get(mat.$orange-palette, 80)};
 }
 
 body {
@@ -99,6 +106,25 @@ body.dark-theme {
 
 * {
   box-sizing: border-box;
+}
+
+// Move-quality tones (?! inaccuracy, ? mistake, ?? blunder), shared by the move list, the game
+// feed, the players' summary and analytics. An annotation follows the move without a space.
+.quality-badge {
+  margin-left: 1px;
+  font-weight: 700;
+}
+
+.quality-inaccuracy {
+  color: var(--app-quality-inaccuracy);
+}
+
+.quality-mistake {
+  color: var(--app-quality-mistake);
+}
+
+.quality-blunder {
+  color: var(--app-quality-blunder);
 }
 /* You can add global styles to this file, and also import other style files */
 

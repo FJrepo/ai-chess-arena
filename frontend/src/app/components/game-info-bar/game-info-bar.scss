@@ -78,6 +78,27 @@ $warning: mat.$orange-palette;
   color: var(--mat-sys-on-surface-variant);
 }
 
+// Compact move-quality line under the model: ACPL and the ?? / ? / ?! counts in their tones.
+.quality-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font: var(--mat-sys-body-small);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface-variant);
+  cursor: default;
+}
+
+.quality-count {
+  font-weight: 700;
+
+  &.none {
+    color: var(--mat-sys-on-surface-variant);
+    font-weight: 400;
+  }
+}
+
 .vs-label {
   font: var(--mat-sys-label-large);
   text-transform: uppercase;

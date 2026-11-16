@@ -1,6 +1,11 @@
 package dev.aichessarena.websocket;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aichessarena.dto.GameQualitySummaryDto;
+import dev.aichessarena.dto.MoveQualityDto;
+import dev.aichessarena.dto.PlyQualityDto;
+import dev.aichessarena.dto.SideQualityDto;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.repository.GameRepository;
 import io.quarkus.websockets.next.WebSocketConnection;
@@ -10,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -309,6 +315,43 @@ class GameWebSocketTest {
 
     private String unsubscribeMessage(UUID gameId) {
         return "{\"type\":\"unsubscribe\",\"gameId\":\"%s\"}".formatted(gameId);
+    }
+
+    @Test
+    void evaluationMessageCarriesMoveQualitiesAndSummary() {
+        UUID gameId = UUID.randomUUID();
+        MoveQualityDto blunder = new MoveQualityDto("BLUNDER", 618, 0.7372, 0.2236, null);
+        GameQualitySummaryDto summary = new GameQualitySummaryDto(
+                new SideQualityDto(35, 41, 2, 1, 0),
+                new SideQualityDto(35, 87, 3, 2, 1)
+        );
+
+        JsonNode msg = endpoint.evaluationMessage(gameId, 35, "BLACK", 338, null,
+                List.of(new PlyQualityDto(35, "BLACK", blunder), new PlyQualityDto(36, "WHITE", null)), summary);
+
+        assertEquals("evaluationUpdate", msg.path("type").asText());
+        assertEquals(338, msg.path("evaluationCp").asInt());
+        assertFalse(msg.has("evaluationMate"));
+        JsonNode first = msg.path("qualities").get(0);
+        assertEquals(35, first.path("moveNumber").asInt());
+        assertEquals("BLACK", first.path("color").asText());
+        assertEquals("BLUNDER", first.path("quality").path("judgement").asText());
+        assertEquals(618, first.path("quality").path("centipawnLoss").asInt());
+        assertEquals(0.7372, first.path("quality").path("winChanceBefore").asDouble());
+        assertTrue(first.path("quality").path("excluded").isNull());
+        assertTrue(msg.path("qualities").get(1).path("quality").isNull());
+        assertEquals(87, msg.path("qualitySummary").path("black").path("averageCentipawnLoss").asInt());
+        assertEquals(1, msg.path("qualitySummary").path("black").path("blunders").asInt());
+        assertEquals(35, msg.path("qualitySummary").path("white").path("analyzedMoves").asInt());
+    }
+
+    @Test
+    void evaluationMessageWithoutQualitiesHasAnEmptyListAndNoSummary() {
+        JsonNode msg = endpoint.evaluationMessage(UUID.randomUUID(), 1, "WHITE", null, null, null, null);
+
+        assertTrue(msg.path("qualities").isArray());
+        assertEquals(0, msg.path("qualities").size());
+        assertFalse(msg.has("qualitySummary"));
     }
 
     private WebSocketConnection connection(String id) {

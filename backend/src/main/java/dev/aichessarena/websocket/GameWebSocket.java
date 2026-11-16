@@ -3,6 +3,8 @@ package dev.aichessarena.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.aichessarena.dto.GameQualitySummaryDto;
+import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.repository.GameRepository;
 import io.quarkus.websockets.next.CloseReason;
 import io.quarkus.websockets.next.OnClose;
@@ -18,6 +20,7 @@ import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -309,7 +312,20 @@ public class GameWebSocket {
         broadcast(gameId, msg.toString());
     }
 
-    public void broadcastEvaluation(UUID gameId, int moveNumber, String color, Integer evaluationCp, Integer evaluationMate) {
+    /**
+     * A move's new evaluation, plus the qualities it decides: the evaluated move's own and the next move's (whose
+     * "before" it is), and the game's updated per-side quality summary.
+     */
+    public void broadcastEvaluation(UUID gameId, int moveNumber, String color, Integer evaluationCp,
+                                    Integer evaluationMate, List<PlyQualityDto> qualities,
+                                    GameQualitySummaryDto qualitySummary) {
+        broadcast(gameId, evaluationMessage(gameId, moveNumber, color, evaluationCp, evaluationMate, qualities,
+                qualitySummary).toString());
+    }
+
+    ObjectNode evaluationMessage(UUID gameId, int moveNumber, String color, Integer evaluationCp,
+                                 Integer evaluationMate, List<PlyQualityDto> qualities,
+                                 GameQualitySummaryDto qualitySummary) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "evaluationUpdate");
         msg.put("gameId", gameId.toString());
@@ -317,7 +333,9 @@ public class GameWebSocket {
         msg.put("color", color);
         if (evaluationCp != null) msg.put("evaluationCp", evaluationCp);
         if (evaluationMate != null) msg.put("evaluationMate", evaluationMate);
-        broadcast(gameId, msg.toString());
+        msg.set("qualities", objectMapper.valueToTree(qualities != null ? qualities : List.of()));
+        if (qualitySummary != null) msg.set("qualitySummary", objectMapper.valueToTree(qualitySummary));
+        return msg;
     }
 
     private void broadcast(UUID gameId, String message) {

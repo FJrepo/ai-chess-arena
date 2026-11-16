@@ -63,6 +63,17 @@ export interface AnalyticsComparisonModel {
   reliabilityScore: number;
   reliabilityBand: string;
   insufficientData: boolean;
+  /** Moves judged by Stockfish (evaluated, not forced, not overrides). Absent from older backends. */
+  analyzedMoves?: number;
+  /** Finished games with at least one judged move of the model. */
+  analyzedGames?: number;
+  /** Average centipawn loss per judged move; null without judged moves. */
+  averageCentipawnLoss?: number | null;
+  inaccuracies?: number;
+  mistakes?: number;
+  blunders?: number;
+  /** Blunders per analyzed game; null without analyzed games. */
+  blundersPerGame?: number | null;
 }
 
 export interface AnalyticsComparisonResponse {
