@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -77,7 +77,14 @@ Respond with valid JSON only:
 You are playing as %s.
 Your opponent is %s (%s).`;
 
-  name = '';
+  /** Backed by a signal so the launch readiness below tracks it; still bound with ngModel. */
+  private readonly nameValue = signal('');
+  get name(): string {
+    return this.nameValue();
+  }
+  set name(value: string) {
+    this.nameValue.set(value);
+  }
   systemRulesTemplate = '';
   sharedCustomInstructions = '';
   moveTimeout = 60;
@@ -361,6 +368,21 @@ Your opponent is %s (%s).`;
 
   creating = signal(false);
   createError = signal<string | null>(null);
+
+  /** One model for the launch checklist and the Create button: a name, at least two participants, not already submitting. */
+  readonly readiness = computed(() => {
+    const named = !!this.nameValue();
+    const count = this.participants().length;
+    const participantsOk = count >= 2;
+    const creating = this.creating();
+    return {
+      named,
+      count,
+      participantsOk,
+      creating,
+      canCreate: named && participantsOk && !creating,
+    };
+  });
   /**
    * Request id bound to exactly the submitted details: retrying the same details reuses it (so a request that
    * reached the server but lost its response creates nothing twice), while edited details get a new id.

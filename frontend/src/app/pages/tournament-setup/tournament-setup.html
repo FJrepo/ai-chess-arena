@@ -13,7 +13,7 @@
     <div class="setup-main">
       <mat-card class="panel settings-card">
         <mat-card-header>
-          <mat-card-title>Tournament Settings</mat-card-title>
+          <h2 mat-card-title>Tournament Settings</h2>
           <mat-card-subtitle>Name, move limits and match format.</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
@@ -145,7 +145,7 @@
 
       <mat-card class="panel participants-card">
         <mat-card-header>
-          <mat-card-title>Participants</mat-card-title>
+          <h2 mat-card-title>Participants</h2>
           <mat-card-subtitle
             >Choose from OpenRouter models instead of typing model IDs manually.</mat-card-subtitle
           >
@@ -334,10 +334,15 @@
     <aside class="setup-aside" aria-label="Tournament preview and launch">
       <mat-card class="panel confidence-panel">
         <mat-card-header>
-          <mat-card-title>Tournament Confidence</mat-card-title>
+          <h2 mat-card-title>Tournament Confidence</h2>
           <mat-card-subtitle>Heuristic runtime and cost preview before launch.</mat-card-subtitle>
         </mat-card-header>
-        <mat-card-content>
+        <mat-card-content
+          class="preview-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="Tournament preview"
+        >
           @if (confidenceSummary(); as summary) {
             <div class="confidence-band-row">
               <span
@@ -436,32 +441,39 @@
           }
         </mat-card-content>
         <div class="launch-footer">
+          @let ready = readiness();
           <ul class="launch-checklist">
-            <li [class.done]="!!name">
+            <li [class.done]="ready.named">
               <mat-icon aria-hidden="true">{{
-                name ? 'check_circle' : 'radio_button_unchecked'
+                ready.named ? 'check_circle' : 'radio_button_unchecked'
               }}</mat-icon>
-              <span>{{ name ? 'Tournament named' : 'Name the tournament' }}</span>
+              <span>{{ ready.named ? 'Tournament named' : 'Name the tournament' }}</span>
             </li>
-            <li [class.done]="participants().length >= 2">
+            <li [class.done]="ready.participantsOk">
               <mat-icon aria-hidden="true">{{
-                participants().length >= 2 ? 'check_circle' : 'radio_button_unchecked'
+                ready.participantsOk ? 'check_circle' : 'radio_button_unchecked'
               }}</mat-icon>
               <span>
-                {{ participants().length }}
-                {{ participants().length === 1 ? 'participant' : 'participants' }}
-                {{ participants().length >= 2 ? 'added' : '(at least 2 needed)' }}
+                {{ ready.count }}
+                {{ ready.count === 1 ? 'participant' : 'participants' }}
+                {{ ready.participantsOk ? 'added' : '(at least 2 needed)' }}
               </span>
             </li>
+            @if (ready.creating) {
+              <li class="pending">
+                <mat-spinner diameter="18" aria-hidden="true"></mat-spinner>
+                <span>Creating…</span>
+              </li>
+            }
           </ul>
           <button
             mat-flat-button
             class="create-button"
             (click)="create()"
-            [disabled]="!name || participants().length < 2 || creating()"
+            [disabled]="!ready.canCreate"
           >
             <mat-icon>emoji_events</mat-icon>
-            <span>{{ creating() ? 'Creating…' : 'Create Tournament' }}</span>
+            <span>{{ ready.creating ? 'Creating…' : 'Create Tournament' }}</span>
           </button>
           @if (createError(); as error) {
             <p class="create-error" role="alert">{{ error }}</p>
