@@ -19,14 +19,16 @@ final class AfterCommit {
     }
 
     /**
-     * Runs {@code update} after the commit of the active transaction. A transaction already marked for rollback never
-     * sends it. Without an active transaction it runs at once: no transaction at all (or outside CDI, registry
-     * null), or a thread still associated with one that has already completed (for example a transaction-phase
-     * observer), where nothing is left to wait for.
+     * Runs {@code update} after the commit of the active transaction. A transaction already marked for rollback, or
+     * rolling or rolled back, never sends it. Without an active transaction it runs at once: no transaction at all
+     * (or outside CDI, registry null), or a thread still associated with one that has already committed (for example
+     * a transaction-phase observer), where nothing is left to wait for. The registry describes the calling thread's
+     * transaction only, so this must be called on the thread that made the change.
      */
     static void run(TransactionSynchronizationRegistry registry, Runnable update) {
         int status = registry == null ? Status.STATUS_NO_TRANSACTION : registry.getTransactionStatus();
-        if (status == Status.STATUS_MARKED_ROLLBACK) {
+        if (status == Status.STATUS_MARKED_ROLLBACK || status == Status.STATUS_ROLLING_BACK
+                || status == Status.STATUS_ROLLEDBACK) {
             return;
         }
         if (status != Status.STATUS_ACTIVE) {
