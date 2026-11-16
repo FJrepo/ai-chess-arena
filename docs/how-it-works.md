@@ -273,6 +273,16 @@ A move counts as talking when a chat message was stored for the same game, move 
 
 Comparison API rows carry `optionalChat` and `mandatoryChat` with `moves`, `messages`, `talkRate` and `averageMessageLength` (the last two omitted without moves or messages).
 
+### Prompt caching
+
+The *Prompt caching* table shows per-model prompt tokens, cached prompt tokens (cache reads), cache hit rate (`cached / prompt`), cache writes and estimated savings in USD. It uses all recorded usage-bearing attempts, including accepted moves, retries, truncated answers, provider errors, discarded answers and resignations. The same completion-time window, tournament and minimum-games filters as the other comparison tables apply: finished, non-bye games only. Attempts without usage are left out; tokens are not counted again from moves.
+
+OpenRouter's `usage.prompt_tokens_details.cached_tokens` and `cache_write_tokens` are stored separately on each attempt as nullable `cached_prompt_tokens` and `cache_write_tokens`; the attempts API exposes `cachedPromptTokens` and `cacheWriteTokens`. Reported zero means zero. A total is **n/a** if any included usage-bearing attempt lacks that counter, or there are no such attempts. Read and write completeness are independent; hit rate also needs a known, positive prompt-token total. Historical attempts without cache counters therefore show **n/a**, including a window mixing historical and newly reported counters. Games from before attempt recording cannot contribute usage totals; these metrics describe recorded attempts only.
+
+Estimated savings are `cached tokens × (pricing.prompt − pricing.input_cache_read)` using the **current** OpenRouter catalog's USD **per-token** prices. Missing, invalid, variable or unavailable prices mean **n/a**; a reported price of zero is valid. This is an estimate of the cache-read discount, not a historical billing reconstruction or net savings after cache-write charges. Cache writes are measured separately.
+
+All existing costs continue to use OpenRouter's returned `usage.cost`, which already reflects provider billing (including cache reads and writes); the app does not recalculate billed costs from catalog list prices. Comparison API rows add `promptCaching` with `promptTokens`, `cachedPromptTokens`, `cacheHitRate`, `cacheWriteTokens` and `estimatedSavingsUsd`; unknown values may be omitted. This step only measures caching: prompts, request messages and `cache_control` are unchanged.
+
 ### Resignations in analytics
 
 The *Resignations* table lists per model how often it resigned (and the share of its games), how often it *resigned while not losing* and how often it *won by resignation* (its opponent resigned).

@@ -76,7 +76,9 @@ public class MoveAttemptService {
             row.reasoningEffort = attempt.reasoningEffort();
             OpenRouterService.LlmResponse response = attempt.response();
             if (response != null) {
-                row.promptTokens = response.promptTokens() > 0 ? response.promptTokens() : null;
+                row.promptTokens = response.promptTokensReported() ? response.promptTokens() : null;
+                row.cachedPromptTokens = response.cachedPromptTokens();
+                row.cacheWriteTokens = response.cacheWriteTokens();
                 row.completionTokens = response.completionTokens() > 0 ? response.completionTokens() : null;
                 row.reasoningTokens = response.reasoningTokens();
                 row.effectiveMaxOutputTokens = response.effectiveMaxOutputTokens();

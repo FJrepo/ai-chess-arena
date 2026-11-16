@@ -180,6 +180,25 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       ),
   );
 
+  readonly cacheExplanation =
+    'All attempts with usage in finished, non-bye games; hit rate = cached / prompt tokens, savings use current catalog read prices; incomplete counters or unknown prices are n/a.';
+
+  cacheRows = computed(() =>
+    [...(this.comparison()?.models ?? [])].sort(
+      (a, b) =>
+        (b.promptCaching?.cacheHitRate ?? -1) - (a.promptCaching?.cacheHitRate ?? -1) ||
+        a.modelId.localeCompare(b.modelId),
+    ),
+  );
+
+  cacheTokens(value: number | null | undefined): string {
+    return value == null ? 'n/a' : formatNumber(value, 'en-US', '1.0-0');
+  }
+
+  cacheSavings(value: number | null | undefined): string {
+    return value == null ? 'n/a' : '$' + formatNumber(value, 'en-US', '1.2-6');
+  }
+
   /** Models that resigned or won by resignation, most resignations first. */
   resignationRows = computed(() =>
     (this.comparison()?.models ?? [])

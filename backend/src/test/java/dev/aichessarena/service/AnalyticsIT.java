@@ -103,8 +103,11 @@ class AnalyticsIT {
             bye.result = Game.GameResult.WHITE_WINS;
             bye.blackPlayerName = "BYE";
             gameRepository.persist(bye);
+            attempt(bye, 1, "WHITE", 1, "model-alpha", Outcome.ACCEPTED, "0");
 
-            gameRepository.persist(game(tournament, alpha, beta, 3, GameStatus.WAITING, now.minusDays(1), null));
+            Game waiting = game(tournament, alpha, beta, 3, GameStatus.WAITING, now.minusDays(1), null);
+            gameRepository.persist(waiting);
+            attempt(waiting, 1, "WHITE", 1, "model-alpha", Outcome.DISCARDED, "0");
             return tournament.id;
         });
     }
@@ -182,6 +185,25 @@ class AnalyticsIT {
         return participant;
     }
 
+    @Test
+    void promptCachingUsesAllAttemptsInFinishedGamesAndExcludesOtherWindowsByesAndWaitingGames() {
+        given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
+                .when().get("/api/analytics/comparison").then().statusCode(200)
+                .body("models.find { it.modelId == 'model-alpha' }.promptCaching.promptTokens", equalTo(300))
+                .body("models.find { it.modelId == 'model-alpha' }.promptCaching.cachedPromptTokens", equalTo(240))
+                .body("models.find { it.modelId == 'model-alpha' }.promptCaching.cacheHitRate", equalTo(0.8f))
+                .body("models.find { it.modelId == 'model-alpha' }.promptCaching.cacheWriteTokens", equalTo(60))
+                .body("models.find { it.modelId == 'model-alpha' }.promptCaching.estimatedSavingsUsd",
+                        org.hamcrest.Matchers.nullValue())
+                .body("models.find { it.modelId == 'model-beta' }.promptCaching.promptTokens", equalTo(100))
+                .body("models.find { it.modelId == 'model-beta' }.promptCaching.cachedPromptTokens",
+                        org.hamcrest.Matchers.nullValue())
+                .body("models.find { it.modelId == 'model-beta' }.promptCaching.cacheHitRate",
+                        org.hamcrest.Matchers.nullValue())
+                .body("models.find { it.modelId == 'model-beta' }.promptCaching.cacheWriteTokens",
+                        org.hamcrest.Matchers.nullValue());
+    }
+
     private Game game(
             Tournament tournament,
             TournamentParticipant white,
@@ -247,6 +269,11 @@ class AnalyticsIT {
         attempt.modelId = modelId;
         attempt.outcome = outcome;
         attempt.costUsd = new BigDecimal(cost);
+        attempt.promptTokens = 100;
+        if ("model-alpha".equals(modelId)) {
+            attempt.cachedPromptTokens = 80;
+            attempt.cacheWriteTokens = 20;
+        }
         attempt.createdAt = game.createdAt;
         attemptRepository.persist(attempt);
     }

@@ -52,6 +52,13 @@ public class MoveAttempt extends PanacheEntityBase {
     @Column(name = "prompt_tokens")
     public Integer promptTokens;
 
+    /** Null when the provider did not report cache usage, including attempts recorded before V17. */
+    @Column(name = "cached_prompt_tokens")
+    public Integer cachedPromptTokens;
+
+    @Column(name = "cache_write_tokens")
+    public Integer cacheWriteTokens;
+
     @Column(name = "completion_tokens")
     public Integer completionTokens;
 

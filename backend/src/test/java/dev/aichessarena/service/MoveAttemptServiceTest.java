@@ -157,6 +157,38 @@ class MoveAttemptServiceTest {
         assertTrue(fixture.attempts.persisted.isEmpty());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(Outcome.class)
+    void everyOutcomeKeepsCacheUsageAndReportedCost(Outcome outcome) throws Exception {
+        Fixture fixture = new Fixture(BigDecimal.ZERO);
+        var response = new LlmResponse("e4", 100, 10, 0.001, 100, "{}", false, null)
+                .withUsage(new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                        {"prompt_tokens":100,"completion_tokens":10,"cost":0.001,
+                        "prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":0}}
+                        """));
+        fixture.service.record(attempt(fixture.game.id, outcome, "e4", response));
+        MoveAttempt stored = fixture.attempts.persisted.getFirst();
+        assertEquals(80, stored.cachedPromptTokens);
+        assertEquals(0, stored.cacheWriteTokens);
+        assertEquals(0, new BigDecimal("0.001").compareTo(stored.costUsd));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"null,null", "0,0", "100,100"})
+    void promptUsageDistinguishesMissingFromReportedZeroEvenWhenCacheCountersExist(String prompt, String expected)
+            throws Exception {
+        Fixture fixture = new Fixture(BigDecimal.ZERO);
+        var response = new LlmResponse("e4", 0, 0, null, 100, "{}", false, null)
+                .withUsage(new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                        {"prompt_tokens":%s,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}
+                        """.formatted(prompt))).withOutputTokenLimits(16384, null);
+        fixture.service.record(attempt(fixture.game.id, Outcome.ACCEPTED, "e4", response));
+        var stored = fixture.attempts.persisted.getFirst();
+        assertEquals("null".equals(expected) ? null : Integer.valueOf(expected), stored.promptTokens);
+        assertEquals(0, stored.cachedPromptTokens);
+        assertEquals(0, stored.cacheWriteTokens);
+    }
+
     private static MoveAttemptService.AttemptRecord attempt(UUID gameId, Outcome outcome, String move,
                                                             LlmResponse response) {
         return new MoveAttemptService.AttemptRecord(gameId, 3, "BLACK", 2, "model-b", outcome, move, null, response);

@@ -13,6 +13,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.net.URI;
+import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -224,13 +225,13 @@ public class OpenRouterService {
 
             if (response.statusCode() != 200) {
                 LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
-                return LlmResponse.providerFailure(
+                return withReportedUsage(LlmResponse.providerFailure(
                         classifyHttpStatus(response.statusCode()),
                         response.statusCode(),
                         describeHttpFailure(response.statusCode(), response.body()),
                         elapsed,
                         response.body()
-                );
+                ), response.body());
             }
 
             return parseCompletion(modelId, response.body(), elapsed);
@@ -297,33 +298,53 @@ public class OpenRouterService {
                 || json.path("choices").isEmpty()) {
             String providerMessage = json == null ? null : json.path("error").path("message").asText(null);
             LOG.warnf("OpenRouter returned no choices for model %s: %s", modelId, providerMessage);
-            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+            return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
                     providerMessage == null
                             ? "OpenRouter returned a response without choices"
                             : "OpenRouter upstream error: " + abbreviate(providerMessage),
-                    elapsed, responseBody);
+                    elapsed, responseBody), responseBody);
         }
         JsonNode message = json.path("choices").get(0).path("message");
         if (!message.isObject()) {
             LOG.warnf("OpenRouter returned a choice without a message object for model %s", modelId);
-            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
-                    "OpenRouter returned a malformed choice", elapsed, responseBody);
+            return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                    "OpenRouter returned a malformed choice", elapsed, responseBody), responseBody);
         }
         String content = message.path("content").asText(null);
         String finishReason = json.path("choices").get(0).path("finish_reason").asText(null);
-        JsonNode reasoningNode = json.at("/usage/completion_tokens_details/reasoning_tokens");
-        Integer reasoningTokens = reasoningNode.isNumber() ? reasoningNode.asInt() : null;
-        int promptTokens = json.at("/usage/prompt_tokens").asInt(0);
-        int completionTokens = json.at("/usage/completion_tokens").asInt(0);
+        return new LlmResponse(content, 0, 0, null, elapsed, responseBody, false, null,
+                ProviderOutcome.OK, 200, finishReason, null).withUsage(json.path("usage"));
+    }
 
-        // Try to get cost from response, or leave null
-        Double cost = null;
-        if (json.has("usage") && json.get("usage").has("cost")) {
-            cost = json.get("usage").get("cost").asDouble();
+    /** Error responses can also contain billable usage. A non-JSON error has no usable counters. */
+    private LlmResponse withReportedUsage(LlmResponse response, String body) {
+        try {
+            JsonNode json = objectMapper.readTree(body);
+            return json == null ? response : response.withUsage(json.path("usage"));
+        } catch (IOException e) {
+            return response;
         }
+    }
 
-        return new LlmResponse(content, promptTokens, completionTokens, cost, elapsed, responseBody, false, null,
-                ProviderOutcome.OK, 200, finishReason, reasoningTokens);
+    /** Current catalog estimate per cached input token; never used to replace OpenRouter's billed cost. */
+    BigDecimal cacheReadSavingsPerToken(String modelId) {
+        JsonNode model = catalogEntry(modelId);
+        if (model == null) {
+            return null;
+        }
+        JsonNode pricing = model.path("pricing");
+        BigDecimal input = nonNegativePrice(pricing.path("prompt"));
+        BigDecimal read = nonNegativePrice(pricing.path("input_cache_read"));
+        return input == null || read == null ? null : input.subtract(read);
+    }
+
+    private static BigDecimal nonNegativePrice(JsonNode node) {
+        try {
+            BigDecimal price = new BigDecimal(node.asText(""));
+            return price.signum() < 0 ? null : price;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime,
@@ -1061,8 +1082,36 @@ public class OpenRouterService {
             String finishReason,
             Integer reasoningTokens,
             Integer effectiveMaxOutputTokens,
-            Integer modelMaxCompletionTokens
+            Integer modelMaxCompletionTokens,
+            Integer cachedPromptTokens,
+            Integer cacheWriteTokens,
+            boolean promptTokensReported
     ) {
+        public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
+                           long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage,
+                           ProviderOutcome outcome, int httpStatus, String finishReason, Integer reasoningTokens,
+                           Integer effectiveMaxOutputTokens, Integer modelMaxCompletionTokens) {
+            this(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse, timedOut,
+                    errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effectiveMaxOutputTokens,
+                    modelMaxCompletionTokens, null, null, promptTokens > 0);
+        }
+
+        LlmResponse withUsage(JsonNode usage) {
+            Double cost = finiteNumber(usage.path("cost"));
+            return new LlmResponse(content, usage.path("prompt_tokens").asInt(0),
+                    usage.path("completion_tokens").asInt(0), cost, responseTimeMs, rawResponse, timedOut,
+                    errorMessage, outcome, httpStatus, finishReason,
+                    tokenCount(usage.path("completion_tokens_details").path("reasoning_tokens")),
+                    effectiveMaxOutputTokens, modelMaxCompletionTokens,
+                    tokenCount(usage.path("prompt_tokens_details").path("cached_tokens")),
+                    tokenCount(usage.path("prompt_tokens_details").path("cache_write_tokens")),
+                    tokenCount(usage.path("prompt_tokens")) != null);
+        }
+
+        private static Integer tokenCount(JsonNode node) {
+            return node.isIntegralNumber() && node.canConvertToInt() && node.intValue() >= 0 ? node.intValue() : null;
+        }
+
         public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
                            long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage,
                            ProviderOutcome outcome, int httpStatus, String finishReason, Integer reasoningTokens) {
@@ -1072,7 +1121,8 @@ public class OpenRouterService {
 
         LlmResponse withOutputTokenLimits(int effective, Integer maximum) {
             return new LlmResponse(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse,
-                    timedOut, errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effective, maximum);
+                    timedOut, errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effective, maximum,
+                    cachedPromptTokens, cacheWriteTokens, promptTokensReported);
         }
 
         public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,

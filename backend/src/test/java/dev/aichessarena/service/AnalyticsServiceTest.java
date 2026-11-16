@@ -617,6 +617,85 @@ class AnalyticsServiceTest {
         assertEquals(0.5, ResignationAnalysis.winChanceAtResignation(List.of(), "WHITE"));
     }
 
+    @Test
+    void promptCachingAggregatesAttemptsInFinishedNonByeGamesAndUsesTokenWeightedRate() {
+        Game recent = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        Game unfinished = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.PAUSED);
+        Game old = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY.minusDays(40));
+        Game bye = finishedGame("model.alpha", null, Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        bye.blackPlayerName = "BYE";
+        bye.blackParticipant = null;
+        AnalyticsService service = service(List.of(recent, unfinished, old, bye), List.of(), List.of());
+        FakeMoveAttemptRepository attempts = (FakeMoveAttemptRepository) service.moveAttemptRepository;
+        attempts.usage = List.of(
+                usage(recent, " model.alpha ", 100, 80, 20),
+                usage(recent, "model.alpha", 300, 0, 100),
+                usage(recent, "model.beta", 0, 0, 0),
+                usage(unfinished, "model.alpha", 10000, 10000, 0),
+                usage(old, "model.alpha", 10000, 10000, 0),
+                usage(bye, "model.alpha", 10000, 10000, 0));
+        var response = service.getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").promptCaching();
+        assertEquals(400L, alpha.promptTokens());
+        assertEquals(80L, alpha.cachedPromptTokens());
+        assertEquals(0.2, alpha.cacheHitRate().doubleValue(), 0.000001);
+        assertEquals(120L, alpha.cacheWriteTokens());
+        assertEquals(0, new BigDecimal("0.000216").compareTo(alpha.estimatedSavingsUsd()));
+        var beta = row(response, "model.beta").promptCaching();
+        assertEquals(0L, beta.cachedPromptTokens());
+        assertEquals(0L, beta.cacheWriteTokens());
+        assertNull(beta.cacheHitRate(), "zero denominator is unknown");
+        assertNull(beta.estimatedSavingsUsd(), "unknown catalog prices, even with zero cache reads");
+    }
+
+    @Test
+    void promptCachingDoesNotTreatLegacyOrPartiallyReportedCountersAsZero() {
+        Game game = finishedGame("model.alpha", "model.legacy", Game.GameResult.DRAW, null, YESTERDAY);
+        AnalyticsService service = service(List.of(game), List.of(), List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                usage(game, "model.alpha", 100, 80, 10),
+                usage(game, "model.alpha", 200, null, null));
+        var response = service.getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").promptCaching();
+        assertEquals(300L, alpha.promptTokens());
+        assertNull(alpha.cachedPromptTokens());
+        assertNull(alpha.cacheWriteTokens());
+        assertNull(alpha.cacheHitRate());
+        assertNull(alpha.estimatedSavingsUsd());
+        var legacy = row(response, "model.legacy").promptCaching();
+        assertNull(legacy.promptTokens());
+        assertNull(legacy.cachedPromptTokens());
+        assertNull(legacy.cacheWriteTokens());
+        assertNull(legacy.cacheHitRate());
+        assertNull(legacy.estimatedSavingsUsd());
+    }
+
+    @Test
+    void promptCachingKeepsReadAndWriteCompletenessIndependentAndDoesNotOverflowIntegerTotals() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        AnalyticsService service = service(List.of(game), List.of(), List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                usage(game, "model.alpha", Integer.MAX_VALUE, 0, null),
+                usage(game, "model.alpha", Integer.MAX_VALUE, 0, 1),
+                usage(game, "model.beta", null, null, 20));
+        var response = service.getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").promptCaching();
+        assertEquals(4294967294L, alpha.promptTokens());
+        assertEquals(0L, alpha.cachedPromptTokens());
+        assertEquals(0, alpha.cacheHitRate().signum());
+        assertEquals(0, alpha.estimatedSavingsUsd().signum());
+        assertNull(alpha.cacheWriteTokens());
+        var beta = row(response, "model.beta").promptCaching();
+        assertNull(beta.promptTokens());
+        assertNull(beta.cacheHitRate());
+        assertEquals(20L, beta.cacheWriteTokens());
+    }
+
+    private MoveAttemptRepository.AttemptUsage usage(Game game, String model, Integer prompt,
+                                                    Integer cached, Integer writes) {
+        return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes);
+    }
+
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
         Move move = move(game, modelId, 1000L, null);
         move.moveNumber = number;
@@ -657,6 +736,12 @@ class AnalyticsServiceTest {
         };
         service.windowLoader = loader;
         service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
+        service.openRouterService = new OpenRouterService() {
+            @Override
+            BigDecimal cacheReadSavingsPerToken(String modelId) {
+                return "model.alpha".equals(modelId) ? new BigDecimal("0.0000027") : null;
+            }
+        };
         return service;
     }
 
@@ -784,6 +869,13 @@ class AnalyticsServiceTest {
         @Override
         public List<RejectedAttemptCost> findRejectedCostsByTournamentId(UUID tournamentId) {
             return costs;
+        }
+
+        private List<AttemptUsage> usage = List.of();
+
+        @Override
+        public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            return usage;
         }
 
         private List<MoveAttemptRepository.ResignationTurnAttempt> resignationAttempts = List.of();
