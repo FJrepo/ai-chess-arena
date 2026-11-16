@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
@@ -18,11 +19,16 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -395,6 +401,72 @@ class StockfishServiceTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"true, true", "true, false", "false, true", "false, false"})
+    @EnabledIfSystemProperty(named = "file.separator", matches = "/")
+    @Timeout(15)
+    void realProcessCleanupTerminatesDescendantsAndIoThreads(boolean handshake, boolean timeout) throws Exception {
+        Set<Thread> existingThreads = Thread.getAllStackTraces().keySet();
+        Process process = new ProcessBuilder("/bin/sh", "-c",
+                handshake ? "sleep 60 & wait" : "sleep 60 & printf 'uciok\\n'; wait")
+                .redirectErrorStream(true).start();
+        var service = new TestService(process);
+        service.handshakeTimeout = Duration.ofSeconds(timeout ? 1 : 60);
+        service.evaluationTimeout = Duration.ofSeconds(timeout ? 1 : 60);
+        List<ProcessHandle> descendants = List.of();
+        try {
+            awaitCondition(() -> process.descendants().findAny().isPresent(), "Shell must fork a child");
+            descendants = process.descendants().toList();
+            assertFalse(descendants.isEmpty());
+
+            CompletableFuture<?> current;
+            if (handshake) {
+                current = CompletableFuture.runAsync(service::init);
+            } else {
+                service.init();
+                current = service.evaluate("valid", 12);
+            }
+            awaitCondition(() -> stockfishThreadsSince(existingThreads).anyMatch(thread ->
+                    Arrays.stream(thread.getStackTrace()).anyMatch(frame ->
+                            frame.getClassName().equals(BufferedReader.class.getName())
+                                    && frame.getMethodName().equals("readLine"))),
+                    "Protocol thread must block reading the real process pipe");
+
+            if (!timeout) CompletableFuture.runAsync(service::cleanup).get(1, TimeUnit.SECONDS);
+            Object result = current.get(3, TimeUnit.SECONDS);
+            if (!handshake) assertNoEvaluation((StockfishService.EvalResult) result);
+            assertFalse(service.status().available());
+            assertTrue(process.waitFor(3, TimeUnit.SECONDS), "Engine process must exit");
+            for (ProcessHandle descendant : descendants) {
+                awaitCondition(() -> !descendant.isAlive(), "Engine descendant must exit");
+            }
+            awaitCondition(() -> stockfishThreadsSince(existingThreads).findAny().isEmpty(),
+                    "stockfish-io and stockfish-close threads must finish");
+        } finally {
+            service.cleanup();
+            // Also clean up after a failing assertion against a broken implementation.
+            descendants.forEach(ProcessHandle::destroyForcibly);
+            process.descendants().forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly();
+            process.waitFor(3, TimeUnit.SECONDS);
+        }
+    }
+
+    private static Stream<Thread> stockfishThreadsSince(Set<Thread> existingThreads) {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> !existingThreads.contains(thread) && thread.isAlive())
+                .filter(thread -> thread.getName().equals("stockfish-io")
+                        || thread.getName().equals("stockfish-close"));
+    }
+
+    private static void awaitCondition(BooleanSupplier condition, String message) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertTrue(condition.getAsBoolean(), message);
+    }
+
     private static void assertStopped(FakeProcess process) throws InterruptedException {
         assertTrue(process.destroyed.await(2, TimeUnit.SECONDS));
         assertFalse(process.isAlive());
@@ -467,6 +539,9 @@ class StockfishServiceTest {
 
         @Override
         public boolean isAlive() { return alive; }
+
+        @Override
+        public Stream<ProcessHandle> descendants() { return Stream.empty(); }
 
         @Override
         public void destroy() { alive = false; destroyed.countDown(); }

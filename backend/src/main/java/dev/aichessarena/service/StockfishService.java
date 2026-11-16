@@ -242,16 +242,34 @@ public class StockfishService {
                 if (active != null) active.cancel(true);
                 io.shutdownNow();
             }
-            // BufferedReader.close() shares the read lock. Close raw pipes on a daemon first;
-            // never make cleanup or the evaluation queue wait for a blocked protocol thread.
+            // Descendants may inherit stdout and keep the protocol read blocked after the engine exits.
+            // BufferedReader.close() shares that read lock, so keep all closing off the caller.
             Thread.ofPlatform().daemon().name("stockfish-close").start(() -> {
-                process.destroyForcibly();
-                close(process.getInputStream());
-                close(process.getOutputStream());
-                close(process.getErrorStream());
-                close(reader);
-                close(writer);
+                try {
+                    terminateDescendants();
+                } finally {
+                    process.destroyForcibly();
+                    close(process.getInputStream());
+                    close(process.getOutputStream());
+                    close(process.getErrorStream());
+                    close(reader);
+                    close(writer);
+                }
             });
+        }
+
+        private void terminateDescendants() {
+            var descendants = process.descendants().toList();
+            descendants.reversed().forEach(ProcessHandle::destroyForcibly);
+            try {
+                // Keep the parent alive briefly so it can reap its children before it is killed.
+                CompletableFuture.allOf(descendants.stream().map(ProcessHandle::onExit)
+                        .toArray(CompletableFuture<?>[]::new)).get(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | TimeoutException e) {
+                LOG.debug("Stockfish descendants did not finish exiting before engine termination.", e);
+            }
         }
 
         private static void close(Closeable stream) {
