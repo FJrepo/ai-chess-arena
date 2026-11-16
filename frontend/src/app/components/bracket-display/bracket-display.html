@@ -31,7 +31,8 @@
                   tone === 'forfeit' ||
                   tone === 'bye' ||
                   (tone === 'ready' && series.currentGame.seriesGameNumber > 1) ||
-                  (tone === 'complete' && series.whiteWins === series.blackWins);
+                  (tone === 'complete' && series.whiteWins === series.blackWins) ||
+                  (series.isComplete && series.roundName === 'Final');
                 <mat-card
                   #matchCard
                   class="match-card"
@@ -90,15 +91,7 @@
                     </div>
                   </div>
 
-                  @if (tone === 'pending') {
-                    <p class="series-context">
-                      @if (!series.whitePlayerName && !series.blackPlayerName) {
-                        Waiting for both players.
-                      } @else {
-                        Waiting for an opponent.
-                      }
-                    </p>
-                  } @else if (showDetail) {
+                  @if (tone === 'pending' || showDetail) {
                     <p class="series-context">{{ series.detailLabel }}</p>
                   }
                   @if (tone === 'paused' && series.currentGame.statusDetail) {
@@ -132,11 +125,7 @@
                         series.currentGame.status === 'COMPLETED' ||
                         series.currentGame.status === 'FORFEIT'
                       ) {
-                        <button
-                          mat-flat-button
-                          color="primary"
-                          (click)="view.emit(series.latestGame)"
-                        >
+                        <button mat-flat-button color="primary" (click)="review(series)">
                           <mat-icon>preview</mat-icon>
                           Review
                         </button>
@@ -156,11 +145,7 @@
                       }
 
                       @if (hasReviewableGame(series) && !series.isComplete) {
-                        <button
-                          mat-button
-                          class="secondary-action"
-                          (click)="view.emit(series.latestGame)"
-                        >
+                        <button mat-button class="secondary-action" (click)="review(series)">
                           <mat-icon>history</mat-icon>
                           Review Previous
                         </button>
@@ -174,21 +159,15 @@
         }
 
         @if (champion) {
-          @let finalSeries = rounds()[rounds().length - 1]?.games?.[0];
-          @let championModelId =
-            finalSeries?.whitePlayerName === champion
-              ? finalSeries?.whiteModelId
-              : finalSeries?.blackPlayerName === champion
-                ? finalSeries?.blackModelId
-                : null;
+          @let championModel = championModelId();
           <div class="round champion-round">
             <h3 class="round-title">Champion</h3>
             <div class="round-matches">
               <div class="champion-card">
                 <mat-icon class="champion-trophy" aria-hidden="true">emoji_events</mat-icon>
                 <span class="champion-name">
-                  @if (championModelId) {
-                    <app-provider-logo [modelId]="championModelId" [size]="18" />
+                  @if (championModel) {
+                    <app-provider-logo [modelId]="championModel" [size]="18" />
                   }
                   {{ champion }}
                 </span>

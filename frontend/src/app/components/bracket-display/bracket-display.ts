@@ -24,25 +24,91 @@ interface ConnectorPath {
   d: string;
 }
 
+/** One side of a game: the bracket participant id when known, otherwise just the name. */
+interface Participant {
+  /** Null for a side without a participant; undefined in data from older backends. */
+  id: string | null | undefined;
+  name: string | null;
+}
+
 interface SeriesCard {
   id: string;
   roundName: string;
   bracketPosition: number;
   bestOf: number;
+  /**
+   * The game being played or up next; once the series is over, its last game.
+   * Drives the start/ready state and the colours shown on the card.
+   */
   currentGame: Game;
-  latestGame: Game;
+  /** The most recent finished (completed or forfeited) game, used for review and result text. */
+  lastFinishedGame: Game | null;
   whitePlayerName: string | null;
+  whiteParticipantId: string | null | undefined;
   whiteModelId: string | null;
   blackPlayerName: string | null;
+  blackParticipantId: string | null | undefined;
   blackModelId: string | null;
+  /** Wins in the regular games (1..bestOf) only, like the backend's series score. */
   whiteWins: number;
   blackWins: number;
+  /** Winner of the first decisive sudden-death game played after the regular games, if any. */
+  tiebreakWinner: Participant | null;
   /** Who advanced from this series, as recorded by the backend (covers draw-policy decisions). */
   advancedName: string | null;
+  advancedParticipantId: string | null | undefined;
   isComplete: boolean;
   stateLabel: string;
   stateTone: 'live' | 'paused' | 'ready' | 'pending' | 'complete' | 'forfeit' | 'bye';
   detailLabel: string;
+}
+
+const BYE_PLAYER_NAME = 'BYE';
+
+function whiteOf(game: Game): Participant {
+  return { id: game.whiteParticipantId, name: game.whitePlayerName };
+}
+
+function blackOf(game: Game): Participant {
+  return { id: game.blackParticipantId, name: game.blackPlayerName };
+}
+
+/**
+ * Same participant: by id when both carry one, so two participants with the same name are never
+ * mixed up. Names are only compared when an id is missing (older backends) or neither side has a
+ * participant; a side without a participant never matches one with a participant.
+ */
+function sameParticipant(a: Participant | null, b: Participant | null): boolean {
+  if (!a || !b) return false;
+  if (a.id && b.id) return a.id === b.id;
+  const idsMissing = a.id === undefined || b.id === undefined || (!a.id && !b.id);
+  return idsMissing && !!a.name && a.name === b.name;
+}
+
+/**
+ * A side without a participant. As in the backend, the name is only a fallback when there is no
+ * participant id: a real participant named "BYE" still plays.
+ */
+function isEmptySide(side: Participant): boolean {
+  if (side.id) return false;
+  return !side.name || !side.name.trim() || side.name === BYE_PLAYER_NAME;
+}
+
+function gameWinner(game: Game): Participant | null {
+  switch (game.result) {
+    case 'WHITE_WINS':
+    case 'BLACK_FORFEIT':
+      return whiteOf(game);
+    case 'BLACK_WINS':
+    case 'WHITE_FORFEIT':
+      return blackOf(game);
+    default:
+      return null;
+  }
+}
+
+function isFinished(game: Game): boolean {
+  return game.status === 'COMPLETED' || game.status === 'FORFEIT';
 }
 
 @Component({
@@ -122,20 +188,14 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
 
   canBattle(card: SeriesCard): boolean {
     const game = card.currentGame;
-    return (
-      game.status === 'WAITING' &&
-      !!game.whitePlayerName &&
-      !!game.blackPlayerName &&
-      game.whitePlayerName !== 'BYE' &&
-      game.blackPlayerName !== 'BYE'
-    );
+    return game.status === 'WAITING' && !isEmptySide(whiteOf(game)) && !isEmptySide(blackOf(game));
   }
 
   /** Whether this side won the series (uses the backend's advancement record when available). */
   isSeriesWinner(card: SeriesCard, side: 'white' | 'black'): boolean {
     if (!card.isComplete) return false;
-    const name = side === 'white' ? card.whitePlayerName : card.blackPlayerName;
-    if (card.advancedName) return card.advancedName === name;
+    const advanced = this.advancedOf(card);
+    if (advanced) return sameParticipant(advanced, this.sideOf(card, side));
     return side === 'white' ? card.whiteWins > card.blackWins : card.blackWins > card.whiteWins;
   }
 
@@ -143,38 +203,102 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     return card.isComplete && this.isSeriesWinner(card, side === 'white' ? 'black' : 'white');
   }
 
-  private advancedText(name: string, whiteWins: number, blackWins: number): string {
-    const high = Math.max(whiteWins, blackWins);
-    const low = Math.min(whiteWins, blackWins);
-    return whiteWins === blackWins
-      ? `${name} advances on the draw policy (${high}-${low})`
-      : `${name} advances ${high}-${low}`;
+  /** Model of the champion, taken from the Final's advancing side (by participant when known). */
+  championModelId(): string | null {
+    const rounds = this.rounds();
+    const finalSeries = rounds[rounds.length - 1]?.games?.[0];
+    if (!finalSeries || !this.champion) return null;
+    const advanced = this.advancedOf(finalSeries);
+    if (advanced && finalSeries.isComplete) {
+      if (sameParticipant(advanced, this.sideOf(finalSeries, 'white'))) {
+        return finalSeries.whiteModelId;
+      }
+      if (sameParticipant(advanced, this.sideOf(finalSeries, 'black'))) {
+        return finalSeries.blackModelId;
+      }
+    }
+    if (finalSeries.whitePlayerName === this.champion) return finalSeries.whiteModelId;
+    if (finalSeries.blackPlayerName === this.champion) return finalSeries.blackModelId;
+    return null;
+  }
+
+  private sideOf(card: SeriesCard, side: 'white' | 'black'): Participant {
+    return side === 'white'
+      ? { id: card.whiteParticipantId, name: card.whitePlayerName }
+      : { id: card.blackParticipantId, name: card.blackPlayerName };
+  }
+
+  private advancedOf(card: SeriesCard): Participant | null {
+    if (!card.advancedName && !card.advancedParticipantId) return null;
+    return { id: card.advancedParticipantId, name: card.advancedName };
+  }
+
+  /** The series score with a non-breaking hyphen, so it never wraps. */
+  private scoreText(card: SeriesCard): string {
+    const high = Math.max(card.whiteWins, card.blackWins);
+    const low = Math.min(card.whiteWins, card.blackWins);
+    return `${high}\u2011${low}`;
+  }
+
+  /**
+   * Who advanced (or, in the Final, won the tournament) and the regular-game score. "(x-y)" is
+   * kept on the line of "draw policy" or "tiebreak" so it never wraps.
+   */
+  private advancedText(card: SeriesCard, advanced: Participant): string {
+    const name = advanced.name ?? 'TBD';
+    const isFinal = card.roundName === 'Final';
+    const score = this.scoreText(card);
+    if (card.whiteWins !== card.blackWins) {
+      return `${name} ${isFinal ? 'wins the tournament' : 'advances'} ${score}`;
+    }
+    if (card.tiebreakWinner && sameParticipant(card.tiebreakWinner, advanced)) {
+      const games = card.bestOf === 1 ? '1 game' : `${card.bestOf} games`;
+      const verb = isFinal ? 'wins the tournament on the tiebreak' : 'wins the tiebreak';
+      return `${name} ${verb}\u00a0(${score} after ${games})`;
+    }
+    const verb = isFinal ? 'wins the tournament' : 'advances';
+    return `${name} ${verb} on the draw policy\u00a0(${score})`;
+  }
+
+  /** Regular-game wins of this participant in the series. */
+  private winsOf(card: SeriesCard, participant: Participant): number {
+    if (sameParticipant(participant, this.sideOf(card, 'white'))) return card.whiteWins;
+    if (sameParticipant(participant, this.sideOf(card, 'black'))) return card.blackWins;
+    return 0;
   }
 
   getResultText(card: SeriesCard): string {
-    if (card.advancedName && card.isComplete) {
-      return this.advancedText(card.advancedName, card.whiteWins, card.blackWins);
+    if (card.isComplete) {
+      const advanced = this.advancedOf(card) ?? card.tiebreakWinner;
+      if (advanced) return this.advancedText(card, advanced);
     }
-    const game = card.latestGame;
-    if (!game.result) return '';
+    const game = card.lastFinishedGame;
+    if (!game?.result) return '';
+    const white = whiteOf(game);
+    const black = blackOf(game);
     switch (game.result) {
       case 'WHITE_WINS':
-        return `${game.whitePlayerName} wins ${card.whiteWins}-${card.blackWins}`;
+        return `${white.name} wins ${this.winsOf(card, white)}-${this.winsOf(card, black)}`;
       case 'BLACK_WINS':
-        return `${game.blackPlayerName} wins ${card.blackWins}-${card.whiteWins}`;
+        return `${black.name} wins ${this.winsOf(card, black)}-${this.winsOf(card, white)}`;
       case 'WHITE_FORFEIT':
-        return `${game.whitePlayerName} forfeits`;
+        return `${white.name} forfeits`;
       case 'BLACK_FORFEIT':
-        return `${game.blackPlayerName} forfeits`;
+        return `${black.name} forfeits`;
       case 'DRAW':
         return 'Draw';
       default:
-        return game.result;
+        return game.resultReason || '';
     }
   }
 
   hasReviewableGame(card: SeriesCard): boolean {
-    return card.latestGame.status === 'COMPLETED' || card.latestGame.status === 'FORFEIT';
+    return card.lastFinishedGame !== null;
+  }
+
+  /** Opens the most recent finished game of the series for review. */
+  review(card: SeriesCard): void {
+    if (card.lastFinishedGame) this.view.emit(card.lastFinishedGame);
   }
 
   private onWindowResize = (): void => {
@@ -274,84 +398,72 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       return left.createdAt.localeCompare(right.createdAt);
     });
     const firstGame = orderedGames[0];
-    const currentGame =
-      orderedGames.find(
-        (game) =>
-          game.status === 'WAITING' || game.status === 'IN_PROGRESS' || game.status === 'PAUSED',
-      ) ?? orderedGames[orderedGames.length - 1];
-    const latestGame = orderedGames[orderedGames.length - 1];
+    const lastGame = orderedGames[orderedGames.length - 1];
+    const bestOf = Math.max(1, firstGame.seriesBestOf || 1);
+    const activeGame = orderedGames.find(
+      (game) =>
+        game.status === 'WAITING' || game.status === 'IN_PROGRESS' || game.status === 'PAUSED',
+    );
+    const currentGame = activeGame ?? lastGame;
+    const lastFinishedGame = [...orderedGames].reverse().find(isFinished) ?? null;
 
+    // The card shows the current game's colours. Wins are counted per participant (by id, by name
+    // only for older data), so a later game that swaps colours still credits the right player.
+    // Only the regular games count toward the score, as in the backend; games beyond best-of-N are
+    // sudden-death tiebreaks, and the first decisive one decides the series.
+    const white = whiteOf(currentGame);
+    const black = blackOf(currentGame);
     let whiteWins = 0;
     let blackWins = 0;
+    let tiebreakWinner: Participant | null = null;
     for (const game of orderedGames) {
-      if (!firstGame.whitePlayerName || !firstGame.blackPlayerName) {
-        break;
-      }
-      if (
-        game.result === 'WHITE_WINS' ||
-        game.result === 'BLACK_FORFEIT' ||
-        game.result === 'BLACK_WINS' ||
-        game.result === 'WHITE_FORFEIT'
-      ) {
-        const winnerName =
-          game.result === 'WHITE_WINS' || game.result === 'BLACK_FORFEIT'
-            ? game.whitePlayerName
-            : game.blackPlayerName;
-
-        if (winnerName === firstGame.whitePlayerName) {
-          whiteWins += 1;
-        } else if (winnerName === firstGame.blackPlayerName) {
-          blackWins += 1;
-        }
+      const winner = gameWinner(game);
+      if (!winner) continue;
+      if (game.seriesGameNumber > bestOf) {
+        tiebreakWinner ??= winner;
+      } else if (sameParticipant(winner, white)) {
+        whiteWins += 1;
+      } else if (sameParticipant(winner, black)) {
+        blackWins += 1;
       }
     }
 
-    const advancedName =
-      orderedGames.map((game) => game.advancedPlayerName).find((name) => !!name) ?? null;
-    const isComplete =
-      currentGame === latestGame &&
-      (currentGame.status === 'COMPLETED' || currentGame.status === 'FORFEIT');
-    const sideToMove = this.sideToMoveLabel(currentGame.currentFen);
-    const hasBye = firstGame.whitePlayerName === 'BYE' || firstGame.blackPlayerName === 'BYE';
-    const { stateLabel, stateTone, detailLabel } = this.describeSeriesState(
-      currentGame,
-      latestGame,
-      hasBye,
-      sideToMove,
-      whiteWins,
-      blackWins,
-      advancedName,
+    const decidingGame = orderedGames.find(
+      (game) => !!game.advancedPlayerName || !!game.advancedParticipantId,
     );
+    const isComplete = !activeGame && isFinished(lastGame);
+    const hasBye =
+      isFinished(firstGame) && (isEmptySide(whiteOf(firstGame)) || isEmptySide(blackOf(firstGame)));
 
-    return {
+    const card: SeriesCard = {
       id: firstGame.seriesId || firstGame.id,
       roundName: firstGame.bracketRound || 'Unknown',
       bracketPosition: firstGame.bracketPosition ?? 0,
-      bestOf: firstGame.seriesBestOf,
+      bestOf,
       currentGame,
-      latestGame,
-      whitePlayerName: firstGame.whitePlayerName,
-      whiteModelId: firstGame.whiteModelId,
-      blackPlayerName: firstGame.blackPlayerName,
-      blackModelId: firstGame.blackModelId,
+      lastFinishedGame,
+      whitePlayerName: white.name,
+      whiteParticipantId: white.id,
+      whiteModelId: currentGame.whiteModelId,
+      blackPlayerName: black.name,
+      blackParticipantId: black.id,
+      blackModelId: currentGame.blackModelId,
       whiteWins,
       blackWins,
-      advancedName,
+      tiebreakWinner,
+      advancedName: decidingGame?.advancedPlayerName ?? null,
+      advancedParticipantId: decidingGame?.advancedParticipantId,
       isComplete,
-      stateLabel,
-      stateTone,
-      detailLabel,
+      stateLabel: '',
+      stateTone: 'pending',
+      detailLabel: '',
     };
+    return { ...card, ...this.describeSeriesState(card, hasBye) };
   }
 
   private describeSeriesState(
-    currentGame: Game,
-    latestGame: Game,
+    card: SeriesCard,
     hasBye: boolean,
-    sideToMove: string | null,
-    whiteWins: number,
-    blackWins: number,
-    advancedName: string | null,
   ): Pick<SeriesCard, 'stateLabel' | 'stateTone' | 'detailLabel'> {
     if (hasBye) {
       return {
@@ -361,6 +473,9 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       };
     }
 
+    const currentGame = card.currentGame;
+    const sideToMove = this.sideToMoveLabel(currentGame.currentFen);
+    const isDecidedFinal = card.isComplete && card.roundName === 'Final';
     switch (currentGame.status) {
       case 'IN_PROGRESS':
         return {
@@ -378,41 +493,41 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
             ? `${sideToMove} to move when resumed.`
             : `Game ${currentGame.seriesGameNumber} is paused.`,
         };
-      case 'WAITING':
+      case 'WAITING': {
+        const bothPlayersSet =
+          !isEmptySide(whiteOf(currentGame)) && !isEmptySide(blackOf(currentGame));
+        let detailLabel: string;
+        if (!bothPlayersSet) {
+          detailLabel = 'Waiting for the previous round.';
+        } else if (card.lastFinishedGame) {
+          detailLabel = `Game ${currentGame.seriesGameNumber} is next. Review the previous result below.`;
+        } else {
+          detailLabel = `Game ${currentGame.seriesGameNumber} can start when you're ready.`;
+        }
         return {
-          stateLabel:
-            currentGame.whitePlayerName && currentGame.blackPlayerName ? 'Ready' : 'Pending',
-          stateTone:
-            currentGame.whitePlayerName && currentGame.blackPlayerName ? 'ready' : 'pending',
-          detailLabel:
-            latestGame !== currentGame &&
-            (latestGame.status === 'COMPLETED' || latestGame.status === 'FORFEIT')
-              ? `Game ${currentGame.seriesGameNumber} is next. Review the previous result below.`
-              : `Game ${currentGame.seriesGameNumber} can start when you're ready.`,
+          stateLabel: bothPlayersSet ? 'Ready' : 'Pending',
+          stateTone: bothPlayersSet ? 'ready' : 'pending',
+          detailLabel,
         };
+      }
       case 'FORFEIT':
         return {
           stateLabel: gameStatusLabel(currentGame.status),
           stateTone: 'forfeit',
-          detailLabel: currentGame.resultReason || 'Series ended by forfeit.',
+          detailLabel:
+            (isDecidedFinal && this.getResultText(card)) ||
+            currentGame.resultReason ||
+            'Series ended by forfeit.',
         };
       case 'COMPLETED':
       default:
         return {
           stateLabel: gameStatusLabel('COMPLETED'),
           stateTone: 'complete',
-          detailLabel:
-            this.completedDetailLabel(
-              currentGame,
-              latestGame,
-              whiteWins,
-              blackWins,
-              advancedName,
-            ) || 'Series complete.',
+          detailLabel: this.getResultText(card) || 'Series complete.',
         };
     }
   }
-
   private sideToMoveLabel(fen: string | null | undefined): string | null {
     if (!fen) {
       return null;
@@ -425,31 +540,5 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       return 'Black';
     }
     return null;
-  }
-
-  private completedDetailLabel(
-    currentGame: Game,
-    latestGame: Game,
-    whiteWins: number,
-    blackWins: number,
-    advancedName: string | null,
-  ): string {
-    if (advancedName) {
-      return this.advancedText(advancedName, whiteWins, blackWins);
-    }
-    switch (latestGame.result) {
-      case 'WHITE_WINS':
-        return `${currentGame.whitePlayerName} wins ${whiteWins}-${blackWins}`;
-      case 'BLACK_WINS':
-        return `${currentGame.blackPlayerName} wins ${blackWins}-${whiteWins}`;
-      case 'WHITE_FORFEIT':
-        return `${currentGame.whitePlayerName} forfeits`;
-      case 'BLACK_FORFEIT':
-        return `${currentGame.blackPlayerName} forfeits`;
-      case 'DRAW':
-        return 'Draw';
-      default:
-        return latestGame.resultReason || '';
-    }
   }
 }

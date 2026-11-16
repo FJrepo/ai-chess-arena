@@ -67,7 +67,7 @@ describe('TournamentBracket champion', () => {
 
     expect(el.querySelector('.champion-card')?.textContent).toContain('Black');
     expect(el.querySelector('.series-context')?.textContent).toContain(
-      'Black advances on the draw policy (0-0)',
+      'Black wins the tournament on the draw policy\u00a0(0\u20110)',
     );
   });
 });
