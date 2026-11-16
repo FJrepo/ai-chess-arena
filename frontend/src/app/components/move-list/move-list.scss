@@ -1,63 +1,92 @@
+// Sizes to its content; the host caps the height (100% of a sized host, or
+// --move-list-max-height) and the list scrolls inside.
+// --move-cell-min fits the longest SAN (7 characters, e.g. `exd8=Q+`) plus a retry badge, so a
+// notation cell never shrinks below its content and runs into the next move.
+:host {
+  --move-cell-min: 6.75rem;
+
+  display: block;
+}
+
 .move-list-card {
-  height: auto;
+  max-height: 100%;
+  min-height: 0;
+
+  mat-card-title {
+    font: var(--mat-sys-title-medium);
+  }
+
+  mat-card-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 12px;
+  }
 }
 
 .move-list-scroll {
-  min-height: 180px;
-  max-height: 26vh;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: var(--move-list-max-height, none);
   overflow-y: auto;
   padding-right: 4px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
   align-content: start;
 }
 
+// One move pair per row, read top to bottom.
 .move-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 8px;
+  grid-template-columns: 2rem minmax(var(--move-cell-min), 1fr) minmax(var(--move-cell-min), 1fr);
+  gap: 4px;
+  padding: 2px 4px;
   align-items: center;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 20%, transparent);
+  border-radius: 8px;
 }
 
 .move-number {
-  min-width: 28px;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
-  font-size: 0.85em;
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
   text-align: right;
+  padding-right: 4px;
 }
 
 .move {
-  padding: 2px 8px;
-  border-radius: 7px;
+  padding: 3px 8px;
+  border-radius: 6px;
   cursor: pointer;
-  font-family: monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.875rem;
   font-weight: 600;
   min-width: 0;
-  text-align: center;
   white-space: nowrap;
 
   &:hover {
-    background-color: color-mix(in srgb, var(--mat-sys-primary) 12%, transparent);
+    background-color: color-mix(in srgb, var(--mat-sys-on-surface) 8%, transparent);
   }
 
   &.active {
-    background-color: color-mix(in srgb, var(--mat-sys-primary) 22%, transparent);
-    color: var(--mat-sys-primary);
+    background-color: var(--mat-sys-secondary-container);
+    color: var(--mat-sys-on-secondary-container);
   }
 }
 
 .retry-badge {
   display: inline-block;
-  background: #ff9800;
-  color: white;
-  border-radius: 50%;
-  width: 16px;
+  box-sizing: border-box;
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+  font-family: var(--mat-sys-label-small-font);
+  border-radius: 999px;
+  min-width: 16px;
   height: 16px;
+  padding: 0 3px;
   font-size: 0.7em;
   text-align: center;
   line-height: 16px;
@@ -66,9 +95,10 @@
 }
 
 .empty-state {
+  grid-column: 1 / -1;
   text-align: center;
-  padding: 24px;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+  padding: 16px;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .move-list-card.compact {
