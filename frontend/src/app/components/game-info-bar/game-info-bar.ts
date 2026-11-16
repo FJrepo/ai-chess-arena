@@ -9,6 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { Game } from '../../models/tournament.model';
 import { CurrencyPipe } from '@angular/common';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
+import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
 
 @Component({
   selector: 'app-game-info-bar',
@@ -33,6 +34,9 @@ export class GameInfoBar {
   @Input() saving = false;
   /** Emits the new output-token limit; the parent saves it and resumes the game. */
   @Output() raiseLimitAndResume = new EventEmitter<number>();
+
+  /** Reader-facing status label for the chip. */
+  readonly statusLabel = gameStatusLabel;
 
   static readonly MIN_OUTPUT_TOKENS = 128;
   static readonly MAX_OUTPUT_TOKENS = 32768;
@@ -95,7 +99,8 @@ export class GameInfoBar {
 
   getResultText(): string {
     if (!this.game.result) return '';
-    const reason = this.game.resultReason ? ` (${this.game.resultReason})` : '';
+    const phrase = resultReasonLabel(this.game.resultReason);
+    const reason = phrase ? ` ${phrase}` : '';
     switch (this.game.result) {
       case 'WHITE_WINS':
         return `${this.game.whitePlayerName} wins${reason}`;

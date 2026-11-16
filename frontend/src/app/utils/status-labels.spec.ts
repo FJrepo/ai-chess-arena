@@ -1,4 +1,9 @@
-import { gameStatusLabel, humanizeStatus, tournamentStatusLabel } from './status-labels';
+import {
+  gameStatusLabel,
+  humanizeStatus,
+  resultReasonLabel,
+  tournamentStatusLabel,
+} from './status-labels';
 
 describe('tournamentStatusLabel', () => {
   it('maps every known tournament status to a readable label', () => {
@@ -40,5 +45,21 @@ describe('humanizeStatus', () => {
 
   it('collapses separators and whitespace', () => {
     expect(humanizeStatus('  waiting__for-PLAYERS ')).toBe('Waiting for players');
+  });
+});
+
+describe('resultReasonLabel', () => {
+  it('phrases known result reasons', () => {
+    expect(resultReasonLabel('RESIGNATION')).toBe('by resignation');
+    expect(resultReasonLabel('CHECKMATE')).toBe('by checkmate');
+    expect(resultReasonLabel('TIMEOUT')).toBe('on time');
+    expect(resultReasonLabel('FIFTY_MOVE')).toBe('by the fifty-move rule');
+  });
+
+  it('humanizes unknown reasons and drops a missing one', () => {
+    expect(resultReasonLabel('MUTUAL_AGREEMENT')).toBe('by mutual agreement');
+    expect(resultReasonLabel(null)).toBe('');
+    expect(resultReasonLabel(undefined)).toBe('');
+    expect(resultReasonLabel(' ')).toBe('');
   });
 });

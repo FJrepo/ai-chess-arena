@@ -34,6 +34,9 @@ html {
   );
   /* Light: a soft lift, so hero surfaces don't look smudged on the pale page. */
   --app-surface-shadow: 0 8px 24px color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent);
+  // Board squares, shared by the board and the captured-pieces trays (same in both themes).
+  --app-board-light-square: #f0d9b5;
+  --app-board-dark-square: #b58863;
 }
 
 :root[data-theme='dark'],
