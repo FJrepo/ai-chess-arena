@@ -7,11 +7,23 @@
   gap: 8px;
 }
 
+// The Model field keeps at least 280 px; in a narrow window Provider and Sort wrap below it.
 .picker-row {
-  display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(150px, 1fr) minmax(150px, 0.9fr);
-  gap: 16px;
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+}
+
+.model-field {
+  flex: 2.2 1 280px;
+  min-width: 280px;
+}
+
+.provider-field,
+.sort-field {
+  flex: 1 1 150px;
+  min-width: 150px;
 }
 
 .filter-row {

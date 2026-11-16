@@ -74,6 +74,25 @@ describe('ModelPicker', () => {
     expect(picker.matches()).toHaveLength(4);
   });
 
+  it('lists a "latest" alias under its provider, after the concrete models, with a note', () => {
+    const alias = catalogModel('~openai/gpt-astra-latest', {
+      name: 'OpenAI: GPT Astra Latest',
+      provider: 'openai',
+      releasedAt: '2026-11-15',
+    });
+    const picker = render([alias, ...catalog]).componentInstance;
+
+    expect(picker.providers().map((option) => option.provider)).toEqual([
+      'openai',
+      'anthropic',
+      'inclusionai',
+    ]);
+    expect(picker.groups()[0].models).toEqual([gpt6, gpt5, alias]);
+    expect(picker.metaLine(alias)).toMatch(/^Latest alias · 2026-11-15/);
+    expect(picker.aliasNote(alias)).toContain('Moving alias');
+    expect(picker.aliasNote(gpt6)).toBeNull();
+  });
+
   it('suggests matches for every typed word', () => {
     const picker = render().componentInstance;
 

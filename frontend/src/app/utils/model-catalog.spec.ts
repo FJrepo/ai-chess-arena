@@ -9,6 +9,7 @@ import {
   formatTokenCount,
   groupByProvider,
   isFreeModel,
+  isLatestAlias,
   matchesQuery,
   modelMetaParts,
   providerOptions,
@@ -205,6 +206,49 @@ describe('model catalog grouping', () => {
   });
 });
 
+describe('model catalog latest aliases', () => {
+  const alias = catalogModel('~anthropic/claude-sonnet-latest', {
+    name: 'Anthropic: Claude Sonnet Latest',
+    provider: 'anthropic',
+    releasedAt: '2026-11-15',
+    promptPricePerMillion: 3,
+    completionPricePerMillion: 15,
+    intelligenceIndex: 70,
+  });
+  // An older backend still reports "~anthropic" as the provider.
+  const legacyAlias = catalogModel('~openai/gpt-astra-latest', {
+    name: 'OpenAI: GPT Astra Latest',
+    provider: '~openai',
+  });
+
+  it('recognises ids starting with "~"', () => {
+    expect(isLatestAlias(alias)).toBe(true);
+    expect(isLatestAlias(sonnet)).toBe(false);
+  });
+
+  it('puts aliases into the real provider group and filter', () => {
+    const models = [alias, legacyAlias, sonnet, gpt];
+    expect(providerOptions(models, ['openai', 'anthropic'])).toEqual([
+      { provider: 'openai', label: 'OpenAI', count: 2 },
+      { provider: 'anthropic', label: 'Anthropic', count: 2 },
+    ]);
+    expect(filterModels(models, { ...noFilters, provider: 'openai' })).toEqual([legacyAlias, gpt]);
+    expect(matchesQuery(alias, 'anthropic latest')).toBe(true);
+  });
+
+  it('sorts aliases after concrete models within a group, whatever the sort', () => {
+    for (const sort of ['newest', 'cheapest', 'intelligence'] as const) {
+      const groups = groupByProvider(sortModels([alias, sonnet], sort), ['anthropic']);
+      expect(groups[0].models).toEqual([sonnet, alias]);
+    }
+  });
+
+  it('marks aliases in the meta line', () => {
+    expect(modelMetaParts(alias)[0]).toBe('Latest alias');
+    expect(modelMetaParts(sonnet)).not.toContain('Latest alias');
+  });
+});
+
 describe('model catalog formatting', () => {
   it('shows n/a instead of 0 or NaN for missing values', () => {
     for (const missing of [null, undefined, Number.NaN]) {
@@ -225,6 +269,13 @@ describe('model catalog formatting', () => {
     expect(formatPrice(0.1)).toBe('$0.10');
     expect(formatPrice(0.075)).toBe('$0.075');
     expect(formatPrice(0.01)).toBe('$0.01');
+    expect(formatPrice(0.5)).toBe('$0.50');
+    expect(formatPrice(15)).toBe('$15.00');
+    expect(formatPrice(0.05)).toBe('$0.05');
+    expect(formatPrice(0.0002)).toBe('$0.0002');
+    // 0.0000001 per token x 1M is 0.09999999999999999 in floating point.
+    expect(formatPrice(0.0000001 * 1_000_000)).toBe('$0.10');
+    expect(formatPrice(0.00000001 * 1_000_000)).toBe('$0.01');
     expect(formatTokenCount(128_000)).toBe('128K');
     expect(formatTokenCount(1_048_576)).toBe('1M');
     expect(formatTokenCount(1_800_000)).toBe('1.8M');

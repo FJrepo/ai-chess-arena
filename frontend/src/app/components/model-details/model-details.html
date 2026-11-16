@@ -3,12 +3,21 @@
   <header class="details-head">
     <app-provider-logo [provider]="m.provider" [modelId]="m.id" [size]="26" />
     <div class="details-title">
-      <span class="details-name">{{ m.name }}</span>
+      <span class="details-name">
+        {{ m.name }}
+        @if (latestAlias()) {
+          <span class="alias-badge">{{ latestAliasLabel }}</span>
+        }
+      </span>
       <span class="details-id"
         ><span class="mono">{{ m.id }}</span> · {{ providerName() }}</span
       >
     </div>
   </header>
+
+  @if (latestAlias()) {
+    <p class="alias-note">{{ latestAliasNote }}</p>
+  }
 
   <dl class="details-facts">
     @for (fact of facts(); track fact.label) {

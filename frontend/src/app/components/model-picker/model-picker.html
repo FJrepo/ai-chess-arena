@@ -38,7 +38,7 @@
               <span class="group-count">{{ group.models.length }}</span>
             </span>
             @for (option of group.models; track option.id) {
-              <mat-option [value]="option">
+              <mat-option [value]="option" [attr.title]="aliasNote(option)">
                 <span class="option-text">
                   <span class="option-title">{{ option.name }}</span>
                   <span class="option-meta">{{ metaLine(option) }}</span>

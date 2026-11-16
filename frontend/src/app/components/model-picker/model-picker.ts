@@ -12,6 +12,8 @@ import {
   ModelSort,
   filterModels,
   groupByProvider,
+  isLatestAlias,
+  LATEST_ALIAS_NOTE,
   modelMetaParts,
   providerOptions,
   sortModels,
@@ -98,6 +100,11 @@ export class ModelPicker {
 
   metaLine(option: OpenRouterModelOption): string {
     return modelMetaParts(option).join(' · ');
+  }
+
+  /** Tooltip explaining a moving "latest" alias; null for concrete models. */
+  aliasNote(option: OpenRouterModelOption): string | null {
+    return isLatestAlias(option) ? LATEST_ALIAS_NOTE : null;
   }
 
   /** Typed text; option selections arrive through {@link onSelected}. */

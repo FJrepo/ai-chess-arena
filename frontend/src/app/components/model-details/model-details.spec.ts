@@ -26,11 +26,12 @@ describe('ModelDetails', () => {
       name: 'Anthropic: Claude Haiku 5.5',
       provider: 'anthropic',
       contextLength: 1_000_000,
-      promptPricePerMillion: 0.1,
+      // As the backend computes them from per-token prices (0.09999999999999999 and 0.01).
+      promptPricePerMillion: 0.0000001 * 1_000_000,
       completionPricePerMillion: 0.5,
       featured: true,
       releasedAt: '2026-10-07',
-      cacheReadPricePerMillion: 0.01,
+      cacheReadPricePerMillion: 0.00000001 * 1_000_000,
       maxCompletionTokens: 128_000,
       reasoningSupported: true,
       reasoningMandatory: false,
@@ -75,6 +76,43 @@ describe('ModelDetails', () => {
     expect(element.querySelector('.details-description')?.textContent?.trim()).toBe(
       'Description: n/a',
     );
+  });
+
+  it('marks a moving "latest" alias and explains it', () => {
+    const element = render({
+      id: '~anthropic/claude-sonnet-latest',
+      name: 'Anthropic: Claude Sonnet Latest',
+      provider: 'anthropic',
+      contextLength: null,
+      promptPricePerMillion: 3,
+      completionPricePerMillion: 15,
+      featured: true,
+    });
+
+    expect(element.querySelector('.alias-badge')?.textContent?.trim()).toBe('Latest alias');
+    expect(element.querySelector('.alias-note')?.textContent?.trim()).toBe(
+      "Moving alias: OpenRouter routes it to the provider's newest model, so results can't be tied " +
+        'to a fixed model version.',
+    );
+    expect(element.querySelector('.details-id')?.textContent).toContain(
+      '~anthropic/claude-sonnet-latest',
+    );
+    expect(element.querySelector('.details-id')?.textContent).toContain('Anthropic');
+  });
+
+  it('shows no alias marker for a concrete model', () => {
+    const element = render({
+      id: 'anthropic/claude-sonnet-5.5',
+      name: 'Anthropic: Claude Sonnet 5.5',
+      provider: 'anthropic',
+      contextLength: null,
+      promptPricePerMillion: 3,
+      completionPricePerMillion: 15,
+      featured: true,
+    });
+
+    expect(element.querySelector('.alias-badge')).toBeNull();
+    expect(element.querySelector('.alias-note')).toBeNull();
   });
 
   it('credits Artificial Analysis for the Intelligence Index', () => {

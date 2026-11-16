@@ -121,6 +121,26 @@
       "reasoning": {"mandatory": "yes", "supported_efforts": "high"}
     },
     {
+      "id": "~anthropic/claude-sonnet-latest",
+      "name": "Anthropic: Claude Sonnet Latest",
+      "created": 1794000000,
+      "context_length": 1000000,
+      "architecture": {"modality": "text+image->text", "output_modalities": ["text"]},
+      "pricing": {"prompt": "0.000003", "completion": "0.000015"},
+      "supported_parameters": ["max_tokens", "reasoning"]
+    },
+    {
+      "id": "example/nanosecond-created",
+      "name": "Example: Nanosecond Created",
+      "created": 1791397883000000000,
+      "pricing": {"prompt": "0.000001", "completion": "0.000002"}
+    },
+    {
+      "id": "example/huge-created",
+      "name": "Example: Huge Created",
+      "created": 1e30
+    },
+    {
       "id": "openai/text-embedding-3-small",
       "name": "OpenAI: Text Embedding 3 Small",
       "created": 1705953180,

@@ -7,6 +7,9 @@ import {
   formatReasoningEfforts,
   formatReleaseDate,
   formatTokenCount,
+  isLatestAlias,
+  LATEST_ALIAS_LABEL,
+  LATEST_ALIAS_NOTE,
 } from '../../utils/model-catalog';
 import { providerDisplayName } from '../../utils/provider-brand';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
@@ -24,6 +27,9 @@ export class ModelDetails {
   readonly providerName = computed(() =>
     providerDisplayName(this.model().provider, this.model().id),
   );
+  readonly latestAlias = computed(() => isLatestAlias(this.model()));
+  readonly latestAliasLabel = LATEST_ALIAS_LABEL;
+  readonly latestAliasNote = LATEST_ALIAS_NOTE;
 
   readonly facts = computed(() => {
     const model = this.model();

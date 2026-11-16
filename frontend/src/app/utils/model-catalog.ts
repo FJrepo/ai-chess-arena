@@ -74,6 +74,16 @@ export function matchesQuery(model: OpenRouterModelOption, query: string): boole
   return tokens.every((token) => text.includes(token));
 }
 
+export const LATEST_ALIAS_LABEL = 'Latest alias';
+export const LATEST_ALIAS_NOTE =
+  "Moving alias: OpenRouter routes it to the provider's newest model, so results can't be tied to a " +
+  'fixed model version.';
+
+/** OpenRouter's moving "latest" aliases have ids starting with "~", e.g. "~anthropic/claude-sonnet-latest". */
+export function isLatestAlias(model: OpenRouterModelOption): boolean {
+  return model.id.startsWith('~');
+}
+
 /** A model whose prompt and completion prices are both known to be zero. */
 export function isFreeModel(model: OpenRouterModelOption): boolean {
   return model.promptPricePerMillion === 0 && model.completionPricePerMillion === 0;
@@ -114,8 +124,9 @@ const byNewest = (a: OpenRouterModelOption, b: OpenRouterModelOption) =>
   compareNullsLast(a.releasedAt || null, b.releasedAt || null, (x, y) => y.localeCompare(x));
 
 /**
- * Newest first by release date; cheapest by input + output price; intelligence by the Intelligence Index,
- * highest first. Models without the value go last; ties fall back to newest, then name.
+ * Concrete models before "latest" aliases; then newest first by release date, cheapest by input + output
+ * price, or intelligence by the Intelligence Index, highest first. Models without the value go last; ties
+ * fall back to newest, then name.
  */
 export function sortModels(
   models: readonly OpenRouterModelOption[],
@@ -135,14 +146,16 @@ export function sortModels(
         return 0;
     }
   };
+  const aliasLast = (a: OpenRouterModelOption, b: OpenRouterModelOption) =>
+    Number(isLatestAlias(a)) - Number(isLatestAlias(b));
   return [...models].sort(
-    (a, b) => primary(a, b) || byNewest(a, b) || a.name.localeCompare(b.name),
+    (a, b) => aliasLast(a, b) || primary(a, b) || byNewest(a, b) || a.name.localeCompare(b.name),
   );
 }
 
 /**
- * The providers in the catalog (aliases merged): the featured providers in their configured order first, then the rest by
- * display name.
+ * The providers in the catalog (aliases merged): the featured providers in their configured order first,
+ * then the rest by display name.
  */
 export function providerOptions(
   models: readonly OpenRouterModelOption[],
@@ -195,7 +208,10 @@ export function groupByProvider(
 
 export const NOT_AVAILABLE = 'n/a';
 
-/** "$0.10", "$0.075", "Free"; "n/a" for a missing, negative or non-numeric price. */
+/**
+ * At least two decimals, more for small prices (two significant digits): "$3.00", "$0.10", "$0.50", "$0.01",
+ * "$0.075", "$0.0002"; "Free" for 0; "n/a" for a missing, negative or non-numeric price.
+ */
 export function formatPrice(pricePerMillion: number | null | undefined): string {
   const value = finiteOrNull(pricePerMillion);
   if (value === null || value < 0) {
@@ -204,7 +220,14 @@ export function formatPrice(pricePerMillion: number | null | undefined): string 
   if (value === 0) {
     return 'Free';
   }
-  return value >= 0.1 ? `$${value.toFixed(2)}` : `$${Number(value.toPrecision(2))}`;
+  if (value >= 0.1) {
+    return `$${value.toFixed(2)}`;
+  }
+  // Round to two significant digits first, so 0.0999999 (0.0000001 per token x 1M) becomes 0.10.
+  const rounded = Number(value.toPrecision(2));
+  const decimals = Math.min(10, Math.max(2, 1 - Math.floor(Math.log10(rounded))));
+  const fixed = rounded.toFixed(decimals);
+  return `$${fixed.replace(/(\.\d\d\d*?)0+$/, '$1')}`;
 }
 
 /** Token counts such as "128K", "1M", "1.8M"; "n/a" when missing or not positive. */
@@ -250,9 +273,15 @@ export function formatReasoningEfforts(model: OpenRouterModelOption): string {
   return efforts.length > 0 ? efforts.join(', ') : NOT_AVAILABLE;
 }
 
-/** Compact facts for a suggestion: release date, prices, context, reasoning and AA index; missing ones left out. */
+/**
+ * Compact facts for a suggestion: alias marker, release date, prices, context, reasoning and AA index;
+ * missing ones left out.
+ */
 export function modelMetaParts(model: OpenRouterModelOption): string[] {
   const parts: string[] = [];
+  if (isLatestAlias(model)) {
+    parts.push(LATEST_ALIAS_LABEL);
+  }
   if (formatReleaseDate(model.releasedAt) !== NOT_AVAILABLE) {
     parts.push(formatReleaseDate(model.releasedAt));
   }

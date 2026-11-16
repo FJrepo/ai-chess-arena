@@ -29,7 +29,7 @@ class OpenRouterServiceModelsTest {
 
     private static final double DELTA = 1e-9;
     /** Text-output models in the fixture; the embedding model is filtered out. */
-    private static final int LISTED_MODELS = 8;
+    private static final int LISTED_MODELS = 11;
 
     private HttpServer server;
     private OpenRouterService service;
@@ -215,9 +215,10 @@ class OpenRouterServiceModelsTest {
     @Test
     void featuredFilterQueryAndProviderStillApply() {
         OpenRouterModelsResponseDto featured = service.listModels(true, null, OpenRouterService.NO_LIMIT, null);
-        assertEquals(List.of("anthropic/claude-haiku-5.5", "google/gemini-4-carbon", "x-ai/grok-4.20"),
+        assertEquals(List.of("anthropic/claude-haiku-5.5", "~anthropic/claude-sonnet-latest",
+                        "google/gemini-4-carbon", "x-ai/grok-4.20"),
                 featured.data().stream().map(OpenRouterModelOptionDto::id).toList());
-        assertEquals(3, featured.featuredCount());
+        assertEquals(4, featured.featuredCount());
 
         assertEquals(List.of("google/gemini-4-carbon"),
                 service.listModels(false, "carbon", 0, null).data().stream()
@@ -225,6 +226,45 @@ class OpenRouterServiceModelsTest {
         assertEquals(List.of("x-ai/grok-4.20"),
                 service.listModels(false, null, 0, "x-ai").data().stream()
                         .map(OpenRouterModelOptionDto::id).toList());
+    }
+
+    @Test
+    void latestAliasesBelongToTheProviderWithoutTheTilde() {
+        OpenRouterModelOptionDto alias = allModels().get("~anthropic/claude-sonnet-latest");
+
+        assertEquals("anthropic", alias.provider());
+        assertTrue(alias.featured());
+        assertEquals(List.of("anthropic/claude-haiku-5.5", "~anthropic/claude-sonnet-latest"),
+                service.listModels(false, null, 0, "anthropic").data().stream()
+                        .map(OpenRouterModelOptionDto::id).toList());
+        assertTrue(service.isModelAllowed("~anthropic/claude-sonnet-latest"));
+
+        assertEquals("openai", OpenRouterService.extractProvider("~openai/gpt-astra-latest"));
+        assertEquals("other", OpenRouterService.extractProvider("~/odd"));
+        assertEquals("other", OpenRouterService.extractProvider("/odd"));
+    }
+
+    @Test
+    void outOfRangeCreatedTimestampsHaveNoReleaseDate() {
+        assertNull(allModels().get("example/nanosecond-created").releasedAt());
+        assertEquals(1.0, allModels().get("example/nanosecond-created").promptPricePerMillion(), DELTA);
+        assertNull(allModels().get("example/huge-created").releasedAt());
+
+        JsonNodeFactory json = JsonNodeFactory.instance;
+        assertNull(OpenRouterService.parseReleaseDate(json.numberNode(1_791_397_883_000_000_000L)));
+        assertNull(OpenRouterService.parseReleaseDate(json.numberNode(Long.MAX_VALUE)));
+        assertNull(OpenRouterService.parseReleaseDate(json.numberNode(1e30)));
+        assertNull(OpenRouterService.parseReleaseDate(json.numberNode(-5L)));
+        assertEquals("9999-12-31", OpenRouterService.parseReleaseDate(json.numberNode(253_402_300_799L)));
+        assertNull(OpenRouterService.parseReleaseDate(json.numberNode(253_402_300_800L)));
+        assertEquals("2026-10-07", OpenRouterService.parseReleaseDate(json.numberNode(1_791_397_883)));
+    }
+
+    @Test
+    void anOutOfRangeTimestampDoesNotBreakValidationOfOtherModels() {
+        assertTrue(service.isModelAllowed("google/gemini-4-carbon"));
+        assertTrue(service.isModelAllowed("example/nanosecond-created"));
+        assertEquals(LISTED_MODELS, service.listModels(false, null, 0, null).totalMatched());
     }
 
     @Test

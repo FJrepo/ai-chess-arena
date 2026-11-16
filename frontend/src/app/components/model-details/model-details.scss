@@ -28,6 +28,23 @@
   letter-spacing: var(--mat-sys-title-small-tracking);
 }
 
+.alias-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+  font: var(--mat-sys-label-small);
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+}
+
+.alias-note {
+  margin: 0;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface);
+}
+
 .details-id,
 .details-description,
 .details-attribution {

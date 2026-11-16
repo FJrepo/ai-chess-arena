@@ -18,6 +18,7 @@ import java.net.http.HttpResponse;
 import java.io.IOException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,6 +48,10 @@ public class OpenRouterService {
     /** {@code limit} value for "no cap": the whole (normalized) catalog in one response. */
     public static final int NO_LIMIT = 0;
     static final int DESCRIPTION_MAX_LENGTH = 400;
+    /** Prefix of OpenRouter's moving "latest" model aliases, which route to the provider's newest model. */
+    static final String LATEST_ALIAS_PREFIX = "~";
+    /** 9999-12-31T23:59:59Z; later (or misscaled, e.g. nanosecond) timestamps are not release dates. */
+    private static final long MAX_RELEASE_EPOCH_SECOND = 253_402_300_799L;
     private static final long MODELS_CACHE_TTL_MS = 5 * 60 * 1000L;
 
     @ConfigProperty(name = "openrouter.api-key")
@@ -550,39 +555,45 @@ public class OpenRouterService {
             }
 
             String provider = extractProvider(id);
-            String name = buildDisplayName(id, node.path("name").asText(null));
-            Integer contextLength = extractContextLength(node);
-            JsonNode pricing = node.path("pricing");
             boolean featured = featuredProviderSet.contains(provider) || containsAny(idLower, featuredKeywords);
-            String searchText = (name + " " + id + " " + provider).toLowerCase(Locale.ROOT);
-            JsonNode reasoning = node.path("reasoning");
-            JsonNode mandatory = reasoning.path("mandatory");
-
-            result.add(new ModelCandidate(
-                    new OpenRouterModelOptionDto(
-                            id,
-                            name,
-                            provider,
-                            contextLength,
-                            parsePricePerMillion(pricing.path("prompt")),
-                            parsePricePerMillion(pricing.path("completion")),
-                            featured,
-                            parseReleaseDate(node.path("created")),
-                            parsePricePerMillion(pricing.path("input_cache_read")),
-                            positiveInt(node.path("top_provider").path("max_completion_tokens")),
-                            supportsReasoning(node),
-                            mandatory.isBoolean() ? mandatory.booleanValue() : null,
-                            parseStringList(reasoning.path("supported_efforts")),
-                            finiteNumber(node.path("benchmarks").path("artificial_analysis")
-                                    .path("intelligence_index")),
-                            trimDescription(node.path("description").asText(null))
-                    ),
-                    searchText
-            ));
+            OpenRouterModelOptionDto option;
+            try {
+                option = toOption(node, id, provider, featured);
+            } catch (RuntimeException e) {
+                // One malformed entry must not break listing or validation of the whole catalog.
+                LOG.debugf(e, "Ignoring unreadable details of OpenRouter model '%s'", id);
+                option = new OpenRouterModelOptionDto(id, buildDisplayName(id, null), provider, null, null, null,
+                        featured, null, null, null, false, null, List.of(), null, null);
+            }
+            String searchText = (option.name() + " " + id + " " + provider).toLowerCase(Locale.ROOT);
+            result.add(new ModelCandidate(option, searchText));
             seenIds.add(id);
         }
 
         return result;
+    }
+
+    private OpenRouterModelOptionDto toOption(JsonNode node, String id, String provider, boolean featured) {
+        JsonNode pricing = node.path("pricing");
+        JsonNode reasoning = node.path("reasoning");
+        JsonNode mandatory = reasoning.path("mandatory");
+        return new OpenRouterModelOptionDto(
+                id,
+                buildDisplayName(id, node.path("name").asText(null)),
+                provider,
+                extractContextLength(node),
+                parsePricePerMillion(pricing.path("prompt")),
+                parsePricePerMillion(pricing.path("completion")),
+                featured,
+                parseReleaseDate(node.path("created")),
+                parsePricePerMillion(pricing.path("input_cache_read")),
+                positiveInt(node.path("top_provider").path("max_completion_tokens")),
+                supportsReasoning(node),
+                mandatory.isBoolean() ? mandatory.booleanValue() : null,
+                parseStringList(reasoning.path("supported_efforts")),
+                finiteNumber(node.path("benchmarks").path("artificial_analysis").path("intelligence_index")),
+                trimDescription(node.path("description").asText(null))
+        );
     }
 
     private Comparator<ModelCandidate> buildComparator(List<String> providerOrder) {
@@ -614,12 +625,17 @@ public class OpenRouterService {
         return Math.min(limit, MAX_LIMIT);
     }
 
-    private String extractProvider(String modelId) {
+    /**
+     * The provider part of a model id. A leading "~" marks OpenRouter's moving "latest" aliases (such as
+     * {@code ~anthropic/claude-sonnet-latest}); they belong to the provider without the "~".
+     */
+    static String extractProvider(String modelId) {
         String[] parts = modelId.split("/");
-        if (parts.length == 0 || parts[0].isBlank()) {
-            return "other";
+        String provider = parts.length == 0 ? "" : parts[0].trim();
+        if (provider.startsWith(LATEST_ALIAS_PREFIX)) {
+            provider = provider.substring(LATEST_ALIAS_PREFIX.length()).trim();
         }
-        return parts[0].trim().toLowerCase(Locale.ROOT);
+        return provider.isEmpty() ? "other" : provider.toLowerCase(Locale.ROOT);
     }
 
     private String buildDisplayName(String modelId, String rawName) {
@@ -685,12 +701,23 @@ public class OpenRouterService {
         }
     }
 
-    /** UTC calendar date (YYYY-MM-DD) of a unix timestamp in seconds; null when missing or not positive. */
+    /**
+     * UTC calendar date (YYYY-MM-DD) of a unix timestamp in seconds; null when missing, not a whole number, not
+     * positive or after the year 9999.
+     */
     static String parseReleaseDate(JsonNode createdNode) {
-        if (createdNode == null || !createdNode.isNumber() || createdNode.asLong() <= 0) {
+        if (createdNode == null || !createdNode.isNumber() || !createdNode.canConvertToLong()) {
             return null;
         }
-        return LocalDate.ofInstant(Instant.ofEpochSecond(createdNode.asLong()), ZoneOffset.UTC).toString();
+        long epochSecond = createdNode.longValue();
+        if (epochSecond <= 0 || epochSecond > MAX_RELEASE_EPOCH_SECOND) {
+            return null;
+        }
+        try {
+            return LocalDate.ofInstant(Instant.ofEpochSecond(epochSecond), ZoneOffset.UTC).toString();
+        } catch (DateTimeException | ArithmeticException e) {
+            return null;
+        }
     }
 
     private static Integer positiveInt(JsonNode node) {
