@@ -1,12 +1,13 @@
 package dev.aichessarena.repository;
 
-import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.LockModeType;
+import jakarta.transaction.Status;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -21,16 +22,17 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
     }
 
     /**
-     * The current chat mode of the game's tournament, read from the database (a game loop's session keeps the
-     * entities it loaded, so a setting changed meanwhile is not visible on them); OPTIONAL for a game outside a
-     * tournament.
+     * Detaches every entity the current session has loaded, so the next read comes from the database. For a
+     * long-lived request context outside a transaction (the game loop), whose session would otherwise keep returning
+     * the copies it loaded first, however often other transactions have changed them since.
+     *
+     * @throws IllegalStateException inside a transaction, where it would also drop unflushed changes
      */
-    public ChatMode findChatMode(UUID gameId) {
-        List<ChatMode> modes = getEntityManager().createQuery(
-                        "select t.chatMode from Game g join g.tournament t where g.id = :gameId", ChatMode.class)
-                .setParameter("gameId", gameId)
-                .getResultList();
-        return modes.isEmpty() || modes.getFirst() == null ? ChatMode.OPTIONAL : modes.getFirst();
+    public void detachAll() {
+        if (QuarkusTransaction.getStatus() != Status.STATUS_NO_TRANSACTION) {
+            throw new IllegalStateException("detachAll() would drop the unflushed changes of the current transaction");
+        }
+        getEntityManager().clear();
     }
 
     /**

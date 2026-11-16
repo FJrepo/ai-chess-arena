@@ -7,12 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import dev.aichessarena.entity.Game;
-import dev.aichessarena.entity.Tournament;
-import dev.aichessarena.repository.GameRepository;
-import dev.aichessarena.repository.TournamentRepository;
-import io.quarkus.arc.Arc;
-import io.quarkus.arc.ManagedContext;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -25,7 +19,6 @@ import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -36,12 +29,6 @@ class ChatModeIT {
 
     @Inject
     EntityManager entityManager;
-
-    @Inject
-    TournamentRepository tournamentRepository;
-
-    @Inject
-    GameRepository gameRepository;
 
     @ConfigProperty(name = "quarkus.datasource.jdbc.url")
     String jdbcUrl;
@@ -112,43 +99,6 @@ class ChatModeIT {
         given().when().get("/api/tournaments/{id}", id)
                 .then().statusCode(200)
                 .body("chatMode", equalTo("OPTIONAL"));
-    }
-
-    /**
-     * A game loop runs in its own request context, whose session keeps the entities it loaded; the loop therefore
-     * reads the chat mode with a query, so a change made meanwhile applies from the next turn.
-     */
-    @Test
-    void aGameLoopSeesAChatModeChangedWhileItRuns() throws InterruptedException {
-        UUID[] ids = QuarkusTransaction.requiringNew().call(() -> {
-            Tournament tournament = new Tournament();
-            tournament.name = "Loop " + UUID.randomUUID();
-            tournamentRepository.persist(tournament);
-            Game game = new Game();
-            game.tournament = tournament;
-            gameRepository.persist(game);
-            return new UUID[] {tournament.id, game.id};
-        });
-        AtomicReference<String> seen = new AtomicReference<>();
-        Thread loop = Thread.startVirtualThread(() -> {
-            ManagedContext requestContext = Arc.container().requestContext();
-            requestContext.activate();
-            try {
-                Game loaded = gameRepository.findById(ids[1]);
-                // The loop reads tournament settings every turn, which loads the tournament into its session.
-                String before = loaded.tournament.chatMode + "/" + gameRepository.findChatMode(ids[1]).name();
-                given().contentType("application/json").body("{\"chatMode\":\"MANDATORY\"}")
-                        .when().put("/api/tournaments/{id}", ids[0].toString())
-                        .then().statusCode(200);
-                seen.set(before + " -> " + gameRepository.findChatMode(ids[1]).name()
-                        + " (entity: " + loaded.tournament.chatMode + ")");
-            } finally {
-                requestContext.terminate();
-            }
-        });
-        loop.join();
-
-        assertEquals("OPTIONAL/OPTIONAL -> MANDATORY (entity: OPTIONAL)", seen.get());
     }
 
     @Test

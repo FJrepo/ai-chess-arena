@@ -41,11 +41,7 @@ public class GameConversationService {
      * prompt, the handling of its messages and the mode recorded on its moves always agree.
      */
     public ConversationState refreshSystemPrompts(Game game, ConversationState state) {
-        return refreshSystemPrompts(game, state, configuredChatMode(game));
-    }
-
-    /** As {@link #refreshSystemPrompts(Game, ConversationState)}, for a chat mode the caller read itself. */
-    public ConversationState refreshSystemPrompts(Game game, ConversationState state, ChatMode chatMode) {
+        ChatMode chatMode = configuredChatMode(game);
         PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE", chatMode);
         PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK", chatMode);
         setSystemPrompt(state.whiteHistory(), whitePrompt.prompt());

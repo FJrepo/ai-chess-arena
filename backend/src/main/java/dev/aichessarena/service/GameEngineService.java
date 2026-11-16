@@ -1,7 +1,6 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.dto.GameDto;
-import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -179,7 +178,6 @@ public class GameEngineService {
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
         List<OpenRouterService.ChatMsg> blackHistory = conversation.blackHistory();
-        Game game = gameRepository.findById(gameId);
 
         while (loop.shouldContinue()) {
             if (chessService.isGameOver(board)) {
@@ -191,8 +189,11 @@ public class GameEngineService {
             int moveNumber = chessService.getMoveNumber(board);
             List<String> legalMoves = chessService.getLegalMovesAsSan(board);
             String fen = board.getFen();
-            // Get current player info
-            game = gameRepository.findById(gameId);
+            // This loop's request context, and with it its Hibernate session, lasts for the whole game, while moves,
+            // costs and tournament settings are committed by other transactions. The session would keep returning the
+            // game and tournament it loaded first, so every turn starts from an empty session and reads them anew.
+            gameRepository.detachAll();
+            Game game = gameRepository.findById(gameId);
             String pgn = game.pgn;
             String modelId = "WHITE".equals(sideToMove) ? game.whiteModelId : game.blackModelId;
             String playerName = "WHITE".equals(sideToMove) ? game.whitePlayerName : game.blackPlayerName;
@@ -211,10 +212,9 @@ public class GameEngineService {
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
             // A changed chat mode applies from this turn on: rebuild both prompts so prompt, message handling and the
-            // mode recorded on the move agree. Read from the database: this loop's entities are not refreshed.
-            ChatMode chatMode = gameRepository.findChatMode(gameId);
-            if (chatMode != conversation.chatMode()) {
-                conversation = gameConversationService.refreshSystemPrompts(game, conversation, chatMode);
+            // mode recorded on the move agree.
+            if (GameConversationService.configuredChatMode(game) != conversation.chatMode()) {
+                conversation = gameConversationService.refreshSystemPrompts(game, conversation);
             }
             GameConversationService.PromptContext prompt =
                     "WHITE".equals(sideToMove) ? conversation.whitePrompt() : conversation.blackPrompt();
@@ -252,7 +252,6 @@ public class GameEngineService {
                 break;
             }
 
-            game = gameRepository.findById(gameId);
             lastMoveSan = turnResult.moveSan();
             lastMessage = turnResult.message();
         }
