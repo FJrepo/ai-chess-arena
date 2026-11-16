@@ -23,7 +23,14 @@ Tournaments are single elimination with best-of 1, 3, 5 or 7 series and a separa
 
 ### Bracket
 
-Participants are ordered by seed (lowest first; the setup page assigns seeds in the order you add participants). When the field is not a power of two, the top seeds get byes; the rest are paired in seed order.
+Before generating the bracket on the tournament page, choose **Bracket draw**:
+
+- **Random draw** (the UI default): shuffle the participants once and assign new seeds starting at 0 in the drawn order.
+- **In added order**: keep the existing seeds (the setup page assigns these in the order you add participants).
+
+Participants are paired in seed order, lowest first. When the field is not a power of two, the lowest seed numbers receive byes; the rest are paired in seed order. For example, with five participants, seeds 0, 1 and 2 receive byes and seeds 3 and 4 play. The **Participants by seed** panel shows the stored seeds after generation. A random draw can happen to produce the original order.
+
+API: `POST /api/tournaments/{id}/generate-bracket?drawMode=RANDOM` requests a random draw; `drawMode=ORDER` or omitting the parameter preserves the existing seed order for compatibility. No request body is required; an empty JSON object also works. An invalid mode returns 400. Generation stores the drawn seeds and bracket together. Repeated or concurrent generation requests return 409 after the first succeeds; they cannot reshuffle an existing bracket. Existing generated brackets remain unchanged, and no migration or backfill is needed.
 
 ### Best of N
 
@@ -32,6 +39,8 @@ A series lasts at most N games. A draw is a game without a winner, and a series 
 ### Draw policies
 
 When level after N games (or a drawn single game), the tournament's draw policy decides — *White advances* (white in game 1), *Black advances*, *Higher seed advances*, *Random*, or *Replay game*.
+
+*Higher seed advances* uses the lower stored seed number, including the newly assigned seeds after a random bracket draw. This tiebreak policy is separate from the **Bracket draw** choice.
 
 *Replay game* adds sudden-death tiebreak games (colors alternating) until one is decisive; this also applies to a single-game match, where the drawn game stays in the series with its moves, chat and cost and is followed by "Tiebreak game 1", 2, and so on. It has no fixed maximum length or cost.
 
