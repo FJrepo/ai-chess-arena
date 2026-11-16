@@ -364,6 +364,23 @@ describe('GameView', () => {
     expect(component.game()?.statusDetail).toBeNull();
   });
 
+  it('updates the chat mode from live turn updates', () => {
+    const { component } = createComponent();
+    component.tournamentChatMode.set('OPTIONAL');
+
+    component.handleWsMessage({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED' });
+    expect(component.tournamentChatMode()).toBe('OPTIONAL');
+
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      activeColor: 'WHITE',
+      chatMode: 'MANDATORY',
+    });
+    expect(component.tournamentChatMode()).toBe('MANDATORY');
+  });
+
   it('detects when the active side is human-controlled', () => {
     const { component } = createComponent();
     component.game.set({

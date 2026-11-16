@@ -84,6 +84,9 @@ class AnalyticsIT {
             move(recent, 1, "WHITE", "model-alpha", "0.01", 1).chatMode = ChatMode.MANDATORY;
             move(recent, 1, "BLACK", "model-beta", "0.02", 0).chatMode = ChatMode.MANDATORY;
             chat(recent, 1, "WHITE", "model-alpha", "  Good luck!  ");
+            // A duplicate message for the same ply (possible in databases from before V8): only the first counts.
+            chat(recent, 1, "WHITE", "model-alpha", "A much longer duplicate message").createdAt =
+                    LocalDateTime.now().plusMinutes(1);
             attempt(recent, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0.003");
             attempt(recent, 1, "WHITE", 2, "model-alpha", Outcome.ACCEPTED, "0.01");
             attempt(recent, 1, "BLACK", 1, "model-beta", Outcome.ACCEPTED, "0.02");
@@ -208,7 +211,7 @@ class AnalyticsIT {
         return game;
     }
 
-    private void chat(Game game, int moveNumber, String color, String modelId, String text) {
+    private ChatMessage chat(Game game, int moveNumber, String color, String modelId, String text) {
         ChatMessage message = new ChatMessage();
         message.game = game;
         message.moveNumber = moveNumber;
@@ -216,6 +219,7 @@ class AnalyticsIT {
         message.senderModel = modelId;
         message.message = text;
         chatMessageRepository.persist(message);
+        return message;
     }
 
     private Move move(Game game, int moveNumber, String color, String modelId, String cost, int retryCount) {

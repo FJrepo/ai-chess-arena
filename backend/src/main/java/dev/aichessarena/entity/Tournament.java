@@ -59,9 +59,9 @@ public class Tournament extends PanacheEntityBase {
     public ChatMode chatMode = ChatMode.OPTIONAL;
 
     /**
-     * The pre-1.4 column {@code trash_talk_enabled}, kept in sync with {@link #chatMode} (false only for OFF) so an
-     * older version still reads a sensible value after a downgrade. Not read by this version; to be dropped in a
-     * later release.
+     * The pre-1.4 column {@code trash_talk_enabled}, kept in sync with {@link #chatMode} (false only for OFF). Not
+     * read by this version; to be dropped in a later release. Rolling back to an older version requires restoring
+     * the pre-upgrade database backup (see docs/deployment.md).
      */
     @Column(name = "trash_talk_enabled", nullable = false)
     boolean legacyTrashTalkEnabled = true;

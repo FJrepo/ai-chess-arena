@@ -264,16 +264,60 @@ class PromptServiceTest {
     }
 
     @Test
-    void aStoredCopyOfAnyModesDefaultRulesIsNotALegacyOverride() {
+    void aStoredCopyOfTheDefaultRulesIsNotALegacyOverrideAndFollowsTheChatMode() {
         for (ChatMode mode : ChatMode.values()) {
             PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
-                    promptService.getSystemPromptTemplate(mode).replace("\n", "\r\n") + "\n", null,
-                    "WHITE", "Opponent Bot", "model/opponent", ChatMode.MANDATORY);
+                    promptService.getDefaultSystemPromptTemplate().replace("\n", "\r\n") + "\n", null,
+                    "WHITE", "Opponent Bot", "model/opponent", mode);
 
-            assertEquals("v2-chat-required", prompt.version(), mode.name());
+            assertEquals(promptService.getSystemPromptVersion(mode), prompt.version(), mode.name());
         }
+    }
+
+    /**
+     * The silent rules as 1.3.1 rendered them (the default template with rule 5 replaced). A tournament or
+     * participant that stored this text has always been a legacy custom template, used byte for byte: that must not
+     * change in any chat mode (the hash is the one 1.3.1 recorded for the silent prompt).
+     */
+    private static final String STORED_SILENT_TEMPLATE_1_3_1 = """
+            You are playing chess in a tournament match. This is a real competition.
+
+            RULES:
+            1. You MUST respond with valid JSON only. No markdown, no code blocks, no extra text.
+            2. Response format:
+               {
+                 "move": "<your move in Standard Algebraic Notation>",
+                 "message": "<optional message to your opponent>"
+               }
+            3. The "move" field is REQUIRED and must be a legal move in Standard Algebraic Notation (SAN).
+               Examples: "e4", "Nf3", "O-O" (kingside castle), "O-O-O" (queenside castle), "Bxe5", "e8=Q"
+            4. The "message" field is OPTIONAL.
+            5. Trash talk is disabled in this tournament. Leave the "message" field empty ("") and do not address your opponent.
+            6. Do NOT use tool calls or function calls. Respond with plain text JSON only.
+            7. Do NOT wrap your response in markdown code blocks.
+            8. Do NOT include any text before or after the JSON object.
+
+            You are playing as %s in this game.
+            Your opponent is %s (%s).
+
+            Play your best chess. May the best model win.""";
+
+    @Test
+    void aStoredCopyOfTheSilentRulesStaysALegacyTemplateWithItsOriginalBytes() {
+        String expected = STORED_SILENT_TEMPLATE_1_3_1.formatted("WHITE", "Opponent Bot", "model/opponent");
+        for (ChatMode mode : ChatMode.values()) {
+            PromptService.ResolvedPrompt prompt = promptService.buildSystemPrompt(
+                    STORED_SILENT_TEMPLATE_1_3_1, "Ignored for legacy templates.",
+                    "WHITE", "Opponent Bot", "model/opponent", mode);
+
+            assertEquals("legacy-custom-template", prompt.version(), mode.name());
+            assertEquals(expected, prompt.prompt(), mode.name());
+            assertEquals("fccd19e6563fac4f88fc4f4b7a730ba09e1f1ae16e14e0f1bfc7b4d8810c0b05",
+                    promptService.computePromptHash(prompt.prompt()), mode.name());
+        }
+        assertEquals("legacy-custom-template", promptService.resolvePromptVersion(STORED_SILENT_TEMPLATE_1_3_1));
         assertEquals("legacy-custom-template", promptService.resolvePromptVersion(
-                promptService.getSystemPromptTemplate(ChatMode.MANDATORY) + " Extra rule."));
+                promptService.getSystemPromptTemplate(ChatMode.MANDATORY)));
     }
 
     @Test

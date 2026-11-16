@@ -19,13 +19,14 @@ public class ChatMessageRepository implements PanacheRepositoryBase<ChatMessage,
 
     /**
      * The ply and length (characters, without surrounding whitespace) of every chat message in the games of an
-     * analytics window (see {@link GameRepository#findInWindow}); the text itself is not loaded.
+     * analytics window (see {@link GameRepository#findInWindow}), oldest first; the text itself is not loaded.
      */
     public List<PlyMessage> findPlyMessagesInWindow(LocalDateTime cutoff, UUID tournamentId) {
         TypedQuery<Object[]> query = getEntityManager().createQuery(
                 "select c.game.id, c.moveNumber, c.senderColor, length(trim(c.message)) from ChatMessage c where "
                         + GameRepository.windowPredicate("c.game")
-                        + GameRepository.tournamentPredicate("c.game", tournamentId),
+                        + GameRepository.tournamentPredicate("c.game", tournamentId)
+                        + " order by c.createdAt, c.id",
                 Object[].class
         );
         Parameters parameters = GameRepository.windowParameters(cutoff, tournamentId);

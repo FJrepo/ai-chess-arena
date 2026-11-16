@@ -654,20 +654,31 @@ public class AnalyticsService {
     /**
      * Counts each model move per chat mode that applied to it ({@link Move#chatMode}) and whether a non-empty chat
      * message was stored for the same ply (game, move number, colour). Moves without a mode (humans, overrides) and
-     * moves made with chat OFF are left out.
+     * moves made with chat OFF are left out. Databases from before migration V8 may hold several moves or messages
+     * for one ply; each ply counts once, with its first stored move and first non-empty message (the duplicates are
+     * the later rows, see docs/deployment.md).
      */
     private void registerTalkativeness(Map<String, ComparisonAccumulator> byModel, List<Move> moves,
                                        List<PlyMessage> messages) {
         Map<PlyKey, Integer> messageLengths = new HashMap<>();
         for (PlyMessage message : messages) {
             if (message.length() > 0) {
-                messageLengths.merge(new PlyKey(message.gameId(), message.moveNumber(), message.color()),
-                        message.length(), Math::max);
+                messageLengths.putIfAbsent(new PlyKey(message.gameId(), message.moveNumber(), message.color()),
+                        message.length());
             }
         }
+        Map<PlyKey, Move> firstMovePerPly = new HashMap<>();
         for (Move move : moves) {
+            if (move.game == null) {
+                continue;
+            }
+            firstMovePerPly.merge(new PlyKey(move.game.id, move.moveNumber, move.color), move,
+                    (kept, other) -> FIRST_STORED.compare(other, kept) < 0 ? other : kept);
+        }
+        for (Map.Entry<PlyKey, Move> ply : firstMovePerPly.entrySet()) {
+            Move move = ply.getValue();
             if (move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
-                    || !hasTrackedModelId(move.modelId) || move.game == null) {
+                    || !hasTrackedModelId(move.modelId)) {
                 continue;
             }
             ComparisonAccumulator accumulator =
@@ -676,13 +687,18 @@ public class AnalyticsService {
                     ? accumulator.mandatoryChat
                     : accumulator.optionalChat;
             talk.moves++;
-            Integer length = messageLengths.get(new PlyKey(move.game.id, move.moveNumber, move.color));
+            Integer length = messageLengths.get(ply.getKey());
             if (length != null) {
                 talk.messages++;
                 talk.messageLengthTotal += length;
             }
         }
     }
+
+    /** Earliest stored first; the id only breaks ties so the choice does not depend on load order. */
+    private static final Comparator<Move> FIRST_STORED = Comparator
+            .comparing((Move move) -> move.createdAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(move -> move.id, Comparator.nullsLast(Comparator.naturalOrder()));
 
     private TalkativenessDto talkativeness(TalkAccumulator talk) {
         return new TalkativenessDto(

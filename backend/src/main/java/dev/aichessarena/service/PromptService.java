@@ -286,18 +286,15 @@ public class PromptService {
     return template.replace("\r\n", "\n").trim();
   }
 
-  /** A stored template is a legacy override unless it is blank or the default rules of one of the chat modes. */
+  /**
+   * A stored template is a legacy override unless it is blank or the default (OPTIONAL) rules. Copies of the
+   * generated OFF or MANDATORY rules stay legacy overrides on purpose: stored templates are used byte for byte with
+   * the version they always had, and only the default template stands for "use the current rules".
+   */
   private boolean isLegacyTemplateOverride(String promptTemplate) {
-    if (promptTemplate == null || promptTemplate.isBlank()) {
-      return false;
-    }
-    String normalized = normalizeTemplate(promptTemplate);
-    for (ChatMode mode : ChatMode.values()) {
-      if (normalized.equals(normalizeTemplate(getSystemPromptTemplate(mode)))) {
-        return false;
-      }
-    }
-    return true;
+    return promptTemplate != null
+        && !promptTemplate.isBlank()
+        && !normalizeTemplate(promptTemplate).equals(normalizeTemplate(DEFAULT_SYSTEM_PROMPT));
   }
 
   private boolean hasCustomInstructions(String customInstructions) {

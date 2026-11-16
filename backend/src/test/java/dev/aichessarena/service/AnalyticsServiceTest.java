@@ -455,6 +455,33 @@ class AnalyticsServiceTest {
                 row(response, "model.beta").optionalChat());
     }
 
+    @Test
+    void talkativenessCountsADuplicatedPlyOnceWithItsFirstMoveAndFirstMessage() {
+        // Databases from before V8 may hold duplicate plies (see docs/deployment.md).
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        Move talking = chatMove(game, "model.alpha", 1, "WHITE", ChatMode.OPTIONAL);
+        Move duplicate = chatMove(game, "model.alpha", 1, "WHITE", ChatMode.MANDATORY);
+        duplicate.createdAt = talking.createdAt.plusSeconds(1);
+        Move silent = chatMove(game, "model.alpha", 2, "WHITE", ChatMode.OPTIONAL);
+        AnalyticsService service = service(
+                List.of(game),
+                // The later duplicate comes first: the choice must not depend on load order.
+                List.of(duplicate, silent, talking),
+                List.of(),
+                List.of(
+                        new PlyMessage(game.id, 1, "WHITE", 10),
+                        new PlyMessage(game.id, 1, "WHITE", 30)
+                )
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+
+        assertEquals(new TalkativenessDto(2, 1, new BigDecimal("0.5000"), new BigDecimal("10.0")),
+                alpha.optionalChat());
+        assertEquals(new TalkativenessDto(0, 0, null, null), alpha.mandatoryChat(),
+                "the later duplicate's mode is not counted");
+    }
+
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
         Move move = move(game, modelId, 1000L, null);
         move.moveNumber = number;

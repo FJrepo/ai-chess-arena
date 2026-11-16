@@ -373,6 +373,16 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void theTurnStartUpdateCarriesTheTurnsChatMode() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+
+        fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.MANDATORY));
+
+        assertTrue(fixture.websocket.turnTimingBroadcast);
+        assertEquals("MANDATORY", fixture.websocket.lastTurnChatMode);
+    }
+
+    @Test
     void onlyTheRecentConversationIsSentToTheModel() {
         List<OpenRouterService.ChatMsg> history = new ArrayList<>();
         history.add(new OpenRouterService.ChatMsg("system", "rules"));
@@ -785,16 +795,20 @@ class GameTurnServiceTest {
                 BigDecimal totalCostUsd,
                 String activeColor,
                 java.time.Instant turnStartedAt,
-                java.time.Instant turnDeadlineAt
+                java.time.Instant turnDeadlineAt,
+                String detail,
+                String chatMode
         ) {
             if (turnStartedAt != null) {
                 turnTimingBroadcast = true;
                 lastTurnStartedAt = turnStartedAt;
                 lastTurnDeadlineAt = turnDeadlineAt;
+                lastTurnChatMode = chatMode;
             }
         }
 
         private boolean turnTimingBroadcast;
+        private String lastTurnChatMode;
         private java.time.Instant lastTurnStartedAt;
         private java.time.Instant lastTurnDeadlineAt;
 

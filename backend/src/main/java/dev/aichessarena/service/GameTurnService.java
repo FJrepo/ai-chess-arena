@@ -93,7 +93,8 @@ public class GameTurnService {
                     Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
         }
 
-        broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt);
+        broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
+                request.chatMode());
 
         int providerFailures = 0;
         String lastProviderFailure = null;
@@ -361,8 +362,9 @@ public class GameTurnService {
         );
     }
 
+    /** Also tells open game views the chat mode of this turn, so a mode changed during play shows up live. */
     private void broadcastTurnTiming(UUID gameId, BigDecimal totalCostUsd, String activeColor,
-                                     Instant turnStartedAt, Instant turnDeadlineAt) {
+                                     Instant turnStartedAt, Instant turnDeadlineAt, ChatMode chatMode) {
         int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));
         gameWebSocket.broadcastGameStatus(
                 gameId,
@@ -373,7 +375,9 @@ public class GameTurnService {
                 totalCostUsd,
                 activeColor,
                 turnStartedAt,
-                turnDeadlineAt
+                turnDeadlineAt,
+                null,
+                chatMode != null ? chatMode.name() : null
         );
     }
 

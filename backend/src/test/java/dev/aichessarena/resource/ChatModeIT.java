@@ -188,13 +188,22 @@ class ChatModeIT {
                           ('00000000-0000-0000-0000-0000000000b3', NULL);
                         INSERT INTO moves (id, game_id, move_number, color, san, fen, model_id, prompt_version,
                                            is_override) VALUES
-                          -- silent tournament: silent prompt, prompt without suffix, and a message despite it
+                          -- a tournament switched off after games with chat on: silent prompts, default
+                          -- prompts with and without a message, older versions and a legacy template
                           ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000b1',
                            1, 'WHITE', 'e4', 'fen', 'alpha', 'v2-silent', false),
                           ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-0000000000b1',
                            1, 'BLACK', 'e5', 'fen', 'beta', 'v2', false),
                           ('00000000-0000-0000-0000-0000000000c3', '00000000-0000-0000-0000-0000000000b1',
                            2, 'WHITE', 'Nf3', 'fen', 'alpha', 'v2+custom-instructions', false),
+                          ('00000000-0000-0000-0000-0000000000c9', '00000000-0000-0000-0000-0000000000b1',
+                           2, 'BLACK', 'Nc6', 'fen', 'beta', 'v1', false),
+                          ('00000000-0000-0000-0000-0000000000ca', '00000000-0000-0000-0000-0000000000b1',
+                           3, 'WHITE', 'Bb5', 'fen', 'alpha', NULL, false),
+                          ('00000000-0000-0000-0000-0000000000cb', '00000000-0000-0000-0000-0000000000b1',
+                           3, 'BLACK', 'a6', 'fen', 'beta', 'legacy-custom-template', false),
+                          ('00000000-0000-0000-0000-0000000000cc', '00000000-0000-0000-0000-0000000000b1',
+                           4, 'WHITE', 'Ba4', 'fen', 'alpha', 'v2+custom-instructions-silent', false),
                           -- talkative tournament: with and without a message, a human move and an override
                           ('00000000-0000-0000-0000-0000000000c4', '00000000-0000-0000-0000-0000000000b2',
                            1, 'WHITE', 'e4', 'fen', 'alpha', 'v2', false),
@@ -224,8 +233,14 @@ class ChatModeIT {
                 Map<String, String> moves = column(statement,
                         "SELECT right(id::text, 2), chat_mode FROM moves");
                 assertEquals("OFF", moves.get("c1"), "silent prompt");
-                assertEquals("OFF", moves.get("c2"), "no suffix and no message: the tournament's setting");
+                assertEquals("OFF", moves.get("cc"), "silent prompt with custom instructions");
+                // Regression: a silent move under the default prompt in a tournament switched off later is
+                // OPTIONAL like its talking neighbour, not OFF (which would make the talk rate 100%).
+                assertEquals("OPTIONAL", moves.get("c2"), "default prompt: chat was on, the model stayed silent");
                 assertEquals("OPTIONAL", moves.get("c3"), "a stored message proves chat was on");
+                assertEquals("OPTIONAL", moves.get("c9"), "v1 predates the switch");
+                assertEquals("OPTIONAL", moves.get("ca"), "no prompt version predates the switch");
+                assertEquals("OFF", moves.get("cb"), "legacy template without a message: the tournament's setting");
                 assertEquals("OPTIONAL", moves.get("c4"));
                 assertEquals("OPTIONAL", moves.get("c5"));
                 assertNull(moves.get("c6"), "human move");

@@ -270,6 +270,15 @@ public class GameWebSocket {
                                      String resultReason, int totalMoves, BigDecimal totalCostUsd,
                                      String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
                                      String detail) {
+        broadcastGameStatus(gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                activeColor, turnStartedAt, turnDeadlineAt, detail, null);
+    }
+
+    /** {@code chatMode} is the chat mode that applies to the turn that starts (sent with turn updates only). */
+    public void broadcastGameStatus(UUID gameId, String status, String result,
+                                     String resultReason, int totalMoves, BigDecimal totalCostUsd,
+                                     String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
+                                     String detail, String chatMode) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "gameStatus");
         msg.put("gameId", gameId.toString());
@@ -280,6 +289,7 @@ public class GameWebSocket {
         if (turnStartedAt != null) msg.put("turnStartedAt", turnStartedAt.toString());
         if (turnDeadlineAt != null) msg.put("turnDeadlineAt", turnDeadlineAt.toString());
         if (detail != null) msg.put("detail", detail);
+        if (chatMode != null) msg.put("chatMode", chatMode);
         msg.put("totalMoves", totalMoves);
         msg.put("totalCostUsd", totalCostUsd != null ? totalCostUsd.doubleValue() : 0);
         broadcast(gameId, msg.toString());
