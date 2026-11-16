@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 class OpenRouterServiceChatTest {
 
     private HttpServer server;
+    private volatile String lastRequestBody;
 
     @AfterEach
     void stopServer() {
@@ -44,6 +45,54 @@ class OpenRouterServiceChatTest {
         assertEquals("{\"move\":\"e4\"}", response.content());
         assertEquals(12, response.promptTokens());
         assertFalse(response.isProviderFailure());
+    }
+
+    @Test
+    void requestCarriesTheGivenOutputTokenLimit() throws IOException {
+        OpenRouterService service = serviceAnswering(200, "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}");
+
+        service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")), Duration.ofSeconds(5), 8192);
+
+        assertEquals(8192, new ObjectMapper().readTree(lastRequestBody).path("max_tokens").asInt());
+    }
+
+    @Test
+    void threeArgumentChatUsesTheConfiguredDefaultLimit() throws IOException {
+        OpenRouterService service = serviceAnswering(200, "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}");
+
+        chat(service);
+
+        assertEquals(100, new ObjectMapper().readTree(lastRequestBody).path("max_tokens").asInt());
+    }
+
+    @Test
+    void finishReasonAndReasoningTokensAreParsed() throws IOException {
+        OpenRouterService service = serviceAnswering(200,
+                "{\"choices\":[{\"message\":{\"content\":null},\"finish_reason\":\"length\"}],"
+                        + "\"usage\":{\"prompt_tokens\":300,\"completion_tokens\":4096,"
+                        + "\"completion_tokens_details\":{\"reasoning_tokens\":4000},\"cost\":0.02}}");
+
+        LlmResponse response = chat(service);
+
+        assertEquals(ProviderOutcome.OK, response.outcome());
+        assertEquals("length", response.finishReason());
+        assertEquals(4000, response.reasoningTokens());
+        assertEquals(4096, response.completionTokens());
+        assertTrue(response.truncated());
+        assertFalse(response.isProviderFailure());
+    }
+
+    @Test
+    void normalStopIsNotTruncatedAndMissingReasoningTokensStayNull() throws IOException {
+        OpenRouterService service = serviceAnswering(200,
+                "{\"choices\":[{\"message\":{\"content\":\"e4\"},\"finish_reason\":\"stop\"}],"
+                        + "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1}}");
+
+        LlmResponse response = chat(service);
+
+        assertEquals("stop", response.finishReason());
+        assertNull(response.reasoningTokens());
+        assertFalse(response.truncated());
     }
 
     @Test
@@ -159,6 +208,7 @@ class OpenRouterServiceChatTest {
     private OpenRouterService serviceAnswering(int status, String body) throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/chat/completions", exchange -> {
+            lastRequestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(status, bytes.length == 0 ? -1 : bytes.length);
             if (bytes.length > 0) {

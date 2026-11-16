@@ -51,6 +51,7 @@ public class TournamentResource {
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
+        if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
 
         List<TournamentParticipant> participants = new ArrayList<>();
@@ -100,6 +101,7 @@ public class TournamentResource {
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         if (req.trashTalkEnabled() != null) t.trashTalkEnabled = req.trashTalkEnabled();
+        if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         t.updatedAt = LocalDateTime.now();
         tournamentRepository.persist(t);
@@ -152,6 +154,14 @@ public class TournamentResource {
         p.customInstructions = normalizeInstructions(req.customInstructions());
         if (req.seed() != null) p.seed = req.seed();
         return p;
+    }
+
+    private int parseMaxOutputTokens(int value) {
+        if (value < Tournament.MIN_MAX_OUTPUT_TOKENS || value > Tournament.MAX_MAX_OUTPUT_TOKENS) {
+            throw new IllegalArgumentException("maxOutputTokens must be between %d and %d"
+                    .formatted(Tournament.MIN_MAX_OUTPUT_TOKENS, Tournament.MAX_MAX_OUTPUT_TOKENS));
+        }
+        return value;
     }
 
     private Tournament.DrawPolicy parseDrawPolicy(String value) {

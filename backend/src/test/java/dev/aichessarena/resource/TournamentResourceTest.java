@@ -21,8 +21,23 @@ class TournamentResourceTest {
         resource.analyticsService = new AnalyticsService();
 
         assertThrows(IllegalArgumentException.class, () -> resource.create(
-                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null, null, null)
+                new CreateTournamentRequest("Series Test", null, null, null, 9, null, null, null, null, null, null)
         ));
+    }
+
+    @Test
+    void createRejectsOutputTokenLimitsOutsideTheAllowedRange() {
+        TournamentResource resource = new TournamentResource();
+        resource.tournamentRepository = new TournamentRepository();
+        resource.tournamentService = new TournamentService();
+        resource.analyticsService = new AnalyticsService();
+
+        for (int limit : new int[] {127, 32769}) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> resource.create(
+                    new CreateTournamentRequest("Limits", null, null, null, null, null, null, null, null, null, limit)
+            ));
+            assertEquals("maxOutputTokens must be between 128 and 32768", error.getMessage());
+        }
     }
 
     @Test

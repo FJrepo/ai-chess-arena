@@ -26,6 +26,21 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
+          <mat-label>Max output tokens per answer</mat-label>
+          <input
+            matInput
+            type="number"
+            min="128"
+            max="32768"
+            step="128"
+            [(ngModel)]="maxOutputTokens"
+          />
+          <mat-hint
+            >Includes reasoning tokens; answers cut off at this limit pause the game</mat-hint
+          >
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
           <mat-label>Draw Policy</mat-label>
           <mat-select [(ngModel)]="drawPolicy">
             @for (option of drawPolicyOptions; track option.value) {

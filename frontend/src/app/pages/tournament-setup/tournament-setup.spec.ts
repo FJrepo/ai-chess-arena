@@ -52,6 +52,18 @@ describe('TournamentSetup', () => {
     expect(participants[1]['customInstructions']).toBe('Avoid trades.');
     expect(api.addedParticipants).toHaveLength(0);
     expect(typeof api.createTournamentPayload?.['clientRequestId']).toBe('string');
+    expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(4096);
+  });
+
+  it('sends the chosen max output tokens per answer', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Reasoning Arena';
+    component.maxOutputTokens = 16384;
+
+    component.create();
+
+    expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(16384);
   });
 
   it('shows the server error, keeps the request id for a retry, and does not navigate', () => {
@@ -138,6 +150,7 @@ describe('TournamentSetup', () => {
     expect(component.finalsBestOf).toBe(5);
     expect(component.drawPolicy).toBe('REPLAY_GAME');
     expect(component.sharedCustomInstructions).toContain('Play your strongest chess');
+    expect(component.maxOutputTokens).toBe(8192);
   });
 
   it('builds a confidence summary with finals override and pricing data', () => {

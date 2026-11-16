@@ -6,6 +6,7 @@ import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
@@ -43,6 +44,9 @@ public class TournamentService {
 
     @Inject
     ChatMessageRepository chatMessageRepository;
+
+    @Inject
+    MoveAttemptRepository moveAttemptRepository;
 
     @Inject
     OpenRouterService openRouterService;
@@ -487,6 +491,7 @@ public class TournamentService {
     private void resetGameForReplay(Game game) {
         moveRepository.delete("game.id", game.id);
         chatMessageRepository.delete("game.id", game.id);
+        moveAttemptRepository.delete("game.id", game.id);
 
         game.status = Game.GameStatus.WAITING;
         game.result = null;

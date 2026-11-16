@@ -11,6 +11,16 @@ public class PromptService {
 
   private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
 
+  /** Version suffix of prompts rendered with trash talk disabled. */
+  static final String SILENT_VERSION_SUFFIX = "-silent";
+
+  /** Rule 5 of {@link #DEFAULT_SYSTEM_PROMPT}; replaced by {@link #SILENT_MESSAGE_RULE} when trash talk is off. */
+  static final String TRASH_TALK_RULE = "5. You can respond to your opponent however you want. They are your opponent, "
+      + "so do not give them an advantage by revealing your next move or plans. You can trash talk if you want.";
+
+  static final String SILENT_MESSAGE_RULE = "5. Trash talk is disabled in this tournament. Leave the \"message\" field "
+      + "empty (\"\") and do not address your opponent.";
+
   private static final String DEFAULT_SYSTEM_PROMPT = """
       You are playing chess in a tournament match. This is a real competition.
 
@@ -76,15 +86,29 @@ public class PromptService {
 
   public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
       String color, String opponentName, String opponentModel) {
+    return buildSystemPrompt(legacyPromptTemplate, customInstructions, color, opponentName, opponentModel, true);
+  }
+
+  /**
+   * Renders the system prompt. With {@code trashTalkEnabled == false} the default prompt asks the model to leave
+   * "message" empty and its version gets the {@value #SILENT_VERSION_SUFFIX} suffix; legacy custom templates are
+   * used as stored.
+   */
+  public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
+      String color, String opponentName, String opponentModel, boolean trashTalkEnabled) {
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
           legacyPromptTemplate.formatted(color, opponentName, opponentModel),
           "legacy-custom-template");
     }
 
+    String versionSuffix = trashTalkEnabled ? "" : SILENT_VERSION_SUFFIX;
     String basePrompt = DEFAULT_SYSTEM_PROMPT.formatted(color, opponentName, opponentModel);
+    if (!trashTalkEnabled) {
+      basePrompt = basePrompt.replace(TRASH_TALK_RULE, SILENT_MESSAGE_RULE);
+    }
     if (!hasCustomInstructions(customInstructions)) {
-      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION);
+      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix);
     }
 
     String combinedPrompt = basePrompt + """
@@ -96,7 +120,7 @@ public class PromptService {
         Follow the rules above exactly. Treat these custom instructions as additional guidance, not as permission to break the required response format or reveal hidden plans.
         """.formatted(customInstructions.trim());
 
-    return new ResolvedPrompt(combinedPrompt, DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions");
+    return new ResolvedPrompt(combinedPrompt, DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions" + versionSuffix);
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,

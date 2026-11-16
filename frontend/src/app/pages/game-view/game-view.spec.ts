@@ -1,11 +1,13 @@
 import { of, throwError } from 'rxjs';
 import { GameView } from './game-view';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import { Game, Move, MoveAttempt } from '../../models/tournament.model';
 
 function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<any> }) {
   const api = {
     pauseGame: () => of(void 0),
     startGame: () => of(void 0),
+    getGameAttempts: () => of([]),
     ...overrides?.api,
   };
   const snackbar = {
@@ -276,4 +278,153 @@ describe('GameView', () => {
     expect(component.humanMove).toBe('');
     expect(component.humanMessage).toBe('');
   });
+
+  it('summarizes failed attempts per ply in the feed', () => {
+    const { component } = createComponent();
+    component.game.set(gameFixture({ status: 'FORFEIT', result: 'BLACK_FORFEIT' }));
+    component.moves.set([moveFixture({ retryCount: 2 })]);
+    component.attempts.set([
+      attemptFixture({ attemptNumber: 1, outcome: 'ILLEGAL_MOVE', proposedMove: 'Qxh7' }),
+      attemptFixture({ attemptNumber: 2, outcome: 'PARSE_FAILURE' }),
+      attemptFixture({ attemptNumber: 3, outcome: 'ACCEPTED', proposedMove: 'e4' }),
+      attemptFixture({
+        color: 'BLACK',
+        outcome: 'ILLEGAL_MOVE',
+        proposedMove: 'Ke7',
+        createdAt: '2026-03-06T10:02:00Z',
+      }),
+      attemptFixture({
+        color: 'BLACK',
+        attemptNumber: 2,
+        outcome: 'EMPTY_RESPONSE',
+        createdAt: '2026-03-06T10:02:30Z',
+      }),
+    ]);
+
+    const events = component.feedEvents();
+    const move = events.find((event) => event.type === 'move');
+    const unplayed = events.find((event) => event.type === 'attempts');
+
+    expect(move?.detail).toBe('Alpha after 2 failed attempts: illegal Qxh7, unparseable answer');
+    expect(unplayed?.label).toBe('Black move 1 not played');
+    expect(unplayed?.detail).toBe('Beta: 2 failed attempts: illegal Ke7, empty answer');
+  });
+
+  it('loads the attempts together with the game', () => {
+    const getGameAttempts = vi.fn(() =>
+      of([attemptFixture({ outcome: 'TRUNCATED', proposedMove: null })]),
+    );
+    const { component } = createComponent({
+      api: {
+        getGame: () => of(gameFixture({ status: 'PAUSED' })),
+        getGameAttempts,
+      },
+    });
+    (component as any).gameId = 'g-1';
+
+    component.loadGame();
+
+    expect(getGameAttempts).toHaveBeenCalledWith('g-1');
+    expect(component.attempts()).toHaveLength(1);
+    expect(component.feedEvents().find((event) => event.type === 'attempts')?.detail).toBe(
+      'Alpha: 1 failed attempt: cut off at the token limit',
+    );
+  });
+
+  it('names the rejected move in the live retry text', () => {
+    const { component } = createComponent();
+
+    component.handleWsMessage({
+      type: 'retry',
+      gameId: 'g-1',
+      color: 'WHITE',
+      attemptNumber: 2,
+      reason: 'Illegal move attempted: Qxh7',
+      outcome: 'ILLEGAL_MOVE',
+      proposedMove: 'Qxh7',
+    });
+    expect(component.retryInfo()).toBe('WHITE attempt 2: illegal move Qxh7');
+
+    component.handleWsMessage({
+      type: 'retry',
+      gameId: 'g-1',
+      color: 'BLACK',
+      attemptNumber: 1,
+      reason: 'Failed to parse response as JSON',
+      outcome: 'PARSE_FAILURE',
+    });
+    expect(component.retryInfo()).toBe('BLACK attempt 1: Failed to parse response as JSON');
+  });
 });
+
+function gameFixture(overrides: Partial<Game> = {}): Game {
+  return {
+    id: 'g-1',
+    tournamentId: null,
+    whitePlayerName: 'Alpha',
+    whiteControlType: 'AI',
+    whiteModelId: 'model-a',
+    blackPlayerName: 'Beta',
+    blackControlType: 'AI',
+    blackModelId: 'model-b',
+    status: 'IN_PROGRESS',
+    result: null,
+    resultReason: null,
+    pgn: null,
+    currentFen: 'fen',
+    bracketRound: null,
+    bracketPosition: null,
+    seriesId: null,
+    seriesGameNumber: 1,
+    seriesBestOf: 1,
+    totalCostUsd: 0,
+    createdAt: '2026-03-06T10:00:00Z',
+    startedAt: '2026-03-06T10:01:00Z',
+    completedAt: '2026-03-06T10:05:00Z',
+    moves: [],
+    chatMessages: [],
+    ...overrides,
+  };
+}
+
+function moveFixture(overrides: Partial<Move> = {}): Move {
+  return {
+    id: 'm1',
+    moveNumber: 1,
+    color: 'WHITE',
+    san: 'e4',
+    fen: 'fen1',
+    modelId: 'model-a',
+    promptVersion: null,
+    promptHash: null,
+    promptTokens: null,
+    completionTokens: null,
+    costUsd: null,
+    responseTimeMs: 1200,
+    retryCount: 0,
+    isOverride: false,
+    createdAt: '2026-03-06T10:01:10Z',
+    ...overrides,
+  };
+}
+
+function attemptFixture(overrides: Partial<MoveAttempt> = {}): MoveAttempt {
+  return {
+    id: `a-${overrides.color ?? 'WHITE'}-${overrides.attemptNumber ?? 1}`,
+    moveNumber: 1,
+    color: 'WHITE',
+    attemptNumber: 1,
+    modelId: 'model-a',
+    outcome: 'ILLEGAL_MOVE',
+    proposedMove: null,
+    promptTokens: null,
+    completionTokens: null,
+    reasoningTokens: null,
+    costUsd: null,
+    responseTimeMs: null,
+    finishReason: null,
+    errorMessage: null,
+    createdAt: '2026-03-06T10:01:05Z',
+    ...overrides,
+  };
+}

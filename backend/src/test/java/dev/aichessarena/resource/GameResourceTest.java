@@ -3,13 +3,17 @@ package dev.aichessarena.resource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.aichessarena.dto.HumanMoveRequest;
+import dev.aichessarena.dto.MoveAttemptDto;
 import dev.aichessarena.dto.OverrideMoveRequest;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.TournamentParticipant;
+import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameEngineService;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -81,6 +85,40 @@ class GameResourceTest {
         assertEquals(404, response.getStatus());
     }
 
+    @Test
+    void attemptsReturnNotFoundForMissingGame() {
+        GameResource resource = new GameResource();
+        resource.gameRepository = new FakeGameRepository(Map.of());
+        resource.moveAttemptRepository = new FakeMoveAttemptRepository(List.of());
+
+        assertEquals(404, resource.getAttempts(UUID.randomUUID()).getStatus());
+    }
+
+    @Test
+    void attemptsAreMappedToDtos() {
+        Game game = new Game();
+        game.id = UUID.randomUUID();
+        MoveAttempt illegal = new MoveAttempt();
+        illegal.id = UUID.randomUUID();
+        illegal.moveNumber = 4;
+        illegal.color = "BLACK";
+        illegal.attemptNumber = 1;
+        illegal.outcome = MoveAttempt.Outcome.ILLEGAL_MOVE;
+        illegal.proposedMove = "Qxh7";
+        GameResource resource = new GameResource();
+        resource.gameRepository = new FakeGameRepository(Map.of(game.id, game));
+        resource.moveAttemptRepository = new FakeMoveAttemptRepository(List.of(illegal));
+
+        Response response = resource.getAttempts(game.id);
+
+        assertEquals(200, response.getStatus());
+        List<?> body = (List<?>) response.getEntity();
+        MoveAttemptDto dto = (MoveAttemptDto) body.getFirst();
+        assertEquals("ILLEGAL_MOVE", dto.outcome());
+        assertEquals("Qxh7", dto.proposedMove());
+        assertEquals(4, dto.moveNumber());
+    }
+
     private TournamentParticipant humanParticipant(String name) {
         TournamentParticipant participant = new TournamentParticipant();
         participant.playerName = name;
@@ -106,6 +144,19 @@ class GameResourceTest {
         @Override
         public Game findById(UUID id) {
             return games.get(id);
+        }
+    }
+
+    private static final class FakeMoveAttemptRepository extends MoveAttemptRepository {
+        private final List<MoveAttempt> attempts;
+
+        private FakeMoveAttemptRepository(List<MoveAttempt> attempts) {
+            this.attempts = attempts;
+        }
+
+        @Override
+        public List<MoveAttempt> findByGameId(UUID gameId) {
+            return attempts;
         }
     }
 

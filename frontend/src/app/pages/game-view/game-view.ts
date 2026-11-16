@@ -13,7 +13,14 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
-import { Game, Move, ChatMessage, WsMessage } from '../../models/tournament.model';
+import {
+  Game,
+  Move,
+  ChatMessage,
+  MoveAttempt,
+  RetryWsMessage,
+  WsMessage,
+} from '../../models/tournament.model';
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
@@ -22,10 +29,11 @@ import { Subscription } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import { failedAttemptsByPly, plyKey, summarizeFailedAttempts } from '../../utils/move-attempts';
 
 type TimelineEvent = {
   id: string;
-  type: 'start' | 'move' | 'chat' | 'result';
+  type: 'start' | 'move' | 'attempts' | 'chat' | 'result';
   label: string;
   detail: string;
   tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
@@ -81,6 +89,8 @@ export class GameView implements OnInit, OnDestroy {
   game = signal<Game | null>(null);
   moves = signal<Move[]>([]);
   chatMessages = signal<ChatMessage[]>([]);
+  /** Every model answer of the game, including rejected ones. */
+  attempts = signal<MoveAttempt[]>([]);
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -188,6 +198,7 @@ export class GameView implements OnInit, OnDestroy {
     const moves = this.moves();
     const chats = this.chatMessages();
     const game = this.game();
+    const failedByPly = failedAttemptsByPly(this.attempts());
 
     if (game?.startedAt) {
       events.push({
@@ -204,8 +215,13 @@ export class GameView implements OnInit, OnDestroy {
     }
 
     moves.forEach((move, index) => {
-      const retrySuffix =
-        move.retryCount > 0
+      const failedSummary = summarizeFailedAttempts(
+        failedByPly.get(plyKey(move.moveNumber, move.color)) ?? [],
+      );
+      failedByPly.delete(plyKey(move.moveNumber, move.color));
+      const retrySuffix = failedSummary
+        ? ` after ${failedSummary}`
+        : move.retryCount > 0
           ? ` after ${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
           : '';
       const overrideSuffix = move.isOverride ? ' (override)' : '';
@@ -219,6 +235,22 @@ export class GameView implements OnInit, OnDestroy {
         createdAtMs: Date.parse(move.createdAt),
         createdAtLabel: move.createdAt,
         moveIndex: index,
+      });
+    });
+
+    // Plies whose failed attempts did not end in a move (forfeit, or a pause after a cut-off answer).
+    failedByPly.forEach((failed) => {
+      const last = failed[failed.length - 1];
+      events.push({
+        id: `attempts-${plyKey(last.moveNumber, last.color)}`,
+        type: 'attempts',
+        label: `${last.color === 'WHITE' ? 'White' : 'Black'} move ${last.moveNumber} not played`,
+        detail: `${this.timelinePlayerName(last.color, last.modelId)}: ${summarizeFailedAttempts(failed)}`,
+        tone: 'warning',
+        icon: 'error_outline',
+        createdAtMs: Date.parse(last.createdAt),
+        createdAtLabel: last.createdAt,
+        moveIndex: moves.length > 0 ? moves.length - 1 : null,
       });
     });
 
@@ -312,6 +344,7 @@ export class GameView implements OnInit, OnDestroy {
         if (game.moves?.length) {
           this.currentMoveIndex.set(game.moves.length - 1);
         }
+        this.loadAttempts();
 
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
@@ -331,6 +364,14 @@ export class GameView implements OnInit, OnDestroy {
         });
         void this.router.navigate(['/tournaments']);
       },
+    });
+  }
+
+  loadAttempts() {
+    this.api.getGameAttempts(this.gameId).subscribe({
+      next: (attempts) => this.attempts.set(attempts),
+      // The feed falls back to the retry counts stored with each move.
+      error: () => this.attempts.set([]),
     });
   }
 
@@ -376,6 +417,12 @@ export class GameView implements OnInit, OnDestroy {
         }
         this.game.update((g) => (g ? { ...g, currentFen: msg.fen, pgn: msg.pgn ?? g.pgn } : g));
         this.retryInfo.set(null);
+        const plyHadFailedAttempts = this.attempts().some(
+          (a) => a.moveNumber === msg.moveNumber && a.color === msg.color,
+        );
+        if ((msg.retryCount ?? 0) > 0 || plyHadFailedAttempts) {
+          this.loadAttempts();
+        }
         break;
 
       case 'evaluationUpdate':
@@ -428,15 +475,19 @@ export class GameView implements OnInit, OnDestroy {
           msg.turnStartedAt,
           msg.turnDeadlineAt,
         );
+        if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
+          this.loadAttempts();
+        }
         break;
 
       case 'retry':
-        this.retryInfo.set(`${msg.color} attempt ${msg.attemptNumber}: ${msg.reason}`);
+        this.retryInfo.set(retryText(msg));
         break;
 
       case 'forfeit':
         this.turnState.clearServerTurnState();
         this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
+        this.loadAttempts();
         break;
     }
   }
@@ -655,4 +706,12 @@ export class GameView implements OnInit, OnDestroy {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+}
+
+function retryText(msg: RetryWsMessage): string {
+  const reason =
+    msg.outcome === 'ILLEGAL_MOVE' && msg.proposedMove
+      ? `illegal move ${msg.proposedMove}`
+      : msg.reason;
+  return `${msg.color} attempt ${msg.attemptNumber}: ${reason}`;
 }

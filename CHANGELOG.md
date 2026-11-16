@@ -7,6 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Tournament setting *Max output tokens per answer* (`maxOutputTokens`, 128–32768, default 4096) on create and update, in the setup page and its presets. It is sent to OpenRouter as `max_tokens` and includes reasoning tokens.
+- Every model attempt is stored in the new `move_attempts` table (migration V10), including illegal, unparseable, empty, cut-off, timed-out and provider-failed answers, with tokens, reasoning tokens, cost, finish reason and the raw answer.
+- `GET /api/games/{id}/attempts` returns a game's attempts ordered by move number; the game feed shows failed attempts per move, and plies that ended without a move.
+- Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
+
+### Changed
+- The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).
+- Only the system prompt, the last six prior messages and the current turn are sent to a model, instead of the whole game's conversation.
+- The cost of rejected answers is added to the game's (and so the tournament's) total cost. Per-model analytics still count accepted moves only.
+- `@QuarkusTest` runs on a random HTTP port so the tests do not collide with a running dev server.
+
+### Fixed
+- Reasoning models no longer lose games because a 500-token limit cut off their answer: an answer cut off at the limit without a usable legal move pauses the game with a hint instead of counting as a failed attempt; a cut-off answer with a legal move is played.
+- Failed attempts and their cost are no longer lost.
+- The tournament's trash talk switch is honoured: with it off, models get a prompt variant (version suffix `-silent`) asking them to leave the message empty, and any message they send is dropped.
+- Replaying a drawn single game also discards the drawn game's attempts.
+
 ## [1.2.0] - 2026-11-16
 
 Runtime release: the images now run on the current LTS versions of Java and Node.js. No configuration changes are needed; existing `.env` files and databases work as they are.

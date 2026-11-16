@@ -77,6 +77,8 @@ Your opponent is %s (%s).`;
   sharedCustomInstructions = '';
   moveTimeout = 60;
   maxRetries = 3;
+  /** Cap on generated tokens per answer (128-32768); includes reasoning tokens. */
+  maxOutputTokens = 4096;
   trashTalkEnabled = true;
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
   matchupBestOf: Tournament['matchupBestOf'] = 1;
@@ -114,6 +116,7 @@ Your opponent is %s (%s).`;
       name: string;
       moveTimeout: number;
       maxRetries: number;
+      maxOutputTokens: number;
       drawPolicy: Tournament['drawPolicy'];
       matchupBestOf: Tournament['matchupBestOf'];
       finalsBestOf: Tournament['finalsBestOf'];
@@ -125,6 +128,7 @@ Your opponent is %s (%s).`;
       name: 'Quick Start Arena',
       moveTimeout: 30,
       maxRetries: 2,
+      maxOutputTokens: 4096,
       drawPolicy: 'WHITE_ADVANCES',
       matchupBestOf: 1,
       finalsBestOf: null,
@@ -135,6 +139,7 @@ Your opponent is %s (%s).`;
       name: 'Balanced Ladder',
       moveTimeout: 45,
       maxRetries: 3,
+      maxOutputTokens: 4096,
       drawPolicy: 'HIGHER_SEED_ADVANCES',
       matchupBestOf: 3,
       finalsBestOf: null,
@@ -145,6 +150,7 @@ Your opponent is %s (%s).`;
       name: 'Series Showcase',
       moveTimeout: 60,
       maxRetries: 3,
+      maxOutputTokens: 8192,
       drawPolicy: 'REPLAY_GAME',
       matchupBestOf: 3,
       finalsBestOf: 5,
@@ -368,6 +374,7 @@ Your opponent is %s (%s).`;
       sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
       moveTimeoutSeconds: this.moveTimeout,
       maxRetries: this.maxRetries,
+      maxOutputTokens: this.maxOutputTokens,
       matchupBestOf: this.matchupBestOf,
       finalsBestOf: this.finalsBestOf,
       trashTalkEnabled: this.trashTalkEnabled,
@@ -545,6 +552,7 @@ Your opponent is %s (%s).`;
     this.name = preset.name;
     this.moveTimeout = preset.moveTimeout;
     this.maxRetries = preset.maxRetries;
+    this.maxOutputTokens = preset.maxOutputTokens;
     this.drawPolicy = preset.drawPolicy;
     this.matchupBestOf = preset.matchupBestOf;
     this.finalsBestOf = preset.finalsBestOf;

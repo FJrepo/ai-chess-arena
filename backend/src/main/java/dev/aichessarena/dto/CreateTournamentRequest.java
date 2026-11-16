@@ -18,5 +18,6 @@ public record CreateTournamentRequest(
         Boolean trashTalkEnabled,
         String drawPolicy,
         List<AddParticipantRequest> participants,
-        UUID clientRequestId
+        UUID clientRequestId,
+        Integer maxOutputTokens
 ) {}
