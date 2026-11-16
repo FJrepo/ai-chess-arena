@@ -1,63 +1,60 @@
 <div class="analytics-page desktop-page">
-  <section class="page-hero-surface page-hero analytics-hero">
-    <div class="page-title-block">
-      <span class="page-kicker">Arena Analytics</span>
-      <h1 class="page-title">Model Comparison and Reliability</h1>
-      <p class="page-subtitle">
-        Compare who wins, who fails, who responds fastest, and who delivers the best value across
-        tournament history.
+  <header class="analytics-header">
+    <div class="analytics-header-copy">
+      <span class="analytics-kicker">Arena Analytics</span>
+      <h1>Model Comparison and Reliability</h1>
+      <p class="analytics-subtitle">
+        Who wins, who fails, who answers fastest and who delivers the best value across tournament
+        history.
       </p>
     </div>
-    <div class="page-actions analytics-actions">
+    <div class="analytics-header-actions">
       @if (lastUpdated(); as lastUpdatedAt) {
-        <div class="last-updated">System Synced at {{ lastUpdatedAt | date: 'mediumTime' }}</div>
+        <span class="last-updated">Last synced {{ lastUpdatedAt | date: 'mediumTime' }}</span>
       }
-    </div>
-  </section>
-
-  <div class="filter-card">
-    <div class="filter-grid">
-      <mat-form-field appearance="outline">
-        <mat-label>Analysis Window</mat-label>
-        <mat-select [(ngModel)]="selectedDays" (ngModelChange)="onCommonFiltersChanged()">
-          @for (days of dayOptions; track days) {
-            <mat-option [value]="days">Last {{ days }} days</mat-option>
-          }
-        </mat-select>
-        <mat-icon matPrefix>calendar_today</mat-icon>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Filter by Tournament</mat-label>
-        <mat-select [(ngModel)]="selectedTournamentId" (ngModelChange)="onCommonFiltersChanged()">
-          <mat-option value="">All tournaments</mat-option>
-          @for (tournament of tournaments(); track tournament.id) {
-            <mat-option [value]="tournament.id">{{ tournament.name }}</mat-option>
-          }
-        </mat-select>
-        <mat-icon matPrefix>emoji_events</mat-icon>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Min Games</mat-label>
-        <input
-          matInput
-          type="number"
-          min="0"
-          [(ngModel)]="minGames"
-          (ngModelChange)="onCommonFiltersChanged()"
-        />
-        <mat-icon matPrefix>leaderboard</mat-icon>
-      </mat-form-field>
-
       <button mat-flat-button color="primary" class="refresh-btn" (click)="manualRefresh()">
         <mat-icon>refresh</mat-icon>
         Sync Data
       </button>
     </div>
+  </header>
+
+  <div class="filter-card">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-window">
+      <mat-label>Analysis Window</mat-label>
+      <mat-select [(ngModel)]="selectedDays" (ngModelChange)="onCommonFiltersChanged()">
+        @for (days of dayOptions; track days) {
+          <mat-option [value]="days">Last {{ days }} days</mat-option>
+        }
+      </mat-select>
+      <mat-icon matPrefix>calendar_today</mat-icon>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-tournament">
+      <mat-label>Filter by Tournament</mat-label>
+      <mat-select [(ngModel)]="selectedTournamentId" (ngModelChange)="onCommonFiltersChanged()">
+        <mat-option value="">All tournaments</mat-option>
+        @for (tournament of tournaments(); track tournament.id) {
+          <mat-option [value]="tournament.id">{{ tournament.name }}</mat-option>
+        }
+      </mat-select>
+      <mat-icon matPrefix>emoji_events</mat-icon>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-min-games">
+      <mat-label>Min Games</mat-label>
+      <input
+        matInput
+        type="number"
+        min="0"
+        [(ngModel)]="minGames"
+        (ngModelChange)="onCommonFiltersChanged()"
+      />
+      <mat-icon matPrefix>leaderboard</mat-icon>
+    </mat-form-field>
   </div>
 
-  <mat-tab-group animationDuration="200ms">
+  <mat-tab-group animationDuration="200ms" mat-stretch-tabs="false" mat-align-tabs="start">
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="tab-icon">insights</mat-icon>
@@ -81,17 +78,33 @@
         @if (comparison(); as c) {
           <div class="kpi-grid leader-grid">
             @for (card of leaderCards(); track card.label) {
-              <div class="leader-card">
+              <div class="leader-card" [class.low-sample]="card.row?.insufficientData">
                 <div class="leader-header">
                   <span class="leader-label">{{ card.label }}</span>
-                  @if (card.row) {
-                    <mat-chip>{{ card.row.reliabilityBand }}</mat-chip>
+                  @if (card.row?.insufficientData) {
+                    <mat-chip class="grade-chip" data-grade="Insufficient data"
+                      >Low sample</mat-chip
+                    >
+                  } @else if (card.row && card.showsGrade) {
+                    <mat-chip class="grade-chip" [attr.data-grade]="card.row.reliabilityBand">
+                      Grade {{ card.row.reliabilityBand }}
+                    </mat-chip>
                   }
                 </div>
                 @if (card.row) {
                   <div class="leader-model">{{ card.row.modelId }}</div>
                   <div class="leader-value">{{ card.value(card.row) }}</div>
                   <div class="leader-sub">{{ card.detail(card.row) }}</div>
+                  @if (card.row.insufficientData) {
+                    <p class="leader-caveat">
+                      <mat-icon aria-hidden="true">info</mat-icon>
+                      <span
+                        >Only {{ card.row.gamesPlayed }}
+                        {{ card.row.gamesPlayed === 1 ? 'game' : 'games' }} played, too few to rank
+                        with confidence.</span
+                      >
+                    </p>
+                  }
                 } @else {
                   <div class="leader-model">No qualifying model</div>
                   <div class="leader-value">N/A</div>
@@ -108,7 +121,7 @@
                 <h3>Model Comparison Table</h3>
                 <p>{{ c.gamesCount }} terminal games in scope.</p>
               </div>
-              <mat-form-field appearance="outline" class="sort-field">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="sort-field">
                 <mat-label>Sort by</mat-label>
                 <mat-select
                   [ngModel]="comparisonSortBy()"
@@ -125,46 +138,45 @@
               <table class="analytics-table comparison-table">
                 <thead>
                   <tr>
-                    <th>Model</th>
-                    <th>Record</th>
-                    <th>Win Rate</th>
-                    <th>Reliability</th>
-                    <th>First-try legal</th>
-                    <th>Latency</th>
-                    <th>Forfeits</th>
-                    <th>White</th>
-                    <th>Black</th>
-                    <th>Total Spend</th>
-                    <th>Cost / Win</th>
+                    <th class="col-model">Model</th>
+                    <th class="num">Record</th>
+                    <th class="num">Win Rate</th>
+                    <th class="col-score">Reliability</th>
+                    <th class="num">First-try legal</th>
+                    <th class="num">Latency</th>
+                    <th class="num">Forfeits</th>
+                    <th class="num">White</th>
+                    <th class="num">Black</th>
+                    <th class="num">Total Spend</th>
+                    <th class="num">Cost / Win</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of comparisonRows(); track row.modelId) {
                     <tr>
-                      <td>
+                      <td class="col-model">
                         <strong>{{ row.modelId }}</strong>
-                        @if (row.insufficientData) {
-                          <div class="table-note">Low sample</div>
-                        }
                       </td>
-                      <td>{{ row.wins }}-{{ row.draws }}-{{ row.losses }}</td>
-                      <td>{{ percent(row.winRate) }}</td>
-                      <td>
-                        {{ row.reliabilityScore | number: '1.1-2' }}
-                        <div class="table-note">{{ row.reliabilityBand }}</div>
+                      <td class="num">{{ row.wins }}-{{ row.draws }}-{{ row.losses }}</td>
+                      <td class="num">{{ percent(row.winRate) }}</td>
+                      <td class="col-score">
+                        <span class="score">{{ row.reliabilityScore | number: '1.1-1' }}</span>
+                        <mat-chip class="grade-chip" [attr.data-grade]="row.reliabilityBand">
+                          {{ row.insufficientData ? 'Low sample' : row.reliabilityBand }}
+                        </mat-chip>
                       </td>
-                      <td>{{ percent(row.firstTryLegalRate) }}</td>
-                      <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
-                      <td>
-                        {{ row.forfeits }}
+                      <td class="num">{{ percent(row.firstTryLegalRate) }}</td>
+                      <td class="num">{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td class="num">
                         @if (row.timeoutForfeits > 0) {
-                          <div class="table-note">{{ row.timeoutForfeits }} timeout</div>
+                          <span class="table-note">{{ row.timeoutForfeits }} timeout</span>
                         }
+                        {{ row.forfeits }}
                       </td>
-                      <td>{{ percent(row.whiteWinRate) }}</td>
-                      <td>{{ percent(row.blackWinRate) }}</td>
-                      <td>{{ currency(row.totalCostUsd) }}</td>
-                      <td>{{ currency(row.costPerWinUsd) }}</td>
+                      <td class="num">{{ percent(row.whiteWinRate) }}</td>
+                      <td class="num">{{ percent(row.blackWinRate) }}</td>
+                      <td class="num">{{ currency(row.totalCostUsd) }}</td>
+                      <td class="num">{{ currency(row.costPerWinUsd) }}</td>
                     </tr>
                   } @empty {
                     <tr>
@@ -283,27 +295,29 @@
               <table class="analytics-table">
                 <thead>
                   <tr>
-                    <th>Model Identity</th>
-                    <th>Moves</th>
-                    <th>Retries</th>
-                    <th>Avg Retries</th>
-                    <th>Latency</th>
-                    <th>Total Cost</th>
-                    <th>Cost/Move</th>
+                    <th class="col-model">Model Identity</th>
+                    <th class="num">Moves</th>
+                    <th class="num">Retries</th>
+                    <th class="num">Avg Retries</th>
+                    <th class="num">Latency</th>
+                    <th class="num">Total Cost</th>
+                    <th class="num">Cost/Move</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of h.models; track row.modelId) {
                     <tr>
-                      <td>
+                      <td class="col-model">
                         <strong>{{ row.modelId }}</strong>
                       </td>
-                      <td>{{ row.movesCount }}</td>
-                      <td>{{ row.retriesTotal }}</td>
-                      <td>{{ row.averageRetriesPerMove | number: '1.2-4' }}</td>
-                      <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
-                      <td>{{ row.totalCostUsd | currency: 'USD' }}</td>
-                      <td>{{ row.averageCostPerMoveUsd | currency: 'USD' }}</td>
+                      <td class="num">{{ row.movesCount | number }}</td>
+                      <td class="num">{{ row.retriesTotal | number }}</td>
+                      <td class="num">{{ row.averageRetriesPerMove | number: '1.2-2' }}</td>
+                      <td class="num">{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td class="num">{{ row.totalCostUsd | currency: 'USD' }}</td>
+                      <td class="num">
+                        {{ row.averageCostPerMoveUsd | currency: 'USD' : 'symbol' : '1.4-4' }}
+                      </td>
                     </tr>
                   } @empty {
                     <tr>
@@ -341,10 +355,10 @@
         }
 
         @if (reliability(); as r) {
-          <div class="kpi-grid">
+          <div class="kpi-row">
             <div class="kpi-card">
               <div class="label">Trust Index</div>
-              <div class="value">{{ reliabilityAverageScore() | number: '1.1-2' }}</div>
+              <div class="value">{{ reliabilityAverageScore() | number: '1.1-1' }}</div>
               <div class="sub">Average across {{ r.models.length }} models</div>
             </div>
             <div class="kpi-card">
@@ -354,43 +368,42 @@
             </div>
           </div>
 
-          <div class="table-card">
+          <div class="table-card reliability-table-card">
             <h3>Reliability Ranking & Stability</h3>
             <div class="table-wrap">
-              <table class="analytics-table">
+              <table class="analytics-table reliability-table">
                 <thead>
                   <tr>
-                    <th>Model Identity</th>
-                    <th>Score</th>
-                    <th>Stability</th>
-                    <th>Games</th>
-                    <th>First-try legal</th>
-                    <th>Forfeit Rate</th>
-                    <th>Avg Retries</th>
-                    <th>Avg Latency</th>
+                    <th class="col-model">Model Identity</th>
+                    <th class="col-score">Score</th>
+                    <th class="num">Games</th>
+                    <th class="num">First-try legal</th>
+                    <th class="num">Forfeit Rate</th>
+                    <th class="num">Avg Retries</th>
+                    <th class="num">Avg Latency</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of r.models; track row.modelId) {
                     <tr>
-                      <td>
+                      <td class="col-model">
                         <strong>{{ row.modelId }}</strong>
                       </td>
-                      <td>{{ row.finalScore | number: '1.1-2' }}</td>
-                      <td>
-                        <mat-chip [class.low-confidence]="row.insufficientData">
+                      <td class="col-score">
+                        <span class="score">{{ row.finalScore | number: '1.1-1' }}</span>
+                        <mat-chip class="grade-chip" [attr.data-grade]="row.band">
                           {{ row.band }}
                         </mat-chip>
                       </td>
-                      <td>{{ row.gamesPlayed }}</td>
-                      <td>{{ percent(row.firstTryLegalRate) }}</td>
-                      <td>{{ row.forfeitRate * 100 | number: '1.1-2' }}%</td>
-                      <td>{{ row.averageRetriesPerMove | number: '1.2-4' }}</td>
-                      <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td class="num">{{ row.gamesPlayed }}</td>
+                      <td class="num">{{ percent(row.firstTryLegalRate) }}</td>
+                      <td class="num">{{ row.forfeitRate * 100 | number: '1.1-1' }}%</td>
+                      <td class="num">{{ row.averageRetriesPerMove | number: '1.2-2' }}</td>
+                      <td class="num">{{ formatMs(row.averageResponseTimeMs) }}</td>
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="8" class="empty">
+                      <td colspan="7" class="empty">
                         No reliability data available for current criteria.
                       </td>
                     </tr>
@@ -398,7 +411,7 @@
                 </tbody>
               </table>
             </div>
-            <p>{{ scoreExplanation }}</p>
+            <p class="table-footnote">{{ scoreExplanation }}</p>
           </div>
         }
       </section>

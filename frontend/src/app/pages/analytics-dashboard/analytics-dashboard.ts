@@ -94,6 +94,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return [
       {
         label: 'Strongest',
+        showsGrade: false,
         description: 'Highest win rate in the current sample',
         row: this.pickBest(
           rows,
@@ -113,11 +114,14 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
           (row) => row.gamesPlayed,
           true,
         ),
-        value: (row: AnalyticsComparisonModel) => row.reliabilityBand,
-        detail: (row: AnalyticsComparisonModel) => `${row.reliabilityScore.toFixed(1)} score`,
+        showsGrade: true,
+        value: (row: AnalyticsComparisonModel) => row.reliabilityScore.toFixed(1),
+        detail: (row: AnalyticsComparisonModel) =>
+          `Out of 100, over ${row.gamesPlayed} ${row.gamesPlayed === 1 ? 'game' : 'games'}`,
       },
       {
         label: 'Fastest',
+        showsGrade: false,
         description: 'Lowest average move latency',
         row: this.pickBest(
           rows,
@@ -130,6 +134,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       },
       {
         label: 'Best Value',
+        showsGrade: false,
         description: 'Lowest cost per win when pricing exists',
         row: this.pickBest(
           rows.filter((row) => row.pricingAvailable && row.costPerWinUsd !== null && row.wins > 0),
@@ -209,7 +214,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     if (value === null || value === undefined) {
       return 'n/a';
     }
-    return `${Math.round(value)} ms`;
+    return `${Math.round(value).toLocaleString('en-US')} ms`;
   }
 
   private refreshAll(): void {

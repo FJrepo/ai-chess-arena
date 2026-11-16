@@ -80,6 +80,34 @@ describe('AnalyticsDashboard', () => {
     expect(bestValue?.row?.modelId).toBe('model.alpha');
     expect(bestValue?.value(bestValue.row!)).toBe('$0.80');
   });
+
+  it('shows the score as the most reliable value and only that card carries the grade', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 7,
+      models: [comparisonRow('model.alpha', { reliabilityScore: 99.18, gamesPlayed: 7 })],
+    });
+
+    const cards = component.leaderCards();
+    const mostReliable = cards.find((card) => card.label === 'Most Reliable');
+
+    expect(mostReliable?.value(mostReliable.row!)).toBe('99.2');
+    expect(mostReliable?.detail(mostReliable.row!)).toBe('Out of 100, over 7 games');
+    expect(cards.filter((card) => card.showsGrade).map((card) => card.label)).toEqual([
+      'Most Reliable',
+    ]);
+  });
+
+  it('formats latency with thousands separators', () => {
+    const component = new AnalyticsDashboard({} as any);
+
+    expect(component.formatMs(10196.4)).toBe('10,196 ms');
+    expect(component.formatMs(812)).toBe('812 ms');
+    expect(component.formatMs(null)).toBe('n/a');
+  });
 });
 
 type AnalyticsComparisonRow = {
