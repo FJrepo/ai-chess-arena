@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-16
+
+"Trustworthy results": the app no longer blames models for its own limits, keeps every model attempt as evidence, scores reliability fairly, and gets a desktop polish of every page.
+
+### Upgrade notes
+- Migration V10 runs automatically: it adds the `move_attempts` table and `tournaments.max_output_tokens` (default 4096) and widens `games.total_cost_usd` to 8 decimal places. Existing tournaments get the 4096-token default.
+- Reasoning models can now use up to the tournament's *Max output tokens per answer*, which can raise cost per move compared with the old fixed 500-token cap; lower the limit per tournament if needed.
+- The API field `maxRetries` keeps its name but is labelled *Max attempts per move* (it counts the first attempt).
+
 ### Added
 - Tournament setting *Max output tokens per answer* (`maxOutputTokens`, 128–32768, default 4096) on create and update, in the setup page and its presets. It is sent to OpenRouter as `max_tokens` and includes reasoning tokens.
 - Every model attempt is stored in the new `move_attempts` table (migration V10), including illegal, unparseable, empty, cut-off, timed-out and provider-failed answers, and legal answers discarded because the position or game status changed meanwhile (`DISCARDED`), with tokens, reasoning tokens, cost, finish reason and the raw answer. Only illegal, unparseable, empty and timed-out answers count as the model's failures; cut-off answers are listed separately in the game feed.
@@ -18,6 +27,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Games in the API (`GameDto`) carry `whiteParticipantId`, `blackParticipantId` and `advancedParticipantId` (null for a side without a participant, such as a bye).
 
 ### Changed
+- Desktop layout and visual polish for every page (tournament list, setup, bracket, game view, analytics, system status) in light and dark themes, with readable status labels, a theme-aware surface shadow and fluid board squares; the UI targets desktop browsers.
 - The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).
 - Only the system prompt, the last six prior messages and the current turn are sent to a model, instead of the whole game's conversation.
 - The cost of rejected answers is added to the game's (and so the tournament's) total cost.
