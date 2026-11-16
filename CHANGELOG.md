@@ -12,7 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The move timeout is now enforced: models that used to answer after the limit (for example slow reasoning models in a 30-second preset) now forfeit on time. Switch the limit off or raise it for such tournaments.
 
 ### Fixed
-- The move timeout is enforced as a hard deadline for the whole answer, from the start of the turn to the last byte of the response, across all attempts of the turn. Before, it only limited the time until OpenRouter started its response, so a model that took 45–70 s per move under a 30-second limit was never timed out while the UI timer ran down to zero. Running out of time forfeits on time, unless an OpenRouter problem happened earlier in the same turn (then the game pauses, as before).
+- The move timeout is enforced as a hard deadline for the whole answer, from the start of the turn to the last byte of the response, across all attempts of the turn. Before, it only limited the time until OpenRouter started its response, so a model that took 45–70 s per move under a 30-second limit was never timed out while the UI timer ran down to zero. Running out of time forfeits on time, unless an OpenRouter problem happened earlier in the same turn (then the game pauses, as before). Retries get only the time that is left (no grace period), and an OpenRouter error status whose body arrives too slowly stays a provider problem instead of a model timeout.
 - The pause reason for an answer cut off at the output-token limit ends with a full stop.
 - The configured fallback output-token limit is 4096 as documented (was still 500); unused `game.default-*` properties removed.
 

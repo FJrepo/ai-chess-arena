@@ -11,7 +11,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -27,6 +29,9 @@ public class GameTurnService {
     long[] providerRetryBackoffMs = {1_000L, 3_000L, 9_000L};
 
     Sleeper sleeper = Thread::sleep;
+
+    /** Monotonic clock for the turn deadline ({@link System#nanoTime()}); replaceable in tests. */
+    LongSupplier nanoClock = System::nanoTime;
 
     @Inject
     ChessService chessService;
@@ -74,9 +79,17 @@ public class GameTurnService {
 
         // Without a move time limit there is no turn deadline; each request is still bounded by the OpenRouter
         // safety cap, which is a provider problem when reached, never the model's timeout.
+        // One absolute deadline on the monotonic clock is enforced for the whole turn; every attempt gets exactly the
+        // time that is left. The wall-clock instants are only shown to viewers.
         Integer moveTimeoutSeconds = request.moveTimeoutSeconds();
         Instant turnStartedAt = Instant.now();
-        Instant turnDeadlineAt = moveTimeoutSeconds == null ? null : turnStartedAt.plusSeconds(moveTimeoutSeconds);
+        Instant turnDeadlineAt = null;
+        OpenRouterService.AnswerDeadline turnDeadline = null;
+        if (moveTimeoutSeconds != null) {
+            turnDeadlineAt = turnStartedAt.plusSeconds(moveTimeoutSeconds);
+            turnDeadline = OpenRouterService.AnswerDeadline.after(
+                    Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
+        }
 
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt);
 
@@ -87,18 +100,13 @@ public class GameTurnService {
                 return TurnResult.stopped();
             }
 
-            Duration answerDeadline = null;
-            if (turnDeadlineAt != null) {
-                long remainingMs = turnDeadlineAt.toEpochMilli() - System.currentTimeMillis();
-                if (remainingMs <= 0) {
-                    if (lastProviderFailure != null) {
-                        // The deadline was eaten by provider outages, not by the model.
-                        return pauseForProvider(request, lastProviderFailure);
-                    }
-                    gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
-                    return TurnResult.terminal();
+            if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
+                if (lastProviderFailure != null) {
+                    // The deadline was eaten by provider outages, not by the model.
+                    return pauseForProvider(request, lastProviderFailure);
                 }
-                answerDeadline = Duration.ofMillis(Math.max(remainingMs, 100L));
+                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
+                return TurnResult.terminal();
             }
 
             LOG.infof("Game %s: %s move %d, attempt %d",
@@ -107,7 +115,7 @@ public class GameTurnService {
             OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
                     request.modelId(),
                     ConversationWindow.trim(request.history(), turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES),
-                    answerDeadline,
+                    turnDeadline,
                     request.maxOutputTokens()
             );
 
@@ -126,7 +134,8 @@ public class GameTurnService {
                 long delayMs = providerRetryBackoffMs[providerFailures];
                 providerFailures++;
                 lastProviderFailure = detail;
-                if (turnDeadlineAt != null && System.currentTimeMillis() + delayMs >= turnDeadlineAt.toEpochMilli()) {
+                if (turnDeadline != null
+                        && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= TimeUnit.MILLISECONDS.toNanos(delayMs)) {
                     return pauseForProvider(request, detail);
                 }
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt,

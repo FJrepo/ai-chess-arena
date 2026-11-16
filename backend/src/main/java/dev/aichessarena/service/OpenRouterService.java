@@ -30,6 +30,8 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 
 @ApplicationScoped
 public class OpenRouterService {
@@ -85,6 +87,9 @@ public class OpenRouterService {
     @ConfigProperty(name = "openrouter.request-safety-cap", defaultValue = "PT10M")
     Duration requestSafetyCap = Duration.ofMinutes(10);
 
+    /** Monotonic clock for deadlines ({@link System#nanoTime()}); replaceable in tests. */
+    LongSupplier nanoClock = System::nanoTime;
+
     @Inject
     ObjectMapper objectMapper;
 
@@ -99,25 +104,34 @@ public class OpenRouterService {
         return chat(modelId, messages, Duration.ofSeconds(120));
     }
 
-    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration answerDeadline) {
-        return chat(modelId, messages, answerDeadline, defaultMaxTokens);
+    /** Sends one chat completion whose complete answer must arrive within {@code answerTime} from now. */
+    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration answerTime) {
+        return chat(modelId, messages, AnswerDeadline.after(answerTime, nanoClock.getAsLong()), defaultMaxTokens);
     }
 
     /**
      * Sends one chat completion and waits for the complete answer. {@code maxOutputTokens} caps the generated
      * tokens of the answer (OpenRouter {@code max_tokens}, which includes reasoning tokens for reasoning models).
      *
-     * <p>{@code answerDeadline} is the time the model has for the whole answer, from sending the request to the
-     * last byte of the response body; exceeding it is the model's timeout ({@link ProviderOutcome#TIMEOUT}).
-     * {@code null} means no move time limit. Every request is also bounded by the technical safety cap
-     * ({@code openrouter.request-safety-cap}); reaching that cap first is a provider problem
-     * ({@link ProviderOutcome#RETRYABLE}), never the model's timeout.
+     * <p>{@code answerDeadline} is the absolute point by which the whole answer, up to the last byte of the
+     * response body, must have arrived; preparing the request counts against it, and a deadline that has already
+     * passed fails at once without sending anything. Exceeding it is the model's timeout
+     * ({@link ProviderOutcome#TIMEOUT}), unless the response had already started with an error status: then the
+     * provider classification of that status applies. {@code null} means no move time limit. Every request is
+     * also bounded by the technical safety cap ({@code openrouter.request-safety-cap}); reaching that cap first
+     * is a provider problem ({@link ProviderOutcome#RETRYABLE}), never the model's timeout.
      */
-    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration answerDeadline, int maxOutputTokens) {
-        Duration safetyCap = requestSafetyCap;
-        boolean limitedByMoveTime = answerDeadline != null && answerDeadline.compareTo(safetyCap) < 0;
-        Duration wait = limitedByMoveTime ? answerDeadline : safetyCap;
-        long startNanos = System.nanoTime();
+    public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
+                            int maxOutputTokens) {
+        long startNanos = nanoClock.getAsLong();
+        AnswerDeadline safetyDeadline = AnswerDeadline.after(requestSafetyCap, startNanos);
+        boolean limitedByMoveTime = answerDeadline != null && answerDeadline.isBefore(safetyDeadline);
+        AnswerDeadline deadline = limitedByMoveTime ? answerDeadline : safetyDeadline;
+        if (deadline.remainingNanos(startNanos) <= 0) {
+            return deadlineExceeded(modelId, limitedByMoveTime, 0, 0);
+        }
+        // Known as soon as the status line and headers arrive, long before an error body may be complete.
+        AtomicInteger responseStatus = new AtomicInteger();
         CompletableFuture<HttpResponse<String>> pending = null;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -134,6 +148,11 @@ public class OpenRouterService {
 
             String jsonBody = objectMapper.writeValueAsString(body);
 
+            long sendBudgetNanos = deadline.remainingNanos(nanoClock.getAsLong());
+            if (sendBudgetNanos <= 0) {
+                // Preparing the request used up the rest of the time: do not send it.
+                return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos));
+            }
             // The request timeout only bounds the time until the response headers arrive, and OpenRouter starts
             // long answers early: the deadline for the complete body is enforced by waiting on the future below.
             HttpRequest request = HttpRequest.newBuilder()
@@ -141,11 +160,18 @@ public class OpenRouterService {
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .timeout(wait)
+                    .timeout(Duration.ofNanos(sendBudgetNanos))
                     .build();
 
-            pending = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
-            HttpResponse<String> response = pending.get(Math.max(1L, wait.toMillis()), TimeUnit.MILLISECONDS);
+            pending = httpClient.sendAsync(request, info -> {
+                responseStatus.set(info.statusCode());
+                return HttpResponse.BodyHandlers.ofString().apply(info);
+            });
+            long waitNanos = deadline.remainingNanos(nanoClock.getAsLong());
+            if (waitNanos <= 0) {
+                throw new TimeoutException("No time left to wait for the answer");
+            }
+            HttpResponse<String> response = pending.get(waitNanos, TimeUnit.NANOSECONDS);
             long elapsed = elapsedMs(startNanos);
 
             if (response.statusCode() != 200) {
@@ -162,12 +188,12 @@ public class OpenRouterService {
             return parseCompletion(modelId, response.body(), elapsed);
         } catch (TimeoutException e) {
             pending.cancel(true);
-            return deadlineExceeded(modelId, limitedByMoveTime, wait, elapsedMs(startNanos));
+            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos));
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
                     ? e.getCause().getCause()
                     : e.getCause();
-            return transportFailure(modelId, cause, limitedByMoveTime, wait, elapsedMs(startNanos));
+            return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos));
         } catch (InterruptedException e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -227,8 +253,8 @@ public class OpenRouterService {
                 ProviderOutcome.OK, 200, finishReason, reasoningTokens);
     }
 
-    private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime, Duration wait,
-                                         long elapsed) {
+    private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime,
+                                         int responseStatus, long elapsed) {
         if (cause instanceof HttpConnectTimeoutException) {
             LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, cause.getMessage());
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
@@ -236,7 +262,7 @@ public class OpenRouterService {
         }
         if (cause instanceof HttpTimeoutException) {
             // No response headers within the wait: the same deadline as for the complete answer.
-            return deadlineExceeded(modelId, limitedByMoveTime, wait, elapsed);
+            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus, elapsed);
         }
         if (cause instanceof IOException) {
             LOG.warnf("OpenRouter request failed for model %s: %s", modelId, cause.toString());
@@ -249,14 +275,26 @@ public class OpenRouterService {
                 "OpenRouter request failed: " + abbreviate(String.valueOf(detail)), 0, null);
     }
 
-    private LlmResponse deadlineExceeded(String modelId, boolean limitedByMoveTime, Duration wait, long elapsed) {
+    /**
+     * The wait ended before the complete answer arrived. {@code responseStatus} is the HTTP status if the response
+     * had started (0 otherwise): an error status is OpenRouter's failure even when its body stalls, never the
+     * model's timeout.
+     */
+    private LlmResponse deadlineExceeded(String modelId, boolean limitedByMoveTime, int responseStatus,
+                                         long elapsed) {
+        if (responseStatus != 0 && responseStatus != 200) {
+            LOG.warnf("OpenRouter answered HTTP %d for model %s, but the error body did not arrive in time",
+                    responseStatus, modelId);
+            return LlmResponse.providerFailure(classifyHttpStatus(responseStatus), responseStatus,
+                    describeHttpFailure(responseStatus, null), elapsed, null);
+        }
         if (limitedByMoveTime) {
-            LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, wait.toMillis());
+            LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, elapsed);
             return new LlmResponse(null, 0, 0, null, elapsed, null, true, "No complete answer within the move time");
         }
-        LOG.warnf("OpenRouter request for model %s exceeded the safety cap of %d ms", modelId, wait.toMillis());
+        LOG.warnf("OpenRouter request for model %s exceeded the safety cap of %s", modelId, describe(requestSafetyCap));
         return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
-                "OpenRouter request did not finish within the safety limit of " + describe(wait),
+                "OpenRouter request did not finish within the safety limit of " + describe(requestSafetyCap),
                 elapsed, null);
     }
 
@@ -268,8 +306,8 @@ public class OpenRouterService {
         return seconds >= 1 ? seconds + " s" : duration.toMillis() + " ms";
     }
 
-    private static long elapsedMs(long startNanos) {
-        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+    private long elapsedMs(long startNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(nanoClock.getAsLong() - startNanos);
     }
 
     static ProviderOutcome classifyHttpStatus(int status) {
@@ -655,6 +693,26 @@ public class OpenRouterService {
     }
 
     public record ChatMsg(String role, String content) {}
+
+    /**
+     * An absolute point on the monotonic clock ({@link System#nanoTime()}) by which a complete answer must have
+     * arrived. A turn shares one deadline across all its attempts, so request preparation and earlier attempts
+     * count against it and no attempt gets extra time.
+     */
+    public record AnswerDeadline(long atNanos) {
+        public static AnswerDeadline after(Duration time, long nowNanos) {
+            return new AnswerDeadline(nowNanos + time.toNanos());
+        }
+
+        /** Time left at {@code nowNanos}; zero or negative once the deadline has passed. */
+        public long remainingNanos(long nowNanos) {
+            return atNanos - nowNanos;
+        }
+
+        boolean isBefore(AnswerDeadline other) {
+            return atNanos - other.atNanos < 0;
+        }
+    }
 
     /**
      * How an OpenRouter call ended, from the provider's point of view.

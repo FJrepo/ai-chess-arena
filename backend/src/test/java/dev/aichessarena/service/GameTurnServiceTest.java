@@ -356,10 +356,41 @@ class GameTurnServiceTest {
         assertNull(fixture.moves.lastRecordedSan);
         assertEquals(List.of(Outcome.TIMEOUT), fixture.attempts.outcomes());
         // The whole remaining turn time is the deadline for the complete answer.
-        Duration deadline = fixture.openRouter.answerDeadlines.getFirst();
-        assertTrue(deadline.toMillis() > 29_000L && deadline.toMillis() <= 30_000L, deadline.toString());
+        assertEquals(List.of(30_000L), fixture.openRouter.remainingMsAtCall);
         assertEquals(Duration.ofSeconds(30),
                 Duration.between(fixture.websocket.lastTurnStartedAt, fixture.websocket.lastTurnDeadlineAt));
+    }
+
+    @Test
+    void aRetryNearExpiryGetsOnlyTheTimeLeftOfTheSameTurnDeadline() {
+        // The first answer is illegal and arrives 20 ms before the deadline; the retry must not get extra time.
+        Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+        fixture.openRouter.callDurationsMs.add(29_980L);
+        fixture.openRouter.callDurationsMs.add(50L);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertEquals(java.util.Arrays.asList(30_000L, 20L), fixture.openRouter.remainingMsAtCall);
+        assertEquals(fixture.openRouter.answerDeadlines.get(0), fixture.openRouter.answerDeadlines.get(1),
+                "every attempt shares the one turn deadline");
+        assertTrue(result.isTerminal());
+        assertEquals(30, fixture.lifecycle.lastTimeoutSeconds);
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.TIMEOUT), fixture.attempts.outcomes());
+    }
+
+    @Test
+    void aDeadlinePassedDuringAnAttemptForfeitsWithoutSendingAnotherRequest() {
+        Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+        // The illegal answer arrives exactly at the deadline: no time is left for a retry.
+        fixture.openRouter.callDurationsMs.add(30_000L);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertTrue(result.isTerminal());
+        assertEquals("WHITE", fixture.lifecycle.lastForfeitColor);
+        assertEquals(1, fixture.openRouter.calls);
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE), fixture.attempts.outcomes());
+        assertNull(fixture.moves.lastRecordedSan);
     }
 
     @Test
@@ -514,6 +545,7 @@ class GameTurnServiceTest {
             service.moveAttemptService = attempts;
             service.providerRetryBackoffMs = new long[] {10L, 20L, 40L};
             service.sleeper = sleptMs::add;
+            service.nanoClock = () -> openRouter.clockNanos[0];
         }
     }
 
@@ -529,9 +561,15 @@ class GameTurnServiceTest {
 
         private final List<Integer> maxOutputTokens = new ArrayList<>();
         private final List<List<ChatMsg>> sentMessages = new ArrayList<>();
-        private final List<Duration> answerDeadlines = new ArrayList<>();
-        /** How long the model needs for a complete answer; like the real service, a shorter deadline times out. */
+        private final List<AnswerDeadline> answerDeadlines = new ArrayList<>();
+        /** Time left until the deadline when each call started, in ms (null without a deadline). */
+        private final List<Long> remainingMsAtCall = new ArrayList<>();
+        /** How long the model needs for a complete answer; like the real service, a later deadline times out. */
         private long modelAnswerMs;
+        /** Per-call answer times in ms, used before {@link #modelAnswerMs}. */
+        private final Deque<Long> callDurationsMs = new ArrayDeque<>();
+        /** The test's monotonic clock, advanced by the simulated answer time. */
+        private final long[] clockNanos = {1_000_000_000L};
 
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout) {
@@ -539,20 +577,25 @@ class GameTurnServiceTest {
         }
 
         @Override
-        public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration answerDeadline,
+        public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                                 int maxOutputTokens) {
             calls++;
             this.maxOutputTokens.add(maxOutputTokens);
             sentMessages.add(List.copyOf(messages));
             answerDeadlines.add(answerDeadline);
+            Long remainingMs = answerDeadline == null
+                    ? null : answerDeadline.remainingNanos(clockNanos[0]) / 1_000_000L;
+            remainingMsAtCall.add(remainingMs);
             if (!responses.isEmpty()) {
                 last = responses.removeFirst();
             }
-            if (last.outcome() == ProviderOutcome.OK && answerDeadline != null
-                    && modelAnswerMs > answerDeadline.toMillis()) {
-                return new LlmResponse(null, 0, 0, null, answerDeadline.toMillis(), null, true,
+            long answerMs = callDurationsMs.isEmpty() ? modelAnswerMs : callDurationsMs.removeFirst();
+            if (last.outcome() == ProviderOutcome.OK && remainingMs != null && answerMs > remainingMs) {
+                clockNanos[0] += remainingMs * 1_000_000L;
+                return new LlmResponse(null, 0, 0, null, remainingMs, null, true,
                         "No complete answer within the move time");
             }
+            clockNanos[0] += answerMs * 1_000_000L;
             return last;
         }
     }
