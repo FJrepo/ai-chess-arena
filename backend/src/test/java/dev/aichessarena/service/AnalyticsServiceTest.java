@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import dev.aichessarena.dto.AnalyticsHealthDto;
 import dev.aichessarena.dto.AnalyticsHealthModelRowDto;
 import dev.aichessarena.dto.AnalyticsModelComparisonDto;
@@ -28,10 +31,21 @@ import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveRepository;
 import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
 
 class AnalyticsServiceTest {
@@ -691,6 +705,111 @@ class AnalyticsServiceTest {
         assertEquals(20L, beta.cacheWriteTokens());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void comparisonDoesNotWaitForFailingCatalogAndTakesOnlyOneSnapshot(boolean stale) throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger snapshots = new AtomicInteger();
+        AtomicLong now = new AtomicLong(1_000_000L);
+        CountDownLatch refreshStarted = new CountDownLatch(1);
+        CountDownLatch failRefresh = new CountDownLatch(1);
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/models", exchange -> {
+            int request = requests.incrementAndGet();
+            boolean warmup = stale && request == 1;
+            try {
+                if (!warmup) {
+                    refreshStarted.countDown();
+                    if (!failRefresh.await(10, TimeUnit.SECONDS)) {
+                        throw new AssertionError("test did not release the failed refresh");
+                    }
+                }
+                byte[] body = (warmup ? """
+                        {"data":[{"id":"model.alpha","pricing":{"prompt":"0.000003",
+                        "input_cache_read":"0.0000003"}}]}
+                        """ : "catalog unavailable").getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(warmup ? 200 : 503, body.length);
+                exchange.getResponseBody().write(body);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            OpenRouterService catalog = new OpenRouterService() {
+                @Override
+                Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+                    snapshots.incrementAndGet();
+                    return super.cacheReadSavingsSnapshot();
+                }
+            };
+            catalog.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            catalog.apiKey = "test-key";
+            catalog.objectMapper = new ObjectMapper();
+            catalog.modelsClock = now::get;
+            if (stale) {
+                catalog.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+                now.addAndGet(300_001L);
+            }
+            Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+            Game other = finishedGame("model.gamma", "model.alpha", Game.GameResult.DRAW, null, YESTERDAY);
+            AnalyticsService service = service(List.of(game, other), List.of(), List.of());
+            service.openRouterService = catalog;
+            ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                    usage(game, "model.alpha", 100, 80, 0),
+                    usage(game, "model.beta", 100, 80, 0),
+                    usage(other, "model.gamma", 100, 80, 0));
+
+            // The client cannot finish until released below: even one synchronous fetch fails this bound.
+            var response = assertTimeoutPreemptively(Duration.ofSeconds(2),
+                    () -> service.getComparison(30, null, 0));
+            assertTrue(refreshStarted.await(2, TimeUnit.SECONDS));
+            assertEquals(1, snapshots.get(), "all three rows share one price snapshot");
+            assertEquals(stale ? 2 : 1, requests.get(), "only one refresh, excluding warm-up");
+            assertEquals(3, response.models().size());
+            assertEquals(stale ? new BigDecimal("0.0002160") : null,
+                    row(response, "model.alpha").promptCaching().estimatedSavingsUsd());
+            assertNull(row(response, "model.beta").promptCaching().estimatedSavingsUsd());
+            assertNull(row(response, "model.gamma").promptCaching().estimatedSavingsUsd());
+
+            assertTimeoutPreemptively(Duration.ofSeconds(2), () -> service.getComparison(31, null, 0));
+            assertEquals(2, snapshots.get());
+            // Simulate a slow failure: the full back-off starts when it finishes, not when it began.
+            now.addAndGet(30_000L);
+            failRefresh.countDown();
+            assertTimeoutPreemptively(Duration.ofSeconds(2), () -> catalog.listModels(false, null, OpenRouterService.NO_LIMIT, null));
+            now.addAndGet(59_999L);
+            catalog.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+            assertTimeoutPreemptively(Duration.ofSeconds(2), () -> service.getComparison(32, null, 0));
+            assertEquals(stale ? 2 : 1, requests.get(), "in-flight refresh and back-off suppress extra fetches");
+        } finally {
+            failRefresh.countDown();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void comparisonReusesItsSnapshotEvenWhenLaterSnapshotsHaveDifferentPrices() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        AnalyticsService service = service(List.of(game), List.of(), List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).usage = List.of(
+                usage(game, "model.alpha", 100, 80, 0), usage(game, "model.beta", 100, 80, 0));
+        AtomicInteger snapshots = new AtomicInteger();
+        service.openRouterService = new OpenRouterService() {
+            @Override
+            Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+                BigDecimal price = BigDecimal.valueOf(snapshots.incrementAndGet());
+                return Map.of("model.alpha", price, "model.beta", price);
+            }
+        };
+        var response = service.getComparison(30, null, 0);
+        assertEquals(1, snapshots.get());
+        assertEquals(new BigDecimal("80"), row(response, "model.alpha").promptCaching().estimatedSavingsUsd());
+        assertEquals(new BigDecimal("80"), row(response, "model.beta").promptCaching().estimatedSavingsUsd());
+    }
+
     private MoveAttemptRepository.AttemptUsage usage(Game game, String model, Integer prompt,
                                                     Integer cached, Integer writes) {
         return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes);
@@ -738,8 +857,8 @@ class AnalyticsServiceTest {
         service.outcomeClassifier = new AnalyticsGameOutcomeClassifier();
         service.openRouterService = new OpenRouterService() {
             @Override
-            BigDecimal cacheReadSavingsPerToken(String modelId) {
-                return "model.alpha".equals(modelId) ? new BigDecimal("0.0000027") : null;
+            Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+                return Map.of("model.alpha", new BigDecimal("0.0000027"));
             }
         };
         return service;

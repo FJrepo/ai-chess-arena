@@ -16,13 +16,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Catalog parsing and listing against a small fixture of the OpenRouter {@code /models} response. */
 class OpenRouterServiceModelsTest {
@@ -33,17 +38,21 @@ class OpenRouterServiceModelsTest {
 
     private HttpServer server;
     private OpenRouterService service;
+    private final AtomicInteger requests = new AtomicInteger();
+    private volatile int responseStatus = 200;
+    private volatile byte[] responseBody;
 
     @BeforeEach
     void serveFixture() throws IOException {
-        byte[] body;
         try (InputStream in = getClass().getResourceAsStream("/openrouter/models-fixture.json")) {
             assertNotNull(in, "fixture missing");
-            body = in.readAllBytes();
+            responseBody = in.readAllBytes();
         }
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/models", exchange -> {
-            exchange.sendResponseHeaders(200, body.length);
+            requests.incrementAndGet();
+            byte[] body = responseBody;
+            exchange.sendResponseHeaders(responseStatus, body.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(body);
             }
@@ -64,6 +73,64 @@ class OpenRouterServiceModelsTest {
     @AfterEach
     void stopServer() {
         server.stop(0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http-error", "{}", "null", "not-json", ""})
+    void failedRefreshBacksOffForOneMinuteThenRecovers(String failure) {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        service.modelsClock = now::get;
+        byte[] validBody = responseBody;
+        responseStatus = "http-error".equals(failure) ? 503 : 200;
+        responseBody = failure.getBytes(StandardCharsets.UTF_8);
+
+        assertTrue(catalog().data().isEmpty());
+        assertEquals(1, requests.get());
+        assertTrue(catalog().data().isEmpty());
+        now.addAndGet(59_999L);
+        assertTrue(catalog().data().isEmpty());
+        assertTrue(service.cacheReadSavingsSnapshot().isEmpty());
+        assertEquals(1, requests.get(), "no retries during back-off even with an empty cache");
+
+        responseStatus = 200;
+        responseBody = validBody;
+        now.incrementAndGet();
+        assertFalse(catalog().data().isEmpty());
+        assertEquals(2, requests.get(), "retry at the back-off boundary");
+        assertFalse(service.cacheReadSavingsSnapshot().isEmpty());
+        catalog();
+        assertEquals(2, requests.get(), "successful refresh restores normal cache freshness");
+    }
+
+    @Test
+    void failedRefreshServesStaleSnapshotAndCanRetryAfterEveryBackoff() {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        service.modelsClock = now::get;
+        var original = catalog();
+        var prices = service.cacheReadSavingsSnapshot();
+        now.addAndGet(300_001L);
+        responseStatus = 503;
+        assertEquals(original, catalog());
+        assertEquals(2, requests.get());
+        assertEquals(prices, service.cacheReadSavingsSnapshot());
+        assertEquals(original, catalog());
+        now.addAndGet(59_999L);
+        assertEquals(original, catalog());
+        assertEquals(2, requests.get());
+        now.incrementAndGet();
+        assertEquals(original, catalog());
+        assertEquals(3, requests.get());
+        now.addAndGet(59_999L);
+        assertEquals(original, catalog());
+        assertEquals(3, requests.get(), "another failed refresh starts a new back-off");
+        responseStatus = 200;
+        now.incrementAndGet();
+        assertEquals(original, catalog());
+        assertEquals(4, requests.get());
+    }
+
+    private OpenRouterModelsResponseDto catalog() {
+        return service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
     }
 
     @Test

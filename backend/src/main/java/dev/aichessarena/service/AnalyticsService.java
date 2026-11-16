@@ -471,6 +471,7 @@ public class AnalyticsService {
             accumulator.resignedTurnFailures += failures.failures();
         });
 
+        Map<String, BigDecimal> cacheReadSavings = openRouterService.cacheReadSavingsSnapshot();
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
             ComparisonAccumulator accumulator = entry.getValue();
@@ -564,7 +565,7 @@ public class AnalyticsService {
                     accumulator.resignationsEvaluated,
                     accumulator.resignationsWhileNotLosing,
                     accumulator.wonByResignation,
-                    promptCaching(entry.getKey(), accumulator.cacheUsage)
+                    promptCaching(entry.getKey(), accumulator.cacheUsage, cacheReadSavings)
             ));
         }
 
@@ -830,12 +831,13 @@ public class AnalyticsService {
         );
     }
 
-    private PromptCachingDto promptCaching(String modelId, List<AttemptUsage> usage) {
+    private PromptCachingDto promptCaching(String modelId, List<AttemptUsage> usage,
+                                           Map<String, BigDecimal> cacheReadSavings) {
         Long prompt = tokenTotal(usage, AttemptUsage::promptTokens);
         Long cached = tokenTotal(usage, AttemptUsage::cachedPromptTokens);
         Long writes = tokenTotal(usage, AttemptUsage::cacheWriteTokens);
         BigDecimal rate = prompt == null || prompt == 0 || cached == null ? null : divide(cached, prompt);
-        BigDecimal savingPerToken = cached == null ? null : openRouterService.cacheReadSavingsPerToken(modelId);
+        BigDecimal savingPerToken = cached == null ? null : cacheReadSavings.get(modelId);
         BigDecimal savings = savingPerToken == null ? null : savingPerToken.multiply(BigDecimal.valueOf(cached));
         return new PromptCachingDto(prompt, cached, rate, writes, savings);
     }

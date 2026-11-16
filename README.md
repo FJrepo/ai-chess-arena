@@ -36,6 +36,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Analysis](docs/how-it-works.md#analytics-and-reliability):** series scores, PGN export, reliability, stored attempts, prompt caching metrics and reported costs.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimated games, runtime and spend before starting.
 
+Prompt caching savings use one cached price snapshot per comparison. Analytics never waits for catalog requests: missing prices show **n/a**, stale prices remain usable, and failed refreshes back off for 60 seconds.
+
 ## Quick start
 
 You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).

@@ -28,15 +28,18 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -56,6 +59,7 @@ public class OpenRouterService {
     /** 9999-12-31T23:59:59Z; later (or misscaled, e.g. nanosecond) timestamps are not release dates. */
     private static final long MAX_RELEASE_EPOCH_SECOND = 253_402_300_799L;
     private static final long MODELS_CACHE_TTL_MS = 5 * 60 * 1000L;
+    private static final long MODELS_FAILURE_BACKOFF_MS = 60_000L;
 
     @ConfigProperty(name = "openrouter.api-key")
     String apiKey;
@@ -106,6 +110,9 @@ public class OpenRouterService {
     /** Monotonic clock for deadlines ({@link System#nanoTime()}); replaceable in tests. */
     LongSupplier nanoClock = System::nanoTime;
 
+    /** Wall clock for catalog freshness and retry back-off; replaceable in tests. */
+    LongSupplier modelsClock = System::currentTimeMillis;
+
     /** Sees each chat request's response future right after it is sent; a test seam for a delayed caller. */
     Consumer<CompletableFuture<?>> sendObserver = sent -> { };
 
@@ -118,6 +125,8 @@ public class OpenRouterService {
 
     private volatile JsonNode cachedModels;
     private volatile long cachedModelsAtMs;
+    private volatile long modelsRetryAfterMs;
+    private final AtomicBoolean modelsRefreshScheduled = new AtomicBoolean();
 
     public LlmResponse chat(String modelId, List<ChatMsg> messages) {
         return chat(modelId, messages, (AnswerDeadline) null, defaultMaxTokens);
@@ -326,16 +335,47 @@ public class OpenRouterService {
         }
     }
 
-    /** Current catalog estimate per cached input token; never used to replace OpenRouter's billed cost. */
-    BigDecimal cacheReadSavingsPerToken(String modelId) {
-        JsonNode model = catalogEntry(modelId);
-        if (model == null) {
-            return null;
+    /**
+     * One immutable price snapshot for a comparison, without waiting for catalog I/O. Stale prices remain usable;
+     * a single background refresh warms later comparisons. These estimates never replace OpenRouter's billed cost.
+     */
+    Map<String, BigDecimal> cacheReadSavingsSnapshot() {
+        JsonNode snapshot = cachedModels;
+        refreshModelsInBackground();
+        if (snapshot == null) {
+            return Map.of();
         }
-        JsonNode pricing = model.path("pricing");
-        BigDecimal input = nonNegativePrice(pricing.path("prompt"));
-        BigDecimal read = nonNegativePrice(pricing.path("input_cache_read"));
-        return input == null || read == null ? null : input.subtract(read);
+        Map<String, BigDecimal> savings = new HashMap<>();
+        for (JsonNode model : snapshot.path("data")) {
+            String id = model.path("id").asText(null);
+            JsonNode pricing = model.path("pricing");
+            BigDecimal input = nonNegativePrice(pricing.path("prompt"));
+            BigDecimal read = nonNegativePrice(pricing.path("input_cache_read"));
+            if (id != null && input != null && read != null) {
+                savings.putIfAbsent(id, input.subtract(read));
+            }
+        }
+        return Map.copyOf(savings);
+    }
+
+    private boolean needsModelsRefresh(long now) {
+        return (cachedModels == null || now - cachedModelsAtMs >= MODELS_CACHE_TTL_MS)
+                && now >= modelsRetryAfterMs;
+    }
+
+    private void refreshModelsInBackground() {
+        if (apiKey == null || apiKey.isBlank() || objectMapper == null
+                || !needsModelsRefresh(modelsClock.getAsLong())
+                || !modelsRefreshScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                fetchRawModels();
+            } finally {
+                modelsRefreshScheduled.set(false);
+            }
+        });
     }
 
     private static BigDecimal nonNegativePrice(JsonNode node) {
@@ -647,17 +687,19 @@ public class OpenRouterService {
             return fallback;
         }
 
-        long now = System.currentTimeMillis();
+        long now = modelsClock.getAsLong();
         JsonNode snapshot = cachedModels;
-        if (snapshot != null && now - cachedModelsAtMs < MODELS_CACHE_TTL_MS) {
-            return snapshot;
+        if (!needsModelsRefresh(now)) {
+            fallback.put("error", "OpenRouter models refresh is backing off");
+            return snapshot != null ? snapshot : fallback;
         }
 
         synchronized (this) {
-            now = System.currentTimeMillis();
+            now = modelsClock.getAsLong();
             snapshot = cachedModels;
-            if (snapshot != null && now - cachedModelsAtMs < MODELS_CACHE_TTL_MS) {
-                return snapshot;
+            if (!needsModelsRefresh(now)) {
+                fallback.put("error", "OpenRouter models refresh is backing off");
+                return snapshot != null ? snapshot : fallback;
             }
 
             try {
@@ -673,22 +715,29 @@ public class OpenRouterService {
                     LOG.errorf("OpenRouter models API error %d: %s",
                             response.statusCode(), truncateForLog(response.body()));
                     fallback.put("error", "OpenRouter models API returned status " + response.statusCode());
+                    modelsRetryAfterMs = modelsClock.getAsLong() + MODELS_FAILURE_BACKOFF_MS;
                     return snapshot != null ? snapshot : fallback;
                 }
 
                 JsonNode parsed = objectMapper.readTree(response.body());
-                if (!parsed.has("data") || !parsed.get("data").isArray()) {
+                if (parsed == null || !parsed.has("data") || !parsed.get("data").isArray()) {
                     LOG.errorf("Unexpected OpenRouter models response shape: %s", truncateForLog(response.body()));
                     fallback.put("error", "Unexpected OpenRouter models response");
+                    modelsRetryAfterMs = modelsClock.getAsLong() + MODELS_FAILURE_BACKOFF_MS;
                     return snapshot != null ? snapshot : fallback;
                 }
 
+                cachedModelsAtMs = modelsClock.getAsLong();
                 cachedModels = parsed;
-                cachedModelsAtMs = now;
+                modelsRetryAfterMs = 0;
                 return parsed;
             } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 LOG.error("Failed to fetch OpenRouter models", e);
                 fallback.put("error", "Failed to fetch OpenRouter models");
+                modelsRetryAfterMs = modelsClock.getAsLong() + MODELS_FAILURE_BACKOFF_MS;
                 return snapshot != null ? snapshot : fallback;
             }
         }

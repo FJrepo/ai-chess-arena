@@ -151,13 +151,13 @@ class OpenRouterOutputTokenTest {
                 {"data":[{"id":"example/model","pricing":{"prompt":"%s","input_cache_read":"%s"}}]}
                 """.formatted(input, read));
         service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
-        var savings = service.cacheReadSavingsPerToken("example/model");
+        var savings = service.cacheReadSavingsSnapshot().get("example/model");
         if ("null".equals(expected)) {
             assertNull(savings);
         } else {
             assertEquals(0, new java.math.BigDecimal(expected).compareTo(savings));
         }
-        assertNull(service.cacheReadSavingsPerToken("unknown/model"));
+        assertNull(service.cacheReadSavingsSnapshot().get("unknown/model"));
         assertEquals(1, catalogRequests.get());
     }
 

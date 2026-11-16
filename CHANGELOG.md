@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- Analytics comparisons use one cached catalog price snapshot for all model rows and refresh prices in the background, avoiding repeated synchronous OpenRouter timeouts. Failed catalog refreshes back off for 60 seconds and keep stale prices when available; missing prices leave estimated prompt caching savings as n/a.
+
 ### Added
 - Prompt caching metrics: nullable OpenRouter cache-read and cache-write tokens persisted for every attempt with usage, exposed in the attempts API, and a compact per-model *Prompt caching* analytics table for finished, non-bye games. The table shows prompt tokens, cache reads, hit rate, writes and estimated USD read savings using current catalog prices; incomplete counters and unknown prices show n/a. OpenRouter's reported cost remains authoritative. Measurement only: no prompt changes or `cache_control`.
 - Bracket draw choice on the tournament page: Random draw (UI default) or In added order, with stored seeds shown after generation. Random draws shuffle once and reassign seeds so byes and Higher seed advances follow the drawn order. The bracket-generation API accepts an optional `drawMode=ORDER|RANDOM` query parameter and defaults to ORDER for existing clients; repeated generation still returns 409. No migration or backfill is required.
