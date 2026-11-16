@@ -75,13 +75,18 @@
     background-image: linear-gradient(var(--app-board-last-move), var(--app-board-last-move));
   }
 
+  // Selection and drop-target rings: a coloured outer band with a dark inner edge, so the
+  // ring stays visible on both square colours and on the last-move wash.
   &.selected {
-    box-shadow: inset 0 0 0 3px color-mix(in srgb, #7ed1ff 85%, white);
+    box-shadow:
+      inset 0 0 0 3px color-mix(in srgb, #7ed1ff 85%, white),
+      inset 0 0 0 5px var(--app-board-ring-edge);
   }
 
   &.drop-target {
     box-shadow:
       inset 0 0 0 3px color-mix(in srgb, #ffd166 85%, white),
+      inset 0 0 0 5px var(--app-board-ring-edge),
       0 0 0 1px color-mix(in srgb, #ffd166 42%, transparent);
   }
 }

@@ -1,6 +1,10 @@
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { EMPTY, Subject, of, throwError } from 'rxjs';
 import { GameView } from './game-view';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import { ApiService } from '../../services/api.service';
+import { WebSocketService } from '../../services/websocket.service';
 import { Game, Move, MoveAttempt, MoveWsMessage, WsMessage } from '../../models/tournament.model';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -897,3 +901,54 @@ function attemptFixture(overrides: Partial<MoveAttempt> = {}): MoveAttempt {
     ...overrides,
   };
 }
+
+describe('GameView promotion picker', () => {
+  function renderPicker(currentFen: string) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () => of(gameWith({ currentFen })),
+            getSystemStatus: () => EMPTY,
+            getGameAttempts: () => of([]),
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => EMPTY,
+            reconnected: () => EMPTY,
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    fixture.componentInstance.pendingPromotion.set({ from: 'e7', to: 'e8' });
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it.each([
+    ['WHITE', START_FEN, 'white-piece'],
+    ['BLACK', AFTER_E4, 'black-piece'],
+  ])('shows the four piece glyphs in %s colours, not escape text', (_color, fen, pieceClass) => {
+    const fixture = renderPicker(fen);
+    const pieces = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.promotion-picker .promotion-piece'),
+    );
+
+    expect(pieces.map((piece) => piece.textContent?.trim())).toEqual(['♛', '♜', '♝', '♞']);
+    expect(pieces.every((piece) => piece.classList.contains(pieceClass))).toBe(true);
+    fixture.destroy();
+  });
+});

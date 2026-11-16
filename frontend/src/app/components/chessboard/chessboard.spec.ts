@@ -75,3 +75,42 @@ describe('ChessboardComponent last-move highlight', () => {
     expect(element.querySelectorAll('.last-move-from, .last-move-to')).toHaveLength(0);
   });
 });
+
+describe('ChessboardComponent piece glyphs', () => {
+  const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  // Both colours use the solid glyphs; the colour class tells them apart.
+  it.each([
+    ['K', 'e1', '♚', 'white-piece'],
+    ['Q', 'd1', '♛', 'white-piece'],
+    ['R', 'a1', '♜', 'white-piece'],
+    ['B', 'c1', '♝', 'white-piece'],
+    ['N', 'b1', '♞', 'white-piece'],
+    ['P', 'e2', '♟', 'white-piece'],
+    ['k', 'e8', '♚', 'black-piece'],
+    ['q', 'd8', '♛', 'black-piece'],
+    ['r', 'a8', '♜', 'black-piece'],
+    ['b', 'c8', '♝', 'black-piece'],
+    ['n', 'b8', '♞', 'black-piece'],
+    ['p', 'e7', '♟', 'black-piece'],
+  ])('renders %s on %s as %s with %s', (code, coord, glyph, colourClass) => {
+    const fixture = TestBed.createComponent(ChessboardComponent);
+    fixture.componentRef.setInput('fen', START_FEN);
+    fixture.detectChanges();
+    const board = fixture.componentInstance;
+    const index = board
+      .squares()
+      .flat()
+      .findIndex((square) => square.coord === coord);
+    expect(squareAt(board, coord).pieceCode).toBe(code);
+
+    const piece = (fixture.nativeElement as HTMLElement)
+      .querySelectorAll('.square')
+      [index].querySelector('.piece');
+    const otherClass = colourClass === 'white-piece' ? 'black-piece' : 'white-piece';
+
+    expect(piece?.textContent?.trim()).toBe(glyph);
+    expect(piece?.classList.contains(colourClass)).toBe(true);
+    expect(piece?.classList.contains(otherClass)).toBe(false);
+  });
+});

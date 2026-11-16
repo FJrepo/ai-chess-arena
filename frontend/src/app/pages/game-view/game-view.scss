@@ -426,6 +426,9 @@ app-advantage-bar {
   background: var(--game-warning-fill);
   flex-wrap: wrap;
   justify-content: center;
+  // Takes the board block's width instead of widening it (the frame sizes to max-content);
+  // the buttons wrap when they don't fit.
+  contain: inline-size;
 }
 
 .promotion-label {

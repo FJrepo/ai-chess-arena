@@ -39,6 +39,9 @@ html {
   --app-board-dark-square: #b58863;
   // Last move: a translucent yellow wash over either square colour.
   --app-board-last-move: rgb(246 214 72 / 0.5);
+  // Inner edge of the selection and drop-target rings: keeps them >= 3:1 against both square
+  // colours, with or without the last-move wash.
+  --app-board-ring-edge: #23262d;
   // Pieces (same in both themes, like the squares): solid glyphs, white ones with a dark edge.
   --app-piece-white: #f7f5f0;
   --app-piece-white-edge: #23262d;
