@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STOCKFISH_VERSION="${STOCKFISH_VERSION:-sf_18}"
+STOCKFISH_VERSION="${STOCKFISH_VERSION:-sf_19}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 ASSET_OVERRIDE="${STOCKFISH_ASSET:-}"
 SHA256_OVERRIDE="${STOCKFISH_SHA256:-}"
@@ -16,7 +16,7 @@ Usage:
 
 Options:
   --install-dir <dir>  Install destination (default: $HOME/.local/bin)
-  --version <tag>      Stockfish release tag (default: sf_18)
+  --version <tag>      Stockfish release tag (default: sf_19)
   --asset <name>       Override release asset filename (requires --sha256)
   --sha256 <value>     Override asset SHA256 (requires --asset)
   --dry-run            Print resolved selection without downloading
@@ -91,6 +91,18 @@ if [[ -n "$ASSET_OVERRIDE" || -n "$SHA256_OVERRIDE" ]]; then
   sha256="$SHA256_OVERRIDE"
 else
   case "${os}:${arch}:${STOCKFISH_VERSION}" in
+    Linux:x86_64:sf_19)
+      asset="stockfish-linux-x86-64-universal.tar.gz"
+      sha256="9defc0d4e55d49c65a6d042f3e571a39fcea499ade6dbe741b53b8c65e03611f"
+      ;;
+    Linux:arm64:sf_19)
+      asset="stockfish-linux-arm64-universal.tar.gz"
+      sha256="fe26cfd1d9db4c8af3d21e24d9ff34cacb31c1f940085a7583da11796f2bac01"
+      ;;
+    Darwin:arm64:sf_19|Darwin:x86_64:sf_19)
+      asset="stockfish-macos-universal.tar.gz"
+      sha256="a1f0e3bcc5a6927a11fe6fc8e54a779754645f3c2bae2cf13420fd1957adaa77"
+      ;;
     Linux:x86_64:sf_18)
       asset="stockfish-ubuntu-x86-64-avx2.tar"
       sha256="536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964"
@@ -120,7 +132,8 @@ EOF
 fi
 
 download_url="https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_VERSION}/${asset}"
-binary_name="${asset%.tar}"
+binary_name="${asset%.gz}"
+binary_name="${binary_name%.tar}"
 target_path="${INSTALL_DIR}/stockfish"
 
 if [[ $DRY_RUN -eq 1 ]]; then
@@ -152,7 +165,7 @@ fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
-archive_path="${tmp_dir}/stockfish.tar"
+archive_path="${tmp_dir}/${asset}"
 
 log "Downloading ${download_url}"
 if [[ "$downloader" == "curl" ]]; then
@@ -175,7 +188,7 @@ tar -xf "$archive_path" -C "$extract_dir"
 
 candidate="${extract_dir}/stockfish/${binary_name}"
 if [[ ! -f "$candidate" ]]; then
-  candidate="$(find "$extract_dir" -type f -name "$binary_name" -print -quit || true)"
+  candidate="$(find "$extract_dir" -type f -name "$binary_name" -print)"
 fi
 [[ -n "$candidate" && -f "$candidate" ]] || fail "Could not find extracted binary: ${binary_name}"
 

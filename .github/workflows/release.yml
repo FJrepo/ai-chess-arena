@@ -172,7 +172,7 @@ jobs:
             'test -f /usr/share/licenses/stockfish/COPYING.txt && test -f /usr/share/licenses/stockfish/NOTICE.txt'
           docker inspect "$BACKEND_PINNED" \
             --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }} {{ index .Config.Labels "dev.aichessarena.stockfish.source" }} {{ index .Config.Labels "org.opencontainers.image.licenses" }}' \
-            | grep 'sf_18'
+            | grep 'sf_19'
 
       - name: Start released-image stack from candidates
         env:

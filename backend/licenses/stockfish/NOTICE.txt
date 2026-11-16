@@ -1,14 +1,20 @@
 Stockfish notice for AI Chess Arena backend image
 
-This image bundles the official unmodified Stockfish chess engine release asset:
+This image bundles the official unmodified Stockfish chess engine release asset, selected by image architecture:
 
-- Name: Stockfish 18
-- Release tag: sf_18
+- Name: Stockfish 19
+- Release tag: sf_19
 - Source repository: https://github.com/official-stockfish/Stockfish
-- Source tree: https://github.com/official-stockfish/Stockfish/tree/sf_18
-- Release page: https://github.com/official-stockfish/Stockfish/releases/tag/sf_18
-- Bundled binary asset: stockfish-ubuntu-x86-64-avx2.tar
-- Asset SHA256: 536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964
+- Source tree: https://github.com/official-stockfish/Stockfish/tree/sf_19
+- Release page: https://github.com/official-stockfish/Stockfish/releases/tag/sf_19
+- amd64 asset: `stockfish-linux-x86-64-universal.tar.gz`
+- amd64 download: https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz
+- amd64 SHA256: `9defc0d4e55d49c65a6d042f3e571a39fcea499ade6dbe741b53b8c65e03611f`
+- arm64 asset: `stockfish-linux-arm64-universal.tar.gz`
+- arm64 download: https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-arm64-universal.tar.gz
+- arm64 SHA256: `fe26cfd1d9db4c8af3d21e24d9ff34cacb31c1f940085a7583da11796f2bac01`
+- Attribution: Copyright (C) 2004-2026 The Stockfish developers (see upstream AUTHORS).
+- Corresponding source archive (including upstream build instructions): https://github.com/official-stockfish/Stockfish/archive/refs/tags/sf_19.tar.gz
 - License: GNU General Public License v3.0
 
 The GPL v3 license text is provided in COPYING.txt in the same directory.

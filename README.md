@@ -27,7 +27,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** seeded brackets, best-of series, separate final settings and draw policies.
 - **[Participants](docs/how-it-works.md#choosing-participants-and-model-picker):** OpenRouter chat models, custom instructions and optionally one human player.
 - **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker):** catalog search, provider filters, prices, reasoning support and Intelligence Index.
-- **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish evaluation.
+- **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish 19 evaluation.
 - **[Move quality](docs/how-it-works.md#move-quality):** inaccuracies, mistakes, blunders and average centipawn loss (ACPL).
 - **[Turn controls](docs/how-it-works.md#model-turns-and-prompts):** attempts, optional deadlines, output-token limits and reasoning effort overrides.
 - **[Chat](docs/how-it-works.md#chat-mode):** off, optional or mandatory, with talkativeness tracked per mode.
@@ -91,7 +91,7 @@ make setup
 docker compose up --build -d   # frontend :4200, backend :8081, PostgreSQL :5433 (all loopback)
 ```
 
-**Without Docker** (Java 25, Maven 3.9+, Node.js 24.15+ — 26 recommended, PostgreSQL 17; Stockfish 18 on `PATH` for evaluation). Maven does not read the root `.env`, so export the settings in the backend terminal; run backend and frontend in separate terminals, each from the repository root:
+**Without Docker** (Java 25, Maven 3.9+, Node.js 24.15+ — 26 recommended, PostgreSQL 17; Stockfish 19 on `PATH` for evaluation). Maven does not read the root `.env`, so export the settings in the backend terminal; run backend and frontend in separate terminals, each from the repository root:
 
 ```bash
 docker compose up -d db                 # or your own PostgreSQL on localhost:5433
@@ -111,6 +111,7 @@ cd frontend && npm ci && npm start
 make test                               # backend unit + frontend tests
 (cd backend && mvn verify)              # + PostgreSQL integration tests (Docker required)
 (cd frontend && npm run lint && npm run typecheck && npm run format:check)
+python3 -B -m unittest discover -s scripts -p 'test_*.py' # offline installer tests
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
@@ -123,7 +124,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 | Frontend | Angular 21.2 with Angular Material, standalone components, CSS chessboard |
 | Database | PostgreSQL 17 |
 | Models | OpenRouter chat models (text output) |
-| Evaluation | Stockfish 18 (bundled in the backend image, `amd64`/AVX2; the app runs without it) |
+| Evaluation | Stockfish 19 (bundled in the backend image, `amd64` universal binary; the app runs without it) |
 
 ## Repository layout
 

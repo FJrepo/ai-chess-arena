@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Bundle Stockfish 19 (`sf_19`) using checksum-pinned universal `.tar.gz` assets selected by Docker target architecture (amd64 or arm64). Published releases remain amd64-only. The local installer now defaults to Stockfish 19 on Linux and macOS. Existing stored evaluations are unchanged; no migration or backfill is required.
+
+### Fixed
+- An engine exit, EOF or broken pipe discards the interrupted evaluation and returns no score. The next queued evaluation attempts one engine restart without replaying the failed input; failed restarts leave evaluation unavailable until backend restart. Mate scores remain normalized to White's perspective for both colors.
+
 ## [1.4.0] - 2026-11-16
 
 Personality and honest play: move quality (blunders, mistakes, inaccuracies), chat modes with a talkativeness metric, optional resignation, reasoning effort per model, a new model picker, and no time limit by default. Also fixes models getting an outdated move list in their prompt (all earlier versions), writes and live updates failing on any address but localhost:4200, and a rare game-loop commit failure.

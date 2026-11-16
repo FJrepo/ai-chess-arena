@@ -7,7 +7,7 @@ help:
 	@echo ""
 	@echo "Setup:"
 	@echo "  make setup         Create .env from .env.example if missing"
-	@echo "  make install-stockfish  Install Stockfish 18 for local (non-Docker) backend runs"
+	@echo "  make install-stockfish  Install Stockfish 19 for local (non-Docker) backend runs"
 	@echo "  make secrets-install    Install git-secrets hooks + OpenRouter key pattern"
 	@echo "  make secrets-scan       Scan tracked, untracked, and history for secrets"
 	@echo ""

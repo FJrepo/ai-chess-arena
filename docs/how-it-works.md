@@ -227,7 +227,11 @@ The result reads "Black Bot resigned; White Bot wins", and a panel shows the res
 
 Stockfish's evaluations mark inaccuracies `?!`, mistakes `?` and blunders `??` in the move list and game feed (the tooltip shows the mover's winning chances before and after, e.g. "Blunder: winning chances 74% → 22% (−6.2)"), and each player gets an average centipawn loss (ACPL) and error counts, live as evaluations arrive.
 
-Stockfish 18 evaluates every move at depth 12 (in the background, so a badge appears a moment after the move).
+Stockfish 19 evaluates every move at depth 12 (in the background, so a badge appears a moment after the move).
+
+Scores are stored from White's perspective: positive centipawns or mate distance favor White, negative values favor Black. UCI reports scores for the side to move, so both signs are reversed when Black is to move; mate 0 denotes checkmate already on the board.
+
+Stockfish 19 can exit on invalid FEN or UCI input. An evaluation interrupted by process exit, EOF or a broken pipe returns no score, discarding partial output. The next queued evaluation attempts one fresh engine start without replaying the failed position. If that start fails, evaluation stays unavailable until the backend restarts; games continue. A missing engine at initial startup also leaves evaluation unavailable. Existing stored evaluations are unchanged by the upgrade.
 
 A move is judged by how much it lowers the mover's winning chances, using the win-probability model Lichess uses: an evaluation in centipawns (capped at ±10 pawns) becomes winning chances via `2 / (1 + exp(−0.00368208 · cp)) − 1` on a −1…+1 scale, and a forced mate counts as a certain win or loss.
 
@@ -293,7 +297,7 @@ Recognized OpenRouter failures (rate limits, server or network errors, invalid k
 
 ## Live settings
 
-Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 18 evaluation bar.
+Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
 
 Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode and resignation changes rebuild both system prompts.
 
