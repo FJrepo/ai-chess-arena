@@ -32,7 +32,14 @@
                 <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                   <mat-label>Move Timeout (seconds)</mat-label>
                   <input matInput type="number" min="10" max="3600" [(ngModel)]="moveTimeout" />
-                  <mat-hint>10–3600; a model that runs out of time forfeits</mat-hint>
+                  @if (showShortMoveTimeoutWarning()) {
+                    <mat-hint class="timeout-warning"
+                      >Reasoning models often need more than a minute per move; running out of time
+                      forfeits the game</mat-hint
+                    >
+                  } @else {
+                    <mat-hint>10–3600; a model that runs out of time forfeits</mat-hint>
+                  }
                 </mat-form-field>
               }
 
@@ -406,8 +413,8 @@
               @if (!limitMoveTime) {
                 <p>
                   Without a time limit per move, runtime is open-ended: the estimate assumes about
-                  {{ typicalMoveSecondsWithoutLimit }} seconds per answer, and reasoning models can
-                  take much longer.
+                  {{ typicalMoveSeconds }} seconds per answer, and reasoning models can take much
+                  longer.
                 </p>
               }
               @if (summary.drawCanExtendSeries) {

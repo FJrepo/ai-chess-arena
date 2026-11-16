@@ -18,6 +18,7 @@ import {
   Move,
   ChatMessage,
   ChatMode,
+  DEFAULT_MOVE_TIMEOUT_SECONDS,
   MoveAttempt,
   MoveWsMessage,
   GameStatusWsMessage,
@@ -471,8 +472,8 @@ export class GameView implements OnInit, OnDestroy {
             error: () => this.turnState.moveTimeoutSeconds.set(null),
           });
         } else {
-          // Games outside a tournament keep the backend's 60-second limit.
-          this.turnState.setMoveTimeoutSeconds(60);
+          // Games outside a tournament use the backend's default limit.
+          this.turnState.setMoveTimeoutSeconds(DEFAULT_MOVE_TIMEOUT_SECONDS);
         }
       },
       error: () => {

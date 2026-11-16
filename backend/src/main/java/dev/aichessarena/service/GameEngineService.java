@@ -163,8 +163,9 @@ public class GameEngineService {
     }
 
     /**
-     * The time limit per move for a game: the tournament's (null when it has no limit), or 60 seconds for a game
-     * outside a tournament. Deliberately no ternary: mixing {@code Integer} and {@code int} would unbox null.
+     * The time limit per move for a game: the tournament's (null when it has no limit), or
+     * {@link Tournament#DEFAULT_MOVE_TIMEOUT_SECONDS} (120) for a game outside a tournament. Deliberately no
+     * ternary: mixing {@code Integer} and {@code int} would unbox null.
      */
     static Integer moveTimeoutSecondsFor(Game game) {
         if (game.tournament == null) {
