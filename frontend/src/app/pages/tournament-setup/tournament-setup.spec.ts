@@ -177,6 +177,46 @@ describe('TournamentSetup', () => {
     expect(summary?.likelyCostUsd).not.toBeNull();
   });
 
+  it('counts the final once when no finals override is set', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.matchupBestOf = 3;
+    component.finalsBestOf = null;
+    component.drawPolicy = 'HIGHER_SEED_ADVANCES';
+    component.participants.set([
+      pricedParticipant('Alpha', 'model-alpha', 1, 1),
+      pricedParticipant('Beta', 'model-beta', 1, 1),
+      pricedParticipant('Gamma', 'model-gamma', 1, 1),
+      pricedParticipant('Delta', 'model-delta', 1, 1),
+    ]);
+
+    const summary = component.confidenceSummary();
+
+    expect(summary?.totalSeries).toBe(3);
+    expect(summary?.minGames).toBe(6);
+    expect(summary?.maxGames).toBe(9);
+    expect(summary?.likelyGames).toBe(7);
+  });
+
+  it('prices a move with the bounded prompt size', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.matchupBestOf = 1;
+    component.finalsBestOf = null;
+    component.drawPolicy = 'HIGHER_SEED_ADVANCES';
+    component.participants.set([
+      pricedParticipant('Alpha', 'model-alpha', 1, 10),
+      pricedParticipant('Beta', 'model-beta', 1, 10),
+    ]);
+
+    const summary = component.confidenceSummary();
+
+    expect(summary?.totalSeries).toBe(1);
+    expect(summary?.minGames).toBe(1);
+    expect(summary?.maxGames).toBe(1);
+    // 70 moves x (1,400 prompt tokens at $1/M + 140 output tokens at $10/M) = 70 x $0.0028.
+    expect(summary?.likelyCostUsd).toBeCloseTo(0.196, 6);
+    expect(summary?.maxCostUsd).toBeCloseTo(0.196, 6);
+  });
+
   it('allows a single human participant without a model id', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
     component.newPlayerName = 'Human Challenger';

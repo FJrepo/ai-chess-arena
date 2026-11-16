@@ -135,8 +135,10 @@ export class TournamentList implements OnInit {
     this.sortBy.set('newest');
   }
 
-  deleteTournament(id: string): void {
-    if (this.deletingIds().has(id)) {
+  /** Asks for confirmation, then deletes the tournament with all its games. */
+  deleteTournament(tournament: Tournament): void {
+    const id = tournament.id;
+    if (this.deletingIds().has(id) || !this.confirm(this.deleteConfirmationMessage(tournament))) {
       return;
     }
 
@@ -175,6 +177,16 @@ export class TournamentList implements OnInit {
       });
   }
 
+  deleteConfirmationMessage(tournament: Tournament): string {
+    if (tournament.status === 'IN_PROGRESS') {
+      return (
+        `"${tournament.name}" is in progress. Deleting it deletes all its games, moves, chat and ` +
+        'history, including the games being played now. This cannot be undone.'
+      );
+    }
+    return `Delete "${tournament.name}" with all its games and history? This cannot be undone.`;
+  }
+
   resultCountLabel(): string {
     const visible = this.filteredTournaments().length;
     const total = this.tournaments().length;
@@ -197,6 +209,11 @@ export class TournamentList implements OnInit {
       return 'OpenRouter is configured and the stack is ready for a first tournament.';
     }
     return 'The stack is up, but provider access still needs attention before a tournament can start.';
+  }
+
+  /** Separate so specs can answer the browser confirmation. */
+  protected confirm(message: string): boolean {
+    return window.confirm(message);
   }
 
   private loadSystemStatus(): void {
