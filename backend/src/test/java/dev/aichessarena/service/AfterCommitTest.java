@@ -36,6 +36,9 @@ class AfterCommitTest {
         // A transaction-phase observer still runs on the thread of the transaction that has just committed.
         AfterCommit.run(new Registry(Status.STATUS_COMMITTED), () -> sent.add("already committed"));
         AfterCommit.run(new Registry(Status.STATUS_MARKED_ROLLBACK), () -> sent.add("will roll back"));
+        // An after-completion callback of a transaction that rolled back: its change never happened.
+        AfterCommit.run(new Registry(Status.STATUS_ROLLING_BACK), () -> sent.add("rolling back"));
+        AfterCommit.run(new Registry(Status.STATUS_ROLLEDBACK), () -> sent.add("rolled back"));
 
         assertEquals(List.of("outside CDI", "no transaction", "already committed"), sent);
     }

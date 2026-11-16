@@ -93,6 +93,11 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-websockets-next</artifactId>
         </dependency>
+        <!-- Used directly: live update sends must not carry the caller's transaction (see GameWebSocket). -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-context-propagation</artifactId>
+        </dependency>
 
         <!-- Scheduler -->
         <dependency>

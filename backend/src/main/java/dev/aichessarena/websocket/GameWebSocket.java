@@ -12,10 +12,12 @@ import io.quarkus.websockets.next.OnOpen;
 import io.quarkus.websockets.next.OnTextMessage;
 import io.quarkus.websockets.next.WebSocket;
 import io.quarkus.websockets.next.WebSocketConnection;
+import io.smallrye.context.SmallRyeThreadContext;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.context.ThreadContext;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
@@ -90,10 +92,32 @@ public class GameWebSocket {
     }
 
     private void closeQuietly(WebSocketConnection connection, String reason) {
-        connection.close(new CloseReason(TRY_AGAIN_LATER, reason)).subscribe().with(
+        outsideTransaction(() -> connection.close(new CloseReason(TRY_AGAIN_LATER, reason)).subscribe().with(
                 ignored -> { },
                 err -> LOG.debugf("Failed to close WebSocket %s: %s", connection.id(), err.getMessage())
-        );
+        ));
+    }
+
+    /**
+     * Context for the callbacks of a send or close. They run later, on the connection's event loop, and Quarkus
+     * propagates every context into them by default, the JTA transaction included: a send made inside a transaction
+     * (a move is announced in the transaction that records it) would make the event loop join that transaction. If
+     * such a callback runs while the transaction commits, Narayana finds two threads in it and disassociates the
+     * committing thread before the one-phase commit; Agroal then refuses to commit the enlisted connection
+     * ("Enlisted connection used without active transaction") and the transaction rolls back. The callbacks only
+     * log, so they get no context: the transaction is cleared, everything else is left as the event loop has it.
+     */
+    private static final class SendContext {
+        static final SmallRyeThreadContext OUTSIDE_TRANSACTION = SmallRyeThreadContext.builder()
+                .propagated(ThreadContext.NONE)
+                .cleared(ThreadContext.TRANSACTION)
+                .unchanged(ThreadContext.ALL_REMAINING)
+                .build();
+    }
+
+    /** Starts a send or close whose callbacks never run inside the caller's transaction (see {@link SendContext}). */
+    private static void outsideTransaction(Runnable send) {
+        SmallRyeThreadContext.withThreadContext(SendContext.OUTSIDE_TRANSACTION, send);
     }
 
     @OnClose
@@ -375,11 +399,13 @@ public class GameWebSocket {
     private void broadcast(UUID gameId, String message) {
         Set<WebSocketConnection> subs = gameSubscriptions.get(gameId);
         if (subs == null) return;
-        for (WebSocketConnection conn : subs) {
-            conn.sendText(message).subscribe().with(
-                    ignored -> {},
-                    err -> LOG.warnf("Failed to send WebSocket message: %s", err.getMessage())
-            );
-        }
+        outsideTransaction(() -> {
+            for (WebSocketConnection conn : subs) {
+                conn.sendText(message).subscribe().with(
+                        ignored -> {},
+                        err -> LOG.warnf("Failed to send WebSocket message: %s", err.getMessage())
+                );
+            }
+        });
     }
 }
