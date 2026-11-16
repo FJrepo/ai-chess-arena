@@ -68,6 +68,13 @@
     box-shadow: inset 0 0 0 2px color-mix(in srgb, #5bb6ff 60%, transparent);
   }
 
+  // Last move (from and to squares): a wash over the square colour, kept under the
+  // selection and drop-target rings.
+  &.last-move-from,
+  &.last-move-to {
+    background-image: linear-gradient(var(--app-board-last-move), var(--app-board-last-move));
+  }
+
   &.selected {
     box-shadow: inset 0 0 0 3px color-mix(in srgb, #7ed1ff 85%, white);
   }

@@ -47,15 +47,10 @@
       <div class="pause-head">
         <mat-icon class="pause-icon" aria-hidden="true">pause_circle</mat-icon>
         <div class="pause-copy">
-          @if (showRaiseLimit()) {
-            <span class="pause-title"
-              >Paused: an answer was cut off at the output-token limit.</span
-            >
-            <span class="pause-hint">Raise the limit for this tournament to resume the game.</span>
-          } @else {
-            <span class="pause-title">Paused. Fix the problem, then resume the game.</span>
-            <span class="pause-detail">{{ game.statusDetail }}</span>
-          }
+          <span class="pause-title">{{
+            showRaiseLimit() ? 'Game paused' : 'Paused. Fix the problem, then resume the game.'
+          }}</span>
+          <span class="pause-detail">{{ game.statusDetail }}</span>
         </div>
       </div>
       @if (showRaiseLimit()) {
@@ -84,10 +79,6 @@
             Save and resume
           </button>
         </div>
-        <details class="pause-details">
-          <summary>Details</summary>
-          <p>{{ game.statusDetail }}</p>
-        </details>
       }
     </div>
   }

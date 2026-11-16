@@ -125,15 +125,12 @@ $warning: mat.$orange-palette;
   }
 }
 
-// Paused game: a plain headline, the fix (field + button) beside it on desktop widths, and the
-// raw reason as a secondary line or behind "Details".
+// Paused game: a headline with the reason as its body line, and the fix (field + button)
+// beside it on desktop widths.
 .pause-panel {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) auto;
-  grid-template-rows: auto 1fr;
-  grid-template-areas:
-    'head form'
-    'details form';
+  grid-template-areas: 'head form';
   align-items: start;
   gap: 8px 24px;
   padding: 14px 16px 12px;
@@ -167,7 +164,6 @@ $warning: mat.$orange-palette;
   color: var(--mat-sys-on-surface);
 }
 
-.pause-hint,
 .pause-detail {
   font: var(--mat-sys-body-medium);
   color: var(--mat-sys-on-surface-variant);
@@ -196,30 +192,4 @@ $warning: mat.$orange-palette;
 .save-resume {
   margin-top: 8px;
   padding-inline: 24px;
-}
-
-.pause-details {
-  grid-area: details;
-  padding-left: 34px;
-  font: var(--mat-sys-body-small);
-  color: var(--mat-sys-on-surface-variant);
-
-  summary {
-    width: fit-content;
-    cursor: pointer;
-    font: var(--mat-sys-label-large);
-    color: var(--mat-sys-on-surface-variant);
-  }
-
-  summary:focus-visible {
-    outline: 2px solid var(--mat-sys-primary);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-
-  p {
-    margin: 6px 0 0;
-    max-width: 90ch;
-    overflow-wrap: anywhere;
-  }
 }
