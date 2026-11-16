@@ -10,11 +10,27 @@ server {
     return 421;
 }
 
+# nginx selects the server (and sets $host) from the request line when it is in absolute form
+# ("GET http://localhost/... HTTP/1.1"), but /api and /ws forward the Host header ($http_host). Compare the
+# Host header's name, without port, to $host so a foreign Host header cannot ride on an allowed request line.
+map $http_host $host_header_name {
+    default "";
+    "~^(?<name>\[[0-9A-Fa-f:.]*\]|[^:]*)(:[0-9]*)?$" $name;
+}
+map "$host|$host_header_name" $host_header_mismatch {
+    default 1;
+    # $host is lower-case and has no trailing dot; the header may have either.
+    "~*^([^|]*)\|\1\.?$" 0;
+}
+
 server {
     listen 8080;
     # Loopback names are always allowed; ALLOWED_HOSTS adds more (space-separated, e.g. a LAN host name or IP).
     # server_name ignores the port, so any FRONTEND_PORT works.
     server_name localhost 127.0.0.1 [::1] ${ALLOWED_HOSTS};
+    if ($host_header_mismatch) {
+        return 421;
+    }
     root /usr/share/nginx/html;
     index index.html;
 

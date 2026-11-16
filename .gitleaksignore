@@ -1,0 +1,5 @@
+# Findings reviewed as false positives (format: <commit>:<file>:<rule>:<line>).
+# Static Sec-WebSocket-Key values in the release smoke test: the RFC 6455 sample handshake nonce, not a
+# secret. The workflow now generates the nonce at runtime; these entries cover the two earlier commits.
+f9053514c2b08c2b4748910698cd22af06db0f7d:.github/workflows/release.yml:generic-api-key:210
+7325e11200e7a2ff6fb555a464225e6da4d37f84:.github/workflows/release.yml:generic-api-key:239

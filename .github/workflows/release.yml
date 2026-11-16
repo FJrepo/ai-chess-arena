@@ -205,9 +205,11 @@ jobs:
             exit 1
           fi
           # The handshake answers 101 and then stays open, so curl ends on its timeout; only the status matters.
+          # Sec-WebSocket-Key is a random per-handshake nonce (16 bytes, base64), not a credential.
+          ws_key="$(head -c 16 /dev/urandom | base64)"
           ws_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
             -H "Origin: $base" -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
-            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            -H 'Sec-WebSocket-Version: 13' -H "Sec-WebSocket-Key: $ws_key" \
             "$base/ws/games" 2>/dev/null || true)"
           echo "WebSocket handshake /ws/games with Origin $base -> $ws_status"
           if [[ "$ws_status" != "101" ]]; then
@@ -231,12 +233,17 @@ jobs:
               exit 1
             fi
           }
+          ws_key="$(head -c 16 /dev/urandom | base64)"
           check_rejected "GET /" "$base/"
           check_rejected "POST /api/tournaments" -X POST -H "Origin: http://$evil" \
             -H 'Content-Type: application/json' --data '{}' "$base/api/tournaments"
           check_rejected "WebSocket handshake /ws/games" -H "Origin: http://$evil" \
             -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
-            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$base/ws/games"
+            -H "Sec-WebSocket-Key: $ws_key" "$base/ws/games"
+          # Absolute-form request line: nginx picks the server by the allowed name in the request line, so the
+          # foreign Host header must be caught separately instead of being forwarded to the backend.
+          check_rejected "Absolute-form GET http://127.0.0.1/api/tournaments" \
+            --request-target "http://127.0.0.1/api/tournaments" "$base/api/tournaments"
 
       - name: Show logs on failure
         if: failure()
