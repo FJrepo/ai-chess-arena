@@ -18,9 +18,12 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
     private static final String REJECTED_COST_SELECT = "select a.game.id, a.modelId, sum(a.costUsd) "
             + "from MoveAttempt a where a.outcome <> :accepted and a.costUsd is not null and a.modelId is not null";
 
-    /** The game's attempts in play order: by ply (White before Black), then by attempt number. */
+    /**
+     * The game's attempts in play order: by ply (White before Black), then by time. Attempt numbers restart at 1
+     * when a paused game resumes, so they only break ties between attempts stored at the same instant.
+     */
     public List<MoveAttempt> findByGameId(UUID gameId) {
-        return list("game.id = ?1 order by moveNumber, color desc, attemptNumber, createdAt", gameId);
+        return list("game.id = ?1 order by moveNumber, color desc, createdAt, attemptNumber", gameId);
     }
 
     /**

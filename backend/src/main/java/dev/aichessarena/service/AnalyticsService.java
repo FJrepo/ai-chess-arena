@@ -298,8 +298,9 @@ public class AnalyticsService {
         );
     }
 
+    /** Based on finished games only, like the comparison, so both views score a model the same way. */
     private ModelReliabilityResponseDto buildReliability(int days, UUID tournamentId, int minGames) {
-        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId);
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
         List<Game> games = scope.games();
         List<Move> moves = scope.moves();
 
@@ -432,6 +433,7 @@ public class AnalyticsService {
         rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
             ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
             accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
+            accumulator.rejectedAttemptsCosted = true;
         });
 
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
@@ -454,7 +456,9 @@ public class AnalyticsService {
 
             BigDecimal forfeitRate = divide(accumulator.forfeits, accumulator.gamesPlayed);
             BigDecimal timeoutForfeitRate = divide(accumulator.timeoutForfeits, accumulator.gamesPlayed);
-            BigDecimal averageCostPerMoveUsd = pricingAvailable(accumulator)
+            // The total is known even without moves (e.g. only rejected answers, then a forfeit); the average per
+            // move needs at least one move.
+            BigDecimal averageCostPerMoveUsd = pricingAvailable(accumulator) && accumulator.movesSampled > 0
                     ? divide(accumulator.totalCostUsd, accumulator.pricedMoves)
                     : null;
             BigDecimal totalCostUsd = pricingAvailable(accumulator)
@@ -646,8 +650,13 @@ public class AnalyticsService {
         return costs.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    /**
+     * Whether the model's total cost is known: every move is priced and there is at least one priced answer
+     * (a move, or a rejected attempt with a reported cost).
+     */
     private boolean pricingAvailable(ComparisonAccumulator accumulator) {
-        return accumulator.movesSampled > 0 && accumulator.pricedMoves == accumulator.movesSampled;
+        boolean anyCost = accumulator.movesSampled > 0 || accumulator.rejectedAttemptsCosted;
+        return anyCost && accumulator.pricedMoves == accumulator.movesSampled;
     }
 
     private BigDecimal divide(long numerator, long denominator) {
@@ -731,6 +740,7 @@ public class AnalyticsService {
         private long responseTimeTotal;
         private BigDecimal totalCostUsd = BigDecimal.ZERO;
         private long pricedMoves;
+        private boolean rejectedAttemptsCosted;
     }
 
     private static final class ReliabilityAccumulator {

@@ -43,7 +43,7 @@ class AnalyticsGameOutcomeClassifierTest {
     }
 
     @Test
-    void byesAreGamesWithAMissingSideOrABye() {
+    void byesAreGamesWithAnEmptySide() {
         Game played = new Game();
         played.whiteParticipant = new TournamentParticipant();
         played.blackParticipant = new TournamentParticipant();
@@ -58,11 +58,28 @@ class AnalyticsGameOutcomeClassifierTest {
         bye.blackPlayerName = "BYE";
         assertTrue(AnalyticsGameOutcomeClassifier.isBye(bye));
 
-        Game namedBye = new Game();
-        namedBye.whiteParticipant = new TournamentParticipant();
-        namedBye.blackParticipant = new TournamentParticipant();
-        namedBye.whitePlayerName = "BYE";
-        assertTrue(AnalyticsGameOutcomeClassifier.isBye(namedBye));
+        Game unreachedSlot = new Game();
+        assertTrue(AnalyticsGameOutcomeClassifier.isBye(unreachedSlot));
+    }
+
+    @Test
+    void aRealParticipantNamedByeStillPlays() {
+        Game game = new Game();
+        game.whiteParticipant = new TournamentParticipant();
+        game.blackParticipant = new TournamentParticipant();
+        game.whitePlayerName = "BYE";
+        game.blackPlayerName = "Beta";
+
+        assertFalse(AnalyticsGameOutcomeClassifier.isBye(game));
+    }
+
+    @Test
+    void aSideWithoutParticipantButWithARealNameIsNotABye() {
+        Game game = new Game();
+        game.whitePlayerName = "Alpha";
+        game.blackPlayerName = "Beta";
+
+        assertFalse(AnalyticsGameOutcomeClassifier.isBye(game));
     }
 
     @Test

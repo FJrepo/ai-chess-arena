@@ -84,6 +84,29 @@ class MoveOrderIT {
         assertEquals("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3", state.board().getFen());
     }
 
+    @Test
+    void attemptsOfAResumedPlyKeepTheirTimeOrder() {
+        LocalDateTime start = LocalDateTime.now().minusMinutes(10);
+        UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.status = GameStatus.IN_PROGRESS;
+            game.whitePlayerName = "White";
+            game.blackPlayerName = "Black";
+            gameRepository.persist(game);
+            // First run: an illegal move, then an answer cut off at the token limit pauses the game.
+            attempt(game, 1, "WHITE", 1, Outcome.ILLEGAL_MOVE, start);
+            attempt(game, 1, "WHITE", 2, Outcome.TRUNCATED, start.plusSeconds(10));
+            // After the resume the attempt counter restarts at 1.
+            attempt(game, 1, "WHITE", 1, Outcome.ACCEPTED, start.plusMinutes(5));
+            return game.id;
+        });
+
+        given().when().get("/api/games/{id}/attempts", gameId)
+                .then().statusCode(200)
+                .body("outcome", contains("ILLEGAL_MOVE", "TRUNCATED", "ACCEPTED"))
+                .body("attemptNumber", contains(1, 2, 1));
+    }
+
     private void move(Game game, int moveNumber, String color, String san, LocalDateTime createdAt) {
         Move move = new Move();
         move.game = game;
@@ -96,12 +119,18 @@ class MoveOrderIT {
     }
 
     private void attempt(Game game, int moveNumber, String color, int number, LocalDateTime createdAt) {
+        Outcome outcome = number == 1 && "WHITE".equals(color) ? Outcome.ILLEGAL_MOVE : Outcome.ACCEPTED;
+        attempt(game, moveNumber, color, number, outcome, createdAt);
+    }
+
+    private void attempt(Game game, int moveNumber, String color, int number, Outcome outcome,
+            LocalDateTime createdAt) {
         MoveAttempt attempt = new MoveAttempt();
         attempt.game = game;
         attempt.moveNumber = moveNumber;
         attempt.color = color;
         attempt.attemptNumber = number;
-        attempt.outcome = number == 1 && "WHITE".equals(color) ? Outcome.ILLEGAL_MOVE : Outcome.ACCEPTED;
+        attempt.outcome = outcome;
         attempt.createdAt = createdAt;
         attemptRepository.persist(attempt);
     }

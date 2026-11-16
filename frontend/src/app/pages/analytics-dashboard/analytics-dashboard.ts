@@ -51,7 +51,7 @@ type ComparisonSortOption =
 export class AnalyticsDashboard implements OnInit, OnDestroy {
   readonly dayOptions = [7, 30, 90];
   readonly scoreExplanation =
-    'Score: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
+    'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
   readonly comparisonSortOptions = [
     { value: 'winRate', label: 'Win Rate' },
     { value: 'reliabilityScore', label: 'Reliability' },

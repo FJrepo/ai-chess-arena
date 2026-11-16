@@ -141,8 +141,8 @@ class AnalyticsServiceTest {
         assertEquals(1, alpha.gamesPlayed());
         assertEquals(1, alpha.gamesCompleted());
         assertEquals(0, alpha.forfeitCount());
-        // Moves of a running game still show how the model plays.
-        assertEquals(2, alpha.movesSampled());
+        // Reliability is based on finished games only, like the comparison.
+        assertEquals(1, alpha.movesSampled());
 
         AnalyticsModelComparisonDto comparison = service.getComparison(30, null, 0);
         assertEquals(1, comparison.gamesCount());
@@ -261,6 +261,34 @@ class AnalyticsServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals(new BigDecimal("0.035000"), alphaHealth.totalCostUsd());
+    }
+
+    @Test
+    void totalCostIsKnownForAModelThatOnlyHadRejectedAnswers() {
+        Game game = finishedGame(
+                "model.alpha",
+                "model.beta",
+                Game.GameResult.WHITE_FORFEIT,
+                Game.ResultReason.FORFEIT_INVALID_MOVES,
+                YESTERDAY
+        );
+
+        AnalyticsService service = service(
+                List.of(game),
+                List.of(),
+                List.of(new RejectedAttemptCost(game.id, "model.alpha", new BigDecimal("0.03")))
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+        assertEquals(0, alpha.movesSampled());
+        assertTrue(alpha.pricingAvailable());
+        assertEquals(new BigDecimal("0.030000"), alpha.totalCostUsd());
+        assertNull(alpha.averageCostPerMoveUsd(), "no moves, so no average per move");
+        assertNull(alpha.costPerWinUsd());
+
+        AnalyticsModelComparisonRowDto beta = row(service.getComparison(30, null, 0), "model.beta");
+        assertFalse(beta.pricingAvailable(), "no priced answer at all");
+        assertNull(beta.totalCostUsd());
     }
 
     @Test

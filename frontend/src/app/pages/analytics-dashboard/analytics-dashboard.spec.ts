@@ -48,7 +48,7 @@ describe('AnalyticsDashboard', () => {
     const component = new AnalyticsDashboard({} as any);
 
     expect(component.scoreExplanation).toBe(
-      'Score: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.',
+      'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.',
     );
   });
 

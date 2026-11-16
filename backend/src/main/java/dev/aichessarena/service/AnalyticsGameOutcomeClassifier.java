@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.TournamentParticipant;
 import jakarta.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped
@@ -16,14 +17,24 @@ public class AnalyticsGameOutcomeClassifier {
     }
 
     /**
-     * A bye (or a bracket slot nobody has reached yet): one side has no participant. Byes are recorded as
-     * completed games without moves and must never count as games played.
+     * A bye (or a bracket slot nobody has reached yet): one side is empty. Byes are recorded as completed games
+     * without moves and must never count as games played.
      */
     static boolean isBye(Game game) {
-        return game.whiteParticipant == null
-                || game.blackParticipant == null
-                || BYE_PLAYER_NAME.equals(game.whitePlayerName)
-                || BYE_PLAYER_NAME.equals(game.blackPlayerName);
+        return isEmptySide(game.whiteParticipant, game.whitePlayerName)
+                || isEmptySide(game.blackParticipant, game.blackPlayerName);
+    }
+
+    /**
+     * A side is empty when it has no participant. The name is only a fallback for a side without a participant:
+     * a real participant named "BYE" still plays, while a side without a participant reference but with a real
+     * player name (a game not linked to bracket participants) still counts.
+     */
+    private static boolean isEmptySide(TournamentParticipant participant, String playerName) {
+        if (participant != null) {
+            return false;
+        }
+        return playerName == null || playerName.isBlank() || BYE_PLAYER_NAME.equals(playerName);
     }
 
     boolean isActive(Game game) {
