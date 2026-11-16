@@ -55,6 +55,14 @@ public class MoveAttempt extends PanacheEntityBase {
     @Column(name = "completion_tokens")
     public Integer completionTokens;
 
+    /** The max_tokens request cap; null for attempts recorded before this metadata was tracked. */
+    @Column(name = "effective_max_output_tokens")
+    public Integer effectiveMaxOutputTokens;
+
+    /** The catalog maximum when the request was prepared; null when unknown. */
+    @Column(name = "model_max_completion_tokens")
+    public Integer modelMaxCompletionTokens;
+
     @Column(name = "reasoning_tokens")
     public Integer reasoningTokens;
 
@@ -86,7 +94,7 @@ public class MoveAttempt extends PanacheEntityBase {
         ILLEGAL_MOVE(true),
         PARSE_FAILURE(true),
         EMPTY_RESPONSE(true),
-        /** Cut off at the tournament's output-token limit: a configuration problem, not the model's fault. */
+        /** Cut off at the request's output-token limit: a configuration problem, not the model's fault. */
         TRUNCATED(false),
         TIMEOUT(true),
         PROVIDER_RETRYABLE(false),

@@ -21,5 +21,7 @@ public record MoveAttemptDto(
         String errorMessage,
         LocalDateTime createdAt,
         // The reasoning effort sent with this attempt (lower case); null when none was sent.
-        String reasoningEffort
+        String reasoningEffort,
+        Integer effectiveMaxOutputTokens,
+        Integer modelMaxCompletionTokens
 ) {}

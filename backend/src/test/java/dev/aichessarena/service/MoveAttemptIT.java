@@ -76,7 +76,28 @@ class MoveAttemptIT {
                 .body("[0].attemptNumber", equalTo(1))
                 .body("[0].reasoningTokens", equalTo(16))
                 .body("[0].finishReason", equalTo("stop"))
+                .body("[0].effectiveMaxOutputTokens", org.hamcrest.Matchers.nullValue())
+                .body("[0].modelMaxCompletionTokens", org.hamcrest.Matchers.nullValue())
                 .body("[1].outcome", equalTo("ACCEPTED"));
+    }
+
+    @Test
+    void truncatedRequestLimitsSurvivePersistenceAndAreExposedOnTheAttemptsApi() {
+        UUID id = newGame(BigDecimal.ZERO);
+        String detail = "Answer was cut off at the model's maximum of 8,192 output tokens";
+        attempts.record(new MoveAttemptService.AttemptRecord(id, 1, "WHITE", 1, "model-a", Outcome.TRUNCATED,
+                null, detail, new LlmResponse(null, 20, 8192, null, 500, "{}", false, null,
+                ProviderOutcome.OK, 200, "length", 8000).withOutputTokenLimits(8192, 8192)));
+
+        MoveAttempt stored = QuarkusTransaction.requiringNew().call(() -> attemptRepository.findByGameId(id).getFirst());
+        assertEquals(8192, stored.effectiveMaxOutputTokens);
+        assertEquals(8192, stored.modelMaxCompletionTokens);
+        assertEquals(detail, stored.errorMessage);
+        given().when().get("/api/games/{id}/attempts", id)
+                .then().statusCode(200)
+                .body("[0].effectiveMaxOutputTokens", equalTo(8192))
+                .body("[0].modelMaxCompletionTokens", equalTo(8192))
+                .body("[0].errorMessage", equalTo(detail));
     }
 
     @Test
@@ -103,7 +124,7 @@ class MoveAttemptIT {
         given().contentType("application/json").body("{\"name\":\"Token limit " + UUID.randomUUID() + "\"}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
-                .body("maxOutputTokens", equalTo(4096));
+                .body("maxOutputTokens", equalTo(16384));
         given().contentType("application/json")
                 .body("{\"name\":\"Token limit " + UUID.randomUUID() + "\",\"maxOutputTokens\":16384}")
                 .when().post("/api/tournaments")

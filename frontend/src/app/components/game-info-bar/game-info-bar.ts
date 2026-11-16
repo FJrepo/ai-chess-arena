@@ -35,9 +35,10 @@ export interface TruncationEffortChoice {
   fromCatalog: boolean;
 }
 
-/** What "Save and resume" asks for: the new limit and, when offered, the participant's new override. */
+/** What "Save and resume" asks for: a changed limit and, when offered, the participant's new override. */
 export interface RaiseLimitRequest {
-  maxOutputTokens: number;
+  /** Absent when the field still contains the current tournament limit. */
+  maxOutputTokens?: number;
   /** Absent when no reasoning-effort choice was offered; null follows the tournament's level. */
   reasoningEffort?: ReasoningEffort | null;
 }
@@ -73,9 +74,9 @@ export class GameInfoBar {
   readonly sideQualityTooltip = sideQualityTooltip;
 
   static readonly MIN_OUTPUT_TOKENS = 128;
-  static readonly MAX_OUTPUT_TOKENS = 32768;
+  static readonly MAX_OUTPUT_TOKENS = 262144;
 
-  /** Value of the raise-limit input; prefilled with double the current limit. */
+  /** Suggested limit, bounded by the model maximum but never below the current tournament limit. */
   newMaxOutputTokens: number | null = null;
   private currentLimit: number | null = null;
 
@@ -89,12 +90,45 @@ export class GameInfoBar {
       return;
     }
     this.currentLimit = value;
-    this.newMaxOutputTokens =
-      value == null ? null : Math.min(GameInfoBar.MAX_OUTPUT_TOKENS, value * 2);
+    this.prefillOutputLimit();
   }
 
   get truncationLimit(): number | null {
     return this.currentLimit;
+  }
+
+  private modelMaximum: number | null = null;
+
+  @Input()
+  set truncationModelMaximum(value: number | null) {
+    if (value !== this.modelMaximum) {
+      this.modelMaximum = value;
+      this.prefillOutputLimit();
+    }
+  }
+
+  /** Bound new suggestions by the model maximum while allowing the current tournament limit. */
+  allowedOutputMaximum(): number {
+    return Math.min(
+      GameInfoBar.MAX_OUTPUT_TOKENS,
+      Math.max(this.currentLimit ?? 0, this.modelMaximum ?? GameInfoBar.MAX_OUTPUT_TOKENS),
+    );
+  }
+
+  outputLimitHint(): string {
+    const range = `Currently ${this.currentLimit}; 128–${this.allowedOutputMaximum()}, includes reasoning tokens`;
+    return this.modelMaximum != null &&
+      this.currentLimit != null &&
+      this.modelMaximum < this.currentLimit
+      ? `${range}. This model is capped at ${this.modelMaximum}; keeping the field unchanged preserves the tournament limit.`
+      : range;
+  }
+
+  private prefillOutputLimit(): void {
+    this.newMaxOutputTokens =
+      this.currentLimit == null
+        ? null
+        : Math.min(this.allowedOutputMaximum(), this.currentLimit * 2);
   }
 
   readonly reasoningEffortLabel = reasoningEffortLabel;
@@ -166,7 +200,7 @@ export class GameInfoBar {
       value != null &&
       Number.isInteger(value) &&
       value >= GameInfoBar.MIN_OUTPUT_TOKENS &&
-      value <= GameInfoBar.MAX_OUTPUT_TOKENS
+      value <= this.allowedOutputMaximum()
     );
   }
 
@@ -174,7 +208,10 @@ export class GameInfoBar {
     if (!this.canSaveLimit()) {
       return;
     }
-    const request: RaiseLimitRequest = { maxOutputTokens: this.newMaxOutputTokens! };
+    const request: RaiseLimitRequest = {};
+    if (this.newMaxOutputTokens !== this.currentLimit) {
+      request.maxOutputTokens = this.newMaxOutputTokens!;
+    }
     if (this.showEffortSelect()) {
       request.reasoningEffort = this.newReasoningEffort;
     }

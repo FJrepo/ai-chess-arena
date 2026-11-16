@@ -33,7 +33,7 @@ import {
   RaiseLimitRequest,
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
-import { forkJoin, Subscription, switchMap } from 'rxjs';
+import { forkJoin, Observable, of, Subscription, switchMap, tap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
@@ -79,7 +79,7 @@ type TimelineEvent = {
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** Backend default for a tournament's output-token limit. */
-const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
 
 // Solid glyphs for both colours; the stylesheet colours them (white pieces get a light fill
 // and a dark edge).
@@ -158,6 +158,16 @@ export class GameView implements OnInit, OnDestroy {
       ? (this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS)
       : null,
   );
+  /** The model maximum captured on the cut-off request, independent of later catalog changes. */
+  truncationModelMaximum = computed<number | null>(() => {
+    if (!this.truncatedSide()) {
+      return null;
+    }
+    const ply = nextPly(this.moves());
+    return (
+      latestAttemptFor(this.attempts(), ply.moveNumber, ply.color)?.modelMaxCompletionTokens ?? null
+    );
+  });
   /**
    * The cut-off side's reasoning effort for the pause banner: its participant, the level it asks for and the
    * levels its model offers (every level until, or unless, the catalog tells). Null without a cut-off answer,
@@ -963,16 +973,16 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
-  /** The pause banner's "Save and resume": the limit, and the cut-off side's reasoning effort when offered. */
+  /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */
   saveTruncationFixAndResume(request: RaiseLimitRequest) {
     this.saveLimitAndResume(request.maxOutputTokens, request.reasoningEffort);
   }
 
   /**
-   * Saves a raised output-token limit for the game's tournament and, unless `reasoningEffort` is undefined, the
+   * Saves a changed output-token limit for the game's tournament and, unless `reasoningEffort` is undefined, the
    * cut-off side's reasoning-effort override (null follows the tournament's), then resumes the game.
    */
-  saveLimitAndResume(maxOutputTokens: number, reasoningEffort?: ReasoningEffort | null) {
+  saveLimitAndResume(maxOutputTokens?: number, reasoningEffort?: ReasoningEffort | null) {
     const tournamentId = this.game()?.tournamentId;
     if (!tournamentId || this.savingLimit() || this.refreshingPauseSettings()) {
       return;
@@ -980,11 +990,19 @@ export class GameView implements OnInit, OnDestroy {
     const effortChoice = reasoningEffort === undefined ? null : this.truncationEffort();
     const side = this.truncatedSide();
     this.savingLimit.set(true);
-    this.api
-      .updateTournament(tournamentId, { maxOutputTokens })
+    const saveLimit: Observable<unknown> =
+      maxOutputTokens === undefined || maxOutputTokens === this.tournamentMaxOutputTokens()
+        ? of(null)
+        : this.api
+            .updateTournament(tournamentId, { maxOutputTokens })
+            .pipe(
+              tap((tournament) =>
+                this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens),
+              ),
+            );
+    saveLimit
       .pipe(
-        switchMap((tournament) => {
-          this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens);
+        switchMap(() => {
           if (!effortChoice || !side) {
             return this.api.startGame(this.gameId);
           }

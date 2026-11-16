@@ -44,6 +44,21 @@ class MoveAttemptServiceTest {
     }
 
     @Test
+    void truncatedAttemptStoresTheEffectiveRequestCapAndKnownModelMaximum() {
+        Fixture fixture = new Fixture(BigDecimal.ZERO);
+        String detail = "Answer was cut off at the model's maximum of 8,192 output tokens";
+        fixture.service.record(new MoveAttemptService.AttemptRecord(fixture.game.id, 1, "WHITE", 1, "model-a",
+                Outcome.TRUNCATED, null, detail,
+                new LlmResponse(null, 100, 8192, null, 500, "{}", false, null,
+                        ProviderOutcome.OK, 200, "length", 8192).withOutputTokenLimits(8192, 8192)));
+
+        MoveAttempt row = fixture.attempts.persisted.getFirst();
+        assertEquals(8192, row.effectiveMaxOutputTokens);
+        assertEquals(8192, row.modelMaxCompletionTokens);
+        assertEquals(detail, row.errorMessage);
+    }
+
+    @Test
     void acceptedAttemptIsStoredWithoutCountingItsCostTwice() {
         Fixture fixture = new Fixture(new BigDecimal("0.10"));
 
@@ -63,6 +78,8 @@ class MoveAttemptServiceTest {
                         null)));
 
         MoveAttempt row = fixture.attempts.persisted.getFirst();
+        assertNull(row.effectiveMaxOutputTokens);
+        assertNull(row.modelMaxCompletionTokens);
         assertNull(row.promptTokens);
         assertNull(row.completionTokens);
         assertNull(row.costUsd);

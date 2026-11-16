@@ -41,11 +41,10 @@ public class Tournament extends PanacheEntityBase {
     public Integer moveTimeoutSeconds = DEFAULT_MOVE_TIMEOUT_SECONDS;
 
     /**
-     * Used when a tournament is created without a limit and for games outside a tournament. Generous because the
-     * limit is a hard deadline (running out of time forfeits) and reasoning models often need more than a minute.
-     * Existing tournaments keep their stored value.
+     * No move time limit for new tournaments and games outside a tournament. Explicit limits remain hard
+     * deadlines (running out of time forfeits). Existing tournaments keep their stored value.
      */
-    public static final int DEFAULT_MOVE_TIMEOUT_SECONDS = 120;
+    public static final Integer DEFAULT_MOVE_TIMEOUT_SECONDS = null;
     public static final int MIN_MOVE_TIMEOUT_SECONDS = 10;
     public static final int MAX_MOVE_TIMEOUT_SECONDS = 3600;
 
@@ -93,9 +92,9 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "max_output_tokens", nullable = false)
     public int maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS;
 
-    public static final int DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+    public static final int DEFAULT_MAX_OUTPUT_TOKENS = 16384;
     public static final int MIN_MAX_OUTPUT_TOKENS = 128;
-    public static final int MAX_MAX_OUTPUT_TOKENS = 32768;
+    public static final int MAX_MAX_OUTPUT_TOKENS = 262144;
 
     /** Client-generated id of the create request; makes retried creations return the same tournament. */
     @Column(name = "client_request_id", unique = true)

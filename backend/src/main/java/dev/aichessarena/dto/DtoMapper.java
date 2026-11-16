@@ -141,7 +141,8 @@ public final class DtoMapper {
         return new MoveAttemptDto(
                 a.id, a.moveNumber, a.color, a.attemptNumber, a.modelId, a.outcome.name(), a.proposedMove,
                 a.promptTokens, a.completionTokens, a.reasoningTokens, a.costUsd, a.responseTimeMs,
-                a.finishReason, a.errorMessage, a.createdAt, apiValue(a.reasoningEffort)
+                a.finishReason, a.errorMessage, a.createdAt, apiValue(a.reasoningEffort),
+                a.effectiveMaxOutputTokens, a.modelMaxCompletionTokens
         );
     }
 

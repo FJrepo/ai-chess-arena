@@ -46,17 +46,93 @@ describe('GameInfoBar raise-limit control', () => {
     expect(bar.showRaiseLimit()).toBe(false);
   });
 
-  it('prefills double the current limit, capped at 32768', () => {
+  it('prefills double the current limit, capped at 262144', () => {
     const bar = new GameInfoBar();
 
     bar.truncationLimit = 4096;
     expect(bar.newMaxOutputTokens).toBe(8192);
 
-    bar.truncationLimit = 20000;
+    bar.truncationLimit = 16384;
     expect(bar.newMaxOutputTokens).toBe(32768);
+
+    bar.truncationLimit = 200000;
+    expect(bar.newMaxOutputTokens).toBe(262144);
 
     bar.truncationLimit = null;
     expect(bar.newMaxOutputTokens).toBeNull();
+  });
+
+  it('bounds suggestions by the model maximum without lowering the current tournament limit', () => {
+    const bar = new GameInfoBar();
+    bar.game = pausedGame();
+    bar.truncationLimit = 32768;
+    bar.truncationModelMaximum = 8192;
+    expect(bar.newMaxOutputTokens).toBe(32768);
+    expect(bar.allowedOutputMaximum()).toBe(32768);
+
+    const emitted: RaiseLimitRequest[] = [];
+    bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+    bar.newMaxOutputTokens = 32769;
+    expect(bar.canSaveLimit()).toBe(false);
+    bar.saveAndResume();
+    bar.newMaxOutputTokens = 8192;
+    bar.saveAndResume();
+    expect(emitted).toEqual([{ maxOutputTokens: 8192 }]);
+
+    bar.truncationLimit = 4096;
+    expect(bar.newMaxOutputTokens).toBe(8192);
+    bar.truncationModelMaximum = null;
+    expect(bar.allowedOutputMaximum()).toBe(262144);
+    bar.truncationModelMaximum = 6000;
+    expect(bar.newMaxOutputTokens).toBe(6000);
+    bar.truncationLimit = 8192;
+    expect(bar.newMaxOutputTokens).toBe(8192);
+  });
+
+  it('keeps 32768 visible and explains the 8192 model cap during effort-only recovery', async () => {
+    const detail =
+      "Alpha's answer was cut off at the model's maximum of 8,192 output tokens. " +
+      'Raising the tournament limit cannot help. Lower the reasoning effort and resume.';
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentInstance.game = pausedGame(detail);
+    fixture.componentInstance.truncationModelMaximum = 8192;
+    fixture.componentInstance.truncationLimit = 32768;
+    fixture.componentInstance.truncationEffort = {
+      participantId: 'p-1',
+      playerName: 'Alpha',
+      current: 'high',
+      tournamentLevel: null,
+      options: ['low', 'high'],
+      fromCatalog: true,
+    };
+    const emitted: RaiseLimitRequest[] = [];
+    fixture.componentInstance.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+    const input = element.querySelector<HTMLInputElement>('input[type="number"]');
+    expect(input?.max).toBe('32768');
+    expect(input?.value).toBe('32768');
+    expect(element.querySelector('.pause-detail')?.textContent).toBe(detail);
+    expect(element.querySelector('.limit-field mat-hint')?.textContent).toContain(
+      'This model is capped at 8192',
+    );
+    expect(element.querySelector<HTMLButtonElement>('.save-resume')?.disabled).toBe(false);
+
+    element.querySelector<HTMLButtonElement>('.save-resume')!.click();
+    expect(emitted).toEqual([{ reasoningEffort: 'low' }]);
+
+    input!.value = '8192';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    element.querySelector<HTMLButtonElement>('.save-resume')!.click();
+    expect(emitted).toEqual([
+      { reasoningEffort: 'low' },
+      { maxOutputTokens: 8192, reasoningEffort: 'low' },
+    ]);
   });
 
   it('emits a valid limit and refuses out-of-range values or a save in progress', () => {
@@ -67,7 +143,7 @@ describe('GameInfoBar raise-limit control', () => {
     bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
 
     bar.saveAndResume();
-    bar.newMaxOutputTokens = 40000;
+    bar.newMaxOutputTokens = 262145;
     bar.saveAndResume();
     bar.newMaxOutputTokens = 100;
     bar.saveAndResume();
@@ -75,7 +151,16 @@ describe('GameInfoBar raise-limit control', () => {
     bar.saving = true;
     bar.saveAndResume();
 
-    expect(emitted).toEqual([{ maxOutputTokens: 8192 }]);
+    bar.saving = false;
+    bar.newMaxOutputTokens = 128;
+    bar.saveAndResume();
+    bar.newMaxOutputTokens = 262144;
+    bar.saveAndResume();
+    expect(emitted).toEqual([
+      { maxOutputTokens: 8192 },
+      { maxOutputTokens: 128 },
+      { maxOutputTokens: 262144 },
+    ]);
   });
 });
 
@@ -108,8 +193,8 @@ describe('GameInfoBar reasoning effort for a cut-off answer', () => {
     bar.saveAndResume();
 
     expect(emitted).toEqual([
-      { maxOutputTokens: 32768, reasoningEffort: 'low' },
-      { maxOutputTokens: 32768, reasoningEffort: null },
+      { maxOutputTokens: 60000, reasoningEffort: 'low' },
+      { maxOutputTokens: 60000, reasoningEffort: null },
     ]);
   });
 
@@ -185,6 +270,10 @@ describe('GameInfoBar reasoning effort for a cut-off answer', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const element: HTMLElement = fixture.nativeElement;
+
+    const tokenInput = element.querySelector<HTMLInputElement>('input[max="262144"]');
+    expect(tokenInput?.min).toBe('128');
+    expect(tokenInput?.value).toBe('60000');
 
     expect(element.querySelector('.effort-field mat-label')?.textContent?.trim()).toBe(
       'Reasoning effort for Ember',

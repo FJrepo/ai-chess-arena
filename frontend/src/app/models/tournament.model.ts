@@ -4,7 +4,7 @@ import type { ReasoningEffort } from '../utils/reasoning-effort';
  * The backend's time limit per move in seconds (Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS): used when a tournament is
  * created without one and for games outside a tournament. Running out of time forfeits the game.
  */
-export const DEFAULT_MOVE_TIMEOUT_SECONDS = 120;
+export const DEFAULT_MOVE_TIMEOUT_SECONDS: number | null = null;
 
 /** OFF: models stay silent. OPTIONAL: models may send a message. MANDATORY: models are asked for one every move. */
 export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
@@ -25,7 +25,7 @@ export interface Tournament {
   sharedCustomInstructions: string | null;
   /**
    * Time limit per move in seconds (10-3600); null means no time limit. In create and update requests, 0
-   * removes the limit and an omitted or null value keeps the default (120 s) or the current value.
+   * removes the limit and an omitted or null value keeps the default (no limit) or the current value.
    */
   moveTimeoutSeconds: number | null;
   maxRetries: number;
@@ -42,7 +42,7 @@ export interface Tournament {
   resignationAllowed?: boolean;
   /**
    * Cap on generated tokens per model answer (includes reasoning tokens); cut-off answers pause the game.
-   * Always sent by the backend (default 4096); optional only so existing test fixtures stay valid.
+   * Always sent by the backend (default 16384); optional only so existing test fixtures stay valid.
    */
   maxOutputTokens?: number;
   /**
@@ -231,6 +231,10 @@ export interface MoveAttempt {
   createdAt: string;
   /** The reasoning effort sent with this attempt; null or absent when none was sent. */
   reasoningEffort?: ReasoningEffort | null;
+  /** The max_tokens cap sent for this attempt; absent on historical attempts. */
+  effectiveMaxOutputTokens?: number | null;
+  /** The model's catalog maximum when this request was prepared, if known. */
+  modelMaxCompletionTokens?: number | null;
 }
 
 export interface ChatMessage {

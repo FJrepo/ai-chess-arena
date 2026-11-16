@@ -92,7 +92,7 @@ public class OpenRouterService {
     @ConfigProperty(name = "game.default-temperature", defaultValue = "0.7")
     double defaultTemperature;
 
-    @ConfigProperty(name = "game.default-max-tokens", defaultValue = "4096")
+    @ConfigProperty(name = "game.default-max-tokens", defaultValue = "16384")
     int defaultMaxTokens;
 
     /**
@@ -119,7 +119,7 @@ public class OpenRouterService {
     private volatile long cachedModelsAtMs;
 
     public LlmResponse chat(String modelId, List<ChatMsg> messages) {
-        return chat(modelId, messages, Duration.ofSeconds(120));
+        return chat(modelId, messages, (AnswerDeadline) null, defaultMaxTokens);
     }
 
     /** Sends one chat completion whose complete answer must arrive within {@code answerTime} from now. */
@@ -151,6 +151,19 @@ public class OpenRouterService {
      */
     public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                             int maxOutputTokens, ReasoningEffort reasoningEffort) {
+        JsonNode model = cachedCatalogEntry(modelId);
+        Integer maximum = model == null ? null
+                : positiveInt(model.path("top_provider").path("max_completion_tokens"));
+        int effective = maximum == null ? maxOutputTokens : Math.min(maxOutputTokens, maximum);
+        if (effective < maxOutputTokens) {
+            LOG.infof("Clamping max_tokens for %s from %d to catalog maximum %d", modelId, maxOutputTokens, maximum);
+        }
+        return chatRequest(modelId, messages, answerDeadline, effective, reasoningEffort)
+                .withOutputTokenLimits(effective, maximum);
+    }
+
+    private LlmResponse chatRequest(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
+                                    int maxOutputTokens, ReasoningEffort reasoningEffort) {
         long startNanos = nanoClock.getAsLong();
         AnswerDeadline safetyDeadline = AnswerDeadline.after(requestSafetyCap, startNanos);
         boolean limitedByMoveTime = answerDeadline != null && answerDeadline.isBefore(safetyDeadline);
@@ -489,6 +502,25 @@ public class OpenRouterService {
             LOG.debugf("Reasoning effort %s for %s: %s", requested.apiValue(), modelId, decision.reason());
         }
         return decision.effort();
+    }
+
+    /** Whether the cached catalog permits effort selection; unknown models may support it. */
+    boolean offersReasoningEffort(String modelId) {
+        return decideReasoningEffort(ReasoningEffort.LOW, cachedCatalogEntry(modelId)).effort() != null;
+    }
+
+    /** Uses the cached catalog only: preparing a move must not wait on a catalog refresh. */
+    private JsonNode cachedCatalogEntry(String modelId) {
+        JsonNode snapshot = cachedModels;
+        if (snapshot == null || snapshot.hasNonNull("error")) {
+            return null;
+        }
+        for (JsonNode model : snapshot.path("data")) {
+            if (modelId.equals(model.path("id").asText(null))) {
+                return model;
+            }
+        }
+        return null;
     }
 
     /** The model's raw catalog entry; null when the catalog is unavailable or does not list the model. */
@@ -1027,8 +1059,22 @@ public class OpenRouterService {
             ProviderOutcome outcome,
             int httpStatus,
             String finishReason,
-            Integer reasoningTokens
+            Integer reasoningTokens,
+            Integer effectiveMaxOutputTokens,
+            Integer modelMaxCompletionTokens
     ) {
+        public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
+                           long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage,
+                           ProviderOutcome outcome, int httpStatus, String finishReason, Integer reasoningTokens) {
+            this(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse, timedOut,
+                    errorMessage, outcome, httpStatus, finishReason, reasoningTokens, null, null);
+        }
+
+        LlmResponse withOutputTokenLimits(int effective, Integer maximum) {
+            return new LlmResponse(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse,
+                    timedOut, errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effective, maximum);
+        }
+
         public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
                            long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage) {
             this(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse, timedOut,

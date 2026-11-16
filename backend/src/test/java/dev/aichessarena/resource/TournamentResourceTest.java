@@ -32,14 +32,16 @@ class TournamentResourceTest {
     }
 
     @Test
-    void createWithoutTimeoutUsesTheDefaultOf120Seconds() {
+    void createWithoutTimeoutUsesNoLimitAnd16kOutputTokens() {
         TournamentResource resource = resourceWithCapturingCreation();
 
         TournamentDto dto = (TournamentDto) resource.create(withTimeout("Default", null)).getEntity();
 
-        assertEquals(120, Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS);
-        assertEquals(120, dto.moveTimeoutSeconds());
-        assertEquals(120, new Tournament().moveTimeoutSeconds, "a new entity starts with the default");
+        assertNull(Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS);
+        assertNull(dto.moveTimeoutSeconds());
+        assertNull(new Tournament().moveTimeoutSeconds, "a new entity starts without a limit");
+        assertEquals(16384, dto.maxOutputTokens());
+        assertEquals(16384, Tournament.DEFAULT_MAX_OUTPUT_TOKENS);
     }
 
     @Test
@@ -79,7 +81,7 @@ class TournamentResourceTest {
             assertThrows(IllegalArgumentException.class,
                     () -> resource.update(UUID.randomUUID(), withTimeout(null, seconds)));
         }
-        assertEquals(120, stored.moveTimeoutSeconds);
+        assertNull(stored.moveTimeoutSeconds);
     }
 
     @Test
@@ -249,17 +251,42 @@ class TournamentResourceTest {
     }
 
     @Test
+    void createAndUpdateAcceptOutputTokenBoundsAndPreserveStoredValuesOnNullUpdate() {
+        TournamentResource resource = resourceWithCapturingCreation();
+        Tournament stored = new Tournament();
+        stored.maxOutputTokens = 4096;
+        resource.tournamentRepository = repositoryHolding(stored);
+        for (int limit : new int[] {128, 262144}) {
+            CreateTournamentRequest request = withOutputTokens(limit);
+            assertEquals(limit, ((TournamentDto) resource.create(request).getEntity()).maxOutputTokens());
+            assertEquals(limit, ((TournamentDto) resource.update(UUID.randomUUID(), request).getEntity())
+                    .maxOutputTokens());
+        }
+        stored.maxOutputTokens = 4096;
+        resource.update(UUID.randomUUID(), withOutputTokens(null));
+        assertEquals(4096, stored.maxOutputTokens);
+        for (int limit : new int[] {127, 262145}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> resource.update(UUID.randomUUID(), withOutputTokens(limit)));
+        }
+    }
+
+    private static CreateTournamentRequest withOutputTokens(Integer limit) {
+        return new CreateTournamentRequest("Limits", null, null, null, null, null, null, null, null, null, limit, null);
+    }
+
+    @Test
     void createRejectsOutputTokenLimitsOutsideTheAllowedRange() {
         TournamentResource resource = new TournamentResource();
         resource.tournamentRepository = new TournamentRepository();
         resource.tournamentService = new TournamentService();
         resource.analyticsService = new AnalyticsService();
 
-        for (int limit : new int[] {127, 32769}) {
+        for (int limit : new int[] {127, 262145}) {
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> resource.create(
                     new CreateTournamentRequest("Limits", null, null, null, null, null, null, null, null, null, limit, null)
             ));
-            assertEquals("maxOutputTokens must be between 128 and 32768", error.getMessage());
+            assertEquals("maxOutputTokens must be between 128 and 262144", error.getMessage());
         }
     }
 
