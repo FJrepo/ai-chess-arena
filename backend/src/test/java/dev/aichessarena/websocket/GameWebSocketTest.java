@@ -49,6 +49,21 @@ class GameWebSocketTest {
     }
 
     @Test
+    void statusChangesCarryTheStatusRevisionAndTurnUpdatesDoNot() throws Exception {
+        UUID gameId = UUID.randomUUID();
+
+        JsonNode change = new ObjectMapper().readTree(endpoint.statusMessage(gameId, "PAUSED", null, null, 4,
+                java.math.BigDecimal.ONE, null, null, null, "Rate limited", null, 7L).toString());
+        JsonNode turn = new ObjectMapper().readTree(endpoint.statusMessage(gameId, "IN_PROGRESS", null, null, 4,
+                java.math.BigDecimal.ONE, "WHITE", null, null, null, "OPTIONAL", null).toString());
+
+        assertEquals("gameStatus", change.get("type").asText());
+        assertEquals(7L, change.get("statusRevision").asLong());
+        assertEquals("Rate limited", change.get("detail").asText());
+        assertFalse(turn.has("statusRevision"));
+    }
+
+    @Test
     void missingGamesDoNotCreateSubscriptionState() {
         WebSocketConnection connection = connection("connection-1");
 

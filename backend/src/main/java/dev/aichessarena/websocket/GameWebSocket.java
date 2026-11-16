@@ -282,6 +282,26 @@ public class GameWebSocket {
                                      String resultReason, int totalMoves, BigDecimal totalCostUsd,
                                      String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
                                      String detail, String tournamentChatMode) {
+        broadcast(gameId, statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, activeColor,
+                turnStartedAt, turnDeadlineAt, detail, tournamentChatMode, null).toString());
+    }
+
+    /**
+     * A status change (start, pause, game over) with the game's {@code statusRevision} after it. Status changes are
+     * announced after their commit and can therefore arrive out of order; clients ignore an update whose revision
+     * is lower than one they already have.
+     */
+    public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
+                                      int totalMoves, BigDecimal totalCostUsd, String detail,
+                                      long statusRevision) {
+        broadcast(gameId, statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, null, null,
+                null, detail, null, statusRevision).toString());
+    }
+
+    ObjectNode statusMessage(UUID gameId, String status, String result, String resultReason, int totalMoves,
+                             BigDecimal totalCostUsd, String activeColor, Instant turnStartedAt,
+                             Instant turnDeadlineAt, String detail, String tournamentChatMode,
+                             Long statusRevision) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "gameStatus");
         msg.put("gameId", gameId.toString());
@@ -295,7 +315,8 @@ public class GameWebSocket {
         if (tournamentChatMode != null) msg.put("tournamentChatMode", tournamentChatMode);
         msg.put("totalMoves", totalMoves);
         msg.put("totalCostUsd", totalCostUsd != null ? totalCostUsd.doubleValue() : 0);
-        broadcast(gameId, msg.toString());
+        if (statusRevision != null) msg.put("statusRevision", statusRevision);
+        return msg;
     }
 
     public void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason) {

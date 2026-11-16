@@ -92,6 +92,11 @@ export interface Game {
   qualitySummary?: GameQualitySummary | null;
   /** How the game ended by resignation; sent with a single game that ended so, otherwise null or absent. */
   resignation?: GameResignation | null;
+  /**
+   * Grows with every status change (start, pause, game over); status-change updates carry it too, so an older
+   * update that arrives late can be ignored. Absent from older backends.
+   */
+  statusRevision?: number;
 }
 
 /** A resignation: who resigned instead of playing which move, and how the position looked. */
@@ -266,6 +271,8 @@ export interface GameStatusWsMessage {
   detail?: string | null;
   /** The tournament's configured chat mode; sent with turn updates of model turns only. */
   tournamentChatMode?: ChatMode;
+  /** The game's status revision after a status change (start, pause, game over); absent on turn updates. */
+  statusRevision?: number;
 }
 
 export interface RetryWsMessage {

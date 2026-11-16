@@ -13,8 +13,6 @@ import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Status;
-import jakarta.transaction.Synchronization;
 import jakarta.transaction.TransactionSynchronizationRegistry;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
@@ -65,10 +63,9 @@ public class GameLifecycleService {
             }
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
+        // The conditional update raised the status revision.
         Game game = gameRepository.findByIdForUpdate(gameId);
-        int moves = totalMoves(gameId);
-        BigDecimal cost = game.totalCostUsd;
-        afterCommit(() -> gameWebSocket.broadcastGameStatus(gameId, "IN_PROGRESS", null, null, moves, cost));
+        announceStatus(game, null, null);
         return DtoMapper.toDto(game, false);
     }
 
@@ -79,7 +76,7 @@ public class GameLifecycleService {
     @Transactional
     public void pauseGamesOrphanedByRestart() {
         int paused = gameRepository.update(
-                "status = ?1, statusDetail = ?2 where status = ?3",
+                "status = ?1, statusDetail = ?2, statusRevision = statusRevision + 1 where status = ?3",
                 GameStatus.PAUSED, RESTART_DETAIL, GameStatus.IN_PROGRESS
         );
         if (paused > 0) {
@@ -95,10 +92,9 @@ public class GameLifecycleService {
         }
         game.status = GameStatus.PAUSED;
         game.statusDetail = null;
+        game.statusRevision++;
         gameRepository.persist(game);
-        int moves = totalMoves(gameId);
-        BigDecimal cost = game.totalCostUsd;
-        afterCommit(() -> gameWebSocket.broadcastGameStatus(gameId, "PAUSED", null, null, moves, cost));
+        announceStatus(game, null, null);
     }
 
     /**
@@ -120,12 +116,10 @@ public class GameLifecycleService {
         String boundedDetail = boundDetail(detail);
         game.status = GameStatus.PAUSED;
         game.statusDetail = boundedDetail;
+        game.statusRevision++;
         gameRepository.persist(game);
         LOG.warnf("Game %s paused: %s", gameId, boundedDetail);
-        int moves = totalMoves(gameId);
-        BigDecimal cost = game.totalCostUsd;
-        afterCommit(() -> gameWebSocket.broadcastGameStatus(
-                gameId, "PAUSED", null, null, moves, cost, null, null, null, boundedDetail));
+        announceStatus(game, null, null);
     }
 
     @Transactional
@@ -140,12 +134,10 @@ public class GameLifecycleService {
         game.resultReason = ResultReason.valueOf(endInfo.reason());
         game.statusDetail = null;
         game.completedAt = LocalDateTime.now();
+        game.statusRevision++;
         gameRepository.persist(game);
 
-        int moves = game.moves.size();
-        BigDecimal cost = game.totalCostUsd;
-        afterCommit(() -> gameWebSocket.broadcastGameStatus(
-                gameId, "COMPLETED", endInfo.result(), endInfo.reason(), moves, cost));
+        announceStatus(game, null, null);
 
         advanceTournamentWinnerIfNeeded(game);
     }
@@ -187,20 +179,15 @@ public class GameLifecycleService {
         game.resultReason = ResultReason.RESIGNATION;
         game.statusDetail = null;
         game.completedAt = LocalDateTime.now();
+        game.statusRevision++;
         gameRepository.persist(game);
         LOG.infof("Game %s: %s resigned at move %d", gameId, color, resignation.moveNumber());
 
-        String result = game.result.name();
-        int moves = totalMoves(gameId);
-        BigDecimal cost = game.totalCostUsd;
-        afterCommit(() -> {
-            if (message != null && !message.isBlank()) {
-                gameWebSocket.broadcastChat(gameId, resignation.moveNumber(), color, resignation.modelId(),
-                        resignation.playerName(), message);
-            }
-            gameWebSocket.broadcastGameStatus(gameId, "COMPLETED", result, ResultReason.RESIGNATION.name(), moves,
-                    cost);
-        });
+        // The last words go out before the game-over update, in the same callback, so their order is kept.
+        Runnable lastWords = message == null || message.isBlank() ? null
+                : () -> gameWebSocket.broadcastChat(gameId, resignation.moveNumber(), color,
+                        resignation.modelId(), resignation.playerName(), message);
+        announceStatus(game, lastWords, null);
         advanceTournamentWinnerIfNeeded(game);
     }
 
@@ -243,47 +230,38 @@ public class GameLifecycleService {
 
     private void broadcastForfeitAfterCommit(Game game, String forfeitColor, String reason) {
         UUID gameId = game.id;
-        String result = game.result.name();
-        String resultReason = game.resultReason.name();
-        int moves = game.moves.size();
-        BigDecimal cost = game.totalCostUsd;
-        afterCommit(() -> {
-            gameWebSocket.broadcastGameStatus(gameId, "FORFEIT", result, resultReason, moves, cost);
-            gameWebSocket.broadcastForfeit(gameId, forfeitColor, reason);
-        });
+        announceStatus(game, null, () -> gameWebSocket.broadcastForfeit(gameId, forfeitColor, reason));
     }
 
     /**
-     * Runs {@code broadcast} once the current transaction has committed, and not at all if it rolls back. Status
-     * updates must not reach viewers before the state they announce is visible: a game view reloads the game when
-     * it learns that the game ended, and a reload that ran before the commit would read the old state. Values the
-     * broadcast needs are read before, while the entities are still attached. Without a transaction (or outside
-     * CDI) it runs at once.
+     * Announces the game's status after the commit, with the status revision written in the same transaction
+     * (clients drop an update older than one they have; see {@link Game#statusRevision}). {@code first} and
+     * {@code then} run right before and after it in the same callback, for messages that belong to the change.
+     * Everything sent is read now, while the game is attached.
      */
-    void afterCommit(Runnable broadcast) {
-        if (transactionRegistry == null || transactionRegistry.getTransactionKey() == null) {
-            broadcast.run();
-            return;
-        }
-        transactionRegistry.registerInterposedSynchronization(new Synchronization() {
-            @Override
-            public void beforeCompletion() {
-                // Nothing to do before the commit.
+    private void announceStatus(Game game, Runnable first, Runnable then) {
+        UUID gameId = game.id;
+        String status = game.status.name();
+        String result = game.result != null ? game.result.name() : null;
+        String resultReason = game.resultReason != null ? game.resultReason.name() : null;
+        String detail = game.statusDetail;
+        long revision = game.statusRevision;
+        int moves = totalMoves(gameId);
+        BigDecimal cost = game.totalCostUsd;
+        afterCommit(() -> {
+            if (first != null) {
+                first.run();
             }
-
-            @Override
-            public void afterCompletion(int status) {
-                if (status != Status.STATUS_COMMITTED) {
-                    return;
-                }
-                try {
-                    broadcast.run();
-                } catch (RuntimeException e) {
-                    // The change is committed; a failed live update must not look like a failed change.
-                    LOG.warnf(e, "Could not broadcast a game status update after commit");
-                }
+            gameWebSocket.broadcastStatusChange(gameId, status, result, resultReason, moves, cost, detail, revision);
+            if (then != null) {
+                then.run();
             }
         });
+    }
+
+    /** Runs {@code broadcast} after the commit (see {@link AfterCommit}). */
+    void afterCommit(Runnable broadcast) {
+        AfterCommit.run(transactionRegistry, broadcast);
     }
 
     private Game markForfeit(UUID gameId, String forfeitColor, ResultReason reason) {
@@ -298,6 +276,7 @@ public class GameLifecycleService {
         game.resultReason = reason;
         game.statusDetail = null;
         game.completedAt = LocalDateTime.now();
+        game.statusRevision++;
         gameRepository.persist(game);
         return game;
     }

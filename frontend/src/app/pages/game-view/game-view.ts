@@ -165,7 +165,9 @@ export class GameView implements OnInit, OnDestroy {
   private bufferedLiveMessages: WsMessage[] = [];
   private attemptsGeneration = 0;
   private attemptsSub?: Subscription;
-  /** Reloads in a row that returned a finished game as still running (see keepAnnouncedResult). */
+  /** The highest status revision seen in a status update or a loaded game; null before any. */
+  private knownStatusRevision: number | null = null;
+  /** Reloads in a row that returned an outdated status (see keepAnnouncedResult). */
   private staleReloads = 0;
   private staleReloadTimer?: ReturnType<typeof setTimeout>;
   static readonly STALE_RELOAD_DELAY_MS = 1000;
@@ -429,8 +431,15 @@ export class GameView implements OnInit, OnDestroy {
           return;
         }
         this.loadInFlight = false;
-        this.game.set(this.keepAnnouncedResult(game));
-        const moves = sortMovesInPlayOrder(game.moves || []);
+        const sorted = sortMovesInPlayOrder(game.moves || []);
+        const moves = keepLiveEvaluations(sorted, this.moves());
+        const keptLive = moves.some((move, index) => move !== sorted[index]);
+        const liveSummary = this.game()?.qualitySummary;
+        const reconciled = this.keepAnnouncedResult(game);
+        // The live summary belongs to the evaluations kept from live updates.
+        this.game.set(
+          keptLive && liveSummary ? { ...reconciled, qualitySummary: liveSummary } : reconciled,
+        );
         this.moves.set(moves);
         this.chatMessages.set(game.chatMessages || []);
         if (moves.length) {
@@ -476,19 +485,23 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   /**
-   * A game never goes back from finished to running. A reload that still shows it running was read before the
-   * result was stored: keep the result already announced and ask again a little later (a few times at most), so
-   * the details only the stored game carries (e.g. a resignation's) arrive too.
+   * A reload can be older than a status update already shown: its status revision is lower than one seen, or
+   * (from a backend without revisions) it shows a finished game as running. Then keep the status already
+   * announced and ask again a little later (a few times at most), so the details only the stored game carries
+   * (e.g. a resignation's) arrive too.
    */
   private keepAnnouncedResult(loaded: Game): Game {
     const previous = this.game();
-    if (
-      !previous ||
-      previous.id !== loaded.id ||
-      !isFinishedStatus(previous.status) ||
-      isFinishedStatus(loaded.status)
-    ) {
+    const known = this.knownStatusRevision;
+    const olderRevision =
+      loaded.statusRevision != null && known != null && loaded.statusRevision < known;
+    const reopened =
+      !!previous && isFinishedStatus(previous.status) && !isFinishedStatus(loaded.status);
+    if (!previous || previous.id !== loaded.id || !(olderRevision || reopened)) {
       this.staleReloads = 0;
+      if (loaded.statusRevision != null) {
+        this.knownStatusRevision = Math.max(known ?? loaded.statusRevision, loaded.statusRevision);
+      }
       return loaded;
     }
     if (this.staleReloads < GameView.MAX_STALE_RELOADS) {
@@ -501,8 +514,9 @@ export class GameView implements OnInit, OnDestroy {
       status: previous.status,
       result: previous.result,
       resultReason: previous.resultReason,
-      statusDetail: null,
+      statusDetail: previous.statusDetail ?? null,
       completedAt: previous.completedAt ?? loaded.completedAt,
+      statusRevision: previous.statusRevision ?? known ?? loaded.statusRevision,
     };
   }
 
@@ -592,6 +606,13 @@ export class GameView implements OnInit, OnDestroy {
         break;
 
       case 'gameStatus':
+        if (msg.statusRevision != null) {
+          // Status changes are sent after their commit and can arrive out of order: ignore an older one.
+          if (this.knownStatusRevision != null && msg.statusRevision < this.knownStatusRevision) {
+            break;
+          }
+          this.knownStatusRevision = msg.statusRevision;
+        }
         const status = msg.status;
         this.game.update((g) =>
           g
@@ -606,6 +627,7 @@ export class GameView implements OnInit, OnDestroy {
                     : null
                   : g.statusDetail,
                 totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
+                statusRevision: msg.statusRevision ?? g.statusRevision,
                 startedAt:
                   status === 'IN_PROGRESS'
                     ? (g.startedAt ?? new Date().toISOString())
@@ -931,6 +953,32 @@ export class GameView implements OnInit, OnDestroy {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+}
+
+/**
+ * The loaded moves, except that a move the reload has without an evaluation keeps the evaluation (and quality)
+ * that already arrived live for the same ply: a reload must not erase fresher live data.
+ */
+function keepLiveEvaluations(loaded: Move[], live: Move[]): Move[] {
+  return loaded.map((move) => {
+    if (move.evaluationCp != null || move.evaluationMate != null) {
+      return move;
+    }
+    const known = live.find(
+      (other) =>
+        other.moveNumber === move.moveNumber &&
+        other.color === move.color &&
+        (other.evaluationCp != null || other.evaluationMate != null),
+    );
+    return known
+      ? {
+          ...move,
+          evaluationCp: known.evaluationCp,
+          evaluationMate: known.evaluationMate,
+          quality: move.quality ?? known.quality,
+        }
+      : move;
+  });
 }
 
 function isFinishedStatus(status: Game['status']): boolean {

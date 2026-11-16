@@ -15,6 +15,7 @@ import com.github.bhlangonijr.chesslib.Board;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
+import jakarta.transaction.TransactionSynchronizationRegistry;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
@@ -49,6 +50,10 @@ public class GameMoveService {
 
     @Inject
     Event<MoveEvaluationRequested> moveEvaluationEvents;
+
+    /** Null outside CDI (unit tests): then evaluation updates go out at once. */
+    @Inject
+    TransactionSynchronizationRegistry transactionRegistry;
 
     @Transactional
     public void recordModelMove(
@@ -199,8 +204,14 @@ public class GameMoveService {
         GameQualitySummaryDto summary = index >= 0
                 ? DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities))
                 : null;
-        gameWebSocket.broadcastEvaluation(move.game.id, move.moveNumber, move.color, move.evaluationCp,
-                move.evaluationMate, changed, summary);
+        UUID gameId = move.game.id;
+        int moveNumber = move.moveNumber;
+        String color = move.color;
+        Integer cp = move.evaluationCp;
+        Integer mate = move.evaluationMate;
+        // After the commit: a viewer that reloads the game on this update must already read the evaluation.
+        AfterCommit.run(transactionRegistry,
+                () -> gameWebSocket.broadcastEvaluation(gameId, moveNumber, color, cp, mate, changed, summary));
     }
 
     @Transactional

@@ -298,6 +298,79 @@ class GameLifecycleServiceTest {
         assertEquals("Rate limited", pauseSocket.lastDetail);
     }
 
+    /**
+     * Regression: a pause whose after-commit update is delayed until after a resume's update arrived second and made
+     * a running game look paused. Every status change raises the revision under the row lock, so the late update
+     * carries the older revision and clients can drop it.
+     */
+    @Test
+    void aDelayedPauseUpdateCarriesAnOlderRevisionThanTheResumeThatOvertookIt() {
+        Game game = resignableGame();
+        game.statusRevision = 4;
+        RecordingGameWebSocket websocket = new RecordingGameWebSocket();
+        GameLifecycleService service = service(game, websocket, new RecordingTournamentService());
+        FakeTransactionRegistry pause = new FakeTransactionRegistry();
+        service.transactionRegistry = pause;
+        service.markGamePaused(game.id);
+
+        FakeTransactionRegistry resume = new FakeTransactionRegistry();
+        service.transactionRegistry = resume;
+        service.markGameStarted(game.id);
+        resume.complete(jakarta.transaction.Status.STATUS_COMMITTED);
+        pause.complete(jakarta.transaction.Status.STATUS_COMMITTED);
+
+        assertEquals(List.of("IN_PROGRESS@6", "PAUSED@5"), websocket.statusChanges);
+        assertEquals(6, game.statusRevision);
+        assertEquals(GameStatus.IN_PROGRESS, game.status);
+    }
+
+    @Test
+    void everyStatusChangeRaisesTheRevisionAndTheGameCarriesIt() {
+        Game game = resignableGame();
+        RecordingGameWebSocket websocket = new RecordingGameWebSocket();
+        GameLifecycleService service = service(game, websocket, new RecordingTournamentService());
+        service.chatMessageRepository = new RecordingChatMessageRepository(new ArrayList<>());
+
+        service.pauseWithReason(game.id, "Rate limited");
+        service.markGameStarted(game.id);
+        service.resign(new GameLifecycleService.Resignation(game.id, 10, "BLACK", "model-b", "Model B", null, null,
+                POSITION));
+
+        assertEquals(List.of("PAUSED@1", "IN_PROGRESS@2", "COMPLETED@3"), websocket.statusChanges);
+        assertEquals(3, dev.aichessarena.dto.DtoMapper.toDto(game, false).statusRevision());
+
+        Game forfeited = resignableGame();
+        RecordingGameWebSocket forfeitSocket = new RecordingGameWebSocket();
+        service(forfeited, forfeitSocket, new RecordingTournamentService()).forfeitInvalidMoves(forfeited.id, "WHITE", 3);
+        Game mated = resignableGame();
+        RecordingGameWebSocket mateSocket = new RecordingGameWebSocket();
+        service(mated, mateSocket, new RecordingTournamentService())
+                .completeGame(mated.id, new ChessService.GameEndInfo("BLACK_WINS", "CHECKMATE"));
+        assertEquals(List.of("FORFEIT@1"), forfeitSocket.statusChanges);
+        assertEquals(List.of("COMPLETED@1"), mateSocket.statusChanges);
+    }
+
+    @Test
+    void aFailingUpdateAfterTheCommitDoesNotFailTheChange() {
+        Game game = resignableGame();
+        RecordingGameWebSocket websocket = new RecordingGameWebSocket() {
+            @Override
+            public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
+                                              int totalMoves, BigDecimal totalCostUsd, String detail,
+                                              long statusRevision) {
+                throw new IllegalStateException("connection closed");
+            }
+        };
+        GameLifecycleService service = service(game, websocket, new RecordingTournamentService());
+        FakeTransactionRegistry transaction = new FakeTransactionRegistry();
+        service.transactionRegistry = transaction;
+
+        service.markGamePaused(game.id);
+        transaction.complete(jakarta.transaction.Status.STATUS_COMMITTED);
+
+        assertEquals(GameStatus.PAUSED, game.status);
+    }
+
     /** One active transaction whose synchronizations run when the test completes it. */
     private static final class FakeTransactionRegistry implements jakarta.transaction.TransactionSynchronizationRegistry {
         private final List<jakarta.transaction.Synchronization> synchronizations = new ArrayList<>();
@@ -402,6 +475,7 @@ class GameLifecycleServiceTest {
                 return false;
             }
             game.status = GameStatus.IN_PROGRESS;
+            game.statusRevision++;
             if (game.startedAt == null) {
                 game.startedAt = now;
             }
@@ -432,7 +506,7 @@ class GameLifecycleServiceTest {
         }
     }
 
-    private static final class RecordingGameWebSocket extends GameWebSocket {
+    private static class RecordingGameWebSocket extends GameWebSocket {
         private String lastStatus;
         private int lastTotalMoves;
         private BigDecimal lastTotalCostUsd;
@@ -478,6 +552,21 @@ class GameLifecycleServiceTest {
         private String lastResult;
         private String lastResultReason;
         private String lastChat;
+        /** Every status change in the order it was sent, as "STATUS@revision". */
+        private final List<String> statusChanges = new ArrayList<>();
+
+        @Override
+        public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
+                                          int totalMoves, BigDecimal totalCostUsd, String detail,
+                                          long statusRevision) {
+            lastStatus = status;
+            lastResult = result;
+            lastResultReason = resultReason;
+            lastTotalMoves = totalMoves;
+            lastTotalCostUsd = totalCostUsd;
+            lastDetail = detail;
+            statusChanges.add(status + "@" + statusRevision);
+        }
 
         @Override
         public void broadcastChat(UUID gameId, int moveNumber, String senderColor, String senderModel,

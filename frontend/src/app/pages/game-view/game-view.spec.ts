@@ -1184,6 +1184,81 @@ describe('GameView resignation', () => {
     }
   });
 
+  it('ignores a pause update that arrives after the resume that overtook it', () => {
+    vi.useFakeTimers();
+    try {
+      const { component, gameLoad, messages, getGame } = createSpectator();
+      component.ngOnInit();
+      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
+
+      // The pause (revision 5) committed first, but its update is delivered after the resume (revision 6).
+      messages.next({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'IN_PROGRESS',
+        statusRevision: 6,
+      });
+      messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 5 });
+
+      expect(component.game()?.status).toBe('IN_PROGRESS');
+      expect(component.game()?.statusRevision).toBe(6);
+
+      // A reload read between the two commits is older too: keep the status and ask again.
+      component.loadGame();
+      gameLoad.next(gameWith({ status: 'PAUSED', statusRevision: 5 }));
+      expect(component.game()?.status).toBe('IN_PROGRESS');
+      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
+      expect(getGame).toHaveBeenCalledTimes(3);
+      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 6 }));
+      expect(component.game()?.status).toBe('IN_PROGRESS');
+
+      // A newer change is applied again.
+      messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 7 });
+      expect(component.game()?.status).toBe('PAUSED');
+      component.ngOnDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a live evaluation that a reload does not have yet', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(resigned());
+
+    messages.next({
+      type: 'evaluationUpdate',
+      gameId: 'g-1',
+      moveNumber: 1,
+      color: 'WHITE',
+      evaluationCp: 30,
+      qualities: [],
+      qualitySummary: {
+        white: {
+          analyzedMoves: 1,
+          averageCentipawnLoss: 0,
+          inaccuracies: 0,
+          mistakes: 0,
+          blunders: 0,
+        },
+        black: {
+          analyzedMoves: 0,
+          averageCentipawnLoss: null,
+          inaccuracies: 0,
+          mistakes: 0,
+          blunders: 0,
+        },
+      },
+    });
+    expect(getGame).toHaveBeenCalledTimes(2);
+    // The reload was read before the evaluation was stored.
+    gameLoad.next(resigned());
+
+    expect(component.moves()[0].evaluationCp).toBe(30);
+    expect(component.game()?.qualitySummary?.white.analyzedMoves).toBe(1);
+    component.ngOnDestroy();
+  });
+
   it('does not reload for other results', () => {
     const { component, gameLoad, messages, getGame } = createSpectator();
     component.ngOnInit();

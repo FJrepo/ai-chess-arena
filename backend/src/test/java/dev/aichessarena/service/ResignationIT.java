@@ -300,10 +300,9 @@ class ResignationIT {
         List<String> seenAtBroadcast = Collections.synchronizedList(new ArrayList<>());
         QuarkusMock.installMockForType(new GameWebSocket() {
             @Override
-            public void broadcastGameStatus(UUID id, String status, String result, String resultReason,
-                                            int totalMoves, java.math.BigDecimal totalCostUsd, String activeColor,
-                                            java.time.Instant turnStartedAt, java.time.Instant turnDeadlineAt,
-                                            String detail, String tournamentChatMode) {
+            public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
+                                              int totalMoves, java.math.BigDecimal totalCostUsd, String detail,
+                                              long statusRevision) {
                 seenAtBroadcast.add(status + " announced, stored "
                         + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));
             }

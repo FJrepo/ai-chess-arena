@@ -84,8 +84,8 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
      */
     public boolean markStartedIfStartable(UUID id, LocalDateTime now) {
         return update(
-                "status = ?1, startedAt = coalesce(startedAt, ?2), statusDetail = null "
-                        + "where id = ?3 and status in ?4",
+                "status = ?1, startedAt = coalesce(startedAt, ?2), statusDetail = null, "
+                        + "statusRevision = statusRevision + 1 where id = ?3 and status in ?4",
                 GameStatus.IN_PROGRESS, now, id, List.of(GameStatus.WAITING, GameStatus.PAUSED)
         ) == 1;
     }

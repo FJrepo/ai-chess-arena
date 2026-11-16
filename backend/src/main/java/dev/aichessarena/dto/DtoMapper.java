@@ -86,7 +86,8 @@ public final class DtoMapper {
                 moves,
                 includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of(),
                 qualitySummary,
-                resignation
+                resignation,
+                g.statusRevision
         );
     }
 
