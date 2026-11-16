@@ -1,0 +1,41 @@
+@let m = model();
+<section class="model-details" aria-label="Selected model">
+  <header class="details-head">
+    <app-provider-logo [provider]="m.provider" [modelId]="m.id" [size]="26" />
+    <div class="details-title">
+      <span class="details-name">
+        {{ m.name }}
+        @if (latestAlias()) {
+          <span class="alias-badge">{{ latestAliasLabel }}</span>
+        }
+      </span>
+      <span class="details-id"
+        ><span class="mono">{{ m.id }}</span> · {{ providerName() }}</span
+      >
+    </div>
+  </header>
+
+  @if (latestAlias()) {
+    <p class="alias-note">{{ latestAliasNote }}</p>
+  }
+
+  <dl class="details-facts">
+    @for (fact of facts(); track fact.label) {
+      <div class="fact">
+        <dt>{{ fact.label }}</dt>
+        <dd [class.missing]="fact.value === 'n/a'">{{ fact.value }}</dd>
+      </div>
+    }
+  </dl>
+
+  <p class="details-description" [class.missing]="!m.description">
+    {{ m.description || 'Description: n/a' }}
+  </p>
+
+  <p class="details-attribution">
+    Intelligence Index by
+    <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer"
+      >Artificial Analysis</a
+    >, via OpenRouter
+  </p>
+</section>

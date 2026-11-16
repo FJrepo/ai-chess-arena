@@ -2,6 +2,7 @@ import { convertToParamMap } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
+import { OpenRouterModelOption } from '../../models/openrouter.model';
 
 describe('TournamentSetup', () => {
   it('adds participant-specific custom instructions when provided', () => {
@@ -282,6 +283,109 @@ describe('TournamentSetup', () => {
     expect(summary?.maxCostUsd).toBeCloseTo(0.196, 6);
   });
 
+  it('loads the whole model catalog once, without a cap or the featured-only filter', () => {
+    const api = createApiService();
+    const getModels = vi.fn(() =>
+      of({
+        data: [catalogModel('openai/gpt-6', 'GPT-6'), catalogModel('acme/tiny', 'Tiny')],
+        totalMatched: 2,
+        featuredCount: 1,
+        error: null,
+        featuredProviders: ['openai', 'anthropic'],
+      }),
+    );
+    api.getModels = getModels as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+
+    component.ngOnInit();
+
+    expect(getModels).toHaveBeenCalledTimes(1);
+    expect(getModels).toHaveBeenCalledWith({ featuredOnly: false, limit: 0 });
+    expect(component.models().map((model) => model.id)).toEqual(['openai/gpt-6', 'acme/tiny']);
+    expect(component.featuredProviders()).toEqual(['openai', 'anthropic']);
+    expect(component.modelsLoading()).toBe(false);
+    expect(component.modelsError()).toBeNull();
+  });
+
+  it('reports a catalog that failed to load and can retry', () => {
+    const api = createApiService();
+    api.getModels = (() => throwError(() => ({ status: 503 }))) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+
+    component.ngOnInit();
+
+    expect(component.models()).toEqual([]);
+    expect(component.modelsError()).toBe('Failed to fetch models from OpenRouter.');
+    expect(component.modelsLoading()).toBe(false);
+
+    api.getModels = (() =>
+      of({ data: [catalogModel('openai/gpt-6', 'GPT-6')], error: null })) as any;
+    component.loadModels();
+    expect(component.modelsError()).toBeNull();
+    expect(component.models()).toHaveLength(1);
+  });
+
+  it('shows the error the backend reports for an unavailable catalog', () => {
+    const api = createApiService();
+    api.getModels = (() =>
+      of({
+        data: [],
+        totalMatched: 0,
+        featuredCount: 0,
+        error: 'OPENROUTER_API_KEY is not configured',
+      })) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+
+    component.ngOnInit();
+
+    expect(component.modelsError()).toBe('OPENROUTER_API_KEY is not configured');
+  });
+
+  it('fills an empty display name from the selected model and keeps a typed one', () => {
+    const api = createApiService();
+    api.getModels = (() =>
+      of({
+        data: [catalogModel('openai/gpt-6', 'OpenAI: GPT-6'), catalogModel('acme/tiny', 'Tiny')],
+      })) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+
+    component.onModelChanged('openai/gpt-6');
+    expect(component.newModelId).toBe('openai/gpt-6');
+    expect(component.newPlayerName).toBe('OpenAI: GPT-6');
+    expect(component.selectedModel()?.id).toBe('openai/gpt-6');
+
+    component.onModelChanged('acme/tiny');
+    expect(component.newPlayerName).toBe('OpenAI: GPT-6');
+
+    component.onModelChanged('');
+    expect(component.newModelId).toBe('');
+    expect(component.selectedModel()).toBeNull();
+    expect(component.canAddParticipant()).toBe(false);
+  });
+
+  it('counts a free model as priced in the estimate', () => {
+    const api = createApiService();
+    api.getModels = (() =>
+      of({
+        data: [
+          catalogModel('acme/free', 'Free One', 0, 0),
+          catalogModel('acme/paid', 'Paid One', 1, 10),
+        ],
+      })) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+
+    for (const id of ['acme/free', 'acme/paid']) {
+      component.onModelChanged(id);
+      component.addParticipant();
+    }
+
+    expect(component.participants()[0].promptPricePerMillion).toBe(0);
+    expect(component.newModelId).toBe('');
+    expect(component.confidenceSummary()?.pricingCoverage).toBe(2);
+  });
+
   it('allows a single human participant without a model id', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
     component.newPlayerName = 'Human Challenger';
@@ -370,6 +474,23 @@ function createRoute(queryParams: Record<string, string> = {}) {
   return {
     queryParamMap: of(convertToParamMap(queryParams)),
   } as any;
+}
+
+function catalogModel(
+  id: string,
+  name: string,
+  promptPricePerMillion: number | null = null,
+  completionPricePerMillion: number | null = null,
+): OpenRouterModelOption {
+  return {
+    id,
+    name,
+    provider: id.split('/')[0],
+    contextLength: null,
+    promptPricePerMillion,
+    completionPricePerMillion,
+    featured: false,
+  };
 }
 
 function pricedParticipant(

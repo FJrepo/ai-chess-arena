@@ -1,0 +1,105 @@
+<div class="model-picker">
+  <div class="picker-row">
+    <mat-form-field
+      appearance="outline"
+      floatLabel="always"
+      subscriptSizing="dynamic"
+      class="model-field"
+    >
+      <mat-label>Model</mat-label>
+      <input
+        matInput
+        type="text"
+        [ngModel]="inputValue()"
+        (ngModelChange)="onInput($event)"
+        [matAutocomplete]="auto"
+        [disabled]="disabled()"
+        placeholder="Type to search, e.g. anthropic sonnet"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      @if (inputValue() && !disabled()) {
+        <button mat-icon-button matSuffix type="button" aria-label="Clear model" (click)="clear()">
+          <mat-icon>close</mat-icon>
+        </button>
+      }
+      <mat-autocomplete
+        #auto="matAutocomplete"
+        class="model-picker-panel"
+        [displayWith]="displayModel"
+        [autoActiveFirstOption]="true"
+        (optionSelected)="onSelected($event.option.value)"
+      >
+        @for (group of groups(); track group.provider) {
+          <mat-optgroup>
+            <span class="group-label">
+              <app-provider-logo [provider]="group.provider" [size]="16" />
+              <span>{{ group.label }}</span>
+              <span class="group-count">{{ group.models.length }}</span>
+            </span>
+            @for (option of group.models; track option.id) {
+              <mat-option [value]="option" [attr.title]="aliasNote(option)">
+                <span class="option-text">
+                  <span class="option-title">{{ option.name }}</span>
+                  <span class="option-meta">{{ metaLine(option) }}</span>
+                </span>
+              </mat-option>
+            }
+          </mat-optgroup>
+        }
+      </mat-autocomplete>
+    </mat-form-field>
+
+    <mat-form-field
+      appearance="outline"
+      floatLabel="always"
+      subscriptSizing="dynamic"
+      class="provider-field"
+    >
+      <mat-label>Provider</mat-label>
+      <mat-select
+        [ngModel]="providerFilter()"
+        (ngModelChange)="providerFilter.set($event)"
+        [disabled]="disabled()"
+      >
+        <mat-option value="">All providers</mat-option>
+        @for (provider of providers(); track provider.provider) {
+          <mat-option [value]="provider.provider">
+            {{ provider.label }} ({{ provider.count }})
+          </mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field
+      appearance="outline"
+      floatLabel="always"
+      subscriptSizing="dynamic"
+      class="sort-field"
+    >
+      <mat-label>Sort</mat-label>
+      <mat-select [ngModel]="sort()" (ngModelChange)="sort.set($event)" [disabled]="disabled()">
+        @for (option of sortOptions; track option.value) {
+          <mat-option [value]="option.value">{{ option.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  </div>
+
+  <div class="filter-row">
+    <mat-chip-listbox multiple aria-label="Model filters" [disabled]="disabled()">
+      <mat-chip-option
+        [selected]="reasoningOnly()"
+        (selectionChange)="reasoningOnly.set($event.selected)"
+        >Reasoning only</mat-chip-option
+      >
+      <mat-chip-option [selected]="freeOnly()" (selectionChange)="freeOnly.set($event.selected)"
+        >Free only</mat-chip-option
+      >
+    </mat-chip-listbox>
+    <span class="match-count" aria-live="polite">
+      {{ matches().length }} of {{ models().length }}
+      {{ models().length === 1 ? 'model' : 'models' }}
+    </span>
+  </div>
+</div>

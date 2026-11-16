@@ -171,10 +171,13 @@
             <div class="openrouter-status warn" role="alert">
               <mat-icon>warning</mat-icon>
               <span>{{ modelsError() }}</span>
+              <button mat-button type="button" class="retry-button" (click)="loadModels()">
+                Retry
+              </button>
             </div>
           }
 
-          <div class="add-participant" [class.is-ai]="newControlType === 'AI'">
+          <div class="add-participant">
             <mat-form-field appearance="outline" floatLabel="always">
               <mat-label>Display Name</mat-label>
               <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
@@ -189,64 +192,21 @@
                 >
               </mat-select>
             </mat-form-field>
-
-            @if (newControlType === 'AI') {
-              <mat-form-field appearance="outline" floatLabel="always">
-                <mat-label>Search Models</mat-label>
-                <input
-                  matInput
-                  [(ngModel)]="modelSearch"
-                  (ngModelChange)="onSearchChanged()"
-                  placeholder="Name or provider"
-                />
-                @if (!modelsLoading() && !modelsError() && openRouterReady() !== false) {
-                  <mat-hint>{{ totalMatched() }} models</mat-hint>
-                }
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" floatLabel="always" class="model-select">
-                <mat-label>OpenRouter Model</mat-label>
-                <mat-select
-                  [ngModel]="newModelId"
-                  (ngModelChange)="onModelChanged($event)"
-                  [disabled]="modelsLoading() || visibleModels().length === 0"
-                  placeholder="Choose a model"
-                  panelWidth=""
-                >
-                  @for (model of visibleModels(); track model.id) {
-                    <mat-option [value]="model.id">
-                      <div class="model-option-row">
-                        <app-provider-logo [provider]="model.provider" [size]="20" />
-                        <div class="model-option-content">
-                          <div class="model-option-title">{{ model.name }}</div>
-                          <div class="model-option-meta">
-                            {{ model.id }} · {{ providerDisplayName(model.provider) }} ·
-                            {{ formatContextLength(model.contextLength) }} context ·
-                            {{ formatPrice(model.promptPricePerMillion) }} prompt
-                          </div>
-                        </div>
-                      </div>
-                    </mat-option>
-                  }
-                </mat-select>
-              </mat-form-field>
-            }
           </div>
 
-          @if (newControlType === 'AI' && selectedModel(); as model) {
-            <div class="selected-model">
-              <app-provider-logo [provider]="model.provider" [size]="22" />
-              <div class="selected-model-text">
-                <span class="selected-model-title">{{ model.name }}</span>
-                <span class="selected-model-meta">
-                  <span class="mono">{{ model.id }}</span> ·
-                  {{ providerDisplayName(model.provider) }} ·
-                  {{ formatContextLength(model.contextLength) }} context ·
-                  {{ formatPrice(model.promptPricePerMillion) }} prompt ·
-                  {{ formatPrice(model.completionPricePerMillion) }} completion
-                </span>
-              </div>
-            </div>
+          @if (newControlType === 'AI') {
+            <app-model-picker
+              class="model-picker"
+              [models]="models()"
+              [featuredProviders]="featuredProviders()"
+              [disabled]="modelsLoading() || models().length === 0"
+              [selectedId]="newModelId"
+              (selectedIdChange)="onModelChanged($event)"
+            />
+
+            @if (selectedModel(); as model) {
+              <app-model-details class="model-details-card" [model]="model" />
+            }
           }
 
           @if (newControlType === 'AI') {
@@ -262,14 +222,6 @@
           }
 
           <div class="add-row">
-            @if (newControlType === 'AI') {
-              <mat-slide-toggle
-                [(ngModel)]="showAllModels"
-                (ngModelChange)="onShowAllModelsChanged()"
-              >
-                Show all models (disable to keep only main models)
-              </mat-slide-toggle>
-            }
             <div class="add-action">
               @if (!canAddParticipant()) {
                 <span class="caption" id="add-participant-reason">

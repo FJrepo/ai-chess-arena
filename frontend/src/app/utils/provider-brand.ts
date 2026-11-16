@@ -147,7 +147,14 @@ export function normalizeProviderKey(provider?: string | null, modelId?: string 
   }
 
   const fromModelId = raw.includes('/') ? raw.split('/')[0] : raw;
-  const normalized = fromModelId.replace(/[_\s]+/g, '-');
+  // "~anthropic/claude-sonnet-latest" is OpenRouter's moving "latest" alias of an Anthropic model.
+  const normalized = fromModelId
+    .replace(/^~+/, '')
+    .trim()
+    .replace(/[_\s]+/g, '-');
+  if (!normalized) {
+    return 'other';
+  }
   return PROVIDER_ALIASES[normalized] ?? normalized;
 }
 

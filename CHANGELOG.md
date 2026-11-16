@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Model picker in tournament setup: one *Model* field that suggests models while you type. Every word must match the model's name, id or provider, in any order ("anthropic sonnet", "sonnet 5.5", "gpt 6"); "-", "." and spaces are interchangeable. Suggestions are grouped by provider and show the release date, input/output price per 1M tokens, context window, a *Reasoning* marker and the Artificial Analysis Intelligence Index ("AA 61.2") when known. Filters for provider (featured providers first), *Reasoning only* and *Free only*, and sorting by *Newest* (default), *Cheapest* (input + output price) or *Intelligence Index*; models without the value go last. Arrow keys and Enter select; editing or clearing the field clears the selection.
+- A details card for the selected model: release date, input, output and cache-read price per 1M tokens, context window, max output tokens, reasoning (supported, always on or optional, effort levels), Intelligence Index (by Artificial Analysis, via OpenRouter) and a short description; missing values show "n/a".
+- `GET /api/models` returns more per model, all null (or an empty list) when OpenRouter does not provide them: `releasedAt` (YYYY-MM-DD), `cacheReadPricePerMillion`, `maxCompletionTokens`, `reasoningSupported`, `reasoningMandatory`, `reasoningEfforts`, `intelligenceIndex` (Artificial Analysis Intelligence Index from the OpenRouter catalog) and `description` (at most about 400 characters). The response also lists the configured `featuredProviders`.
+- `GET /api/models?limit=0` returns every matching model without a cap; the default (120) and the maximum for other values (300) are unchanged.
+- OpenRouter's moving "latest" aliases (ids starting with "~", such as `~anthropic/claude-sonnet-latest`) belong to their provider (`provider` is `anthropic`, not `~anthropic`) and keep their full id. The picker lists them after the provider's concrete models, marks them *Latest alias*, and the details card notes that OpenRouter routes them to the provider's newest model, so results can't be tied to a fixed model version.
+- A model with an out-of-range `created` timestamp gets no release date instead of breaking the model list and model validation on tournament create.
+
+### Changed
+- The setup page loads the whole OpenRouter catalog (all text-output models) once and searches it in the browser. The separate *Search Models* field, the *OpenRouter Model* dropdown and the *Show all models* switch are gone, and no model is silently left out by a result cap anymore.
+- `GET /api/models` reports a free model's prices as `0` instead of `null`, so free models count as priced in the setup estimate; unknown and variable prices (OpenRouter's `-1`) stay `null`.
+
 ## [1.3.1] - 2026-11-16
 
 Patch release: the per-move time limit is now optional and, when set, actually enforced.

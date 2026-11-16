@@ -1,0 +1,69 @@
+:host {
+  display: block;
+}
+
+.model-picker {
+  display: grid;
+  gap: 8px;
+}
+
+// The Model field keeps at least 280 px; in a narrow window Provider and Sort wrap below it.
+.picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+}
+
+.model-field {
+  flex: 2.2 1 280px;
+  min-width: 280px;
+}
+
+.provider-field,
+.sort-field {
+  flex: 1 1 150px;
+  min-width: 150px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.match-count {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// Rendered in the autocomplete overlay; the classes still carry this component's scope.
+.group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--mat-sys-label-large);
+}
+
+.group-count {
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.option-text {
+  display: grid;
+  gap: 1px;
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.option-title {
+  font-weight: 600;
+}
+
+.option-meta {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
