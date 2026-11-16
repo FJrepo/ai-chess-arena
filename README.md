@@ -27,7 +27,9 @@ AI Chess Arena runs single-elimination tournaments between [OpenRouter](https://
 
 | Live game | Analytics |
 |---|---|
-| ![Live game with board, moves and chat](docs/screenshots/live-game-board-chat.png) | ![Analytics dashboard](docs/screenshots/analytics-dashboard.png) |
+| ![Finished game: resignation with last words, move-quality marks, ACPL per side and the chat](docs/screenshots/live-game-board-chat.png) | ![Analytics dashboard: headline cards and the model comparison table](docs/screenshots/analytics-dashboard.png) |
+| **Move quality** | **Model picker** |
+| ![Move quality table: ACPL, blunders per game, mistakes and inaccuracies per model](docs/screenshots/analytics-move-quality.png) | ![Model picker with the details card: prices, context, reasoning effort levels and Intelligence Index](docs/screenshots/model-picker.png) |
 
 ## Quick start
 You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).
