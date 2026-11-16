@@ -133,6 +133,9 @@ jobs:
       backend_digest: ${{ steps.digests.outputs.backend_digest }}
       frontend_digest: ${{ steps.digests.outputs.frontend_digest }}
     env:
+      # Not the default 4200: changing FRONTEND_PORT is the documented fix for a port conflict, and the
+      # same-origin check below must hold on any published port, not only on an allow-listed one.
+      FRONTEND_PORT: '4317'
       BACKEND_REF: ${{ needs.validate-tag.outputs.backend_image }}:${{ needs.validate-tag.outputs.candidate_tag }}
       FRONTEND_REF: ${{ needs.validate-tag.outputs.frontend_image }}:${{ needs.validate-tag.outputs.candidate_tag }}
     steps:
@@ -186,6 +189,31 @@ jobs:
           curl -fsS -o /dev/null "http://127.0.0.1:${FRONTEND_PORT:-4200}/"
           curl -fsS "http://127.0.0.1:${FRONTEND_PORT:-4200}/api/tournaments" | head -c 200
           echo
+
+      - name: Check same-origin writes and WebSocket through the frontend proxy
+        # Browsers send Origin on every POST and WebSocket handshake. The frontend's own address is not on
+        # quarkus.http.cors.origins, so these only pass if nginx forwards Host with its port and the backend
+        # sees the request as same-origin. A 403 here means every create/start/move in the UI would fail.
+        run: |
+          base="http://127.0.0.1:${FRONTEND_PORT:-4200}"
+          # An empty body is rejected by validation (400) without changing anything.
+          status="$(curl -sS -o /tmp/post-body.txt -w '%{http_code}' -X POST \
+            -H "Origin: $base" -H 'Content-Type: application/json' --data '{}' "$base/api/tournaments")"
+          echo "POST /api/tournaments with Origin $base -> $status: $(head -c 200 /tmp/post-body.txt)"
+          if [[ "$status" != "400" ]]; then
+            echo "::error::Same-origin POST through the frontend proxy returned $status, expected 400 (validation)."
+            exit 1
+          fi
+          # The handshake answers 101 and then stays open, so curl ends on its timeout; only the status matters.
+          ws_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
+            -H "Origin: $base" -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            "$base/ws/games" 2>/dev/null || true)"
+          echo "WebSocket handshake /ws/games with Origin $base -> $ws_status"
+          if [[ "$ws_status" != "101" ]]; then
+            echo "::error::Same-origin WebSocket handshake through the frontend proxy returned $ws_status, expected 101."
+            exit 1
+          fi
 
       - name: Show logs on failure
         if: failure()

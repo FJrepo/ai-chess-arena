@@ -267,7 +267,7 @@ docker compose -f docker-compose.prod.yml logs --tail=200 backend frontend
 The default frontend image expects the backend service to be reachable as `backend:8080` within the same Compose project.
 
 ### Ports are already in use
-Change `FRONTEND_PORT` in `.env` (the released-image stack publishes no other host ports).
+Change `FRONTEND_PORT` in `.env` (the released-image stack publishes no other host ports). No CORS change is needed: the frontend proxy forwards the browser's `Host` header including the port, so the backend treats requests from the new address as same-origin. Versions up to 1.3.1 dropped the port, which made every POST/PUT/DELETE and the live-update WebSocket fail with 403 on any port other than 4200.
 
 Then recreate the stack:
 

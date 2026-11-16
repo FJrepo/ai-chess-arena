@@ -19,6 +19,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The setup page loads the whole OpenRouter catalog (all text-output models) once and searches it in the browser. The separate *Search Models* field, the *OpenRouter Model* dropdown and the *Show all models* switch are gone, and no model is silently left out by a result cap anymore.
 - `GET /api/models` reports a free model's prices as `0` instead of `null`, so free models count as priced in the setup estimate; unknown and variable prices (OpenRouter's `-1`) stay `null`.
 
+### Fixed
+- Creating tournaments, starting games and every other change (POST/PUT/DELETE) failed with an empty 403 when the Docker stack was opened on any address other than `http://localhost:4200`, for example after changing `FRONTEND_PORT`, or via `127.0.0.1`, a hostname or an IP. Live updates (`/ws/games`) were rejected the same way. The bundled nginx dropped the port from the `Host` header it forwards to the backend, so the backend's CORS filter did not recognise the browser's request as same-origin. nginx now forwards the `Host` header unchanged, and the app works on whatever host and port it is opened on, without adding that address to `quarkus.http.cors.origins`. Other origins are still rejected.
+- The release smoke test runs the stack on a non-default port and checks that a same-origin POST and the WebSocket handshake through the frontend proxy are not rejected.
+
 ## [1.3.1] - 2026-11-16
 
 Patch release: the per-move time limit is now optional and, when set, actually enforced.
