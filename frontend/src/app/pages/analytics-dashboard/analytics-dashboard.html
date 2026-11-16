@@ -308,6 +308,47 @@
             <p class="table-footnote">{{ talkExplanation }}</p>
           </div>
 
+          <div class="table-card cache-table-card">
+            <div class="section-header">
+              <h3>Prompt caching</h3>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table cache-table">
+                <thead>
+                  <tr>
+                    <th class="col-model">Model</th>
+                    <th class="num">Prompt tokens</th>
+                    <th class="num">Cached tokens</th>
+                    <th class="num">Hit rate</th>
+                    <th class="num">Cache writes</th>
+                    <th class="num">Est. savings (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of cacheRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                      </td>
+                      <td class="num">{{ cacheTokens(row.promptCaching?.promptTokens) }}</td>
+                      <td class="num">{{ cacheTokens(row.promptCaching?.cachedPromptTokens) }}</td>
+                      <td class="num">{{ percent(row.promptCaching?.cacheHitRate ?? null) }}</td>
+                      <td class="num">{{ cacheTokens(row.promptCaching?.cacheWriteTokens) }}</td>
+                      <td class="num">
+                        {{ cacheSavings(row.promptCaching?.estimatedSavingsUsd) }}
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="6" class="empty">No model data in finished games yet.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ cacheExplanation }}</p>
+          </div>
+
           <div class="table-card resign-table-card">
             <div class="section-header">
               <div>

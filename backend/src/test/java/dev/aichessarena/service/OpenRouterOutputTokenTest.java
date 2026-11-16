@@ -23,6 +23,7 @@ class OpenRouterOutputTokenTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private HttpServer server;
     private volatile String lastChatBody;
+    private int chatStatus = 200;
     private String chatResponse = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}";
     private final AtomicInteger catalogRequests = new AtomicInteger();
 
@@ -95,6 +96,71 @@ class OpenRouterOutputTokenTest {
         assertEquals(1, catalogRequests.get());
     }
 
+    @ParameterizedTest
+    @CsvSource({"80,20", "0,0", "null,null"})
+    void parsesNullableCacheCountersAndKeepsReportedCost(String cached, String writes) throws IOException {
+        OpenRouterService service = serviceWithCatalog("{\"data\":[]}");
+        chatResponse = """
+                {"choices":[{"message":{"content":"e4"}}],"usage":{"prompt_tokens":100,
+                "completion_tokens":10,"cost":0.000123,"prompt_tokens_details":{
+                "cached_tokens":%s,"cache_write_tokens":%s}}}
+                """.formatted(cached, writes);
+        var response = service.chat("example/model", messages());
+        assertEquals("null".equals(cached) ? null : Integer.valueOf(cached), response.cachedPromptTokens());
+        assertEquals("null".equals(writes) ? null : Integer.valueOf(writes), response.cacheWriteTokens());
+        assertEquals(0.000123, response.costUsd());
+        assertEquals(100, response.promptTokens());
+        assertFalse(JSON.readTree(lastChatBody).has("cache_control"));
+        assertEquals(JSON.readTree("[{\"role\":\"user\",\"content\":\"move\"}]"),
+                JSON.readTree(lastChatBody).path("messages"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"'{}'", "'{\"prompt_tokens\":100}'", "'{\"prompt_tokens_details\":{}}'"})
+    void absentCacheCountersStayUnknown(String usage) throws IOException {
+        OpenRouterService service = serviceWithCatalog("{\"data\":[]}");
+        chatResponse = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}],\"usage\":" + usage + "}";
+        var response = service.chat("example/model", messages());
+        assertNull(response.cachedPromptTokens());
+        assertNull(response.cacheWriteTokens());
+        assertNull(response.costUsd());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"200,true", "200,false", "503,true", "400,true"})
+    void providerErrorsRetainUsageWhenPresent(int status, boolean error) throws IOException {
+        OpenRouterService service = serviceWithCatalog("{\"data\":[]}");
+        chatStatus = status;
+        chatResponse = (error ? "{\"error\":{\"message\":\"failure\"}," : "{\"choices\":[{}],") + """
+                "usage":{"prompt_tokens":100,"cost":0.002,"prompt_tokens_details":{
+                "cached_tokens":80,"cache_write_tokens":20}}}
+                """;
+        var response = service.chat("example/model", messages());
+        assertTrue(response.isProviderFailure());
+        assertEquals(80, response.cachedPromptTokens());
+        assertEquals(20, response.cacheWriteTokens());
+        assertEquals(0.002, response.costUsd());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"'0.000003','0.0000003','0.0000027'", "'0','0','0'",
+            "'0.000003',null,null", "null,'0.0000003',null", "'-1','0',null", "'bad','0',null"})
+    void savingsUsePerTokenCatalogPricesAndPreserveUnknowns(String input, String read, String expected)
+            throws IOException {
+        OpenRouterService service = serviceWithCatalog("""
+                {"data":[{"id":"example/model","pricing":{"prompt":"%s","input_cache_read":"%s"}}]}
+                """.formatted(input, read));
+        service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+        var savings = service.cacheReadSavingsSnapshot().get("example/model");
+        if ("null".equals(expected)) {
+            assertNull(savings);
+        } else {
+            assertEquals(0, new java.math.BigDecimal(expected).compareTo(savings));
+        }
+        assertNull(service.cacheReadSavingsSnapshot().get("unknown/model"));
+        assertEquals(1, catalogRequests.get());
+    }
+
     private static List<OpenRouterService.ChatMsg> messages() {
         return List.of(new OpenRouterService.ChatMsg("user", "move"));
     }
@@ -113,7 +179,7 @@ class OpenRouterOutputTokenTest {
         server.createContext("/chat/completions", exchange -> {
             lastChatBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             byte[] bytes = chatResponse.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.sendResponseHeaders(chatStatus, bytes.length);
             try (var out = exchange.getResponseBody()) {
                 out.write(bytes);
             }

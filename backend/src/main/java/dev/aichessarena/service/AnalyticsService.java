@@ -11,6 +11,7 @@ import dev.aichessarena.dto.ModelReliabilityDto;
 import dev.aichessarena.dto.ModelReliabilityResponseDto;
 import dev.aichessarena.dto.TournamentCostSummaryDto;
 import dev.aichessarena.dto.TalkativenessDto;
+import dev.aichessarena.dto.PromptCachingDto;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -20,6 +21,7 @@ import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.MoveAttemptRepository.AttemptUsage;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveAttemptRepository.ResignationTurnAttempt;
 import dev.aichessarena.repository.MoveRepository;
@@ -61,6 +63,9 @@ public class AnalyticsService {
 
     @Inject
     AnalyticsGameOutcomeClassifier outcomeClassifier;
+
+    @Inject
+    OpenRouterService openRouterService;
 
     private final AnalyticsReliabilityScorer reliabilityScorer = new AnalyticsReliabilityScorer();
 
@@ -454,12 +459,19 @@ public class AnalyticsService {
         registerMoveQuality(byModel, moves);
         registerTalkativeness(byModel, moves, scope.messages());
         registerResignations(byModel, terminalGames, moves);
+        for (AttemptUsage usage : scope.attemptUsage()) {
+            if (hasTrackedModelId(usage.modelId())) {
+                byModel.computeIfAbsent(normalizeModelId(usage.modelId()), ignored -> new ComparisonAccumulator())
+                        .cacheUsage.add(usage);
+            }
+        }
         resignedTurnFailures(scope.resignationAttempts()).forEach((modelId, failures) -> {
             ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
             accumulator.resignedTurnsWithFailures += failures.turns();
             accumulator.resignedTurnFailures += failures.failures();
         });
 
+        Map<String, BigDecimal> cacheReadSavings = openRouterService.cacheReadSavingsSnapshot();
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
             ComparisonAccumulator accumulator = entry.getValue();
@@ -552,7 +564,8 @@ public class AnalyticsService {
                     accumulator.resignations,
                     accumulator.resignationsEvaluated,
                     accumulator.resignationsWhileNotLosing,
-                    accumulator.wonByResignation
+                    accumulator.wonByResignation,
+                    promptCaching(entry.getKey(), accumulator.cacheUsage, cacheReadSavings)
             ));
         }
 
@@ -818,6 +831,24 @@ public class AnalyticsService {
         );
     }
 
+    private PromptCachingDto promptCaching(String modelId, List<AttemptUsage> usage,
+                                           Map<String, BigDecimal> cacheReadSavings) {
+        Long prompt = tokenTotal(usage, AttemptUsage::promptTokens);
+        Long cached = tokenTotal(usage, AttemptUsage::cachedPromptTokens);
+        Long writes = tokenTotal(usage, AttemptUsage::cacheWriteTokens);
+        BigDecimal rate = prompt == null || prompt == 0 || cached == null ? null : divide(cached, prompt);
+        BigDecimal savingPerToken = cached == null ? null : cacheReadSavings.get(modelId);
+        BigDecimal savings = savingPerToken == null ? null : savingPerToken.multiply(BigDecimal.valueOf(cached));
+        return new PromptCachingDto(prompt, cached, rate, writes, savings);
+    }
+
+    private Long tokenTotal(List<AttemptUsage> usage, java.util.function.Function<AttemptUsage, Integer> counter) {
+        if (usage.isEmpty() || usage.stream().anyMatch(attempt -> counter.apply(attempt) == null)) {
+            return null;
+        }
+        return usage.stream().mapToLong(attempt -> counter.apply(attempt)).sum();
+    }
+
     private record PlyKey(UUID gameId, int moveNumber, String color) {
     }
 
@@ -980,6 +1011,7 @@ public class AnalyticsService {
         private long resignationsEvaluated;
         private long resignationsWhileNotLosing;
         private long wonByResignation;
+        private final List<AttemptUsage> cacheUsage = new ArrayList<>();
     }
 
     private static final class TalkAccumulator {

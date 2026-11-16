@@ -237,6 +237,8 @@ export interface MoveAttempt {
   effectiveMaxOutputTokens?: number | null;
   /** The model's catalog maximum when this request was prepared, if known. */
   modelMaxCompletionTokens?: number | null;
+  cachedPromptTokens?: number | null;
+  cacheWriteTokens?: number | null;
 }
 
 export interface ChatMessage {

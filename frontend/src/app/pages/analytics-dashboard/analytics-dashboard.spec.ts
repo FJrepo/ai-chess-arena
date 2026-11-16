@@ -218,6 +218,57 @@ describe('AnalyticsDashboard', () => {
     expect(component.formatTalkRate(undefined)).toBe('n/a');
   });
 
+  it('lists caching metrics, reported zeros and n/a for legacy or incomplete usage', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 3,
+      models: [
+        comparisonRow('model.legacy'),
+        comparisonRow('model.zero', {
+          promptCaching: {
+            promptTokens: 100,
+            cachedPromptTokens: 0,
+            cacheHitRate: 0,
+            cacheWriteTokens: 0,
+            estimatedSavingsUsd: 0,
+          },
+        }),
+        comparisonRow('model.cached', {
+          promptCaching: {
+            promptTokens: 1000,
+            cachedPromptTokens: 800,
+            cacheHitRate: 0.8,
+            cacheWriteTokens: null,
+            estimatedSavingsUsd: 0.000216,
+          },
+        }),
+      ],
+    });
+    expect(component.cacheRows().map((row) => row.modelId)).toEqual([
+      'model.cached',
+      'model.zero',
+      'model.legacy',
+    ]);
+    const [cached, zero, legacy] = component.cacheRows();
+    expect(component.cacheTokens(cached.promptCaching?.promptTokens)).toBe('1,000');
+    expect(component.cacheTokens(cached.promptCaching?.cachedPromptTokens)).toBe('800');
+    expect(component.percent(cached.promptCaching?.cacheHitRate ?? null)).toBe('80.0%');
+    expect(component.cacheTokens(cached.promptCaching?.cacheWriteTokens)).toBe('n/a');
+    expect(component.cacheSavings(cached.promptCaching?.estimatedSavingsUsd)).toBe('$0.000216');
+    expect(component.cacheTokens(zero.promptCaching?.cachedPromptTokens)).toBe('0');
+    expect(component.percent(zero.promptCaching?.cacheHitRate ?? null)).toBe('0.0%');
+    expect(component.cacheSavings(zero.promptCaching?.estimatedSavingsUsd)).toBe('$0.00');
+    expect(component.cacheTokens(legacy.promptCaching?.promptTokens)).toBe('n/a');
+    expect(component.cacheSavings(null)).toBe('n/a');
+    expect(component.cacheSavings(undefined)).toBe('n/a');
+    expect(component.cacheExplanation).toContain('All attempts');
+    expect(component.cacheExplanation).toContain('finished, non-bye games');
+    expect(component.cacheExplanation).toContain('current catalog');
+  });
+
   it('explains talkativeness in one line', () => {
     const component = new AnalyticsDashboard({} as any);
 

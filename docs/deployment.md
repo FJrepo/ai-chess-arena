@@ -153,6 +153,10 @@ Flyway migrations run automatically on backend startup.
 ## Backups and rollback
 Migrations only run forward: there are no down-migrations, and an older backend is not guaranteed to keep a migrated database consistent. To roll back to an older release, restore the database backup taken before the upgrade; the data written since then is lost. Since 1.4 (migration V12, chat modes) this is required: an older backend still starts, but it only writes `trash_talk_enabled` and stores moves without a chat mode, which leaves the data inconsistent when you upgrade again.
 
+The prompt caching metrics upgrade adds nullable `move_attempts.cached_prompt_tokens` and `cache_write_tokens` via Flyway V17 on backend startup. Existing rows keep null cache counters and their reported costs; there is no historical cache-usage backfill. Only newly reported provider counters populate the metrics.
+
+Analytics comparisons read one cached catalog price snapshot without waiting for OpenRouter. Empty or expired catalogs trigger a single background refresh; failed catalog refreshes back off for 60 seconds, retaining stale prices when available. After a restart, savings may show n/a until prices are cached and the 15-second comparison cache expires. This catalog handling fix adds no migration or backfill and leaves persisted usage and costs unchanged; rebuild and recreate the backend to apply it.
+
 Back up before every upgrade (the stack keeps running):
 
 ```bash

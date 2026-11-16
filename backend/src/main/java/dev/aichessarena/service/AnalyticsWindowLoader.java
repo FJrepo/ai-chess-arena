@@ -6,6 +6,7 @@ import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.MoveAttemptRepository.AttemptUsage;
 import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveAttemptRepository.ResignationTurnAttempt;
 import dev.aichessarena.repository.MoveRepository;
@@ -46,7 +47,8 @@ public class AnalyticsWindowLoader {
                 moveRepository.findInWindow(cutoff, tournamentId),
                 moveAttemptRepository.findRejectedCostsInWindow(cutoff, tournamentId),
                 chatMessageRepository.findPlyMessagesInWindow(cutoff, tournamentId),
-                moveAttemptRepository.findResignationTurnAttemptsInWindow(cutoff, tournamentId)
+                moveAttemptRepository.findResignationTurnAttemptsInWindow(cutoff, tournamentId),
+                moveAttemptRepository.findUsageInWindow(cutoff, tournamentId)
         );
     }
 
@@ -56,12 +58,13 @@ public class AnalyticsWindowLoader {
                 .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status))
                 .toList();
         return scopeFor(terminalGames, scope.moves(), scope.rejectedAttemptCosts(), scope.messages(),
-                scope.resignationAttempts());
+                scope.resignationAttempts(), scope.attemptUsage());
     }
 
     /** Keeps only the moves, attempt costs, messages and resignation attempts that belong to {@code games}. */
     static AnalyticsScope scopeFor(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
-                                   List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts) {
+                                   List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
+                                   List<AttemptUsage> attemptUsage) {
         Set<UUID> gameIds = games.stream().map(game -> game.id).collect(Collectors.toSet());
         List<Move> gameMoves = moves.stream()
                 .filter(move -> move.game != null && gameIds.contains(move.game.id))
@@ -75,10 +78,14 @@ public class AnalyticsWindowLoader {
         List<ResignationTurnAttempt> gameResignationAttempts = resignationAttempts.stream()
                 .filter(attempt -> gameIds.contains(attempt.gameId()))
                 .toList();
-        return new AnalyticsScope(games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts);
+        List<AttemptUsage> gameUsage = attemptUsage.stream()
+                .filter(usage -> gameIds.contains(usage.gameId()))
+                .toList();
+        return new AnalyticsScope(games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts, gameUsage);
     }
 
     record AnalyticsScope(List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
-                          List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts) {
+                          List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
+                          List<AttemptUsage> attemptUsage) {
     }
 }
