@@ -12,6 +12,7 @@ import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Tournament;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
@@ -164,7 +165,36 @@ class GameEngineServiceTest {
 
     /** Runs the real game loop for one turn of a fresh game and returns the request it passed to the turn. */
     private static GameTurnService.TurnRequest runOneTurnFor(Tournament tournament) {
+        return runTurnsFor(tournament, null, 1).getFirst();
+    }
+
+    @Test
+    void aMixedTemplateGameKeepsTheConfiguredModeForTheLiveLabelOnEveryTurn() {
+        // MANDATORY tournament; White has a legacy template, which cannot ask for a message.
+        Tournament tournament = tournamentWithTimeout(45);
+        tournament.chatMode = ChatMode.MANDATORY;
+        TournamentParticipant white = new TournamentParticipant();
+        white.customSystemPrompt = "Play as %s against %s (%s). Answer with JSON.";
+
+        List<GameTurnService.TurnRequest> turns = runTurnsFor(tournament, white, 4);
+
+        assertEquals(List.of("WHITE", "BLACK", "WHITE", "BLACK"),
+                turns.stream().map(GameTurnService.TurnRequest::sideToMove).toList());
+        assertEquals(List.of(ChatMode.OPTIONAL, ChatMode.MANDATORY, ChatMode.OPTIONAL, ChatMode.MANDATORY),
+                turns.stream().map(GameTurnService.TurnRequest::chatMode).toList(), "effective mode per side");
+        assertEquals(List.of(ChatMode.MANDATORY, ChatMode.MANDATORY, ChatMode.MANDATORY, ChatMode.MANDATORY),
+                turns.stream().map(GameTurnService.TurnRequest::tournamentChatMode).toList(),
+                "configured mode for the live label");
+    }
+
+    /**
+     * Runs the real game loop for {@code turns} turns of a fresh game (each turn plays the first legal move) and
+     * returns the requests it passed to the turns.
+     */
+    private static List<GameTurnService.TurnRequest> runTurnsFor(Tournament tournament,
+                                                                 TournamentParticipant whiteParticipant, int turns) {
         Game game = new Game();
+        game.whiteParticipant = whiteParticipant;
         game.id = UUID.randomUUID();
         game.status = GameStatus.IN_PROGRESS;
         game.tournament = tournament;
@@ -194,14 +224,20 @@ class GameEngineServiceTest {
             @Override
             public TurnResult playTurn(TurnRequest request) {
                 requests.add(request);
-                return TurnResult.terminal();
+                if (requests.size() >= turns) {
+                    return TurnResult.terminal();
+                }
+                String san = request.legalMoves().getFirst();
+                chessService.validateAndApply(request.board(), san);
+                return TurnResult.recorded(san, null);
             }
         };
+        service.gameTurnService.chessService = service.chessService;
 
         service.runGameLoop(game.id, new GameEngineService.GameLoop(), null, null);
 
-        assertEquals(1, requests.size());
-        return requests.getFirst();
+        assertEquals(turns, requests.size());
+        return requests;
     }
 
     private static Tournament tournamentWithTimeout(Integer moveTimeoutSeconds) {

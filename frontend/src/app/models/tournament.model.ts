@@ -238,8 +238,8 @@ export interface GameStatusWsMessage {
   turnStartedAt?: string;
   turnDeadlineAt?: string;
   detail?: string | null;
-  /** The chat mode of the turn that starts; sent with turn updates of model turns only. */
-  chatMode?: ChatMode;
+  /** The tournament's configured chat mode; sent with turn updates of model turns only. */
+  tournamentChatMode?: ChatMode;
 }
 
 export interface RetryWsMessage {

@@ -94,7 +94,7 @@ public class GameTurnService {
         }
 
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
-                request.chatMode());
+                request.tournamentChatMode());
 
         int providerFailures = 0;
         String lastProviderFailure = null;
@@ -362,9 +362,13 @@ public class GameTurnService {
         );
     }
 
-    /** Also tells open game views the chat mode of this turn, so a mode changed during play shows up live. */
+    /**
+     * Also tells open game views the tournament's configured chat mode, so a mode changed during play shows up live.
+     * The configured mode, not this side's effective one: a legacy template makes MANDATORY effectively OPTIONAL
+     * for one side only, and the label must not flip from turn to turn.
+     */
     private void broadcastTurnTiming(UUID gameId, BigDecimal totalCostUsd, String activeColor,
-                                     Instant turnStartedAt, Instant turnDeadlineAt, ChatMode chatMode) {
+                                     Instant turnStartedAt, Instant turnDeadlineAt, ChatMode tournamentChatMode) {
         int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));
         gameWebSocket.broadcastGameStatus(
                 gameId,
@@ -377,7 +381,7 @@ public class GameTurnService {
                 turnStartedAt,
                 turnDeadlineAt,
                 null,
-                chatMode != null ? chatMode.name() : null
+                tournamentChatMode != null ? tournamentChatMode.name() : null
         );
     }
 
@@ -404,8 +408,11 @@ public class GameTurnService {
             BigDecimal totalCostUsd,
             BooleanSupplier shouldContinue,
             int maxOutputTokens,
-            // The chat mode that applies to this side's answer (see GameConversationService.PromptContext).
-            ChatMode chatMode
+            // The chat mode that applies to this side's answer (see GameConversationService.PromptContext); it decides
+            // the prompt, whether the message is kept and the mode recorded on the move.
+            ChatMode chatMode,
+            // The tournament's configured chat mode, shown live in the game view.
+            ChatMode tournamentChatMode
     ) {
     }
 

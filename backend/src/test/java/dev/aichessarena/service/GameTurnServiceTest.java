@@ -373,13 +373,16 @@ class GameTurnServiceTest {
     }
 
     @Test
-    void theTurnStartUpdateCarriesTheTurnsChatMode() {
+    void theTurnStartUpdateCarriesTheConfiguredTournamentModeNotTheSidesEffectiveOne() {
+        // The request's tournament mode is MANDATORY; this side has a legacy template, so its effective mode is
+        // OPTIONAL. The live label shows the configured mode, the move records the effective one.
         Fixture fixture = new Fixture(VALID_MOVE);
 
-        fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.MANDATORY));
+        fixture.service.playTurn(request(new ArrayList<>(), 3, 30, () -> true, ChatMode.OPTIONAL));
 
         assertTrue(fixture.websocket.turnTimingBroadcast);
         assertEquals("MANDATORY", fixture.websocket.lastTurnChatMode);
+        assertEquals(ChatMode.OPTIONAL, fixture.moves.lastChatMode);
     }
 
     @Test
@@ -610,7 +613,8 @@ class GameTurnServiceTest {
                 BigDecimal.ZERO,
                 shouldContinue,
                 MAX_OUTPUT_TOKENS,
-                chatMode
+                chatMode,
+                ChatMode.MANDATORY
         );
     }
 

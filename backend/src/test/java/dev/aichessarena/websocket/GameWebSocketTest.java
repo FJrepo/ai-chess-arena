@@ -308,8 +308,8 @@ class GameWebSocketTest {
             }
         }
         assertEquals(2, statuses.size());
-        assertEquals("MANDATORY", statuses.get(0).get("chatMode").asText());
-        assertFalse(statuses.get(1).has("chatMode"));
+        assertEquals("MANDATORY", statuses.get(0).get("tournamentChatMode").asText());
+        assertFalse(statuses.get(1).has("tournamentChatMode"));
     }
 
     /** An open connection that records every text frame sent to it. */

@@ -569,8 +569,8 @@ export class GameView implements OnInit, OnDestroy {
           msg.turnDeadlineAt,
         );
         // A mode changed during play shows up with the next model turn.
-        if (msg.chatMode) {
-          this.tournamentChatMode.set(msg.chatMode);
+        if (msg.tournamentChatMode) {
+          this.tournamentChatMode.set(msg.tournamentChatMode);
         }
         if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
           this.loadAttempts();

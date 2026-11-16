@@ -376,9 +376,25 @@ describe('GameView', () => {
       gameId: 'g-1',
       status: 'IN_PROGRESS',
       activeColor: 'WHITE',
-      chatMode: 'MANDATORY',
+      tournamentChatMode: 'MANDATORY',
     });
     expect(component.tournamentChatMode()).toBe('MANDATORY');
+  });
+
+  it('keeps the configured chat mode over successive turns of a mixed-template game', () => {
+    // MANDATORY tournament, White with a legacy template (effectively OPTIONAL): every turn update carries the
+    // configured mode, so the label does not flip between the sides' turns.
+    const { component } = createComponent();
+    for (const activeColor of ['WHITE', 'BLACK', 'WHITE', 'BLACK'] as const) {
+      component.handleWsMessage({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'IN_PROGRESS',
+        activeColor,
+        tournamentChatMode: 'MANDATORY',
+      });
+      expect(component.tournamentChatMode()).toBe('MANDATORY');
+    }
   });
 
   it('detects when the active side is human-controlled', () => {

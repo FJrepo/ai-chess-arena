@@ -240,7 +240,8 @@ public class GameEngineService {
                     game.totalCostUsd,
                     loop::shouldContinue,
                     maxOutputTokens,
-                    prompt.chatMode()
+                    prompt.chatMode(),
+                    conversation.chatMode()
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

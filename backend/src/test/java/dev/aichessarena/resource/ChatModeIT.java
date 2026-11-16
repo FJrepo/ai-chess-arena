@@ -204,6 +204,11 @@ class ChatModeIT {
                            3, 'BLACK', 'a6', 'fen', 'beta', 'legacy-custom-template', false),
                           ('00000000-0000-0000-0000-0000000000cc', '00000000-0000-0000-0000-0000000000b1',
                            4, 'WHITE', 'Ba4', 'fen', 'alpha', 'v2+custom-instructions-silent', false),
+                          -- precedence: a legacy template with a message, a silent prompt with a message
+                          ('00000000-0000-0000-0000-0000000000cd', '00000000-0000-0000-0000-0000000000b1',
+                           4, 'BLACK', 'Nf6', 'fen', 'beta', 'legacy-custom-template', false),
+                          ('00000000-0000-0000-0000-0000000000ce', '00000000-0000-0000-0000-0000000000b1',
+                           5, 'WHITE', 'O-O', 'fen', 'alpha', 'v2-silent', false),
                           -- talkative tournament: with and without a message, a human move and an override
                           ('00000000-0000-0000-0000-0000000000c4', '00000000-0000-0000-0000-0000000000b2',
                            1, 'WHITE', 'e4', 'fen', 'alpha', 'v2', false),
@@ -218,6 +223,8 @@ class ChatModeIT {
                            1, 'WHITE', 'd4', 'fen', 'alpha', 'v2', false);
                         INSERT INTO chat_messages (game_id, move_number, sender_model, sender_color, message) VALUES
                           ('00000000-0000-0000-0000-0000000000b1', 2, 'alpha', 'WHITE', 'Switched on mid-game'),
+                          ('00000000-0000-0000-0000-0000000000b1', 4, 'beta', 'BLACK', 'Legacy but talking'),
+                          ('00000000-0000-0000-0000-0000000000b1', 5, 'alpha', 'WHITE', 'Told to stay silent'),
                           ('00000000-0000-0000-0000-0000000000b2', 1, 'alpha', 'WHITE', 'Good luck');
                         """);
             }
@@ -241,6 +248,11 @@ class ChatModeIT {
                 assertEquals("OPTIONAL", moves.get("c9"), "v1 predates the switch");
                 assertEquals("OPTIONAL", moves.get("ca"), "no prompt version predates the switch");
                 assertEquals("OFF", moves.get("cb"), "legacy template without a message: the tournament's setting");
+                // Precedence: the silent prompt wins over a stored message (the model was told to stay silent, so
+                // counting its move would distort the talk rate); a stored message wins over the tournament's
+                // setting for a legacy template, whose prompt does not tell the mode.
+                assertEquals("OPTIONAL", moves.get("cd"), "legacy template with a message: chat was on");
+                assertEquals("OFF", moves.get("ce"), "silent prompt wins over a stored message");
                 assertEquals("OPTIONAL", moves.get("c4"));
                 assertEquals("OPTIONAL", moves.get("c5"));
                 assertNull(moves.get("c6"), "human move");

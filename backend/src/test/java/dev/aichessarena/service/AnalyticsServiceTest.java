@@ -482,6 +482,27 @@ class AnalyticsServiceTest {
                 "the later duplicate's mode is not counted");
     }
 
+    @Test
+    void talkativenessTakesTheFirstNonEmptyMessageOfADuplicatedPly() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        AnalyticsService service = service(
+                List.of(game),
+                List.of(chatMove(game, "model.alpha", 1, "WHITE", ChatMode.OPTIONAL)),
+                List.of(),
+                // Oldest first: an empty (whitespace-only, length 0 after trimming) message, then a real one.
+                List.of(
+                        new PlyMessage(game.id, 1, "WHITE", 0),
+                        new PlyMessage(game.id, 1, "WHITE", 24),
+                        new PlyMessage(game.id, 1, "WHITE", 50)
+                )
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+
+        assertEquals(new TalkativenessDto(1, 1, new BigDecimal("1.0000"), new BigDecimal("24.0")),
+                alpha.optionalChat());
+    }
+
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
         Move move = move(game, modelId, 1000L, null);
         move.moveNumber = number;
