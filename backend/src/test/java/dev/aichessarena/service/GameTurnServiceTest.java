@@ -196,11 +196,13 @@ class GameTurnServiceTest {
         GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 1, 30));
 
         assertTrue(result.pausedGame());
-        assertTrue(fixture.lifecycle.pauseDetail.contains("2048-token output limit"), fixture.lifecycle.pauseDetail);
-        assertTrue(fixture.lifecycle.pauseDetail.contains("1800 of them reasoning"), fixture.lifecycle.pauseDetail);
-        assertTrue(fixture.lifecycle.pauseDetail.contains("Max output tokens per answer"));
-        assertTrue(fixture.lifecycle.pauseDetail.contains("'Save and resume' in the game view"));
-        assertTrue(fixture.lifecycle.pauseDetail.contains("PUT /api/tournaments/{id}"));
+        assertTrue(fixture.lifecycle.pauseDetail.endsWith(
+                "answer was cut off at the 2048-token output limit (1800 of them reasoning). Raise the limit and resume"),
+                fixture.lifecycle.pauseDetail);
+        // User-facing: no API route, field name or pointer to the page the user is already on.
+        assertFalse(fixture.lifecycle.pauseDetail.contains("/api/"), fixture.lifecycle.pauseDetail);
+        assertFalse(fixture.lifecycle.pauseDetail.contains("maxOutputTokens"), fixture.lifecycle.pauseDetail);
+        assertFalse(fixture.lifecycle.pauseDetail.contains("game view"), fixture.lifecycle.pauseDetail);
         assertNull(fixture.lifecycle.lastForfeitColor);
         assertFalse(fixture.lifecycle.invalidMovesForfeited);
         assertEquals(1, fixture.openRouter.calls);
