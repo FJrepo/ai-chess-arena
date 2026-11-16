@@ -70,6 +70,7 @@ class GameMoveServiceTest {
         assertEquals("Good luck", chatRepository.persistedMessages.getFirst().message);
         assertEquals("Model A", websocket.lastChatSenderName);
         assertEquals("e4", websocket.lastMoveSan);
+        assertFalse(websocket.lastMoveOverride);
         assertTrue(game.pgn.contains("1. e4"));
         assertEquals(AFTER_E4, game.currentFen);
     }
@@ -117,6 +118,44 @@ class GameMoveServiceTest {
         service.applyOverrideMove(game.id, "e4", START_FEN);
         assertEquals(1, moveRepository.persistedMoves.size());
         assertEquals(AFTER_E4.split(" ")[0], game.currentFen.split(" ")[0]);
+    }
+
+    @Test
+    void overrideMoveIsQueuedForEvaluationAndBroadcastAsOverride() {
+        Game game = game(Game.GameStatus.PAUSED, START_FEN);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        GameMoveService service = service(game, moveRepository);
+        TrackingMoveEvaluationEvent moveEvaluationEvents = (TrackingMoveEvaluationEvent) service.moveEvaluationEvents;
+        RecordingGameWebSocket websocket = (RecordingGameWebSocket) service.gameWebSocket;
+
+        service.applyOverrideMove(game.id, "e4", START_FEN);
+
+        Move move = moveRepository.persistedMoves.getFirst();
+        assertTrue(move.isOverride);
+        assertTrue(moveRepository.persistAndFlushCalled);
+        assertNotNull(moveEvaluationEvents.lastRequest);
+        assertEquals(move.id, moveEvaluationEvents.lastRequest.moveId());
+        assertEquals(game.id, moveEvaluationEvents.lastRequest.gameId());
+        assertEquals(1, moveEvaluationEvents.lastRequest.moveNumber());
+        assertEquals("WHITE", moveEvaluationEvents.lastRequest.color());
+        assertEquals(move.fen, moveEvaluationEvents.lastRequest.fen());
+        assertEquals("e4", websocket.lastMoveSan);
+        assertTrue(websocket.lastMoveOverride);
+    }
+
+    @Test
+    void humanMoveIsBroadcastAsARegularMove() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        GameMoveService service = service(game, moveRepository);
+        RecordingGameWebSocket websocket = (RecordingGameWebSocket) service.gameWebSocket;
+        websocket.lastMoveOverride = true;
+
+        service.recordHumanMove(game.id, 1, "WHITE", "e4", AFTER_E4, "Human", null, START_FEN);
+
+        assertEquals("e4", websocket.lastMoveSan);
+        assertFalse(websocket.lastMoveOverride);
+        assertNotNull(((TrackingMoveEvaluationEvent) service.moveEvaluationEvents).lastRequest);
     }
 
     @Test
@@ -235,6 +274,7 @@ class GameMoveServiceTest {
     private static final class RecordingGameWebSocket extends GameWebSocket {
         private String lastChatSenderName;
         private String lastMoveSan;
+        private boolean lastMoveOverride;
 
         @Override
         public void broadcastChat(
@@ -258,9 +298,11 @@ class GameMoveServiceTest {
                 String pgn,
                 String modelId,
                 long responseTimeMs,
-                int retryCount
+                int retryCount,
+                boolean isOverride
         ) {
             lastMoveSan = san;
+            lastMoveOverride = isOverride;
         }
     }
 }

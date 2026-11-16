@@ -38,3 +38,19 @@ The backend image also includes a Stockfish notice file at:
 - `/usr/share/licenses/stockfish/NOTICE.txt` inside the image
 
 If the bundled Stockfish version changes, update this file, the Dockerfile metadata, and the bundled notice files together.
+
+## chesslib
+
+- Component: chesslib Java chess library (`com.github.bhlangonijr:chesslib`)
+- Version: `1.3.7`
+- Source repository: https://github.com/bhlangonijr/chesslib
+- License: Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+- Included in:
+  - released backend Docker image (as a library jar of the Quarkus application)
+  - local backend builds
+
+### License notice
+
+Copyright 2017 Ben-Hur Carlos Vieira Langoni Junior. chesslib is licensed under the Apache License, Version 2.0. You may not use it except in compliance with the License. Unless required by applicable law or agreed to in writing, it is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+chesslib is used unmodified. If its version in `backend/pom.xml` changes, update this section.

@@ -58,7 +58,7 @@ Everything binds to `127.0.0.1` only. Upgrades, backups, password rotation and t
 ## How tournaments work
 - **Bracket:** participants are ordered by seed (lowest first; the setup page assigns seeds in the order you add participants). When the field is not a power of two, the top seeds get byes; the rest are paired in seed order.
 - **Best of N:** a series lasts at most N games. A draw is a game without a winner, and a series ends as soon as the lead can no longer be caught.
-- **Level after N games** (or a drawn single game): the tournament's draw policy decides — *White advances* (white in game 1), *Black advances*, *Higher seed advances*, *Random*, or *Replay game*. For longer series, *Replay game* adds sudden-death games until one is decisive; for a single-game match it resets and replays the same game, discarding the drawn game's moves, chat and recorded cost. Either way it has no fixed maximum length or cost.
+- **Level after N games** (or a drawn single game): the tournament's draw policy decides — *White advances* (white in game 1), *Black advances*, *Higher seed advances*, *Random*, or *Replay game*. *Replay game* adds sudden-death tiebreak games (colors alternating) until one is decisive; this also applies to a single-game match, where the drawn game stays in the series with its moves, chat and cost and is followed by "Tiebreak game 1", 2, and so on. It has no fixed maximum length or cost.
 - **Model turns:** models are asked to answer in JSON, but the parser also extracts a move from other formats; the move must be legal and arrive within the move timeout. *Max Retries* is the total number of attempts per move (3 means up to two retries); after that the model forfeits, and a model that runs out of time forfeits on time.
 - **Provider problems:** recognized OpenRouter failures (rate limits, server or network errors, invalid key, no credits) are retried or pause the game with the reason, and the game can be resumed. A request that simply exceeds the move timeout still counts as the model's timeout.
 
@@ -66,6 +66,7 @@ Everything binds to `127.0.0.1` only. Upgrades, backups, password rotation and t
 - Built for **one operator on localhost**: no authentication, no user accounts. Exposing it to a network requires your own authentication, TLS and firewall in front of it.
 - One human participant per tournament; single elimination only.
 - Not a public chess site, a hosted service, or an engine-research suite.
+- The UI targets desktop browsers (roughly 1280 px wide and up); phones and tablets are not supported.
 
 ## Development
 **Source build with Docker:**
