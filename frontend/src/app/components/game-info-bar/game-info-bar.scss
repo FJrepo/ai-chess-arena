@@ -247,6 +247,31 @@ $warning: mat.$orange-palette;
   width: 380px;
 }
 
+// With the reasoning-effort select the form needs the full width: it goes under the headline.
+.pause-panel:has(.effort-field) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'head'
+    'form';
+
+  .pause-head {
+    grid-column: auto;
+  }
+
+  .limit-field {
+    width: 300px;
+  }
+}
+
+.effort-field {
+  width: 340px;
+}
+
+// The level a side asks for, after its model id.
+.effort-tag {
+  white-space: nowrap;
+}
+
 // Centres the 40px button on the 56px outlined input box.
 .save-resume {
   margin-top: 8px;

@@ -1,7 +1,9 @@
 package dev.aichessarena.resource;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.aichessarena.dto.*;
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
@@ -17,7 +19,9 @@ import jakarta.ws.rs.core.Response;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,6 +30,8 @@ import java.util.UUID;
 @Consumes(MediaType.APPLICATION_JSON)
 public class TournamentResource {
     private static final Set<Integer> ALLOWED_BEST_OF_VALUES = Set.of(1, 3, 5, 7);
+    /** Tournament {@code reasoningEffort} value for "each model's default": nothing is sent. */
+    static final String MODEL_DEFAULT_EFFORT = "default";
 
     @Inject
     TournamentRepository tournamentRepository;
@@ -57,6 +63,8 @@ public class TournamentResource {
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
+        // null (omitted) keeps the model default.
+        if (req.reasoningEffort() != null) t.reasoningEffort = parseTournamentReasoningEffort(req.reasoningEffort());
 
         List<TournamentParticipant> participants = new ArrayList<>();
         if (req.participants() != null) {
@@ -111,6 +119,8 @@ public class TournamentResource {
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
+        // null (omitted) keeps the current level, "default" clears it; applies from the next turn of running games.
+        if (req.reasoningEffort() != null) t.reasoningEffort = parseTournamentReasoningEffort(req.reasoningEffort());
         t.updatedAt = LocalDateTime.now();
         tournamentRepository.persist(t);
         return Response.ok(DtoMapper.toDto(t)).build();
@@ -132,6 +142,37 @@ public class TournamentResource {
     public Response addParticipant(@PathParam("id") UUID id, AddParticipantRequest req) {
         TournamentParticipant saved = tournamentService.addParticipant(id, toParticipant(req));
         return Response.status(Response.Status.CREATED).entity(DtoMapper.toDto(saved)).build();
+    }
+
+    /**
+     * Changes a participant's settings that may change at any time, also while its games run or are paused (a change
+     * applies from its next turn). Only {@code reasoningEffort} can be changed: a level, or null to use the
+     * tournament's again; omitted keeps it. Other fields are rejected.
+     */
+    @PUT
+    @Path("/{id}/participants/{pid}")
+    public Response updateParticipant(@PathParam("id") UUID id, @PathParam("pid") UUID pid, JsonNode body) {
+        if (body == null || !body.isObject()) {
+            throw new IllegalArgumentException("Request body must be a JSON object");
+        }
+        Iterator<String> fields = body.fieldNames();
+        while (fields.hasNext()) {
+            String field = fields.next();
+            if (!"reasoningEffort".equals(field)) {
+                throw new IllegalArgumentException("Only reasoningEffort can be changed for a participant, not " + field);
+            }
+        }
+        if (!body.has("reasoningEffort")) {
+            TournamentParticipant unchanged = tournamentService.findParticipant(id, pid);
+            return Response.ok(DtoMapper.toDto(unchanged)).build();
+        }
+        JsonNode value = body.get("reasoningEffort");
+        if (!value.isNull() && !value.isTextual()) {
+            throw new IllegalArgumentException("reasoningEffort must be a string or null");
+        }
+        ReasoningEffort effort = value.isNull() ? null : parseParticipantReasoningEffort(value.asText());
+        TournamentParticipant updated = tournamentService.updateParticipantReasoningEffort(id, pid, effort);
+        return Response.ok(DtoMapper.toDto(updated)).build();
     }
 
     @DELETE
@@ -161,7 +202,31 @@ public class TournamentResource {
         p.controlType = parseControlType(req.controlType());
         p.customInstructions = normalizeInstructions(req.customInstructions());
         if (req.seed() != null) p.seed = req.seed();
+        if (req.reasoningEffort() != null) p.reasoningEffort = parseParticipantReasoningEffort(req.reasoningEffort());
         return p;
+    }
+
+    /** A level, or {@code "default"} (null: each model's default); anything else is a 400. */
+    static ReasoningEffort parseTournamentReasoningEffort(String value) {
+        if (value != null && MODEL_DEFAULT_EFFORT.equals(value.trim().toLowerCase(Locale.ROOT))) {
+            return null;
+        }
+        ReasoningEffort effort = ReasoningEffort.fromApiValue(value);
+        if (effort == null) {
+            throw new IllegalArgumentException("Invalid reasoningEffort: " + value + " (must be one of "
+                    + ReasoningEffort.allowedValues() + " or " + MODEL_DEFAULT_EFFORT + ")");
+        }
+        return effort;
+    }
+
+    /** A participant override is a level; null (not a value) follows the tournament's. Anything else is a 400. */
+    static ReasoningEffort parseParticipantReasoningEffort(String value) {
+        ReasoningEffort effort = ReasoningEffort.fromApiValue(value);
+        if (effort == null) {
+            throw new IllegalArgumentException("Invalid reasoningEffort: " + value + " (must be one of "
+                    + ReasoningEffort.allowedValues() + ", or null to use the tournament's)");
+        }
+        return effort;
     }
 
     /** {@code 0} means no time limit per move (stored as null); other values must be 10-3600 seconds. */

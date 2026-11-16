@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from '../utils/reasoning-effort';
+
 /**
  * The backend's time limit per move in seconds (Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS): used when a tournament is
  * created without one and for games outside a tournament. Running out of time forfeits the game.
@@ -43,6 +45,11 @@ export interface Tournament {
    * Always sent by the backend (default 4096); optional only so existing test fixtures stay valid.
    */
   maxOutputTokens?: number;
+  /**
+   * OpenRouter reasoning effort for every model unless a participant overrides it; null or absent means each
+   * model's default (nothing is sent). An update request may send 'default' to clear it.
+   */
+  reasoningEffort?: ReasoningEffort | 'default' | null;
   createdAt: string;
   updatedAt: string;
   participants: Participant[];
@@ -56,6 +63,8 @@ export interface Participant {
   modelId: string | null;
   customInstructions: string | null;
   seed: number;
+  /** Overrides the tournament's reasoning effort; null or absent uses the tournament's. */
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 export interface Game {
@@ -103,6 +112,12 @@ export interface Game {
    * update that arrives late can be ignored. Absent from older backends.
    */
   statusRevision?: number;
+  /**
+   * The reasoning effort each side asks for (participant override, else the tournament's); null or absent for
+   * the model default and human sides. The backend sends the nearest level the model supports.
+   */
+  whiteReasoningEffort?: ReasoningEffort | null;
+  blackReasoningEffort?: ReasoningEffort | null;
 }
 
 /** A resignation: who resigned instead of playing which move, and how the position looked. */
@@ -214,6 +229,8 @@ export interface MoveAttempt {
   finishReason: string | null;
   errorMessage: string | null;
   createdAt: string;
+  /** The reasoning effort sent with this attempt; null or absent when none was sent. */
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 export interface ChatMessage {

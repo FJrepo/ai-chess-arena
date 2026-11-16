@@ -23,6 +23,7 @@ public final class DtoMapper {
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
                 t.resignationAllowed,
                 t.maxOutputTokens,
+                apiValue(t.reasoningEffort),
                 t.createdAt, t.updatedAt,
                 t.participants.stream().map(DtoMapper::toDto).toList(),
                 t.games.stream().map(g -> toDto(g, false)).toList(),
@@ -43,8 +44,13 @@ public final class DtoMapper {
                 p.controlType.name(),
                 p.modelId,
                 p.customInstructions,
-                p.seed
+                p.seed,
+                apiValue(p.reasoningEffort)
         );
+    }
+
+    private static String apiValue(ReasoningEffort effort) {
+        return effort != null ? effort.apiValue() : null;
     }
 
     /** With {@code includeMoves}, the moves carry their quality and the game its per-side quality summary. */
@@ -87,7 +93,9 @@ public final class DtoMapper {
                 includeMoves ? g.chatMessages.stream().map(DtoMapper::toDto).toList() : List.of(),
                 qualitySummary,
                 resignation,
-                g.statusRevision
+                g.statusRevision,
+                apiValue(g.requestedReasoningEffort("WHITE")),
+                apiValue(g.requestedReasoningEffort("BLACK"))
         );
     }
 
@@ -133,7 +141,7 @@ public final class DtoMapper {
         return new MoveAttemptDto(
                 a.id, a.moveNumber, a.color, a.attemptNumber, a.modelId, a.outcome.name(), a.proposedMove,
                 a.promptTokens, a.completionTokens, a.reasoningTokens, a.costUsd, a.responseTimeMs,
-                a.finishReason, a.errorMessage, a.createdAt
+                a.finishReason, a.errorMessage, a.createdAt, apiValue(a.reasoningEffort)
         );
     }
 

@@ -2,6 +2,7 @@ package dev.aichessarena.entity;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -68,6 +69,11 @@ public class MoveAttempt extends PanacheEntityBase {
 
     @Column(name = "error_message", length = 500)
     public String errorMessage;
+
+    /** The reasoning effort sent with this request (after mapping to a supported level); null when none was sent. */
+    @Convert(converter = ReasoningEffortConverter.class)
+    @Column(name = "reasoning_effort", length = 16)
+    public ReasoningEffort reasoningEffort;
 
     @Column(name = "raw_response", columnDefinition = "TEXT")
     public String rawResponse;

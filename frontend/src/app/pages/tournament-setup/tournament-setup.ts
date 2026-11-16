@@ -23,6 +23,13 @@ import { ProviderLogoComponent } from '../../components/provider-logo/provider-l
 import { ModelPicker } from '../../components/model-picker/model-picker';
 import { ModelDetails } from '../../components/model-details/model-details';
 import { providerDisplayName as resolveProviderDisplayName } from '../../utils/provider-brand';
+import {
+  REASONING_EFFORT_HINT,
+  REASONING_EFFORTS,
+  ReasoningEffort,
+  reasoningEffortLabel,
+  supportedEfforts,
+} from '../../utils/reasoning-effort';
 
 /**
  * Prompt tokens one model call sends: system prompt, the last six prior messages and the current turn (the
@@ -121,6 +128,17 @@ Your opponent is %s (%s).`;
   maxRetries = 3;
   /** Cap on generated tokens per answer (128-32768); includes reasoning tokens. */
   maxOutputTokens = 4096;
+  /**
+   * Reasoning effort for every model unless a participant overrides it; null is each model's default (the field
+   * is then left out of the request, so nothing is sent to OpenRouter).
+   */
+  reasoningEffort: ReasoningEffort | null = null;
+  readonly reasoningEffortOptions = REASONING_EFFORTS.map((value) => ({
+    value,
+    label: reasoningEffortLabel(value),
+  }));
+  readonly reasoningEffortHint = REASONING_EFFORT_HINT;
+  readonly reasoningEffortLabel = reasoningEffortLabel;
   /** Whether models talk; sent as chatMode. */
   chatMode: ChatMode = 'OPTIONAL';
   readonly chatModeOptions: ReadonlyArray<{ value: ChatMode; label: string; hint: string }> = [
@@ -153,6 +171,8 @@ Your opponent is %s (%s).`;
   newControlType: Participant['controlType'] = 'AI';
   newModelId = '';
   newCustomInstructions = '';
+  /** The new participant's override; null follows the tournament's level. Reset when the model changes. */
+  newReasoningEffort: ReasoningEffort | null = null;
 
   participants = signal<SetupParticipant[]>([]);
   /** The whole OpenRouter catalog, loaded once; the picker filters it client-side. */
@@ -333,6 +353,10 @@ Your opponent is %s (%s).`;
 
   /** Selection from the picker ('' when cleared); fills an empty display name with the model's name. */
   onModelChanged(modelId: string): void {
+    if (modelId !== this.newModelId) {
+      // The levels differ from model to model.
+      this.newReasoningEffort = null;
+    }
     this.newModelId = modelId;
     if (this.newPlayerName.trim().length > 0) {
       return;
@@ -346,6 +370,19 @@ Your opponent is %s (%s).`;
 
   selectedModel(): OpenRouterModelOption | null {
     return this.models().find((model) => model.id === this.newModelId) ?? null;
+  }
+
+  /** The levels the selected model offers, in order; empty without a model or without effort control. */
+  selectedModelEfforts(): ReasoningEffort[] {
+    return supportedEfforts(this.selectedModel());
+  }
+
+  /** E.g. "Tournament setting (Low)" or "Tournament setting (model default)". */
+  tournamentEffortOptionLabel(): string {
+    const level = this.reasoningEffort
+      ? reasoningEffortLabel(this.reasoningEffort)
+      : 'model default';
+    return `Tournament setting (${level})`;
   }
 
   providerDisplayName(provider?: string | null, modelId?: string | null): string {
@@ -386,6 +423,12 @@ Your opponent is %s (%s).`;
             ? (this.selectedModel()?.completionPricePerMillion ?? null)
             : null,
         seed: list.length,
+        reasoningEffort:
+          this.newControlType === 'AI' &&
+          this.newReasoningEffort &&
+          this.selectedModelEfforts().includes(this.newReasoningEffort)
+            ? this.newReasoningEffort
+            : null,
       },
     ]);
 
@@ -393,6 +436,7 @@ Your opponent is %s (%s).`;
     this.newControlType = 'AI';
     this.newModelId = '';
     this.newCustomInstructions = '';
+    this.newReasoningEffort = null;
   }
 
   removeParticipant(index: number) {
@@ -440,6 +484,8 @@ Your opponent is %s (%s).`;
       finalsBestOf: this.finalsBestOf,
       chatMode: this.chatMode,
       resignationAllowed: this.resignationAllowed,
+      // Left out for the model default, so nothing is sent to OpenRouter.
+      ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
       drawPolicy: this.drawPolicy,
       participants: this.participants().map((p) => ({
         playerName: p.playerName,
@@ -447,6 +493,7 @@ Your opponent is %s (%s).`;
         modelId: p.modelId,
         customInstructions: p.customInstructions ?? null,
         seed: p.seed,
+        reasoningEffort: p.reasoningEffort ?? null,
       })),
     };
     const key = JSON.stringify(details);
@@ -648,8 +695,9 @@ Your opponent is %s (%s).`;
     this.matchupBestOf = preset.matchupBestOf;
     this.finalsBestOf = preset.finalsBestOf;
     this.chatMode = preset.chatMode;
-    // Presets play every game to the end.
+    // Presets play every game to the end, with each model's default reasoning effort.
     this.resignationAllowed = false;
+    this.reasoningEffort = null;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
   }
 

@@ -806,6 +806,156 @@ describe('TournamentSetup', () => {
     expect(fixture.componentInstance.resignationAllowed).toBe(true);
     expect(element.querySelector('#resignation-hint')?.textContent).toContain('10th move');
   });
+
+  it('sends no reasoning effort for the model default and the chosen level otherwise', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Effort Arena';
+
+    expect(component.reasoningEffort).toBeNull();
+    component.create();
+    expect(api.createTournamentPayload).not.toHaveProperty('reasoningEffort');
+
+    component.reasoningEffort = 'low';
+    component.create();
+    expect(api.createTournamentPayload?.['reasoningEffort']).toBe('low');
+  });
+
+  it('offers Model default and every level with a one-line hint', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+
+    expect(component.reasoningEffortOptions.map((option) => option.value)).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(component.reasoningEffortHint).toBe(
+      'Lower effort makes heavy thinkers faster and cheaper; some models think without end at their default',
+    );
+  });
+
+  it('offers a participant only the levels its model supports and sends the override', () => {
+    const api = createApiService();
+    const ember: OpenRouterModelOption = {
+      ...catalogModel('meta/muse-ember', 'Meta: Muse Ember'),
+      reasoningSupported: true,
+      reasoningMandatory: true,
+      reasoningEfforts: ['max', 'xhigh', 'high', 'medium', 'low', 'minimal'],
+      defaultEffort: 'max',
+    };
+    const plain = catalogModel('acme/plain', 'Plain');
+    api.getModels = (() => of({ data: [ember, plain] })) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+    component.name = 'Override Arena';
+    component.reasoningEffort = 'medium';
+
+    component.onModelChanged('meta/muse-ember');
+    expect(component.selectedModelEfforts()).toEqual([
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(component.tournamentEffortOptionLabel()).toBe('Tournament setting (Medium)');
+    component.newReasoningEffort = 'low';
+    component.addParticipant();
+
+    // A model without effort levels gets no override, and a model change resets the choice.
+    component.newReasoningEffort = 'high';
+    component.onModelChanged('acme/plain');
+    expect(component.newReasoningEffort).toBeNull();
+    expect(component.selectedModelEfforts()).toEqual([]);
+    component.addParticipant();
+
+    component.create();
+    const participants = api.createTournamentPayload?.['participants'] as Array<
+      Record<string, unknown>
+    >;
+    expect(participants.map((p) => p['reasoningEffort'])).toEqual(['low', null]);
+    expect(api.createTournamentPayload?.['reasoningEffort']).toBe('medium');
+  });
+
+  it('presets reset the reasoning effort to the model default', () => {
+    const component = new TournamentSetup(
+      createApiService(),
+      createRouter(),
+      createRoute({ preset: 'balanced' }),
+    );
+    component.reasoningEffort = 'max';
+
+    component.ngOnInit();
+
+    expect(component.reasoningEffort).toBeNull();
+  });
+
+  it('renders the tournament select, the participant select and n/a for a model without levels', async () => {
+    const api = createApiService();
+    api.getModels = (() =>
+      of({
+        data: [
+          {
+            ...catalogModel('moonshotai/kimi-k3.1-pro', 'Kimi K3.1 Pro'),
+            reasoningSupported: true,
+            reasoningEfforts: ['max', 'high', 'low', 'none'],
+            defaultEffort: 'max',
+          },
+          catalogModel('acme/plain', 'Plain'),
+        ],
+      })) as any;
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: api },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    const settle = async () => {
+      // Plain fields changed from the test, as a user event would, mark the view for checking.
+      fixture.componentRef.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    await settle();
+    const element: HTMLElement = fixture.nativeElement;
+
+    expect(element.querySelector('.reasoning-effort-field mat-label')?.textContent?.trim()).toBe(
+      'Reasoning effort',
+    );
+    expect(
+      element.querySelector('.reasoning-effort-field .mat-mdc-select-value')?.textContent?.trim(),
+    ).toBe('Model default');
+    expect(element.querySelector('.reasoning-effort-hint')?.textContent).toContain(
+      'some models think without end at their default',
+    );
+    expect(element.querySelector('.participant-effort')).toBeNull();
+
+    fixture.componentInstance.onModelChanged('moonshotai/kimi-k3.1-pro');
+    await settle();
+    expect(element.querySelector('.participant-effort-field mat-label')?.textContent?.trim()).toBe(
+      'Reasoning effort for this participant',
+    );
+    expect(
+      element.querySelector('.participant-effort-field .mat-mdc-select-value')?.textContent?.trim(),
+    ).toBe('Tournament setting (model default)');
+    expect(element.querySelector('.model-details')?.textContent).toContain('Default effort');
+
+    fixture.componentInstance.onModelChanged('acme/plain');
+    await settle();
+    expect(element.querySelector('.participant-effort-field')).toBeNull();
+    expect(element.querySelector('.participant-effort-na')?.textContent?.trim()).toBe(
+      'Reasoning effort: n/a (this model offers no effort levels)',
+    );
+  });
 });
 
 type FakeTournamentSetupApi = ApiService & {

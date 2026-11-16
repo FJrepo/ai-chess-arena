@@ -21,6 +21,8 @@ export interface OpenRouterModelOption {
   /** Artificial Analysis Intelligence Index, as published in the OpenRouter catalog. */
   intelligenceIndex?: number | null;
   description?: string | null;
+  /** The reasoning effort the model uses when none is sent (e.g. "max"); absent before 1.4. */
+  defaultEffort?: string | null;
 }
 
 export interface OpenRouterModelsResponse {

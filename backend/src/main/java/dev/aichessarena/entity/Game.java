@@ -109,6 +109,19 @@ public class Game extends PanacheEntityBase {
     @OrderBy("createdAt ASC")
     public List<ChatMessage> chatMessages = new ArrayList<>();
 
+    /**
+     * The reasoning effort a side asks for: its participant's override, else the tournament's; null for the model
+     * default, a human side and a game outside a tournament. Read anew every turn, so a change applies from the next.
+     */
+    public ReasoningEffort requestedReasoningEffort(String color) {
+        TournamentParticipant participant = "WHITE".equals(color) ? whiteParticipant : blackParticipant;
+        if (participant != null) {
+            return participant.controlType == TournamentParticipant.ControlType.HUMAN
+                    ? null : participant.effectiveReasoningEffort();
+        }
+        return tournament != null ? tournament.reasoningEffort : null;
+    }
+
     public enum GameStatus {
         WAITING, IN_PROGRESS, PAUSED, COMPLETED, FORFEIT
     }

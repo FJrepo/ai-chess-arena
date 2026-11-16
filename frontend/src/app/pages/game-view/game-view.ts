@@ -28,7 +28,11 @@ import {
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
-import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
+import {
+  GameInfoBar,
+  RaiseLimitRequest,
+  TruncationEffortChoice,
+} from '../../components/game-info-bar/game-info-bar';
 import { Subscription, switchMap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
@@ -49,6 +53,12 @@ import {
   plyKey,
   summarizeAttempts,
 } from '../../utils/move-attempts';
+import {
+  REASONING_EFFORTS,
+  ReasoningEffort,
+  isReasoningEffort,
+  supportedEfforts,
+} from '../../utils/reasoning-effort';
 
 type TimelineEvent = {
   id: string;
@@ -117,22 +127,60 @@ export class GameView implements OnInit, OnDestroy {
   tournamentMaxOutputTokens = signal<number | null>(null);
   /** The tournament's chat mode, once loaded (shown in the chat panel). */
   tournamentChatMode = signal<ChatMode | null>(null);
+  /** The tournament's reasoning effort, once loaded; null for each model's default. */
+  tournamentReasoningEffort = signal<ReasoningEffort | null>(null);
+  /**
+   * The effort levels of models looked up for the pause banner, by model id: the model's levels (empty when it
+   * offers none), or null when the catalog could not tell (then every level is offered).
+   */
+  modelEfforts = signal<Record<string, ReasoningEffort[] | null>>({});
   savingLimit = signal(false);
   /**
-   * The current output-token limit when the game is paused because the latest answer for the ply to be
-   * played was cut off at it (outcome TRUNCATED); null otherwise.
+   * The side whose latest answer for the ply to be played was cut off at the output-token limit (outcome
+   * TRUNCATED) while the game is paused; null otherwise.
    */
-  truncationPauseLimit = computed<number | null>(() => {
+  truncatedSide = computed<'WHITE' | 'BLACK' | null>(() => {
     const game = this.game();
     if (!game || game.status !== 'PAUSED' || !game.statusDetail || !game.tournamentId) {
       return null;
     }
     const ply = nextPly(this.moves());
     const latest = latestAttemptFor(this.attempts(), ply.moveNumber, ply.color);
-    if (latest?.outcome !== 'TRUNCATED') {
+    return latest?.outcome === 'TRUNCATED' ? ply.color : null;
+  });
+  /** The current output-token limit when the game is paused by a cut-off answer; null otherwise. */
+  truncationPauseLimit = computed<number | null>(() =>
+    this.truncatedSide() ? (this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS) : null,
+  );
+  /**
+   * The cut-off side's reasoning effort for the pause banner: its participant, the level it asks for and the
+   * levels its model offers (every level until, or unless, the catalog tells). Null without a cut-off answer,
+   * for a side without a participant and for a human side.
+   */
+  truncationEffort = computed<TruncationEffortChoice | null>(() => {
+    const side = this.truncatedSide();
+    const game = this.game();
+    if (!side || !game) {
       return null;
     }
-    return this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS;
+    const white = side === 'WHITE';
+    const participantId = white ? game.whiteParticipantId : game.blackParticipantId;
+    const controlType = white ? game.whiteControlType : game.blackControlType;
+    if (!participantId || controlType === 'HUMAN') {
+      return null;
+    }
+    const modelId = white ? game.whiteModelId : game.blackModelId;
+    const known = modelId ? this.modelEfforts()[modelId] : undefined;
+    const current = white ? game.whiteReasoningEffort : game.blackReasoningEffort;
+    return {
+      participantId,
+      playerName:
+        (white ? game.whitePlayerName : game.blackPlayerName) || (white ? 'White' : 'Black'),
+      current: current ?? null,
+      tournamentLevel: this.tournamentReasoningEffort(),
+      options: known ?? [...REASONING_EFFORTS],
+      fromCatalog: known != null,
+    };
   });
   currentMoveIndex = signal(-1);
   flipped = signal(false);
@@ -467,6 +515,9 @@ export class GameView implements OnInit, OnDestroy {
               this.tournamentChatMode.set(
                 tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
               );
+              this.tournamentReasoningEffort.set(
+                isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
+              );
             },
             // Limit unknown: only a deadline sent by the server shows a countdown.
             error: () => this.turnState.moveTimeoutSeconds.set(null),
@@ -544,6 +595,7 @@ export class GameView implements OnInit, OnDestroy {
       next: (attempts) => {
         if (generation === this.attemptsGeneration) {
           this.attempts.set(attempts);
+          this.lookUpTruncatedModelEfforts();
         }
       },
       // The feed falls back to the retry counts stored with each move.
@@ -812,19 +864,74 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
-  /** Saves a raised output-token limit for the game's tournament, then resumes the game. */
-  saveLimitAndResume(maxOutputTokens: number) {
+  /**
+   * Looks up the levels of the cut-off side's model in the catalog once, so the pause banner offers only those.
+   * Until it answers, and if it fails, every level is offered (the backend maps to the nearest supported one).
+   */
+  private lookUpTruncatedModelEfforts(): void {
+    const side = this.truncatedSide();
+    const game = this.game();
+    const modelId =
+      side && game ? (side === 'WHITE' ? game.whiteModelId : game.blackModelId) : null;
+    if (!modelId || modelId in this.modelEfforts()) {
+      return;
+    }
+    this.modelEfforts.update((known) => ({ ...known, [modelId]: null }));
+    this.api.getModels({ featuredOnly: false, q: modelId, limit: 0 }).subscribe({
+      next: (response) => {
+        const model = (response.data ?? []).find((option) => option.id === modelId);
+        if (model) {
+          this.modelEfforts.update((known) => ({ ...known, [modelId]: supportedEfforts(model) }));
+        }
+      },
+      // Unknown: every level stays on offer.
+      error: () => undefined,
+    });
+  }
+
+  /** The pause banner's "Save and resume": the limit, and the cut-off side's reasoning effort when offered. */
+  saveTruncationFixAndResume(request: RaiseLimitRequest) {
+    this.saveLimitAndResume(request.maxOutputTokens, request.reasoningEffort);
+  }
+
+  /**
+   * Saves a raised output-token limit for the game's tournament and, unless `reasoningEffort` is undefined, the
+   * cut-off side's reasoning-effort override (null follows the tournament's), then resumes the game.
+   */
+  saveLimitAndResume(maxOutputTokens: number, reasoningEffort?: ReasoningEffort | null) {
     const tournamentId = this.game()?.tournamentId;
     if (!tournamentId || this.savingLimit()) {
       return;
     }
+    const effortChoice = reasoningEffort === undefined ? null : this.truncationEffort();
+    const side = this.truncatedSide();
     this.savingLimit.set(true);
     this.api
       .updateTournament(tournamentId, { maxOutputTokens })
       .pipe(
         switchMap((tournament) => {
           this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens);
-          return this.api.startGame(this.gameId);
+          if (!effortChoice || !side) {
+            return this.api.startGame(this.gameId);
+          }
+          return this.api
+            .updateParticipant(tournamentId, effortChoice.participantId, {
+              reasoningEffort: reasoningEffort ?? null,
+            })
+            .pipe(
+              switchMap((participant) => {
+                // Shown next to the model name at once; the next reload confirms it.
+                const asked = participant?.reasoningEffort ?? effortChoice.tournamentLevel;
+                this.game.update((game) =>
+                  game
+                    ? side === 'WHITE'
+                      ? { ...game, whiteReasoningEffort: asked }
+                      : { ...game, blackReasoningEffort: asked }
+                    : game,
+                );
+                return this.api.startGame(this.gameId);
+              }),
+            );
         }),
       )
       .subscribe({

@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
@@ -81,6 +82,9 @@ public class GameTurnService {
         int turnStart = request.history().size();
         request.history().add(new OpenRouterService.ChatMsg("user", turnPrompt));
 
+        // Decided once per turn and before the move time starts: the catalog lookup must not eat the model's time.
+        ReasoningEffort effort = openRouterService.resolveReasoningEffort(request.modelId(), request.reasoningEffort());
+
         // Without a move time limit there is no turn deadline; each request is still bounded by the OpenRouter
         // safety cap, which is a provider problem when reached, never the model's timeout.
         // One absolute deadline on the monotonic clock is enforced for the whole turn; every attempt gets exactly the
@@ -121,14 +125,15 @@ public class GameTurnService {
                     request.modelId(),
                     ConversationWindow.trim(request.history(), turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES),
                     turnDeadline,
-                    request.maxOutputTokens()
+                    request.maxOutputTokens(),
+                    effort
             );
 
             if (llmResponse.isProviderFailure()) {
-                String detail = llmResponse.errorMessage();
+                String detail = withReasoningEffortHint(llmResponse, effort, request);
                 LOG.warnf("Game %s: OpenRouter failure for %s (%s): %s",
                         request.gameId(), request.modelId(), llmResponse.outcome(), detail);
-                recordAttempt(request, attempt,
+                recordAttempt(request, effort, attempt,
                         llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
                                 ? Outcome.PROVIDER_FATAL : Outcome.PROVIDER_RETRYABLE,
                         null, detail, llmResponse);
@@ -154,7 +159,7 @@ public class GameTurnService {
             }
 
             if (llmResponse.timedOut()) {
-                recordAttempt(request, attempt, Outcome.TIMEOUT, null, "No answer within the move time", llmResponse);
+                recordAttempt(request, effort, attempt, Outcome.TIMEOUT, null, "No answer within the move time", llmResponse);
                 if (lastProviderFailure != null) {
                     // Outages earlier in this turn ate part of the move time; don't score that as a model timeout.
                     return pauseForProvider(request,
@@ -172,10 +177,10 @@ public class GameTurnService {
 
             if (llmResponse.content() == null) {
                 if (llmResponse.truncated()) {
-                    return pauseForTruncation(request, attempt, null, llmResponse);
+                    return pauseForTruncation(request, effort, attempt, null, llmResponse);
                 }
                 LOG.errorf("Game %s: null response from %s", request.gameId(), request.modelId());
-                recordAttempt(request, attempt, Outcome.EMPTY_RESPONSE, null, "Model returned an empty response", llmResponse);
+                recordAttempt(request, effort, attempt, Outcome.EMPTY_RESPONSE, null, "Model returned an empty response", llmResponse);
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Model returned an empty response",
                         Outcome.EMPTY_RESPONSE, null);
                 if (attempt < request.maxRetries()) {
@@ -196,11 +201,11 @@ public class GameTurnService {
             ResponseParserService.ParseResult parseResult = responseParserService.parse(llmResponse.content());
             if (parseResult.isFailure()) {
                 if (llmResponse.truncated()) {
-                    return pauseForTruncation(request, attempt, null, llmResponse);
+                    return pauseForTruncation(request, effort, attempt, null, llmResponse);
                 }
                 LOG.warnf("Game %s: parse failure from %s: %s",
                         request.gameId(), request.modelId(), parseResult.message());
-                recordAttempt(request, attempt, Outcome.PARSE_FAILURE, null, parseResult.message(), llmResponse);
+                recordAttempt(request, effort, attempt, Outcome.PARSE_FAILURE, null, parseResult.message(), llmResponse);
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Failed to parse response as JSON",
                         Outcome.PARSE_FAILURE, null);
                 if (attempt < request.maxRetries()) {
@@ -222,17 +227,17 @@ public class GameTurnService {
             if (parseResult.resign()) {
                 if (mayResign(request)) {
                     // Resign wins: a move sent along is ignored.
-                    return resign(request, attempt, parseResult, llmResponse);
+                    return resign(request, effort, attempt, parseResult, llmResponse);
                 }
                 if (parseResult.move() == null) {
                     if (llmResponse.truncated()) {
-                        return pauseForTruncation(request, attempt, null, llmResponse);
+                        return pauseForTruncation(request, effort, attempt, null, llmResponse);
                     }
                     // Not allowed and nothing else to play: an invalid answer like an illegal move.
                     String error = promptService.getResignationNotAllowedError(request.resignationAllowed());
                     LOG.warnf("Game %s: %s tried to resign at move %d: %s",
                             request.gameId(), request.modelId(), request.moveNumber(), error);
-                    recordAttempt(request, attempt, Outcome.RESIGN_NOT_ALLOWED, null, error, llmResponse);
+                    recordAttempt(request, effort, attempt, Outcome.RESIGN_NOT_ALLOWED, null, error, llmResponse);
                     broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Tried to resign: " + error,
                             Outcome.RESIGN_NOT_ALLOWED, null);
                     if (attempt < request.maxRetries()) {
@@ -257,11 +262,11 @@ public class GameTurnService {
             ChessService.ValidMoveResult moveResult = chessService.validateAndApply(request.board(), parseResult.move());
             if (!moveResult.valid()) {
                 if (llmResponse.truncated()) {
-                    return pauseForTruncation(request, attempt, parseResult.move(), llmResponse);
+                    return pauseForTruncation(request, effort, attempt, parseResult.move(), llmResponse);
                 }
                 LOG.warnf("Game %s: illegal move '%s' from %s: %s",
                         request.gameId(), parseResult.move(), request.modelId(), moveResult.error());
-                recordAttempt(request, attempt, Outcome.ILLEGAL_MOVE, parseResult.move(), moveResult.error(), llmResponse);
+                recordAttempt(request, effort, attempt, Outcome.ILLEGAL_MOVE, parseResult.move(), moveResult.error(), llmResponse);
                 broadcastRetry(
                         request.gameId(),
                         request.sideToMove(),
@@ -314,10 +319,10 @@ public class GameTurnService {
                 LOG.warnf("Game %s: discarding %s move %s: %s",
                         request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
                 // The move transaction has rolled back; keep the paid answer and its cost (added once, here).
-                recordAttempt(request, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
+                recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
                 return TurnResult.stopped();
             }
-            recordAttempt(request, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
+            recordAttempt(request, effort, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
             return TurnResult.recorded(parseResult.move(), message);
         }
 
@@ -335,7 +340,7 @@ public class GameTurnService {
      * with chat OFF). The answer is recorded as RESIGNED, with any move sent along as the ignored proposal; if the game
      * changed meanwhile it is recorded as DISCARDED instead, like a move that could not be played.
      */
-    private TurnResult resign(TurnRequest request, int attempt, ResponseParserService.ParseResult parseResult,
+    private TurnResult resign(TurnRequest request, ReasoningEffort effort, int attempt, ResponseParserService.ParseResult parseResult,
                               OpenRouterService.LlmResponse llmResponse) {
         request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
         ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
@@ -354,34 +359,55 @@ public class GameTurnService {
             ));
         } catch (GameStateConflictException e) {
             LOG.warnf("Game %s: discarding %s resignation: %s", request.gameId(), request.sideToMove(), e.getMessage());
-            recordAttempt(request, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
+            recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
             return TurnResult.stopped();
         }
-        recordAttempt(request, attempt, Outcome.RESIGNED, parseResult.move(), null, llmResponse);
+        recordAttempt(request, effort, attempt, Outcome.RESIGNED, parseResult.move(), null, llmResponse);
         return TurnResult.terminal();
     }
 
-    private TurnResult pauseForTruncation(TurnRequest request, int attempt, String proposedMove,
-                                          OpenRouterService.LlmResponse response) {
-        String reasoning = response.reasoningTokens() != null && response.reasoningTokens() > 0
-                ? " (%d of them reasoning)".formatted(response.reasoningTokens())
-                : "";
-        // Shown as-is (a full sentence) above the raise-limit field; the API route is documented in the README only.
-        String detail = "%s's answer was cut off at the %d-token output limit%s. Raise the limit and resume."
+    private TurnResult pauseForTruncation(TurnRequest request, ReasoningEffort effort, int attempt,
+                                          String proposedMove, OpenRouterService.LlmResponse response) {
+        boolean reasoned = response.reasoningTokens() != null && response.reasoningTokens() > 0;
+        String reasoning = reasoned ? " (%d of them reasoning)".formatted(response.reasoningTokens()) : "";
+        // Shown as-is (a full sentence) above the raise-limit and reasoning-effort fields; the API routes are
+        // documented in the README only. A model that spent the answer thinking is better helped by less effort.
+        String remedy = reasoned ? "Raise the limit or lower the reasoning effort and resume."
+                : "Raise the limit and resume.";
+        String detail = "%s's answer was cut off at the %d-token output limit%s. %s"
                 .formatted(request.playerName() != null ? request.playerName() : request.modelId(),
-                        request.maxOutputTokens(), reasoning);
+                        request.maxOutputTokens(), reasoning, remedy);
         LOG.warnf("Game %s: %s", request.gameId(), detail);
-        recordAttempt(request, attempt, Outcome.TRUNCATED, proposedMove, detail, response);
+        recordAttempt(request, effort, attempt, Outcome.TRUNCATED, proposedMove, detail, response);
         gameLifecycleService.pauseWithReason(request.gameId(), detail);
         return TurnResult.paused();
     }
 
-    private void recordAttempt(TurnRequest request, int attempt, Outcome outcome, String proposedMove,
-                               String errorMessage, OpenRouterService.LlmResponse response) {
+    /**
+     * A provider failure's message, with a hint when OpenRouter rejected a request that carried a reasoning effort as
+     * invalid (HTTP 400 or 422): the level is a likely cause and can be changed for this participant before resuming.
+     */
+    static String withReasoningEffortHint(OpenRouterService.LlmResponse response, ReasoningEffort effort,
+                                          TurnRequest request) {
+        String detail = response.errorMessage();
+        int status = response.httpStatus();
+        boolean rejected = status == 400 || status == 422;
+        if (effort == null || !rejected) {
+            return detail;
+        }
+        String player = request.playerName() != null ? request.playerName() : request.modelId();
+        String base = detail == null ? "OpenRouter rejected the request" : detail.replaceAll("[.\\s]+$", "");
+        return ("%s. The request asked for reasoning effort \"%s\"; if the model does not accept it, choose another "
+                + "level for %s (or Model default for the tournament) and resume.")
+                .formatted(base, effort.apiValue(), player);
+    }
+
+    private void recordAttempt(TurnRequest request, ReasoningEffort effort, int attempt, Outcome outcome,
+                               String proposedMove, String errorMessage, OpenRouterService.LlmResponse response) {
         try {
             moveAttemptService.record(new MoveAttemptService.AttemptRecord(
                     request.gameId(), request.moveNumber(), request.sideToMove(), attempt, request.modelId(),
-                    outcome, proposedMove, errorMessage, response));
+                    outcome, proposedMove, errorMessage, response, effort));
         } catch (RuntimeException e) {
             // The attempt is committed in its own transaction; a failed commit must not interrupt the game.
             LOG.warnf(e, "Game %s: could not record %s attempt", request.gameId(), outcome);
@@ -488,8 +514,25 @@ public class GameTurnService {
             ChatMode tournamentChatMode,
             // Whether this side's prompt offers resignation (see GameConversationService.PromptContext); it may resign
             // from move Tournament.MIN_RESIGNATION_MOVE on.
-            boolean resignationAllowed
+            boolean resignationAllowed,
+            // The reasoning effort this side asks for (participant override, else the tournament's); null for the
+            // model default. playTurn maps it to a level the model supports before sending it.
+            ReasoningEffort reasoningEffort
     ) {
+        /** A request without a reasoning effort (the model's default). */
+        public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
+                           List<String> legalMoves, String modelId, String playerName, String opponentName,
+                           List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
+                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
+                           int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode,
+                           boolean resignationAllowed) {
+            this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
+                    resignationAllowed, null);
+        }
+
         /** A request for a game without resignation. */
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
@@ -499,7 +542,8 @@ public class GameTurnService {
                            int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode) {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
                     history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
-                    promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode, false);
+                    promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode, false,
+                    null);
         }
     }
 

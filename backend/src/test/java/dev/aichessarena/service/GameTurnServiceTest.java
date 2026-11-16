@@ -9,6 +9,7 @@ import com.github.bhlangonijr.chesslib.Board;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
 import dev.aichessarena.service.OpenRouterService.ProviderOutcome;
@@ -200,7 +201,8 @@ class GameTurnServiceTest {
 
         assertTrue(result.pausedGame());
         assertTrue(fixture.lifecycle.pauseDetail.endsWith(
-                "answer was cut off at the 2048-token output limit (1800 of them reasoning). Raise the limit and resume."),
+                "answer was cut off at the 2048-token output limit (1800 of them reasoning). Raise the limit or "
+                        + "lower the reasoning effort and resume."),
                 fixture.lifecycle.pauseDetail);
         assertFalse(fixture.lifecycle.pauseDetail.endsWith(".."), fixture.lifecycle.pauseDetail);
         // User-facing: no API route, field name or pointer to the page the user is already on.
@@ -712,6 +714,81 @@ class GameTurnServiceTest {
                 ProviderOutcome.OK, 200, "length", reasoningTokens);
     }
 
+    @Test
+    void theRequestedEffortIsSentAndRecordedOnEveryAttempt() {
+        Fixture fixture = new Fixture(
+                new LlmResponse("{\"move\":\"Ke2\"}", 10, 6, null, 400, "{}", false, null),
+                VALID_MOVE);
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                withEffort(request(new ArrayList<>(), 3, 30), ReasoningEffort.LOW));
+
+        assertTrue(result.moveRecorded());
+        assertEquals(List.of(ReasoningEffort.LOW, ReasoningEffort.LOW), fixture.openRouter.efforts);
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.ACCEPTED), fixture.attempts.outcomes());
+        assertEquals(List.of(ReasoningEffort.LOW, ReasoningEffort.LOW),
+                fixture.attempts.recorded.stream().map(MoveAttemptService.AttemptRecord::reasoningEffort).toList());
+    }
+
+    @Test
+    void theEffortSentIsTheMappedOneAndNoneIsRecordedWithoutALevel() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+        fixture.openRouter.effortMapping = requested -> requested == ReasoningEffort.MEDIUM ? ReasoningEffort.LOW : null;
+
+        fixture.service.playTurn(withEffort(request(new ArrayList<>(), 3, 30), ReasoningEffort.MEDIUM));
+        fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+
+        assertEquals(java.util.Arrays.asList(ReasoningEffort.LOW, null), fixture.openRouter.efforts);
+        assertEquals(java.util.Arrays.asList(ReasoningEffort.LOW, null),
+                fixture.attempts.recorded.stream().map(MoveAttemptService.AttemptRecord::reasoningEffort).toList());
+    }
+
+    @Test
+    void aRejectedRequestWithAnEffortPausesWithAHintToChangeIt() {
+        Fixture fixture = new Fixture(failure(ProviderOutcome.FATAL, 400,
+                "OpenRouter rejected the request (HTTP 400): Invalid reasoning effort"));
+
+        GameTurnService.TurnResult result = fixture.service.playTurn(
+                withEffort(request(new ArrayList<>(), 3, 30), ReasoningEffort.MINIMAL));
+
+        assertTrue(result.pausedGame());
+        assertEquals("OpenRouter rejected the request (HTTP 400): Invalid reasoning effort. The request asked for "
+                + "reasoning effort \"minimal\"; if the model does not accept it, choose another level for Model A "
+                + "(or Model default for the tournament) and resume.", fixture.lifecycle.pauseDetail);
+        assertEquals(List.of(Outcome.PROVIDER_FATAL), fixture.attempts.outcomes());
+        assertEquals(ReasoningEffort.MINIMAL, fixture.attempts.recorded.getFirst().reasoningEffort());
+    }
+
+    @Test
+    void otherFailuresAndRequestsWithoutAnEffortKeepTheirMessage() {
+        Fixture withoutEffort = new Fixture(failure(ProviderOutcome.FATAL, 400, "OpenRouter rejected the request (HTTP 400)"));
+        withoutEffort.service.playTurn(request(new ArrayList<>(), 3, 30));
+        assertEquals("OpenRouter rejected the request (HTTP 400)", withoutEffort.lifecycle.pauseDetail);
+
+        Fixture keyProblem = new Fixture(failure(ProviderOutcome.FATAL, 401, "OpenRouter rejected the API key (HTTP 401)"));
+        keyProblem.service.playTurn(withEffort(request(new ArrayList<>(), 3, 30), ReasoningEffort.LOW));
+        assertEquals("OpenRouter rejected the API key (HTTP 401)", keyProblem.lifecycle.pauseDetail);
+    }
+
+    @Test
+    void aCutOffAnswerWithoutReasoningOnlySuggestsRaisingTheLimit() {
+        Fixture fixture = new Fixture(truncated(null, 0));
+
+        fixture.service.playTurn(request(new ArrayList<>(), 1, 30));
+
+        assertTrue(fixture.lifecycle.pauseDetail.endsWith(
+                "answer was cut off at the 2048-token output limit. Raise the limit and resume."),
+                fixture.lifecycle.pauseDetail);
+    }
+
+    private static GameTurnService.TurnRequest withEffort(GameTurnService.TurnRequest r, ReasoningEffort effort) {
+        return new GameTurnService.TurnRequest(r.gameId(), r.pgn(), r.fen(), r.board(), r.sideToMove(), r.moveNumber(),
+                r.legalMoves(), r.modelId(), r.playerName(), r.opponentName(), r.history(), r.lastMoveSan(),
+                r.lastMessage(), r.isFirstMove(), r.maxRetries(), r.moveTimeoutSeconds(), r.promptVersion(),
+                r.promptHash(), r.totalCostUsd(), r.shouldContinue(), r.maxOutputTokens(), r.chatMode(),
+                r.tournamentChatMode(), r.resignationAllowed(), effort);
+    }
+
     private static LlmResponse failure(ProviderOutcome outcome, int status, String detail) {
         return LlmResponse.providerFailure(outcome, status, detail, 5, null);
     }
@@ -841,6 +918,10 @@ class GameTurnServiceTest {
         }
 
         private final List<Integer> maxOutputTokens = new ArrayList<>();
+        /** The reasoning effort of every call. */
+        private final List<ReasoningEffort> efforts = new ArrayList<>();
+        /** Stands in for the catalog lookup; by default every level is sent as requested. */
+        private java.util.function.UnaryOperator<ReasoningEffort> effortMapping = requested -> requested;
         private final List<List<ChatMsg>> sentMessages = new ArrayList<>();
         private final List<AnswerDeadline> answerDeadlines = new ArrayList<>();
         /** Time left until the deadline when each call started, in ms (null without a deadline). */
@@ -853,15 +934,21 @@ class GameTurnServiceTest {
         private final long[] clockNanos = {1_000_000_000L};
 
         @Override
+        public ReasoningEffort resolveReasoningEffort(String modelId, ReasoningEffort requested) {
+            return requested == null ? null : effortMapping.apply(requested);
+        }
+
+        @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout) {
             throw new AssertionError("The game must pass the tournament's output-token limit");
         }
 
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
-                                int maxOutputTokens) {
+                                int maxOutputTokens, ReasoningEffort reasoningEffort) {
             calls++;
             this.maxOutputTokens.add(maxOutputTokens);
+            efforts.add(reasoningEffort);
             sentMessages.add(List.copyOf(messages));
             answerDeadlines.add(answerDeadline);
             Long remainingMs = answerDeadline == null

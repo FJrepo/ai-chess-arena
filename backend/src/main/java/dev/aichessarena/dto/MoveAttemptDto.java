@@ -19,5 +19,7 @@ public record MoveAttemptDto(
         Long responseTimeMs,
         String finishReason,
         String errorMessage,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        // The reasoning effort sent with this attempt (lower case); null when none was sent.
+        String reasoningEffort
 ) {}

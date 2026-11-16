@@ -6,11 +6,41 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
 import { Game, GameResignation, SideQuality } from '../../models/tournament.model';
 import { CurrencyPipe } from '@angular/common';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
 import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
 import { qualityCounts, sideQualityTooltip } from '../../utils/move-quality';
+import {
+  ReasoningEffort,
+  reasoningEffortLabel,
+  suggestedLowerEffort,
+} from '../../utils/reasoning-effort';
+
+/**
+ * The reasoning effort of the side whose answer was cut off, for the pause banner: its participant, the level it
+ * asks for now and the levels to offer.
+ */
+export interface TruncationEffortChoice {
+  participantId: string;
+  playerName: string;
+  /** The level the side asks for now (its override, else the tournament's); null for the model default. */
+  current: ReasoningEffort | null;
+  /** The tournament's level, which "Tournament setting" falls back to; null for the model default. */
+  tournamentLevel: ReasoningEffort | null;
+  /** The levels to offer, from least to most; empty when the model offers no effort levels. */
+  options: ReasoningEffort[];
+  /** Whether `options` are the model's own levels (from the catalog) or every level (catalog unavailable). */
+  fromCatalog: boolean;
+}
+
+/** What "Save and resume" asks for: the new limit and, when offered, the participant's new override. */
+export interface RaiseLimitRequest {
+  maxOutputTokens: number;
+  /** Absent when no reasoning-effort choice was offered; null follows the tournament's level. */
+  reasoningEffort?: ReasoningEffort | null;
+}
 
 @Component({
   selector: 'app-game-info-bar',
@@ -22,6 +52,7 @@ import { qualityCounts, sideQualityTooltip } from '../../utils/move-quality';
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
+    MatSelectModule,
     CurrencyPipe,
     ProviderLogoComponent,
   ],
@@ -33,8 +64,8 @@ export class GameInfoBar {
   @Input() retryInfo: string | null = null;
   /** Saving a raised output-token limit is in progress. */
   @Input() saving = false;
-  /** Emits the new output-token limit; the parent saves it and resumes the game. */
-  @Output() raiseLimitAndResume = new EventEmitter<number>();
+  /** Emits the new output-token limit (and reasoning effort); the parent saves them and resumes the game. */
+  @Output() raiseLimitAndResume = new EventEmitter<RaiseLimitRequest>();
 
   /** Reader-facing status label for the chip. */
   readonly statusLabel = gameStatusLabel;
@@ -66,6 +97,54 @@ export class GameInfoBar {
     return this.currentLimit;
   }
 
+  readonly reasoningEffortLabel = reasoningEffortLabel;
+  /** Value of the reasoning-effort select; pre-selects a lower level (low) for the cut-off side. */
+  newReasoningEffort: ReasoningEffort | null = null;
+  private effortChoice: TruncationEffortChoice | null = null;
+
+  /** The cut-off side's reasoning effort to offer next to the limit; null hides the select. */
+  @Input()
+  set truncationEffort(value: TruncationEffortChoice | null) {
+    const previous = this.effortChoice;
+    this.effortChoice = value;
+    const sameChoice =
+      previous != null &&
+      value != null &&
+      previous.participantId === value.participantId &&
+      previous.current === value.current &&
+      previous.options.join() === value.options.join();
+    if (!sameChoice) {
+      this.newReasoningEffort = value ? suggestedLowerEffort(value.current, value.options) : null;
+    }
+  }
+
+  get truncationEffort(): TruncationEffortChoice | null {
+    return this.effortChoice;
+  }
+
+  /** Whether the pause banner offers a reasoning-effort select (the model offers levels). */
+  showEffortSelect(): boolean {
+    return this.showRaiseLimit() && (this.effortChoice?.options.length ?? 0) > 0;
+  }
+
+  /** E.g. "Tournament setting (Low)" or "Tournament setting (model default)". */
+  tournamentEffortOptionLabel(): string {
+    const level = this.effortChoice?.tournamentLevel;
+    return `Tournament setting (${level ? reasoningEffortLabel(level) : 'model default'})`;
+  }
+
+  /** One line under the select: the current level and what the choice does. */
+  effortHint(): string {
+    const choice = this.effortChoice;
+    if (!choice) {
+      return '';
+    }
+    const current = choice.current ? reasoningEffortLabel(choice.current) : 'model default';
+    return choice.fromCatalog
+      ? `Currently ${current}; saved for ${choice.playerName} from the next turn`
+      : `Currently ${current}; sent as the nearest level the model supports`;
+  }
+
   /** A side's move-quality summary once at least one of its moves has been judged; null before. */
   sideQuality(color: 'WHITE' | 'BLACK'): SideQuality | null {
     const summary = this.game?.qualitySummary;
@@ -92,9 +171,21 @@ export class GameInfoBar {
   }
 
   saveAndResume(): void {
-    if (this.canSaveLimit()) {
-      this.raiseLimitAndResume.emit(this.newMaxOutputTokens!);
+    if (!this.canSaveLimit()) {
+      return;
     }
+    const request: RaiseLimitRequest = { maxOutputTokens: this.newMaxOutputTokens! };
+    if (this.showEffortSelect()) {
+      request.reasoningEffort = this.newReasoningEffort;
+    }
+    this.raiseLimitAndResume.emit(request);
+  }
+
+  /** The reasoning effort a side asks for, e.g. "low"; null for the model default and human sides. */
+  sideEffort(color: 'WHITE' | 'BLACK'): ReasoningEffort | null {
+    const effort =
+      color === 'WHITE' ? this.game?.whiteReasoningEffort : this.game?.blackReasoningEffort;
+    return effort ?? null;
   }
 
   getStatusColor(): string {

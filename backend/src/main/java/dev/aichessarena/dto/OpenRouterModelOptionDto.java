@@ -11,6 +11,7 @@ import java.util.List;
  * @param reasoningMandatory null when the catalog does not say
  * @param intelligenceIndex Artificial Analysis Intelligence Index as published in the OpenRouter catalog
  * @param description trimmed to about 400 characters, cut at a word boundary
+ * @param defaultEffort the reasoning effort the model uses when none is sent ({@code reasoning.default_effort})
  */
 public record OpenRouterModelOptionDto(
         String id,
@@ -27,5 +28,6 @@ public record OpenRouterModelOptionDto(
         Boolean reasoningMandatory,
         List<String> reasoningEfforts,
         Double intelligenceIndex,
-        String description
+        String description,
+        String defaultEffort
 ) {}
