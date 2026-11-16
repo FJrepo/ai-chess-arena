@@ -1221,6 +1221,85 @@ describe('GameView resignation', () => {
     }
   });
 
+  it('applies a pause announced before the first snapshot when the snapshot is older', () => {
+    vi.useFakeTimers();
+    try {
+      const { component, gameLoad, messages, getGame } = createSpectator();
+      component.ngOnInit();
+
+      // The GET read revision 4; the pause (revision 5) is announced before its response arrives.
+      messages.next({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'PAUSED',
+        detail: 'Rate limited',
+        statusRevision: 5,
+      });
+      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
+
+      expect(component.game()?.status).toBe('PAUSED');
+      expect(component.game()?.statusDetail).toBe('Rate limited');
+      expect(component.game()?.statusRevision).toBe(5);
+
+      // The stored game is read again; a newer snapshot is accepted, an older one would not be.
+      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      gameLoad.next(
+        gameWith({ status: 'PAUSED', statusDetail: 'Rate limited', statusRevision: 5 }),
+      );
+      expect(component.game()?.status).toBe('PAUSED');
+      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS * 3);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      component.ngOnDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('applies a forfeit announced before the first snapshot when the snapshot is older', () => {
+    vi.useFakeTimers();
+    try {
+      const { component, gameLoad, messages, getGame } = createSpectator();
+      component.ngOnInit();
+
+      messages.next({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'FORFEIT',
+        result: 'BLACK_FORFEIT',
+        resultReason: 'TIMEOUT',
+        statusRevision: 5,
+      });
+      messages.next({ type: 'forfeit', gameId: 'g-1' });
+      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
+
+      expect(component.game()?.status).toBe('FORFEIT');
+      expect(component.game()?.result).toBe('BLACK_FORFEIT');
+      expect(component.game()?.resultReason).toBe('TIMEOUT');
+
+      // A retry that still reads the old snapshot keeps the forfeit.
+      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
+      expect(component.game()?.status).toBe('FORFEIT');
+      component.ngOnDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a newer first snapshot over an older status announced before it', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+
+    messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 5 });
+    gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 6 }));
+
+    expect(component.game()?.status).toBe('IN_PROGRESS');
+    expect(getGame).toHaveBeenCalledTimes(1);
+    component.ngOnDestroy();
+  });
+
   it('keeps a live evaluation that a reload does not have yet', () => {
     const { component, gameLoad, messages, getGame } = createSpectator();
     component.ngOnInit();

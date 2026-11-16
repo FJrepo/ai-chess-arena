@@ -445,6 +445,12 @@ export class GameView implements OnInit, OnDestroy {
         if (moves.length) {
           this.currentMoveIndex.set(moves.length - 1);
         }
+        // A status change announced before the first snapshot arrived is newer than the snapshot: the replay
+        // below applies it, and the stored game is read again for the details that only it carries.
+        const announced = highestStatusRevision(this.bufferedLiveMessages);
+        if (announced != null && (game.statusRevision == null || announced > game.statusRevision)) {
+          this.scheduleStaleReload();
+        }
         this.replayBufferedLiveMessages();
         this.loadAttempts();
 
@@ -504,11 +510,7 @@ export class GameView implements OnInit, OnDestroy {
       }
       return loaded;
     }
-    if (this.staleReloads < GameView.MAX_STALE_RELOADS) {
-      this.staleReloads++;
-      clearTimeout(this.staleReloadTimer);
-      this.staleReloadTimer = setTimeout(() => this.loadGame(), GameView.STALE_RELOAD_DELAY_MS);
-    }
+    this.scheduleStaleReload();
     return {
       ...loaded,
       status: previous.status,
@@ -518,6 +520,15 @@ export class GameView implements OnInit, OnDestroy {
       completedAt: previous.completedAt ?? loaded.completedAt,
       statusRevision: previous.statusRevision ?? known ?? loaded.statusRevision,
     };
+  }
+
+  /** Reads the game again a little later, at most {@link GameView.MAX_STALE_RELOADS} times in a row. */
+  private scheduleStaleReload() {
+    if (this.staleReloads < GameView.MAX_STALE_RELOADS) {
+      this.staleReloads++;
+      clearTimeout(this.staleReloadTimer);
+      this.staleReloadTimer = setTimeout(() => this.loadGame(), GameView.STALE_RELOAD_DELAY_MS);
+    }
   }
 
   /**
@@ -558,6 +569,16 @@ export class GameView implements OnInit, OnDestroy {
   handleWsMessage(msg: WsMessage) {
     if (this.loadInFlight && (msg.type === 'move' || msg.type === 'evaluationUpdate')) {
       // The loaded game replaces the move list; apply these on top of it once it arrives.
+      this.bufferedLiveMessages.push(msg);
+      return;
+    }
+    if (
+      this.loadInFlight &&
+      this.game() === null &&
+      (msg.type === 'gameStatus' || msg.type === 'forfeit')
+    ) {
+      // Before the first snapshot there is no game to apply a status change to. Keep it (with its revision)
+      // and replay it on the snapshot; the revision check then keeps whichever is newer.
       this.bufferedLiveMessages.push(msg);
       return;
     }
@@ -979,6 +1000,17 @@ function keepLiveEvaluations(loaded: Move[], live: Move[]): Move[] {
         }
       : move;
   });
+}
+
+/** The highest status revision among buffered status updates; null when none carries one. */
+function highestStatusRevision(messages: WsMessage[]): number | null {
+  let highest: number | null = null;
+  for (const msg of messages) {
+    if (msg.type === 'gameStatus' && msg.statusRevision != null) {
+      highest = Math.max(highest ?? msg.statusRevision, msg.statusRevision);
+    }
+  }
+  return highest;
 }
 
 function isFinishedStatus(status: Game['status']): boolean {
