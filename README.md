@@ -66,6 +66,7 @@ Everything binds to `127.0.0.1` only. Upgrades, backups, password rotation and t
 - Built for **one operator on localhost**: no authentication, no user accounts. Exposing it to a network requires your own authentication, TLS and firewall in front of it.
 - One human participant per tournament; single elimination only.
 - Not a public chess site, a hosted service, or an engine-research suite.
+- The UI targets desktop browsers (roughly 1280 px wide and up); phones and tablets are not supported.
 
 ## Development
 **Source build with Docker:**
