@@ -1,15 +1,22 @@
 import { MoveAttempt, MoveAttemptOutcome } from '../models/tournament.model';
 
 /**
- * Outcomes that count as a failed model attempt. Provider errors are excluded: they are retried without
- * using up the model's attempts and are not the model's fault.
+ * Outcomes that count as a failed model attempt (the model's own fault). Cut-off answers (a too low
+ * output-token limit), provider errors and discarded legal answers are not failures of the model and must
+ * not feed anything that rates its reliability.
  */
 const FAILED_OUTCOMES: ReadonlySet<MoveAttemptOutcome> = new Set([
   'ILLEGAL_MOVE',
   'PARSE_FAILURE',
   'EMPTY_RESPONSE',
-  'TRUNCATED',
   'TIMEOUT',
+]);
+
+/** Outcomes worth showing in the game feed: model failures plus cut-off and discarded answers. */
+const NOTABLE_OUTCOMES: ReadonlySet<MoveAttemptOutcome> = new Set([
+  ...FAILED_OUTCOMES,
+  'TRUNCATED',
+  'DISCARDED',
 ]);
 
 export function isFailedAttempt(attempt: MoveAttempt): boolean {
@@ -20,11 +27,11 @@ export function plyKey(moveNumber: number, color: 'WHITE' | 'BLACK'): string {
   return `${moveNumber}-${color}`;
 }
 
-/** Failed attempts grouped by ply ({@link plyKey}), in attempt order. */
-export function failedAttemptsByPly(attempts: MoveAttempt[]): Map<string, MoveAttempt[]> {
+/** Attempts worth showing in the feed, grouped by ply ({@link plyKey}), in attempt order. */
+export function notableAttemptsByPly(attempts: MoveAttempt[]): Map<string, MoveAttempt[]> {
   const byPly = new Map<string, MoveAttempt[]>();
   for (const attempt of attempts) {
-    if (!isFailedAttempt(attempt)) {
+    if (!NOTABLE_OUTCOMES.has(attempt.outcome)) {
       continue;
     }
     const key = plyKey(attempt.moveNumber, attempt.color);
@@ -44,25 +51,45 @@ export function describeAttempt(attempt: MoveAttempt): string {
     case 'EMPTY_RESPONSE':
       return 'empty answer';
     case 'TRUNCATED':
-      return 'cut off at the token limit';
+      return 'answer cut off at the token limit';
     case 'TIMEOUT':
       return 'no answer in time';
     case 'PROVIDER_RETRYABLE':
     case 'PROVIDER_FATAL':
       return 'provider error';
+    case 'DISCARDED':
+      return attempt.proposedMove
+        ? `${attempt.proposedMove} discarded (position changed)`
+        : 'answer discarded (position changed)';
     case 'ACCEPTED':
       return attempt.proposedMove ? `played ${attempt.proposedMove}` : 'accepted';
   }
 }
 
-/** E.g. "2 failed attempts: illegal Qxh7, unparseable answer"; null when there are none. */
-export function summarizeFailedAttempts(attempts: MoveAttempt[]): string | null {
+/**
+ * E.g. "2 failed attempts: illegal Qxh7, unparseable answer; answer cut off at the token limit".
+ * Cut-off and discarded answers are listed separately and never counted as failed attempts. Null when there
+ * is nothing to show.
+ */
+export function summarizeAttempts(attempts: MoveAttempt[]): string | null {
+  const parts: string[] = [];
   const failed = attempts.filter(isFailedAttempt);
-  if (failed.length === 0) {
-    return null;
+  if (failed.length > 0) {
+    const noun = failed.length === 1 ? 'failed attempt' : 'failed attempts';
+    parts.push(`${failed.length} ${noun}: ${failed.map(describeAttempt).join(', ')}`);
   }
-  const noun = failed.length === 1 ? 'failed attempt' : 'failed attempts';
-  return `${failed.length} ${noun}: ${failed.map(describeAttempt).join(', ')}`;
+  const truncated = attempts.filter((attempt) => attempt.outcome === 'TRUNCATED').length;
+  if (truncated === 1) {
+    parts.push('answer cut off at the token limit');
+  } else if (truncated > 1) {
+    parts.push(`${truncated} answers cut off at the token limit`);
+  }
+  for (const attempt of attempts) {
+    if (attempt.outcome === 'DISCARDED') {
+      parts.push(describeAttempt(attempt));
+    }
+  }
+  return parts.length > 0 ? parts.join('; ') : null;
 }
 
 /** The ply to be played after {@code moves}: White's first move when there are none. */

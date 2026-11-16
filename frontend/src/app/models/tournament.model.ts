@@ -96,7 +96,8 @@ export type MoveAttemptOutcome =
   | 'TRUNCATED'
   | 'TIMEOUT'
   | 'PROVIDER_RETRYABLE'
-  | 'PROVIDER_FATAL';
+  | 'PROVIDER_FATAL'
+  | 'DISCARDED';
 
 /** One model answer for a ply, including rejected ones (GET /api/games/{id}/attempts). */
 export interface MoveAttempt {

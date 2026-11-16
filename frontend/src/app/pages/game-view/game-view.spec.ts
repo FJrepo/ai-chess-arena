@@ -411,7 +411,7 @@ describe('GameView', () => {
     const move = events.find((event) => event.type === 'move');
     const unplayed = events.find((event) => event.type === 'attempts');
 
-    expect(move?.detail).toBe('Alpha after 2 failed attempts: illegal Qxh7, unparseable answer');
+    expect(move?.detail).toBe('Alpha: 2 failed attempts: illegal Qxh7, unparseable answer');
     expect(unplayed?.label).toBe('Black move 1 not played');
     expect(unplayed?.detail).toBe('Beta: 2 failed attempts: illegal Ke7, empty answer');
   });
@@ -433,8 +433,41 @@ describe('GameView', () => {
     expect(getGameAttempts).toHaveBeenCalledWith('g-1');
     expect(component.attempts()).toHaveLength(1);
     expect(component.feedEvents().find((event) => event.type === 'attempts')?.detail).toBe(
-      'Alpha: 1 failed attempt: cut off at the token limit',
+      'Alpha: answer cut off at the token limit',
     );
+  });
+
+  it('ignores an outdated attempts response that arrives after a newer one', () => {
+    const responses: Array<Subject<MoveAttempt[]>> = [];
+    const { component } = createComponent({
+      api: {
+        getGameAttempts: () => {
+          const response = new Subject<MoveAttempt[]>();
+          responses.push(response);
+          return response;
+        },
+      },
+    });
+    (component as any).gameId = 'g-1';
+    component.tournamentMaxOutputTokens.set(4096);
+    component.game.set(gameFixture({ tournamentId: 't-1', status: 'IN_PROGRESS' }));
+
+    // Initial load, then a pause event triggers a second request.
+    component.loadAttempts();
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail: 'Answer cut off',
+    });
+    expect(responses).toHaveLength(2);
+
+    // They complete in reverse order: the newer one (with the cut-off answer) first.
+    responses[1].next([attemptFixture({ outcome: 'TRUNCATED' })]);
+    responses[0].next([]);
+
+    expect(component.attempts().map((attempt) => attempt.outcome)).toEqual(['TRUNCATED']);
+    expect(component.truncationPauseLimit()).toBe(4096);
   });
 
   it('names the rejected move in the live retry text', () => {

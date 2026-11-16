@@ -248,6 +248,8 @@ public class GameTurnService {
             } catch (GameStateConflictException e) {
                 LOG.warnf("Game %s: discarding %s move %s: %s",
                         request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
+                // The move transaction has rolled back; keep the paid answer and its cost (added once, here).
+                recordAttempt(request, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
                 return TurnResult.stopped();
             }
             recordAttempt(request, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);

@@ -24,3 +24,8 @@ CREATE TABLE IF NOT EXISTS move_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_move_attempts_game_ply ON move_attempts (game_id, move_number, color);
+
+-- Game totals now also add rejected answers, which are often fractions of a cent: keep the same precision as
+-- move_attempts.cost_usd so small charges are not rounded away.
+ALTER TABLE games
+    ALTER COLUMN total_cost_usd TYPE NUMERIC(12, 8);

@@ -31,11 +31,11 @@ import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-ma
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
 import {
-  failedAttemptsByPly,
   latestAttemptFor,
   nextPly,
+  notableAttemptsByPly,
   plyKey,
-  summarizeFailedAttempts,
+  summarizeAttempts,
 } from '../../utils/move-attempts';
 
 type TimelineEvent = {
@@ -243,7 +243,7 @@ export class GameView implements OnInit, OnDestroy {
     const moves = this.moves();
     const chats = this.chatMessages();
     const game = this.game();
-    const failedByPly = failedAttemptsByPly(this.attempts());
+    const attemptsByPly = notableAttemptsByPly(this.attempts());
 
     if (game?.startedAt) {
       events.push({
@@ -260,12 +260,12 @@ export class GameView implements OnInit, OnDestroy {
     }
 
     moves.forEach((move, index) => {
-      const failedSummary = summarizeFailedAttempts(
-        failedByPly.get(plyKey(move.moveNumber, move.color)) ?? [],
+      const attemptsSummary = summarizeAttempts(
+        attemptsByPly.get(plyKey(move.moveNumber, move.color)) ?? [],
       );
-      failedByPly.delete(plyKey(move.moveNumber, move.color));
-      const retrySuffix = failedSummary
-        ? ` after ${failedSummary}`
+      attemptsByPly.delete(plyKey(move.moveNumber, move.color));
+      const retrySuffix = attemptsSummary
+        ? `: ${attemptsSummary}`
         : move.retryCount > 0
           ? ` after ${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
           : '';
@@ -283,14 +283,14 @@ export class GameView implements OnInit, OnDestroy {
       });
     });
 
-    // Plies whose failed attempts did not end in a move (forfeit, or a pause after a cut-off answer).
-    failedByPly.forEach((failed) => {
-      const last = failed[failed.length - 1];
+    // Plies whose attempts did not end in a move (forfeit, or a pause after a cut-off answer).
+    attemptsByPly.forEach((plyAttempts) => {
+      const last = plyAttempts[plyAttempts.length - 1];
       events.push({
         id: `attempts-${plyKey(last.moveNumber, last.color)}`,
         type: 'attempts',
         label: `${last.color === 'WHITE' ? 'White' : 'Black'} move ${last.moveNumber} not played`,
-        detail: `${this.timelinePlayerName(last.color, last.modelId)}: ${summarizeFailedAttempts(failed)}`,
+        detail: `${this.timelinePlayerName(last.color, last.modelId)}: ${summarizeAttempts(plyAttempts)}`,
         tone: 'warning',
         icon: 'error_outline',
         createdAtMs: Date.parse(last.createdAt),

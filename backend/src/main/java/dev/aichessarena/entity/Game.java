@@ -80,7 +80,7 @@ public class Game extends PanacheEntityBase {
     @Column(name = "series_best_of", nullable = false)
     public int seriesBestOf = 1;
 
-    @Column(name = "total_cost_usd", nullable = false)
+    @Column(name = "total_cost_usd", nullable = false, precision = 12, scale = 8)
     public BigDecimal totalCostUsd = BigDecimal.ZERO;
 
     @Column(name = "created_at", nullable = false)

@@ -80,6 +80,20 @@ class MoveAttemptIT {
     }
 
     @Test
+    void tinyRejectedChargesAddUpExactly() {
+        UUID id = newGame(BigDecimal.ZERO);
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            attempts.record(new MoveAttemptService.AttemptRecord(id, 1, "WHITE", attempt, "model-a",
+                    Outcome.PARSE_FAILURE, null, "Could not extract a move",
+                    new LlmResponse("hmm", 3, 1, 0.0000004, 50, "{}", false, null)));
+        }
+
+        BigDecimal total = QuarkusTransaction.requiringNew().call(() -> games.findById(id).totalCostUsd);
+        assertEquals(0, new BigDecimal("0.0000012").compareTo(total), total.toPlainString());
+    }
+
+    @Test
     void attemptsOfAnUnknownGameAreNotFound() {
         given().when().get("/api/games/{id}/attempts", UUID.randomUUID()).then().statusCode(404);
     }

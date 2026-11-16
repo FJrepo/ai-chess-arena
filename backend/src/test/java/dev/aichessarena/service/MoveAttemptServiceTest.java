@@ -87,6 +87,23 @@ class MoveAttemptServiceTest {
     }
 
     @Test
+    void onlyTheModelsOwnFailuresCountAgainstIt() {
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.PARSE_FAILURE, Outcome.EMPTY_RESPONSE, Outcome.TIMEOUT),
+                java.util.Arrays.stream(Outcome.values()).filter(Outcome::isModelFailure).toList());
+    }
+
+    @Test
+    void discardedLegalAnswerAddsItsCost() {
+        Fixture fixture = new Fixture(new BigDecimal("0.10"));
+
+        fixture.service.record(attempt(fixture.game.id, Outcome.DISCARDED, "e4",
+                new LlmResponse("{\"move\":\"e4\"}", 100, 10, 0.004, 500, "{}", false, null)));
+
+        assertEquals(Outcome.DISCARDED, fixture.attempts.persisted.getFirst().outcome);
+        assertEquals(0, new BigDecimal("0.104").compareTo(fixture.game.totalCostUsd));
+    }
+
+    @Test
     void unknownGameIsIgnored() {
         Fixture fixture = new Fixture(BigDecimal.ZERO);
 

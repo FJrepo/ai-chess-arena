@@ -145,15 +145,48 @@ class GameTurnServiceTest {
     }
 
     @Test
-    void positionConflictWhileRecordingStopsTheTurnWithoutForfeit() {
-        Fixture fixture = new Fixture(VALID_MOVE);
+    void positionConflictWhileRecordingStopsTheTurnWithoutForfeitAndKeepsTheDiscardedAnswer() {
+        LlmResponse paidAnswer = new LlmResponse("{\"move\":\"e4\"}", 100, 8, 0.0035, 400, "{\"raw\":1}", false, null);
+        Fixture fixture = new Fixture(paidAnswer);
         fixture.moves.conflict = new GameStateConflictException("Position changed while the model was thinking");
+        // Real attempt service over in-memory repositories: checks the stored row and the cost bookkeeping.
+        dev.aichessarena.entity.Game game = new dev.aichessarena.entity.Game();
+        game.totalCostUsd = new BigDecimal("0.01");
+        List<dev.aichessarena.entity.MoveAttempt> stored = new ArrayList<>();
+        MoveAttemptService attempts = new MoveAttemptService();
+        attempts.gameRepository = new dev.aichessarena.repository.GameRepository() {
+            @Override
+            public dev.aichessarena.entity.Game findById(UUID id) {
+                return game;
+            }
+
+            @Override
+            public dev.aichessarena.entity.Game findByIdForUpdate(UUID id) {
+                return game;
+            }
+        };
+        attempts.moveAttemptRepository = new dev.aichessarena.repository.MoveAttemptRepository() {
+            @Override
+            public void persist(dev.aichessarena.entity.MoveAttempt entity) {
+                stored.add(entity);
+            }
+        };
+        fixture.service.moveAttemptService = attempts;
 
         GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
 
         assertEquals(GameTurnService.Status.STOPPED, result.status());
         assertNull(fixture.lifecycle.lastForfeitColor);
         assertFalse(fixture.lifecycle.invalidMovesForfeited);
+        assertNull(fixture.moves.lastRecordedSan, "the move itself was not recorded");
+        assertEquals(1, stored.size());
+        dev.aichessarena.entity.MoveAttempt discarded = stored.getFirst();
+        assertEquals(Outcome.DISCARDED, discarded.outcome);
+        assertEquals("e4", discarded.proposedMove);
+        assertEquals("Position changed while the model was thinking", discarded.errorMessage);
+        assertEquals("{\"raw\":1}", discarded.rawResponse);
+        // Added exactly once: 0.01 + 0.0035.
+        assertEquals(0, new BigDecimal("0.0135").compareTo(game.totalCostUsd), game.totalCostUsd.toPlainString());
     }
 
     @Test

@@ -76,13 +76,30 @@ public class MoveAttempt extends PanacheEntityBase {
     public LocalDateTime createdAt = LocalDateTime.now();
 
     public enum Outcome {
-        ACCEPTED,
-        ILLEGAL_MOVE,
-        PARSE_FAILURE,
-        EMPTY_RESPONSE,
-        TRUNCATED,
-        TIMEOUT,
-        PROVIDER_RETRYABLE,
-        PROVIDER_FATAL
+        ACCEPTED(false),
+        ILLEGAL_MOVE(true),
+        PARSE_FAILURE(true),
+        EMPTY_RESPONSE(true),
+        /** Cut off at the tournament's output-token limit: a configuration problem, not the model's fault. */
+        TRUNCATED(false),
+        TIMEOUT(true),
+        PROVIDER_RETRYABLE(false),
+        PROVIDER_FATAL(false),
+        /** A legal answer that was not played because the position or game status changed meanwhile. */
+        DISCARDED(false);
+
+        private final boolean modelFailure;
+
+        Outcome(boolean modelFailure) {
+            this.modelFailure = modelFailure;
+        }
+
+        /**
+         * Whether the attempt failed through the model's own fault. Only these may count against a model's
+         * reliability; cut-off answers, provider errors and discarded legal answers must not.
+         */
+        public boolean isModelFailure() {
+            return modelFailure;
+        }
     }
 }
