@@ -19,6 +19,10 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -131,6 +135,53 @@ class OpenRouterServiceModelsTest {
 
     private OpenRouterModelsResponseDto catalog() {
         return service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void concurrentRefreshReturnsPublishedCatalog(boolean stale) throws Exception {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        service.modelsClock = now::get;
+        if (stale) {
+            assertEquals(LISTED_MODELS, catalog().data().size());
+            now.addAndGet(300_000L);
+        }
+        responseBody = """
+                {"data":[{"id":"openai/published-model","architecture":{"output_modalities":["text"]}}]}
+                """.getBytes(StandardCharsets.UTF_8);
+        CountDownLatch snapshotRead = new CountDownLatch(1);
+        CountDownLatch refreshPublished = new CountDownLatch(1);
+        AtomicBoolean pauseNextRead = new AtomicBoolean(true);
+        service.modelsSnapshotObserver = () -> {
+            if (pauseNextRead.compareAndSet(true, false)) {
+                snapshotRead.countDown();
+                try {
+                    if (!refreshPublished.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("catalog refresh was not released");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(e);
+                }
+            }
+        };
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var caller = executor.submit(this::catalog);
+            try {
+                assertTrue(snapshotRead.await(5, TimeUnit.SECONDS), "caller captured its initial snapshot");
+                var published = catalog();
+                assertEquals(List.of("openai/published-model"), published.data().stream()
+                        .map(OpenRouterModelOptionDto::id).toList());
+                refreshPublished.countDown();
+
+                assertEquals(published, caller.get(5, TimeUnit.SECONDS),
+                        "caller must see the published catalog rather than its earlier empty or stale snapshot");
+                assertEquals(stale ? 2 : 1, requests.get(), "the waiting caller must not refresh again");
+            } finally {
+                refreshPublished.countDown();
+            }
+        }
     }
 
     @Test

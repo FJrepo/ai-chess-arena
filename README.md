@@ -38,6 +38,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 Prompt caching savings use one cached price snapshot per comparison. Analytics never waits for catalog requests: missing prices show **n/a**, stale prices remain usable, and failed refreshes back off for 60 seconds.
 
+Concurrent catalog lookups use a consistent snapshot for freshness and model data, so model validation and reasoning-effort mapping can use a catalog published by another caller during a refresh.
+
 ## Quick start
 
 You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).

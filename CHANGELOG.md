@@ -8,6 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Fixed
+- Concurrent catalog lookups now check freshness and return model data from the same snapshot, rechecking after acquiring the refresh lock. A caller no longer returns an earlier empty or expired catalog when another caller has published a fresh one; the 60-second failure back-off and stale-data reuse are preserved.
 - Analytics comparisons use one cached catalog price snapshot for all model rows and refresh prices in the background, avoiding repeated synchronous OpenRouter timeouts. Failed catalog refreshes back off for 60 seconds and keep stale prices when available; missing prices leave estimated prompt caching savings as n/a.
 
 ### Added

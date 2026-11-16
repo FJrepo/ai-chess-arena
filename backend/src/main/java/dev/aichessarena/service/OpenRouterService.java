@@ -113,6 +113,9 @@ public class OpenRouterService {
     /** Wall clock for catalog freshness and retry back-off; replaceable in tests. */
     LongSupplier modelsClock = System::currentTimeMillis;
 
+    /** Called after the initial catalog snapshot read; a test seam for a concurrent refresh. */
+    Runnable modelsSnapshotObserver = () -> { };
+
     /** Sees each chat request's response future right after it is sent; a test seam for a delayed caller. */
     Consumer<CompletableFuture<?>> sendObserver = sent -> { };
 
@@ -123,9 +126,7 @@ public class OpenRouterService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    private volatile JsonNode cachedModels;
-    private volatile long cachedModelsAtMs;
-    private volatile long modelsRetryAfterMs;
+    private volatile ModelsSnapshot modelsSnapshot = new ModelsSnapshot(null, 0, 0);
     private final AtomicBoolean modelsRefreshScheduled = new AtomicBoolean();
 
     public LlmResponse chat(String modelId, List<ChatMsg> messages) {
@@ -340,8 +341,9 @@ public class OpenRouterService {
      * a single background refresh warms later comparisons. These estimates never replace OpenRouter's billed cost.
      */
     Map<String, BigDecimal> cacheReadSavingsSnapshot() {
-        JsonNode snapshot = cachedModels;
-        refreshModelsInBackground();
+        ModelsSnapshot cache = modelsSnapshot;
+        JsonNode snapshot = cache.data();
+        refreshModelsInBackground(cache);
         if (snapshot == null) {
             return Map.of();
         }
@@ -358,14 +360,9 @@ public class OpenRouterService {
         return Map.copyOf(savings);
     }
 
-    private boolean needsModelsRefresh(long now) {
-        return (cachedModels == null || now - cachedModelsAtMs >= MODELS_CACHE_TTL_MS)
-                && now >= modelsRetryAfterMs;
-    }
-
-    private void refreshModelsInBackground() {
+    private void refreshModelsInBackground(ModelsSnapshot snapshot) {
         if (apiKey == null || apiKey.isBlank() || objectMapper == null
-                || !needsModelsRefresh(modelsClock.getAsLong())
+                || !snapshot.needsRefresh(modelsClock.getAsLong())
                 || !modelsRefreshScheduled.compareAndSet(false, true)) {
             return;
         }
@@ -572,7 +569,7 @@ public class OpenRouterService {
 
     /** Uses the cached catalog only: preparing a move must not wait on a catalog refresh. */
     private JsonNode cachedCatalogEntry(String modelId) {
-        JsonNode snapshot = cachedModels;
+        JsonNode snapshot = modelsSnapshot.data();
         if (snapshot == null || snapshot.hasNonNull("error")) {
             return null;
         }
@@ -688,18 +685,19 @@ public class OpenRouterService {
         }
 
         long now = modelsClock.getAsLong();
-        JsonNode snapshot = cachedModels;
-        if (!needsModelsRefresh(now)) {
+        ModelsSnapshot snapshot = modelsSnapshot;
+        modelsSnapshotObserver.run();
+        if (!snapshot.needsRefresh(now)) {
             fallback.put("error", "OpenRouter models refresh is backing off");
-            return snapshot != null ? snapshot : fallback;
+            return snapshot.data() != null ? snapshot.data() : fallback;
         }
 
         synchronized (this) {
             now = modelsClock.getAsLong();
-            snapshot = cachedModels;
-            if (!needsModelsRefresh(now)) {
+            snapshot = modelsSnapshot;
+            if (!snapshot.needsRefresh(now)) {
                 fallback.put("error", "OpenRouter models refresh is backing off");
-                return snapshot != null ? snapshot : fallback;
+                return snapshot.data() != null ? snapshot.data() : fallback;
             }
 
             try {
@@ -715,21 +713,19 @@ public class OpenRouterService {
                     LOG.errorf("OpenRouter models API error %d: %s",
                             response.statusCode(), truncateForLog(response.body()));
                     fallback.put("error", "OpenRouter models API returned status " + response.statusCode());
-                    modelsRetryAfterMs = modelsClock.getAsLong() + MODELS_FAILURE_BACKOFF_MS;
-                    return snapshot != null ? snapshot : fallback;
+                    modelsSnapshot = snapshot.failedAt(modelsClock.getAsLong());
+                    return snapshot.data() != null ? snapshot.data() : fallback;
                 }
 
                 JsonNode parsed = objectMapper.readTree(response.body());
                 if (parsed == null || !parsed.has("data") || !parsed.get("data").isArray()) {
                     LOG.errorf("Unexpected OpenRouter models response shape: %s", truncateForLog(response.body()));
                     fallback.put("error", "Unexpected OpenRouter models response");
-                    modelsRetryAfterMs = modelsClock.getAsLong() + MODELS_FAILURE_BACKOFF_MS;
-                    return snapshot != null ? snapshot : fallback;
+                    modelsSnapshot = snapshot.failedAt(modelsClock.getAsLong());
+                    return snapshot.data() != null ? snapshot.data() : fallback;
                 }
 
-                cachedModelsAtMs = modelsClock.getAsLong();
-                cachedModels = parsed;
-                modelsRetryAfterMs = 0;
+                modelsSnapshot = new ModelsSnapshot(parsed, modelsClock.getAsLong(), 0);
                 return parsed;
             } catch (Exception e) {
                 if (e instanceof InterruptedException) {
@@ -737,8 +733,8 @@ public class OpenRouterService {
                 }
                 LOG.error("Failed to fetch OpenRouter models", e);
                 fallback.put("error", "Failed to fetch OpenRouter models");
-                modelsRetryAfterMs = modelsClock.getAsLong() + MODELS_FAILURE_BACKOFF_MS;
-                return snapshot != null ? snapshot : fallback;
+                modelsSnapshot = snapshot.failedAt(modelsClock.getAsLong());
+                return snapshot.data() != null ? snapshot.data() : fallback;
             }
         }
     }
@@ -1194,6 +1190,17 @@ public class OpenRouterService {
 
         public boolean isProviderFailure() {
             return outcome == ProviderOutcome.RETRYABLE || outcome == ProviderOutcome.FATAL;
+        }
+    }
+
+    /** Catalog data and its freshness state are published together; data is never mutated after publication. */
+    private record ModelsSnapshot(JsonNode data, long fetchedAtMs, long retryAfterMs) {
+        boolean needsRefresh(long now) {
+            return (data == null || now - fetchedAtMs >= MODELS_CACHE_TTL_MS) && now >= retryAfterMs;
+        }
+
+        ModelsSnapshot failedAt(long now) {
+            return new ModelsSnapshot(data, fetchedAtMs, now + MODELS_FAILURE_BACKOFF_MS);
         }
     }
 
