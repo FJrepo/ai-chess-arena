@@ -38,6 +38,12 @@
         <span class="timer-label">{{ activeHumanPlayerLabel() }} to move</span>
         <span class="timer-value">Your turn</span>
       </div>
+    } @else if (isLive() && activeColor() && noMoveTimeLimit()) {
+      <div class="move-timer no-time-limit">
+        <mat-icon>timer_off</mat-icon>
+        <span class="timer-label">{{ activeColor() === 'BLACK' ? 'Black' : 'White' }} to move</span>
+        <span class="timer-value">No time limit</span>
+      </div>
     }
   </div>
 

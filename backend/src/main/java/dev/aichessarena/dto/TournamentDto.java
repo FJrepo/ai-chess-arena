@@ -1,5 +1,6 @@
 package dev.aichessarena.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -11,7 +12,8 @@ public record TournamentDto(
         String format,
         String drawPolicy,
         String sharedCustomInstructions,
-        int moveTimeoutSeconds,
+        // Always serialized: null means no time limit per move (other null fields are omitted).
+        @JsonInclude(JsonInclude.Include.ALWAYS) Integer moveTimeoutSeconds,
         int maxRetries,
         int matchupBestOf,
         Integer finalsBestOf,

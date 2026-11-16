@@ -170,6 +170,73 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
+    void slowlyStreamedBodyTimesOutAtTheDeadlineNotWhenTheBodyEnds() throws IOException {
+        // Headers arrive at once, the body trickles in over about 3 s: the old request timeout never fired.
+        OpenRouterService service = serviceStreamingSlowly(10, 300);
+
+        long start = System.nanoTime();
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                Duration.ofMillis(700), 100);
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        assertTrue(response.timedOut());
+        assertFalse(response.isProviderFailure());
+        assertTrue(elapsedMs >= 650 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
+    }
+
+    @Test
+    void streamedBodyThatFinishesBeforeTheDeadlineSucceeds() throws IOException {
+        OpenRouterService service = serviceStreamingSlowly(3, 50);
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                Duration.ofSeconds(5), 100);
+
+        assertEquals(ProviderOutcome.OK, response.outcome());
+        assertEquals("e4", response.content());
+    }
+
+    @Test
+    void withoutAMoveTimeLimitTheSafetyCapIsAProviderProblemNotAModelTimeout() throws IOException {
+        OpenRouterService service = serviceStreamingSlowly(10, 300);
+        service.requestSafetyCap = Duration.ofMillis(600);
+
+        long start = System.nanoTime();
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                null, 100);
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+        assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+        assertFalse(response.timedOut());
+        assertTrue(response.isProviderFailure());
+        assertEquals("OpenRouter request did not finish within the safety limit of 600 ms", response.errorMessage());
+        assertTrue(elapsedMs >= 550 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
+    }
+
+    @Test
+    void withoutAMoveTimeLimitAFastAnswerSucceeds() throws IOException {
+        OpenRouterService service = serviceAnswering(200, "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}");
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                null, 100);
+
+        assertEquals(ProviderOutcome.OK, response.outcome());
+        assertEquals("e4", response.content());
+    }
+
+    @Test
+    void aMoveTimeLimitLongerThanTheSafetyCapIsBoundedByTheCapAsAProviderProblem() throws IOException {
+        OpenRouterService service = serviceStreamingSlowly(10, 300);
+        service.requestSafetyCap = Duration.ofMillis(500);
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                Duration.ofSeconds(30), 100);
+
+        assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+        assertFalse(response.timedOut());
+    }
+
+    @Test
     void modelValidationHonoursFailOpenWhenTheCatalogIsUnavailable() throws IOException {
         OpenRouterService service = serviceAnswering(503, "");
         server.createContext("/models", exchange -> {
@@ -215,6 +282,35 @@ class OpenRouterServiceChatTest {
                 try (OutputStream out = exchange.getResponseBody()) {
                     out.write(bytes);
                 }
+            }
+            exchange.close();
+        });
+        server.start();
+        return service("http://127.0.0.1:" + server.getAddress().getPort());
+    }
+
+    /**
+     * Sends status and headers immediately, then a valid completion in {@code chunks} pieces with
+     * {@code pauseMs} between them (the way OpenRouter starts long answers early).
+     */
+    private OpenRouterService serviceStreamingSlowly(int chunks, long pauseMs) throws IOException {
+        byte[] body = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}".getBytes(StandardCharsets.UTF_8);
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+        server.createContext("/chat/completions", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                int chunkSize = (body.length + chunks - 1) / chunks;
+                for (int offset = 0; offset < body.length; offset += chunkSize) {
+                    Thread.sleep(pauseMs);
+                    out.write(body, offset, Math.min(chunkSize, body.length - offset));
+                    out.flush();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (IOException ignored) {
+                // The client gave up and closed the connection.
             }
             exchange.close();
         });

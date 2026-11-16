@@ -36,8 +36,13 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "shared_custom_instructions", columnDefinition = "TEXT")
     public String sharedCustomInstructions;
 
-    @Column(name = "move_timeout_seconds", nullable = false)
-    public int moveTimeoutSeconds = 60;
+    /** Time limit for a whole move (all attempts) in seconds; null means no time limit per move. */
+    @Column(name = "move_timeout_seconds")
+    public Integer moveTimeoutSeconds = DEFAULT_MOVE_TIMEOUT_SECONDS;
+
+    public static final int DEFAULT_MOVE_TIMEOUT_SECONDS = 60;
+    public static final int MIN_MOVE_TIMEOUT_SECONDS = 10;
+    public static final int MAX_MOVE_TIMEOUT_SECONDS = 3600;
 
     @Column(name = "max_retries", nullable = false)
     public int maxRetries = 3;

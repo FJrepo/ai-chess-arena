@@ -3,7 +3,10 @@ import { Game, Move } from '../models/tournament.model';
 
 @Injectable()
 export class GameTurnStateService {
-  readonly moveTimeoutSeconds = signal(60);
+  /** The game's time limit per move in seconds; null while unknown or when there is no limit. */
+  readonly moveTimeoutSeconds = signal<number | null>(null);
+  /** The tournament has no time limit per move: there is no countdown. */
+  readonly noMoveTimeLimit = signal(false);
   readonly timerNowMs = signal(Date.now());
   readonly serverActiveColor = signal<'WHITE' | 'BLACK' | null>(null);
   readonly serverTurnStartedAtMs = signal<number | null>(null);
@@ -45,7 +48,10 @@ export class GameTurnStateService {
       return Math.max(0, remaining);
     }
 
-    const timeout = Math.max(1, this.moveTimeoutSeconds());
+    // Without a (known) limit there is nothing to count down.
+    const limit = this.moveTimeoutSeconds();
+    if (limit == null) return null;
+    const timeout = Math.max(1, limit);
     const startedAtMs = this.turnStartedAtMs();
     if (!startedAtMs) return timeout;
 
@@ -84,8 +90,11 @@ export class GameTurnStateService {
     }
   }
 
-  setMoveTimeoutSeconds(seconds: number): void {
-    this.moveTimeoutSeconds.set(Math.max(1, seconds || 60));
+  /** Sets the time limit per move; null (or 0) means the game has no time limit per move. */
+  setMoveTimeoutSeconds(seconds: number | null): void {
+    const limited = seconds != null && seconds > 0;
+    this.moveTimeoutSeconds.set(limited ? seconds : null);
+    this.noMoveTimeLimit.set(!limited);
   }
 
   applyStatusUpdate(

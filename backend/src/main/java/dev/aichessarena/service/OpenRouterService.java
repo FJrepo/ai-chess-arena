@@ -25,6 +25,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @ApplicationScoped
 public class OpenRouterService {
@@ -73,6 +78,13 @@ public class OpenRouterService {
     @ConfigProperty(name = "game.default-max-tokens", defaultValue = "4096")
     int defaultMaxTokens;
 
+    /**
+     * Technical upper bound for one chat request, also when the tournament has no move time limit, so a hung
+     * connection cannot block a game forever. Reaching it is a provider problem, not the model's timeout.
+     */
+    @ConfigProperty(name = "openrouter.request-safety-cap", defaultValue = "PT10M")
+    Duration requestSafetyCap = Duration.ofMinutes(10);
+
     @Inject
     ObjectMapper objectMapper;
 
@@ -87,15 +99,26 @@ public class OpenRouterService {
         return chat(modelId, messages, Duration.ofSeconds(120));
     }
 
-    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout) {
-        return chat(modelId, messages, requestTimeout, defaultMaxTokens);
+    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration answerDeadline) {
+        return chat(modelId, messages, answerDeadline, defaultMaxTokens);
     }
 
     /**
-     * Sends one chat completion. {@code maxOutputTokens} caps the generated tokens of the answer (OpenRouter
-     * {@code max_tokens}, which includes reasoning tokens for reasoning models).
+     * Sends one chat completion and waits for the complete answer. {@code maxOutputTokens} caps the generated
+     * tokens of the answer (OpenRouter {@code max_tokens}, which includes reasoning tokens for reasoning models).
+     *
+     * <p>{@code answerDeadline} is the time the model has for the whole answer, from sending the request to the
+     * last byte of the response body; exceeding it is the model's timeout ({@link ProviderOutcome#TIMEOUT}).
+     * {@code null} means no move time limit. Every request is also bounded by the technical safety cap
+     * ({@code openrouter.request-safety-cap}); reaching that cap first is a provider problem
+     * ({@link ProviderOutcome#RETRYABLE}), never the model's timeout.
      */
-    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration requestTimeout, int maxOutputTokens) {
+    public LlmResponse chat(String modelId, List<ChatMsg> messages, Duration answerDeadline, int maxOutputTokens) {
+        Duration safetyCap = requestSafetyCap;
+        boolean limitedByMoveTime = answerDeadline != null && answerDeadline.compareTo(safetyCap) < 0;
+        Duration wait = limitedByMoveTime ? answerDeadline : safetyCap;
+        long startNanos = System.nanoTime();
+        CompletableFuture<HttpResponse<String>> pending = null;
         try {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("model", modelId);
@@ -111,17 +134,19 @@ public class OpenRouterService {
 
             String jsonBody = objectMapper.writeValueAsString(body);
 
+            // The request timeout only bounds the time until the response headers arrive, and OpenRouter starts
+            // long answers early: the deadline for the complete body is enforced by waiting on the future below.
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/chat/completions"))
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .timeout(requestTimeout)
+                    .timeout(wait)
                     .build();
 
-            long startTime = System.currentTimeMillis();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            long elapsed = System.currentTimeMillis() - startTime;
+            pending = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = pending.get(Math.max(1L, wait.toMillis()), TimeUnit.MILLISECONDS);
+            long elapsed = elapsedMs(startNanos);
 
             if (response.statusCode() != 200) {
                 LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
@@ -134,65 +159,117 @@ public class OpenRouterService {
                 );
             }
 
-            JsonNode json;
-            try {
-                json = objectMapper.readTree(response.body());
-            } catch (IOException e) {
-                LOG.warnf("OpenRouter returned a non-JSON body for model %s", modelId);
-                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
-                        "OpenRouter returned a malformed response", elapsed, response.body());
-            }
-            if (json == null || json.hasNonNull("error") || !json.path("choices").isArray()
-                    || json.path("choices").isEmpty()) {
-                String providerMessage = json == null ? null : json.path("error").path("message").asText(null);
-                LOG.warnf("OpenRouter returned no choices for model %s: %s", modelId, providerMessage);
-                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
-                        providerMessage == null
-                                ? "OpenRouter returned a response without choices"
-                                : "OpenRouter upstream error: " + abbreviate(providerMessage),
-                        elapsed, response.body());
-            }
-            JsonNode message = json.path("choices").get(0).path("message");
-            if (!message.isObject()) {
-                LOG.warnf("OpenRouter returned a choice without a message object for model %s", modelId);
-                return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
-                        "OpenRouter returned a malformed choice", elapsed, response.body());
-            }
-            String content = message.path("content").asText(null);
-            String finishReason = json.path("choices").get(0).path("finish_reason").asText(null);
-            JsonNode reasoningNode = json.at("/usage/completion_tokens_details/reasoning_tokens");
-            Integer reasoningTokens = reasoningNode.isNumber() ? reasoningNode.asInt() : null;
-            int promptTokens = json.at("/usage/prompt_tokens").asInt(0);
-            int completionTokens = json.at("/usage/completion_tokens").asInt(0);
-
-            // Try to get cost from response, or leave null
-            Double cost = null;
-            if (json.has("usage") && json.get("usage").has("cost")) {
-                cost = json.get("usage").get("cost").asDouble();
-            }
-
-            return new LlmResponse(content, promptTokens, completionTokens, cost, elapsed, response.body(), false, null,
-                    ProviderOutcome.OK, 200, finishReason, reasoningTokens);
-        } catch (HttpConnectTimeoutException e) {
-            LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, e.getMessage());
-            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
-                    "Could not connect to OpenRouter (connection timed out)", 0, null);
-        } catch (HttpTimeoutException e) {
-            LOG.warnf("OpenRouter request timed out for model %s", modelId);
-            return new LlmResponse(null, 0, 0, null, 0, null, true, "Request timed out");
-        } catch (IOException e) {
-            LOG.warnf("OpenRouter request failed for model %s: %s", modelId, e.toString());
-            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
-                    "Could not reach OpenRouter: " + abbreviate(String.valueOf(e.getMessage())), 0, null);
+            return parseCompletion(modelId, response.body(), elapsed);
+        } catch (TimeoutException e) {
+            pending.cancel(true);
+            return deadlineExceeded(modelId, limitedByMoveTime, wait, elapsedMs(startNanos));
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
+                    ? e.getCause().getCause()
+                    : e.getCause();
+            return transportFailure(modelId, cause, limitedByMoveTime, wait, elapsedMs(startNanos));
         } catch (InterruptedException e) {
+            if (pending != null) {
+                pending.cancel(true);
+            }
             Thread.currentThread().interrupt();
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
                     "OpenRouter request was interrupted", 0, null);
         } catch (Exception e) {
+            if (pending != null) {
+                pending.cancel(true);
+            }
             LOG.error("OpenRouter API call failed", e);
             return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
                     "OpenRouter request failed: " + abbreviate(String.valueOf(e.getMessage())), 0, null);
         }
+    }
+
+    private LlmResponse parseCompletion(String modelId, String responseBody, long elapsed) {
+        JsonNode json;
+        try {
+            json = objectMapper.readTree(responseBody);
+        } catch (IOException e) {
+            LOG.warnf("OpenRouter returned a non-JSON body for model %s", modelId);
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                    "OpenRouter returned a malformed response", elapsed, responseBody);
+        }
+        if (json == null || json.hasNonNull("error") || !json.path("choices").isArray()
+                || json.path("choices").isEmpty()) {
+            String providerMessage = json == null ? null : json.path("error").path("message").asText(null);
+            LOG.warnf("OpenRouter returned no choices for model %s: %s", modelId, providerMessage);
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                    providerMessage == null
+                            ? "OpenRouter returned a response without choices"
+                            : "OpenRouter upstream error: " + abbreviate(providerMessage),
+                    elapsed, responseBody);
+        }
+        JsonNode message = json.path("choices").get(0).path("message");
+        if (!message.isObject()) {
+            LOG.warnf("OpenRouter returned a choice without a message object for model %s", modelId);
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                    "OpenRouter returned a malformed choice", elapsed, responseBody);
+        }
+        String content = message.path("content").asText(null);
+        String finishReason = json.path("choices").get(0).path("finish_reason").asText(null);
+        JsonNode reasoningNode = json.at("/usage/completion_tokens_details/reasoning_tokens");
+        Integer reasoningTokens = reasoningNode.isNumber() ? reasoningNode.asInt() : null;
+        int promptTokens = json.at("/usage/prompt_tokens").asInt(0);
+        int completionTokens = json.at("/usage/completion_tokens").asInt(0);
+
+        // Try to get cost from response, or leave null
+        Double cost = null;
+        if (json.has("usage") && json.get("usage").has("cost")) {
+            cost = json.get("usage").get("cost").asDouble();
+        }
+
+        return new LlmResponse(content, promptTokens, completionTokens, cost, elapsed, responseBody, false, null,
+                ProviderOutcome.OK, 200, finishReason, reasoningTokens);
+    }
+
+    private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime, Duration wait,
+                                         long elapsed) {
+        if (cause instanceof HttpConnectTimeoutException) {
+            LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, cause.getMessage());
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                    "Could not connect to OpenRouter (connection timed out)", 0, null);
+        }
+        if (cause instanceof HttpTimeoutException) {
+            // No response headers within the wait: the same deadline as for the complete answer.
+            return deadlineExceeded(modelId, limitedByMoveTime, wait, elapsed);
+        }
+        if (cause instanceof IOException) {
+            LOG.warnf("OpenRouter request failed for model %s: %s", modelId, cause.toString());
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                    "Could not reach OpenRouter: " + abbreviate(String.valueOf(cause.getMessage())), 0, null);
+        }
+        LOG.error("OpenRouter API call failed", cause);
+        String detail = cause == null ? null : cause.getMessage();
+        return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
+                "OpenRouter request failed: " + abbreviate(String.valueOf(detail)), 0, null);
+    }
+
+    private LlmResponse deadlineExceeded(String modelId, boolean limitedByMoveTime, Duration wait, long elapsed) {
+        if (limitedByMoveTime) {
+            LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, wait.toMillis());
+            return new LlmResponse(null, 0, 0, null, elapsed, null, true, "No complete answer within the move time");
+        }
+        LOG.warnf("OpenRouter request for model %s exceeded the safety cap of %d ms", modelId, wait.toMillis());
+        return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                "OpenRouter request did not finish within the safety limit of " + describe(wait),
+                elapsed, null);
+    }
+
+    private static String describe(Duration duration) {
+        long seconds = duration.toSeconds();
+        if (seconds >= 60 && seconds % 60 == 0) {
+            return seconds / 60 + " min";
+        }
+        return seconds >= 1 ? seconds + " s" : duration.toMillis() + " ms";
+    }
+
+    private static long elapsedMs(long startNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
     }
 
     static ProviderOutcome classifyHttpStatus(int status) {

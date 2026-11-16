@@ -199,7 +199,9 @@ public class GameEngineService {
             boolean isFirstMove = moveNumber == 1 && "WHITE".equals(sideToMove);
 
             int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
-            int moveTimeoutSeconds = game.tournament != null ? game.tournament.moveTimeoutSeconds : 60;
+            // A tournament without a move time limit stores null; games outside a tournament keep 60 seconds.
+            Integer moveTimeoutSeconds = game.tournament != null
+                    ? game.tournament.moveTimeoutSeconds : Tournament.DEFAULT_MOVE_TIMEOUT_SECONDS;
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
             boolean trashTalkEnabled = game.tournament == null || game.tournament.trashTalkEnabled;

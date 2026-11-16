@@ -24,6 +24,13 @@ import { providerDisplayName as resolveProviderDisplayName } from '../../utils/p
 const PROMPT_TOKENS_PER_MOVE = 1400;
 /** Completion tokens of a typical non-reasoning answer (JSON move plus a short message). */
 const COMPLETION_TOKENS_PER_MOVE = 140;
+/**
+ * Typical seconds per model answer for the runtime estimate when there is no time limit per move: fast models
+ * answer in seconds, reasoning models often take about a minute. Runtime without a limit is open-ended.
+ */
+export const TYPICAL_MOVE_SECONDS_WITHOUT_LIMIT = 30;
+/** Moves (plies) per game assumed by the estimate. */
+const ESTIMATED_MOVES_PER_GAME = 70;
 
 type SetupParticipant = Partial<Participant> & {
   promptPricePerMillion?: number | null;
@@ -40,7 +47,8 @@ type TournamentConfidence = {
   likelyCostUsd: number | null;
   maxCostUsd: number | null;
   likelyRuntimeMinutes: number;
-  maxRuntimeMinutes: number;
+  /** Null when runtime is open-ended because there is no time limit per move. */
+  maxRuntimeMinutes: number | null;
   paceLabel: string;
   riskBand: 'Safe' | 'Moderate' | 'Expensive';
   riskReason: string;
@@ -87,6 +95,10 @@ Your opponent is %s (%s).`;
   }
   systemRulesTemplate = '';
   sharedCustomInstructions = '';
+  /** Off: no time limit per move (sent as moveTimeoutSeconds 0). */
+  limitMoveTime = true;
+  readonly typicalMoveSecondsWithoutLimit = TYPICAL_MOVE_SECONDS_WITHOUT_LIMIT;
+  /** Seconds per move (10-3600) while limitMoveTime is on. */
   moveTimeout = 60;
   maxRetries = 3;
   /** Cap on generated tokens per answer (128-32768); includes reasoning tokens. */
@@ -399,7 +411,8 @@ Your opponent is %s (%s).`;
     const details = {
       name: this.name,
       sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
-      moveTimeoutSeconds: this.moveTimeout,
+      // 0 means no time limit per move.
+      moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : 0,
       maxRetries: this.maxRetries,
       maxOutputTokens: this.maxOutputTokens,
       matchupBestOf: this.matchupBestOf,
@@ -481,11 +494,21 @@ Your opponent is %s (%s).`;
     const maxGames = openingSeries * this.matchupBestOf + finalBestOf;
     const likelyGames = Math.max(minGames, Math.round(minGames + (maxGames - minGames) * 0.4));
 
-    const fastMinutesPerGame = Math.max(6, Math.round(this.moveTimeout * 0.22));
-    const slowMinutesPerGame = Math.max(10, Math.round(this.moveTimeout * 0.42));
-    const likelyRuntimeMinutes =
-      likelyGames * Math.round((fastMinutesPerGame + slowMinutesPerGame) / 2);
-    const maxRuntimeMinutes = maxGames * slowMinutesPerGame;
+    let likelyRuntimeMinutes: number;
+    let maxRuntimeMinutes: number | null;
+    if (this.limitMoveTime) {
+      const fastMinutesPerGame = Math.max(6, Math.round(this.moveTimeout * 0.22));
+      const slowMinutesPerGame = Math.max(10, Math.round(this.moveTimeout * 0.42));
+      likelyRuntimeMinutes =
+        likelyGames * Math.round((fastMinutesPerGame + slowMinutesPerGame) / 2);
+      maxRuntimeMinutes = maxGames * slowMinutesPerGame;
+    } else {
+      // No time limit per move: a typical answer time for the estimate, and no upper bound.
+      likelyRuntimeMinutes =
+        likelyGames *
+        Math.round((ESTIMATED_MOVES_PER_GAME * TYPICAL_MOVE_SECONDS_WITHOUT_LIMIT) / 60);
+      maxRuntimeMinutes = null;
+    }
 
     const participantsWithPricing = this.participants().filter(
       (participant) =>
@@ -505,7 +528,7 @@ Your opponent is %s (%s).`;
       averageMoveCostUsd = totalMoveCost / participantsWithPricing.length;
     }
 
-    const estimatedMovesPerGame = 70;
+    const estimatedMovesPerGame = ESTIMATED_MOVES_PER_GAME;
     const drawCanExtendSeries = this.drawPolicy === 'REPLAY_GAME';
     const likelyCostUsd =
       averageMoveCostUsd == null ? null : likelyGames * estimatedMovesPerGame * averageMoveCostUsd;
@@ -517,7 +540,13 @@ Your opponent is %s (%s).`;
       (participantCount >= 16 ? 3 : participantCount >= 8 ? 2 : 1) +
       (this.matchupBestOf >= 5 ? 2 : this.matchupBestOf >= 3 ? 1 : 0) +
       (this.finalsBestOf != null && this.finalsBestOf > this.matchupBestOf ? 1 : 0) +
-      (this.moveTimeout >= 90 ? 3 : this.moveTimeout >= 60 ? 2 : this.moveTimeout >= 45 ? 1 : 0) +
+      (!this.limitMoveTime || this.moveTimeout >= 90
+        ? 3
+        : this.moveTimeout >= 60
+          ? 2
+          : this.moveTimeout >= 45
+            ? 1
+            : 0) +
       (drawCanExtendSeries ? 1 : 0) +
       (likelyRuntimeMinutes >= 360 ? 2 : likelyRuntimeMinutes >= 120 ? 1 : 0) +
       (likelyCostUsd != null ? (likelyCostUsd >= 5 ? 2 : likelyCostUsd >= 1 ? 1 : 0) : 0);
@@ -541,7 +570,13 @@ Your opponent is %s (%s).`;
       maxCostUsd,
       likelyRuntimeMinutes,
       maxRuntimeMinutes,
-      paceLabel: this.moveTimeout <= 30 ? 'Fast' : this.moveTimeout <= 60 ? 'Balanced' : 'Slow',
+      paceLabel: !this.limitMoveTime
+        ? 'No limit'
+        : this.moveTimeout <= 30
+          ? 'Fast'
+          : this.moveTimeout <= 60
+            ? 'Balanced'
+            : 'Slow',
       riskBand,
       riskReason,
       drawCanExtendSeries,
@@ -579,6 +614,7 @@ Your opponent is %s (%s).`;
     }
 
     this.name = preset.name;
+    this.limitMoveTime = true;
     this.moveTimeout = preset.moveTimeout;
     this.maxRetries = preset.maxRetries;
     this.maxOutputTokens = preset.maxOutputTokens;

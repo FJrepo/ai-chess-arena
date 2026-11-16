@@ -502,6 +502,39 @@ describe('GameView', () => {
     expect(unplayed?.attemptSummary).toBe('answer cut off at the token limit');
   });
 
+  it('shows no move countdown when the tournament has no time limit per move', () => {
+    const { component } = createComponent({
+      api: {
+        getGame: () =>
+          of(gameFixture({ status: 'IN_PROGRESS', tournamentId: 't-1', currentFen: START_FEN })),
+        getTournament: () => of({ id: 't-1', moveTimeoutSeconds: null, maxOutputTokens: 4096 }),
+      },
+    });
+    (component as any).gameId = 'g-1';
+
+    component.loadGame();
+
+    expect(component.noMoveTimeLimit()).toBe(true);
+    expect(component.moveTimerSeconds()).toBeNull();
+    expect(component.activeColor()).toBe('WHITE');
+  });
+
+  it('counts down the move time when the tournament has a limit', () => {
+    const { component } = createComponent({
+      api: {
+        getGame: () =>
+          of(gameFixture({ status: 'IN_PROGRESS', tournamentId: 't-1', currentFen: START_FEN })),
+        getTournament: () => of({ id: 't-1', moveTimeoutSeconds: 45, maxOutputTokens: 4096 }),
+      },
+    });
+    (component as any).gameId = 'g-1';
+
+    component.loadGame();
+
+    expect(component.noMoveTimeLimit()).toBe(false);
+    expect(component.moveTimerSeconds()).not.toBeNull();
+  });
+
   it('ignores an outdated attempts response that arrives after a newer one', () => {
     const responses: Array<Subject<MoveAttempt[]>> = [];
     const { component } = createComponent({
