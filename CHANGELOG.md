@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-16
+
+Patch release: the per-move time limit is now optional and, when set, actually enforced.
+
 ### Upgrade notes
 - Migration V11 runs automatically: it makes `tournaments.move_timeout_seconds` nullable (null = no time limit per move). Existing tournaments keep their values.
 - The move timeout is now enforced: models that used to answer after the limit (for example slow reasoning models in a 30-second preset) now forfeit on time. Switch the limit off or raise it for such tournaments.
