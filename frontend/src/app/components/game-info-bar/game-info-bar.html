@@ -1,78 +1,90 @@
 <mat-card class="game-info-bar">
-  <div class="players">
-    <div class="player white-player">
-      <span class="color-dot white-dot"></span>
-      @if (game.whiteModelId) {
-        <app-provider-logo [modelId]="game.whiteModelId" [size]="24" />
-      } @else {
-        <mat-icon>person</mat-icon>
-      }
-      <div class="player-meta">
-        <span class="name">{{ game.whitePlayerName }}</span>
-        <span class="model">{{ game.whiteModelId || 'Human player' }}</span>
+  <div class="summary">
+    <div class="players">
+      <div class="player white-player">
+        <span class="color-dot white-dot" aria-hidden="true"></span>
+        @if (game.whiteModelId) {
+          <app-provider-logo [modelId]="game.whiteModelId" [size]="24" />
+        } @else {
+          <mat-icon>person</mat-icon>
+        }
+        <div class="player-meta">
+          <span class="name">{{ game.whitePlayerName }}</span>
+          <span class="model">{{ game.whiteModelId || 'Human player' }}</span>
+        </div>
+      </div>
+      <span class="vs-label">vs</span>
+      <div class="player black-player">
+        <span class="color-dot black-dot" aria-hidden="true"></span>
+        @if (game.blackModelId) {
+          <app-provider-logo [modelId]="game.blackModelId" [size]="24" />
+        } @else {
+          <mat-icon>person</mat-icon>
+        }
+        <div class="player-meta">
+          <span class="name">{{ game.blackPlayerName }}</span>
+          <span class="model">{{ game.blackModelId || 'Human player' }}</span>
+        </div>
       </div>
     </div>
-    <span class="vs-label">VS</span>
-    <div class="player black-player">
-      <span class="color-dot black-dot"></span>
-      @if (game.blackModelId) {
-        <app-provider-logo [modelId]="game.blackModelId" [size]="24" />
-      } @else {
-        <mat-icon>person</mat-icon>
+    <div class="info">
+      <mat-chip-set>
+        <mat-chip [highlighted]="game.status === 'IN_PROGRESS'">{{
+          statusLabel(game.status)
+        }}</mat-chip>
+      </mat-chip-set>
+      @if (game.result) {
+        <span class="result">{{ getResultText() }}</span>
       }
-      <div class="player-meta">
-        <span class="name">{{ game.blackPlayerName }}</span>
-        <span class="model">{{ game.blackModelId || 'Human player' }}</span>
-      </div>
+      <span class="cost" title="Model cost for this game">
+        <mat-icon class="cost-icon" aria-hidden="true">payments</mat-icon>
+        {{ game.totalCostUsd | currency: 'USD' }}
+      </span>
     </div>
-  </div>
-  <div class="info">
-    <mat-chip-set>
-      <mat-chip [highlighted]="game.status === 'IN_PROGRESS'">{{ game.status }}</mat-chip>
-    </mat-chip-set>
-    @if (game.result) {
-      <span class="result">{{ getResultText() }}</span>
-    }
-    <span class="cost">
-      <mat-icon class="cost-icon">payments</mat-icon>
-      {{ game.totalCostUsd | currency: 'USD' }}
-    </span>
   </div>
   @if (game.status === 'PAUSED' && game.statusDetail) {
-    <div class="pause-alert" role="status">
-      <mat-icon>pause_circle</mat-icon>
+    <div class="pause-panel" role="status">
+      <div class="pause-head">
+        <mat-icon class="pause-icon" aria-hidden="true">pause_circle</mat-icon>
+        <div class="pause-copy">
+          <span class="pause-title">{{
+            showRaiseLimit() ? 'Game paused' : 'Paused. Fix the problem, then resume the game.'
+          }}</span>
+          <span class="pause-detail">{{ game.statusDetail }}</span>
+        </div>
+      </div>
       @if (showRaiseLimit()) {
-        <span>Paused: {{ game.statusDetail }}.</span>
-      } @else {
-        <span>Paused: {{ game.statusDetail }}. Fix the problem, then resume the game.</span>
+        <div class="raise-limit">
+          <mat-form-field appearance="outline" class="limit-field" subscriptSizing="dynamic">
+            <mat-label>Max output tokens per answer</mat-label>
+            <input
+              matInput
+              type="number"
+              min="128"
+              max="32768"
+              step="128"
+              [(ngModel)]="newMaxOutputTokens"
+            />
+            <mat-hint
+              >Currently {{ truncationLimit }}; 128–32768, includes reasoning tokens</mat-hint
+            >
+          </mat-form-field>
+          <button
+            mat-flat-button
+            type="button"
+            class="save-resume"
+            [disabled]="!canSaveLimit()"
+            (click)="saveAndResume()"
+          >
+            Save and resume
+          </button>
+        </div>
       }
     </div>
-    @if (showRaiseLimit()) {
-      <div class="raise-limit">
-        <mat-form-field appearance="outline">
-          <mat-label>Max output tokens per answer</mat-label>
-          <input
-            matInput
-            type="number"
-            min="128"
-            max="32768"
-            step="128"
-            [(ngModel)]="newMaxOutputTokens"
-          />
-          <mat-hint>Currently {{ truncationLimit }}; 128–32768, includes reasoning tokens</mat-hint>
-        </mat-form-field>
-        <button
-          mat-flat-button
-          type="button"
-          [disabled]="!canSaveLimit()"
-          (click)="saveAndResume()"
-        >
-          Save and resume
-        </button>
-      </div>
-    }
   }
   @if (retryInfo) {
-    <div class="retry-alert"><mat-icon>warning</mat-icon> {{ retryInfo }}</div>
+    <div class="retry-alert" role="status">
+      <mat-icon aria-hidden="true">warning</mat-icon> {{ retryInfo }}
+    </div>
   }
 </mat-card>

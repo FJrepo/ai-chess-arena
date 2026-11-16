@@ -1,6 +1,10 @@
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { EMPTY, Subject, of, throwError } from 'rxjs';
 import { GameView } from './game-view';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import { ApiService } from '../../services/api.service';
+import { WebSocketService } from '../../services/websocket.service';
 import { Game, Move, MoveAttempt, MoveWsMessage, WsMessage } from '../../models/tournament.model';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -147,6 +151,62 @@ describe('GameView', () => {
     expect(component.evaluationStatusLabel()).toBe('Eval unavailable');
   });
 
+  it('shows the stored evaluation of the viewed move and unknown, not 0.0, where there is none', () => {
+    const { component } = createComponent();
+    component.game.set(gameWith({ status: 'COMPLETED', resultReason: 'RESIGNATION' }));
+    component.moves.set([
+      { ...storedMove(1, 'WHITE', 'e4', AFTER_E4), evaluationCp: 35, evaluationMate: null },
+      { ...storedMove(1, 'BLACK', 'e5', AFTER_E5), evaluationCp: null, evaluationMate: null },
+    ]);
+
+    component.goLast();
+    expect(component.currentEvaluation()).toEqual({ cp: null, mate: null, checkmated: null });
+
+    component.goPrev();
+    expect(component.currentEvaluation()).toEqual({ cp: 35, mate: null, checkmated: null });
+
+    component.goFirst();
+    expect(component.currentEvaluation()).toEqual({ cp: null, mate: null, checkmated: null });
+  });
+
+  it('shows the final position of a checkmate as a win for the mating side', () => {
+    const { component } = createComponent();
+    const foolsMate = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
+    component.game.set(
+      gameWith({ status: 'COMPLETED', result: 'BLACK_WINS', resultReason: 'CHECKMATE' }),
+    );
+    component.moves.set([
+      storedMove(1, 'WHITE', 'f3', 'rnbqkbnr/pppppppp/8/8/8/5P2/PPPPP1PP/RNBQKBNR b KQkq - 0 1'),
+      storedMove(1, 'BLACK', 'e5', 'rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w KQkq - 0 2'),
+      storedMove(2, 'WHITE', 'g4', 'rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2'),
+      storedMove(2, 'BLACK', 'Qh4#', foolsMate),
+    ]);
+    component.goLast();
+
+    expect(component.currentEvaluation().checkmated).toBe('WHITE');
+    expect(component.lastMove()).toEqual({ from: 'd8', to: 'h4' });
+  });
+
+  it('derives the last-move squares of the viewed move, and none before the first move', () => {
+    const { component } = createComponent();
+    component.game.set(gameWith({ currentFen: AFTER_E5 }));
+
+    expect(component.lastMove()).toBeNull();
+
+    component.moves.set([
+      storedMove(1, 'WHITE', 'e4', AFTER_E4),
+      storedMove(1, 'BLACK', 'e5', AFTER_E5),
+    ]);
+    component.goLast();
+    expect(component.lastMove()).toEqual({ from: 'e7', to: 'e5' });
+
+    component.goPrev();
+    expect(component.lastMove()).toEqual({ from: 'e2', to: 'e4' });
+
+    component.goFirst();
+    expect(component.lastMove()).toBeNull();
+  });
+
   it('keeps chat out of the feed by default and can opt it back in', () => {
     const { component } = createComponent();
     component.game.set({
@@ -212,7 +272,10 @@ describe('GameView', () => {
 
     expect(timelineEvents.map((event) => event.type)).toEqual(['result', 'chat', 'move', 'start']);
     expect(defaultFeedEvents.map((event) => event.type)).toEqual(['result', 'move', 'start']);
-    expect(defaultFeedEvents[1].detail).toContain('after 1 retry');
+    expect(defaultFeedEvents[1].detail).toBe('Alpha');
+    expect(defaultFeedEvents[1].attemptSummary).toBe('1 retry');
+    expect(defaultFeedEvents[0].attemptSummary).toBeNull();
+    expect(defaultFeedEvents[2].attemptSummary).toBeNull();
     expect(defaultFeedEvents[2].label).toBe('Game Started');
 
     component.includeChatInFeed.set(true);
@@ -411,9 +474,11 @@ describe('GameView', () => {
     const move = events.find((event) => event.type === 'move');
     const unplayed = events.find((event) => event.type === 'attempts');
 
-    expect(move?.detail).toBe('Alpha: 2 failed attempts: illegal Qxh7, unparseable answer');
+    expect(move?.detail).toBe('Alpha');
+    expect(move?.attemptSummary).toBe('2 failed attempts: illegal Qxh7, unparseable answer');
     expect(unplayed?.label).toBe('Black move 1 not played');
-    expect(unplayed?.detail).toBe('Beta: 2 failed attempts: illegal Ke7, empty answer');
+    expect(unplayed?.detail).toBe('Beta');
+    expect(unplayed?.attemptSummary).toBe('2 failed attempts: illegal Ke7, empty answer');
   });
 
   it('loads the attempts together with the game', () => {
@@ -432,9 +497,9 @@ describe('GameView', () => {
 
     expect(getGameAttempts).toHaveBeenCalledWith('g-1');
     expect(component.attempts()).toHaveLength(1);
-    expect(component.feedEvents().find((event) => event.type === 'attempts')?.detail).toBe(
-      'Alpha: answer cut off at the token limit',
-    );
+    const unplayed = component.feedEvents().find((event) => event.type === 'attempts');
+    expect(unplayed?.detail).toBe('Alpha');
+    expect(unplayed?.attemptSummary).toBe('answer cut off at the token limit');
   });
 
   it('ignores an outdated attempts response that arrives after a newer one', () => {
@@ -836,3 +901,54 @@ function attemptFixture(overrides: Partial<MoveAttempt> = {}): MoveAttempt {
     ...overrides,
   };
 }
+
+describe('GameView promotion picker', () => {
+  function renderPicker(currentFen: string) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () => of(gameWith({ currentFen })),
+            getSystemStatus: () => EMPTY,
+            getGameAttempts: () => of([]),
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => EMPTY,
+            reconnected: () => EMPTY,
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    fixture.componentInstance.pendingPromotion.set({ from: 'e7', to: 'e8' });
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it.each([
+    ['WHITE', START_FEN, 'white-piece'],
+    ['BLACK', AFTER_E4, 'black-piece'],
+  ])('shows the four piece glyphs in %s colours, not escape text', (_color, fen, pieceClass) => {
+    const fixture = renderPicker(fen);
+    const pieces = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.promotion-picker .promotion-piece'),
+    );
+
+    expect(pieces.map((piece) => piece.textContent?.trim())).toEqual(['♛', '♜', '♝', '♞']);
+    expect(pieces.every((piece) => piece.classList.contains(pieceClass))).toBe(true);
+    fixture.destroy();
+  });
+});

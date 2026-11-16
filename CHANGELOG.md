@@ -14,6 +14,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
 - When a game is paused because an answer was cut off at the output-token limit, the game view offers a *Max output tokens per answer* field (prefilled with double the current limit) and a *Save and resume* button that updates the tournament and resumes the game.
 - Analytics: a *First-try legal* column (share of turns answered with a legal move on the first attempt) in the reliability and comparison tables, a matching sort option, and a one-line explanation of the score under the reliability table. The reliability and comparison API rows carry `firstTryLegalRate`.
+- Game view: the board marks the squares of the move being viewed with the classes `last-move-from` and `last-move-to` (derived from the stored positions, including castling, en passant and promotion, and only when the two positions are exactly one legal-looking move apart); there is no mark before the first move. The squares are not styled yet.
+- Games in the API (`GameDto`) carry `whiteParticipantId`, `blackParticipantId` and `advancedParticipantId` (null for a side without a participant, such as a bye).
 
 ### Changed
 - The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).
@@ -27,6 +29,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - *Max Retries* is labelled *Max attempts per move* in the setup page and README; the API field stays `maxRetries` for compatibility.
 - The setup estimate prices a move with about 1,400 prompt tokens (system prompt, last six prior messages and the current turn, measured by a backend test) instead of 900, and its footnote warns that reasoning models can use far more output tokens, up to the tournament's max output tokens.
 - Deleting a tournament asks for confirmation first; for a tournament in progress the prompt warns that all its games, moves, chat and history are deleted.
+- Game feed: a ply's failed or cut-off answers are shown on their own line (class `feed-attempts`) instead of being appended to the player name.
+- The pause reason for a cut-off answer is short and user-facing ("…'s answer was cut off at the 4096-token output limit (3900 of them reasoning). Raise the limit and resume"); it no longer names the API route or field, which stay documented in the README.
 
 ### Fixed
 - Reasoning models no longer lose games because a 500-token limit cut off their answer: an answer cut off at the limit without a usable legal move pauses the game with a hint instead of counting as a failed attempt; a cut-off answer with a legal move is played.
@@ -38,8 +42,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Game view: reviewing earlier moves no longer changes whose turn the page shows when the server has not reported it.
 - Analytics no longer count byes (a side without a participant; a real participant named "BYE" still counts) or waiting, running and paused games as games played, so unfinished games no longer lower completion; finished games are selected by completion time instead of creation time, and moves follow their games.
 - Setup estimate: the final is no longer counted twice when no separate final format is set (4 players, best of 3: 6–9 games instead of 8–12).
+- Bracket: a waiting series with a missing player says "Waiting for the previous round." instead of offering to start the game.
+- Bracket: the Final's result says "*name* wins the tournament" instead of "advances", also when the draw policy decided it ("wins the tournament on the draw policy (1-1)").
+- Bracket: in a best-of series, a ready or running later game can open the previous finished game with *Review Previous*, and the result text and *Review* use the last finished game instead of the next waiting one.
+- Bracket: a series card shows the colours of the current game when a later game swaps them; series wins stay with the right participant, identified by participant id, so two participants with the same name are no longer mixed up (names are only compared for data without ids).
+- Bracket: the score in draw-policy results, such as "(0-0)", no longer wraps across lines.
+- Bracket: a completed Final shows its result ("*name* wins the tournament 2-0"), also when it ended by forfeit, not only when it was level.
+- Bracket: sudden-death tiebreak games beyond best of N no longer count toward the series score (1-1 plus a tiebreak showed 2-1); a series decided by a tiebreak says "*name* wins the tiebreak (1-1 after 3 games)" instead of naming the draw policy.
+- Bracket: only a side without a participant is a bye; a real participant named "BYE" can play and shows a score.
+- Bracket: a pending card shows "Waiting for the previous round." instead of "Waiting for an opponent" or "Waiting for both players".
 - System status: a failed refresh no longer leaves the page loading, and while the backend is unreachable the OpenRouter and Stockfish cards show *Unknown* instead of a failure.
 - Moves that share a move number are ordered White first everywhere (`Game.moves`, the moves and attempts endpoints (attempts of a ply by time, since attempt numbers restart after a resume), the board rebuild on resume, and the game view), also when they were stored Black-first or with equal timestamps.
+- Game view: the evaluation bar no longer shows 0.0 for positions without a Stockfish evaluation (not evaluated yet, Stockfish unavailable, or the start position); it shows a dash on a neutral bar instead, titled "Evaluation unavailable". The bar is exposed to screen readers as an image named after its state (for example "Evaluation: +0.4"). The final position of a game won by checkmate shows the result (1-0 or 0-1) with the bar fully on the winner's side and the label "White wins by checkmate" or "Black wins by checkmate", also when Stockfish reported it as an unsigned "mate 0"; a final stalemate or insufficient-material position shows 0.0, also when a different score was stored for it.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
 
 ## [1.2.0] - 2026-11-16

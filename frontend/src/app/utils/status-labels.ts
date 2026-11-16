@@ -15,6 +15,17 @@ const GAME_STATUS_LABELS: Record<Game['status'], string> = {
   FORFEIT: 'Forfeit',
 };
 
+const RESULT_REASON_LABELS: Record<string, string> = {
+  CHECKMATE: 'by checkmate',
+  STALEMATE: 'by stalemate',
+  REPETITION: 'by repetition',
+  FIFTY_MOVE: 'by the fifty-move rule',
+  INSUFFICIENT_MATERIAL: 'by insufficient material',
+  TIMEOUT: 'on time',
+  FORFEIT_INVALID_MOVES: 'by forfeit after invalid moves',
+  RESIGNATION: 'by resignation',
+};
+
 /** Reader-facing label for a tournament status; unknown values are humanized. */
 export function tournamentStatusLabel(status: string | null | undefined): string {
   return lookup(TOURNAMENT_STATUS_LABELS, status);
@@ -23,6 +34,20 @@ export function tournamentStatusLabel(status: string | null | undefined): string
 /** Reader-facing label for a game status; unknown values are humanized. */
 export function gameStatusLabel(status: string | null | undefined): string {
   return lookup(GAME_STATUS_LABELS, status);
+}
+
+/**
+ * Phrase that follows a result, such as `by resignation` in "Black wins by resignation";
+ * unknown reasons become `by <humanized reason>`, and a missing reason an empty string.
+ */
+export function resultReasonLabel(reason: string | null | undefined): string {
+  if (!reason || reason.trim().length === 0) {
+    return '';
+  }
+  if (Object.hasOwn(RESULT_REASON_LABELS, reason)) {
+    return RESULT_REASON_LABELS[reason];
+  }
+  return `by ${humanizeStatus(reason).toLowerCase()}`;
 }
 
 /** Turns a raw enum value such as `SOME_NEW_STATE` into `Some new state`. */

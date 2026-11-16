@@ -1,16 +1,23 @@
 :host {
-  --board-square-size: 56px;
+  // The board fills its host's width up to --chessboard-max-size; the host sets the width.
+  // Squares and pieces scale with it (board width = label column + 8 squares).
   --board-label-size: 24px;
+
+  display: block;
+  width: 100%;
+  max-width: var(--chessboard-max-size, 472px);
 }
 
 .chessboard-container {
-  display: inline-block;
+  container-type: inline-size;
+  width: 100%;
 }
 
 .board {
   display: grid;
-  grid-template-columns: var(--board-label-size) repeat(8, var(--board-square-size));
-  grid-template-rows: repeat(8, var(--board-square-size)) var(--board-label-size);
+  grid-template-columns: var(--board-label-size) repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr)) var(--board-label-size);
+  aspect-ratio: 1;
   user-select: none;
 }
 
@@ -18,9 +25,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75em;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 65%, transparent);
-  width: var(--board-label-size);
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .file-labels-spacer {
@@ -31,14 +37,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75em;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 65%, transparent);
-  height: var(--board-label-size);
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .square {
-  width: var(--board-square-size);
-  height: var(--board-square-size);
+  min-width: 0;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -48,11 +53,11 @@
     transform 120ms ease;
 
   &.light {
-    background-color: #f0d9b5;
+    background-color: var(--app-board-light-square);
   }
 
   &.dark {
-    background-color: #b58863;
+    background-color: var(--app-board-dark-square);
   }
 
   &.interactive {
@@ -63,19 +68,31 @@
     box-shadow: inset 0 0 0 2px color-mix(in srgb, #5bb6ff 60%, transparent);
   }
 
+  // Last move (from and to squares): a wash over the square colour, kept under the
+  // selection and drop-target rings.
+  &.last-move-from,
+  &.last-move-to {
+    background-image: linear-gradient(var(--app-board-last-move), var(--app-board-last-move));
+  }
+
+  // Selection and drop-target rings: a coloured outer band with a dark inner edge, so the
+  // ring stays visible on both square colours and on the last-move wash.
   &.selected {
-    box-shadow: inset 0 0 0 3px color-mix(in srgb, #7ed1ff 85%, white);
+    box-shadow:
+      inset 0 0 0 3px color-mix(in srgb, #7ed1ff 85%, white),
+      inset 0 0 0 5px var(--app-board-ring-edge);
   }
 
   &.drop-target {
     box-shadow:
       inset 0 0 0 3px color-mix(in srgb, #ffd166 85%, white),
+      inset 0 0 0 5px var(--app-board-ring-edge),
       0 0 0 1px color-mix(in srgb, #ffd166 42%, transparent);
   }
 }
 
 .piece {
-  font-size: calc(var(--board-square-size) * 0.72);
+  font-size: calc((100cqi - var(--board-label-size)) / 8 * 0.72);
   line-height: 1;
   cursor: default;
 
@@ -86,22 +103,4 @@
   &[draggable='true']:active {
     cursor: grabbing;
   }
-}
-
-.piece.white-piece {
-  color: #f4f6fb;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.58),
-    1px -1px 0 rgba(0, 0, 0, 0.58),
-    -1px 1px 0 rgba(0, 0, 0, 0.58),
-    1px 1px 0 rgba(0, 0, 0, 0.58);
-}
-
-.piece.black-piece {
-  color: #171b22;
-  text-shadow:
-    -1px -1px 0 rgba(255, 255, 255, 0.35),
-    1px -1px 0 rgba(255, 255, 255, 0.35),
-    -1px 1px 0 rgba(255, 255, 255, 0.35),
-    1px 1px 0 rgba(255, 255, 255, 0.35);
 }

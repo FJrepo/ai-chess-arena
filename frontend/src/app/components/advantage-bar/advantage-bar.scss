@@ -63,3 +63,28 @@
     color: #eee;
   }
 }
+
+// No evaluation for this position: one muted neutral fill and a centred dash, so it doesn't
+// read as an even 0.0 split.
+.eval-bar.unknown {
+  background: var(--mat-sys-surface-container-highest);
+
+  .white-bar,
+  .black-bar,
+  .center-line {
+    visibility: hidden;
+  }
+
+  .eval-text {
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    color: var(--mat-sys-on-surface-variant);
+    text-shadow: none;
+  }
+}
+
+// Delivered checkmate: the bar is all the winner's colour; the result reads a size larger.
+.eval-bar.checkmate .eval-text {
+  font-size: 0.75rem;
+}

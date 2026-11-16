@@ -266,9 +266,8 @@ public class GameTurnService {
                 ? " (%d of them reasoning)".formatted(response.reasoningTokens())
                 : "";
         // No trailing period: the game view appends its own sentence end after the pause reason.
-        String detail = ("%s's answer was cut off at the %d-token output limit%s. "
-                + "Raise 'Max output tokens per answer' with 'Save and resume' in the game view "
-                + "(or set maxOutputTokens via PUT /api/tournaments/{id} and resume)")
+        // Shown to the user above the raise-limit field; the API route is documented in the README only.
+        String detail = "%s's answer was cut off at the %d-token output limit%s. Raise the limit and resume"
                 .formatted(request.playerName() != null ? request.playerName() : request.modelId(),
                         request.maxOutputTokens(), reasoning);
         LOG.warnf("Game %s: %s", request.gameId(), detail);

@@ -1,35 +1,45 @@
+@use 'sass:map';
+@use '@angular/material' as mat;
+
+// Status tones come from Material's tonal palettes (M3 has no success or warning role), as on
+// the system page; surfaces and text use the theme's system tokens. Dark is the app default.
+$success: mat.$green-palette;
+$warning: mat.$orange-palette;
+
+:host {
+  --game-success-text: color-mix(in srgb, #{map.get($success, 80)} 55%, var(--mat-sys-on-surface));
+  --game-warning-text: #{map.get($warning, 80)};
+  --game-warning-border: color-mix(in srgb, var(--game-warning-text) 60%, transparent);
+  --game-warning-fill: color-mix(in srgb, var(--game-warning-text) 10%, transparent);
+
+  display: block;
+}
+
+:host-context([data-theme='light']) {
+  --game-success-text: #{map.get($success, 30)};
+  --game-warning-text: #{map.get($warning, 30)};
+  --game-warning-border: #{map.get($warning, 40)};
+  --game-warning-fill: color-mix(in srgb, #{map.get($warning, 40)} 7%, transparent);
+}
+
 .view-actions {
   display: flex;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 12px;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.move-timer {
+// A quiet status line, not a control: icon + text, no pill.
+.eval-status-chip {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 36%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 84%, transparent);
-  font-size: 0.82rem;
-}
-
-.eval-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 36%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 84%, transparent);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  gap: 6px;
+  padding: 0 4px;
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface-variant);
+  cursor: default;
 
   mat-icon {
     font-size: 18px;
@@ -37,114 +47,135 @@
     height: 18px;
   }
 
-  &.online {
-    color: color-mix(in srgb, #4db06f 80%, var(--mat-sys-on-surface));
-    border-color: color-mix(in srgb, #4db06f 38%, var(--mat-sys-outline));
-    background: color-mix(in srgb, #4db06f 12%, var(--mat-sys-surface-container));
+  &.online mat-icon {
+    color: var(--game-success-text);
   }
 
-  &.offline {
-    color: color-mix(in srgb, #ff8a65 82%, var(--mat-sys-on-surface));
-    border-color: color-mix(in srgb, #ff8a65 38%, var(--mat-sys-outline));
-    background: color-mix(in srgb, #ff8a65 12%, var(--mat-sys-surface-container));
+  &.offline mat-icon {
+    color: var(--game-warning-text);
+  }
+}
+
+.move-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container);
+  font: var(--mat-sys-label-large);
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    color: var(--mat-sys-on-surface-variant);
   }
 }
 
 .timer-label {
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 600;
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .timer-value {
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
     monospace;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--mat-sys-on-surface);
 }
 
 .move-timer.warning {
-  border-color: color-mix(in srgb, #ff8f00 60%, var(--mat-sys-outline));
-  background: color-mix(in srgb, #ff8f00 16%, var(--mat-sys-surface-container));
-}
+  border-color: var(--game-warning-border);
+  background: var(--game-warning-fill);
 
-.move-timer.warning .timer-value {
-  color: color-mix(in srgb, #ffb74d 76%, white);
-}
-
-.move-timer.waiting-human {
-  border-color: color-mix(in srgb, #5bb6ff 46%, var(--mat-sys-outline));
-  background: color-mix(in srgb, #5bb6ff 14%, var(--mat-sys-surface-container));
-}
-
-.game-layout {
-  --board-square-size: clamp(58px, 3.6vw, 72px);
-  --moves-col: 2.35fr;
-  --board-col: 4.45fr;
-  --chat-col: 3.35fr;
-
-  display: grid;
-  grid-template-columns:
-    minmax(180px, var(--moves-col))
-    minmax(calc(24px + (8 * var(--board-square-size))), var(--board-col))
-    minmax(280px, var(--chat-col));
-  grid-template-areas:
-    'feed board chat'
-    'movelist movelist movelist';
-  gap: 14px;
-  margin-top: 16px;
-  align-items: start;
-}
-
-.human-move-card {
-  margin-top: 16px;
-  border-radius: 18px;
-
-  mat-card-subtitle {
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 66%, transparent);
+  mat-icon,
+  .timer-value {
+    color: var(--game-warning-text);
   }
 }
 
-.human-move-form {
+.move-timer.waiting-human {
+  border-color: color-mix(in srgb, var(--mat-sys-primary) 50%, transparent);
+  background: color-mix(in srgb, var(--mat-sys-primary) 8%, transparent);
+}
+
+// Board size (incl. the rank-label column; the board is square) follows the viewport height so
+// board, moves and feed fit one screen, and is capped by the width the side columns leave.
+.game-layout {
+  --board-chrome-v: 384px;
+  --board-max: 680px;
+  // Moves column minimum: two full notation cells (see the move list's --move-cell-min).
+  --moves-col-min: 19rem;
+  // Width the side columns, gaps, eval bar and page padding need next to the board.
+  --board-side-reserve: 798px;
+  --board-size: clamp(
+    340px,
+    min(100dvh - var(--board-chrome-v), min(100vw, 1720px) - var(--board-side-reserve)),
+    var(--board-max)
+  );
+
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(240px, 1fr) auto;
-  gap: 14px;
-  align-items: start;
+  grid-template-columns: max-content minmax(var(--moves-col-min), 0.7fr) minmax(0, 1.3fr);
+  grid-template-areas:
+    'board moves feed'
+    'chat chat chat';
+  gap: 16px;
+  margin-top: 12px;
+  align-items: stretch;
 }
 
-.human-message-field {
-  min-width: 0;
-}
-
-.moves-column,
-.chat-column {
-  min-width: 0;
-}
-
-.moves-column {
+// The feed and move list take the row height (set by the board) and scroll inside it.
+.feed-column,
+.moves-area {
   grid-area: feed;
-  display: grid;
-  gap: 14px;
+  min-width: 0;
+  contain: size;
+}
+
+.moves-area {
+  grid-area: moves;
+}
+
+.moves-area app-move-list {
+  display: block;
+  height: 100%;
+}
+
+.chat-column {
+  grid-area: chat;
+  min-width: 0;
 }
 
 .chat-column app-chat-panel {
   display: block;
   height: 100%;
-  --chat-panel-min-height: 180px;
-  --chat-panel-max-height: calc((8 * var(--board-square-size)) + 72px);
+  --chat-panel-min-height: 0px;
+  --chat-panel-max-height: 320px;
 }
 
 .timeline-card {
+  height: 100%;
   border-radius: 16px;
 
   mat-card-header {
-    padding-bottom: 8px;
+    padding-bottom: 6px;
   }
 
   mat-card-title {
     margin: 0;
+    font: var(--mat-sys-title-medium);
+  }
+
+  mat-card-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 8px;
   }
 }
 
@@ -157,73 +188,69 @@
 }
 
 .timeline-toggle {
-  font-size: 0.82rem;
   justify-self: end;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface-variant);
 
   ::ng-deep .mdc-form-field {
     gap: 10px;
   }
 }
 
+// The list fades out at the bottom edge so a cut-off entry reads as "scroll for more".
 .timeline-scroll {
-  min-height: 180px;
-  max-height: calc((8 * var(--board-square-size)) + 72px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: grid;
-  gap: 10px;
-  padding-right: 4px;
+  align-content: start;
+  gap: 2px;
+  margin-inline: -8px;
+  padding: 0 4px 28px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
 
+// One quiet row style for every entry; tone shows only in the icon, and as a soft warning
+// edge for failed attempts and overrides.
 .timeline-event {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
   text-align: left;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 26%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 86%, transparent);
-  color: inherit;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  cursor: default;
 
   &.clickable {
     cursor: pointer;
   }
 
   &.clickable:hover {
-    border-color: color-mix(in srgb, var(--mat-sys-primary) 34%, transparent);
-    background: color-mix(in srgb, var(--mat-sys-primary-container) 22%, transparent);
+    background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
   }
 
-  &.move-event .timeline-icon {
-    color: color-mix(in srgb, var(--mat-sys-primary) 84%, white);
-    background: color-mix(in srgb, var(--mat-sys-primary) 18%, transparent);
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
   }
 
-  &.move-event {
-    border-color: color-mix(in srgb, var(--mat-sys-primary) 28%, transparent);
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--mat-sys-primary) 11%, transparent) 0%,
-      color-mix(in srgb, var(--mat-sys-surface-container) 88%, transparent) 18%
-    );
-  }
+  &.warning-event {
+    background: var(--game-warning-fill);
+    box-shadow: inset 3px 0 0 var(--game-warning-border);
 
-  &.move-event .timeline-label {
-    color: color-mix(in srgb, var(--mat-sys-primary) 78%, white);
-  }
-
-  &.chat-event .timeline-icon {
-    color: color-mix(in srgb, #5bb6ff 78%, white);
-  }
-
-  &.warning-event .timeline-icon {
-    color: color-mix(in srgb, #ff8a65 84%, white);
+    .timeline-icon {
+      color: var(--game-warning-text);
+    }
   }
 
   &.success-event .timeline-icon {
-    color: color-mix(in srgb, #4db06f 84%, white);
+    color: var(--game-success-text);
   }
 }
 
@@ -231,75 +258,77 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
+  width: 20px;
+  height: 20px;
+  color: var(--mat-sys-on-surface-variant);
 
   mat-icon {
-    font-size: 17px;
-    width: 17px;
-    height: 17px;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
   }
 }
 
 .timeline-copy {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
 }
 
 .timeline-label {
-  font-weight: 700;
+  font: var(--mat-sys-title-small);
   color: var(--mat-sys-on-surface);
 }
 
-.timeline-detail {
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 66%, transparent);
-  font-size: 0.84rem;
-  line-height: 1.3;
+.timeline-detail,
+.feed-attempts {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--mat-sys-on-surface-variant);
   overflow-wrap: anywhere;
 }
 
+// Failed-attempt summary: same quiet size as the detail line, set apart by the warning tone.
+.feed-attempts {
+  color: var(--game-warning-text);
+}
+
 .timeline-time {
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 54%, transparent);
+  padding-top: 1px;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface-variant);
   white-space: nowrap;
 }
 
 .timeline-empty {
   text-align: center;
   padding: 20px 12px;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 56%, transparent);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .board-section {
   grid-area: board;
-  width: 100%;
-  justify-self: stretch;
-  display: grid;
-  gap: 12px;
+  min-width: 0;
 }
 
+// Capture bars and controls take the width of the board block (eval bar + board).
 .board-frame {
-  width: min(100%, calc(56px + (8 * var(--board-square-size))));
-  justify-self: center;
+  width: max-content;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .board-container {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: stretch;
-  justify-content: center;
-  width: 100%;
 }
 
 app-chessboard {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  width: var(--board-size);
+  --chessboard-max-size: var(--board-size);
 }
 
 app-advantage-bar {
@@ -307,17 +336,17 @@ app-advantage-bar {
 }
 
 .eval-unavailable {
-  width: 42px;
-  border-radius: 16px;
-  border: 1px dashed color-mix(in srgb, var(--mat-sys-outline) 48%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 82%, transparent);
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+  width: 28px;
+  border-radius: 12px;
+  border: 1px dashed var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container);
+  color: var(--mat-sys-on-surface-variant);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 10px 4px;
+  padding: 10px 2px;
   text-align: center;
 
   mat-icon {
@@ -330,8 +359,8 @@ app-advantage-bar {
 .eval-unavailable-label {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  font-size: 0.68rem;
-  font-weight: 700;
+  font-size: 0.6875rem;
+  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -340,71 +369,51 @@ app-advantage-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
+  min-height: 38px;
+  padding: 4px 6px 4px 12px;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 36%, transparent);
-  background: color-mix(in srgb, var(--mat-sys-surface-container) 86%, transparent);
-  width: 100%;
+  border: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container-low);
   min-width: 0;
-
-  &.top {
-    margin-bottom: 8px;
-  }
-
-  &.bottom {
-    margin-top: 8px;
-  }
 }
 
 .capture-label {
-  min-width: 106px;
-  font-size: 0.76rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
-  font-weight: 700;
+  flex: 0 0 auto;
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .capture-pieces {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1px;
-  min-height: 24px;
+  min-width: 0;
+  min-height: 28px;
+}
+
+// Captured pieces sit on a light-square tray so both piece colours read as on the board,
+// in either theme.
+.capture-pieces.has-pieces {
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--app-board-light-square);
 }
 
 .captured-piece {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.captured-piece.white-piece {
-  color: #f4f6fb;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.6),
-    1px -1px 0 rgba(0, 0, 0, 0.6),
-    -1px 1px 0 rgba(0, 0, 0, 0.6),
-    1px 1px 0 rgba(0, 0, 0, 0.6);
-}
-
-.captured-piece.black-piece {
-  color: #14181d;
-  text-shadow:
-    -1px -1px 0 rgba(255, 255, 255, 0.4),
-    1px -1px 0 rgba(255, 255, 255, 0.4),
-    -1px 1px 0 rgba(255, 255, 255, 0.4),
-    1px 1px 0 rgba(255, 255, 255, 0.4);
+  font-size: 22px;
+  line-height: 26px;
 }
 
 .capture-empty {
-  font-size: 0.82rem;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 54%, transparent);
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .material-edge {
   margin-left: auto;
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: color-mix(in srgb, var(--mat-sys-primary) 76%, var(--mat-sys-on-surface));
+  padding-right: 6px;
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface);
 }
 
 .promotion-picker {
@@ -413,55 +422,63 @@ app-advantage-bar {
   gap: 8px;
   padding: 10px 14px;
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, #ffd166 60%, var(--mat-sys-outline));
-  background: color-mix(in srgb, #ffd166 14%, var(--mat-sys-surface-container));
+  border: 1px solid var(--game-warning-border);
+  background: var(--game-warning-fill);
   flex-wrap: wrap;
   justify-content: center;
+  // Takes the board block's width instead of widening it (the frame sizes to max-content);
+  // the buttons wrap when they don't fit.
+  contain: inline-size;
 }
 
 .promotion-label {
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 82%, transparent);
+  font: var(--mat-sys-label-large);
+  color: var(--mat-sys-on-surface);
   margin-right: 4px;
 }
 
 .promotion-btn {
   min-width: 0;
-  font-size: 0.82rem;
 }
 
 .promotion-piece {
   font-size: 1.3rem;
   line-height: 1;
   margin-right: 4px;
+  // A light-square chip, like the capture trays, so both piece colours read on the button.
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: var(--app-board-light-square);
 }
 
 .promotion-cancel {
-  font-size: 0.82rem;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 66%, transparent);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .board-controls {
   display: flex;
   justify-content: center;
   gap: 4px;
-  margin-top: -2px;
 }
 
-.move-list-row {
-  grid-area: movelist;
-  width: 100%;
+.human-move-card {
+  margin-top: 16px;
+  border-radius: 18px;
+
+  mat-card-subtitle {
+    color: var(--mat-sys-on-surface-variant);
+  }
 }
 
-.move-list-row app-move-list {
-  display: block;
-  width: 100%;
+.human-move-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(240px, 1fr) auto;
+  gap: 14px;
+  align-items: start;
 }
 
-.chat-column {
-  grid-area: chat;
-  min-height: 540px;
+.human-message-field {
+  min-width: 0;
 }
 
 .admin-panel {
@@ -481,59 +498,49 @@ app-advantage-bar {
   align-items: center;
 }
 
-@media (max-width: 1380px) {
+// Wide desktop: feed | board | moves over chat. The board spans both rows; the move list sizes
+// to its content up to its cap and the chat takes the rest of the board height.
+@media (min-width: 1500px) {
   .game-layout {
-    --board-square-size: clamp(54px, 4.2vw, 66px);
+    --board-side-reserve: 754px;
 
-    grid-template-columns: auto minmax(340px, 1fr);
+    grid-template-columns: minmax(320px, 1fr) max-content minmax(
+        max(320px, var(--moves-col-min)),
+        1fr
+      );
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
-      'board chat'
-      'feed chat'
-      'movelist movelist';
+      'feed board moves'
+      'feed board chat';
   }
 
-  .board-section {
-    grid-area: board;
+  .moves-area {
+    contain: none;
+    --move-list-max-height: calc(var(--board-size) * 0.42);
   }
+
   .chat-column {
-    grid-area: chat;
-    min-height: 0;
+    contain: size;
+    min-height: 200px;
+  }
+
+  .chat-column app-chat-panel {
+    --chat-panel-max-height: none;
   }
 }
 
-@media (max-width: 980px) {
+// Narrower than the supported desktop range: one column, natural heights.
+@media (max-width: 1099px) {
   .game-layout {
-    --board-square-size: clamp(42px, 10.5vw, 56px);
+    --board-size: clamp(300px, calc(100vw - 96px), 560px);
 
     display: flex;
     flex-direction: column;
   }
 
-  .board-section {
-    justify-self: start;
-  }
-
-  .move-timer {
-    margin-left: 0;
-  }
-
-  .eval-status-chip {
-    order: 3;
-  }
-
-  .capture-strip {
-    min-width: 0;
-    width: 100%;
-  }
-}
-
-@media (max-width: 1360px) {
-  .timeline-header {
-    grid-template-columns: 1fr;
-    justify-items: start;
-  }
-
-  .timeline-toggle {
-    justify-self: start;
+  .feed-column,
+  .moves-area {
+    contain: none;
+    max-height: 520px;
   }
 }
