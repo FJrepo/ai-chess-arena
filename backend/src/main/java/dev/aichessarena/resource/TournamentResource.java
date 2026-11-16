@@ -2,6 +2,7 @@ package dev.aichessarena.resource;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.aichessarena.dto.*;
+import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game;
@@ -14,8 +15,10 @@ import dev.aichessarena.service.TournamentService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -187,8 +190,17 @@ public class TournamentResource {
 
     @POST
     @Path("/{id}/generate-bracket")
-    public Response generateBracket(@PathParam("id") UUID id) {
-        List<Game> games = tournamentService.generateBracket(id);
+    public Response generateBracket(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
+        // Read the query map to distinguish an omitted mode from an explicitly empty one.
+        var query = uriInfo.getQueryParameters();
+        String drawMode = query.containsKey("drawMode") ? query.getFirst("drawMode") : "ORDER";
+        BracketDrawMode mode;
+        try {
+            mode = BracketDrawMode.valueOf(drawMode == null ? "" : drawMode.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("drawMode must be ORDER or RANDOM");
+        }
+        List<Game> games = tournamentService.generateBracket(id, mode);
         return Response.ok(games.stream().map(g -> DtoMapper.toDto(g, false)).toList()).build();
     }
 

@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
@@ -15,11 +16,14 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -27,6 +31,16 @@ import java.util.concurrent.ThreadLocalRandom;
 public class TournamentService {
 
     private static final Logger LOG = Logger.getLogger(TournamentService.class);
+
+    private final Random bracketRandom;
+
+    public TournamentService() {
+        this(new SecureRandom());
+    }
+
+    TournamentService(Random bracketRandom) {
+        this.bracketRandom = Objects.requireNonNull(bracketRandom);
+    }
 
     @Inject
     TournamentRepository tournamentRepository;
@@ -179,6 +193,12 @@ public class TournamentService {
 
     @Transactional
     public List<Game> generateBracket(UUID tournamentId) {
+        return generateBracket(tournamentId, BracketDrawMode.ORDER);
+    }
+
+    @Transactional
+    public List<Game> generateBracket(UUID tournamentId, BracketDrawMode drawMode) {
+        Objects.requireNonNull(drawMode, "drawMode");
         // The row lock makes concurrent or repeated generation requests wait, then see the bracket.
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
         if (tournament == null) throw new IllegalArgumentException("Tournament not found");
@@ -187,11 +207,19 @@ public class TournamentService {
             throw new WebApplicationException("The bracket has already been generated", Response.Status.CONFLICT);
         }
 
-        List<TournamentParticipant> participants = participantRepository.findByTournamentId(tournamentId);
+        List<TournamentParticipant> participants = new ArrayList<>(participantRepository.findByTournamentId(tournamentId));
         participants.sort(Comparator.comparingInt(p -> p.seed));
 
         if (participants.size() < 2) {
             throw new IllegalArgumentException("Need at least 2 participants");
+        }
+
+        if (drawMode == BracketDrawMode.RANDOM) {
+            Collections.shuffle(participants, bracketRandom);
+            // These are managed entities: the transaction stores drawn seeds together with the bracket.
+            for (int seed = 0; seed < participants.size(); seed++) {
+                participants.get(seed).seed = seed;
+            }
         }
 
         int size = nextPowerOf2(participants.size());

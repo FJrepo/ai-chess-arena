@@ -24,7 +24,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 ## Features
 
-- **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** seeded brackets, best-of series, separate final settings and draw policies.
+- **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** random or added-order bracket draws (UI defaults to random), best-of series, separate final settings and draw policies.
 - **[Participants](docs/how-it-works.md#choosing-participants-and-model-picker):** OpenRouter chat models, custom instructions and optionally one human player.
 - **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker):** catalog search, provider filters, prices, reasoning support and Intelligence Index.
 - **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish 19 evaluation.

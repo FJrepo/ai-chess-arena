@@ -9,6 +9,8 @@ export const DEFAULT_MOVE_TIMEOUT_SECONDS: number | null = null;
 /** OFF: models stay silent. OPTIONAL: models may send a message. MANDATORY: models are asked for one every move. */
 export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
 
+export type BracketDrawMode = 'ORDER' | 'RANDOM';
+
 export interface Tournament {
   /** Champion of a completed tournament. */
   winnerName?: string | null;
