@@ -53,6 +53,13 @@ export interface Game {
   statusDetail?: string | null;
   /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
   advancedPlayerName?: string | null;
+  /**
+   * Bracket participant ids of each side and of who advanced. Null for a side without a participant
+   * (a bye or a slot not reached yet); absent in data from older backends.
+   */
+  whiteParticipantId?: string | null;
+  blackParticipantId?: string | null;
+  advancedParticipantId?: string | null;
   pgn: string | null;
   currentFen: string;
   bracketRound: string | null;

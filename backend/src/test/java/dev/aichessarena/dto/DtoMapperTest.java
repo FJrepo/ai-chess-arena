@@ -34,6 +34,44 @@ class DtoMapperTest {
         assertEquals("Seed 2", dto.games().get(1).advancedPlayerName());
     }
 
+    @Test
+    void gameCarriesParticipantIdsSoEqualNamesStayDistinct() {
+        TournamentParticipant white = participant("Same");
+        TournamentParticipant black = participant("Same");
+        Game game = game(null, "Final", black);
+        game.whiteParticipant = white;
+        game.whitePlayerName = white.playerName;
+        game.blackParticipant = black;
+        game.blackPlayerName = black.playerName;
+
+        GameDto dto = DtoMapper.toDto(game, false);
+
+        assertEquals(white.id, dto.whiteParticipantId());
+        assertEquals(black.id, dto.blackParticipantId());
+        assertEquals(black.id, dto.advancedParticipantId());
+    }
+
+    @Test
+    void sideWithoutParticipantHasNoParticipantId() {
+        Game bye = game(null, "Quarterfinal", null);
+        bye.whiteParticipant = participant("BYE");
+        bye.blackPlayerName = "BYE";
+
+        GameDto dto = DtoMapper.toDto(bye, false);
+
+        assertEquals(bye.whiteParticipant.id, dto.whiteParticipantId());
+        assertNull(dto.blackParticipantId());
+        assertNull(dto.advancedParticipantId());
+    }
+
+    private static TournamentParticipant participant(String name) {
+        TournamentParticipant participant = new TournamentParticipant();
+        participant.id = UUID.randomUUID();
+        participant.playerName = name;
+        participant.controlType = TournamentParticipant.ControlType.AI;
+        return participant;
+    }
+
     private static Game game(Tournament tournament, String round, TournamentParticipant advanced) {
         Game game = new Game();
         game.id = UUID.randomUUID();

@@ -14,6 +14,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
 - When a game is paused because an answer was cut off at the output-token limit, the game view offers a *Max output tokens per answer* field (prefilled with double the current limit) and a *Save and resume* button that updates the tournament and resumes the game.
 - Analytics: a *First-try legal* column (share of turns answered with a legal move on the first attempt) in the reliability and comparison tables, a matching sort option, and a one-line explanation of the score under the reliability table. The reliability and comparison API rows carry `firstTryLegalRate`.
+- Games in the API (`GameDto`) carry `whiteParticipantId`, `blackParticipantId` and `advancedParticipantId` (null for a side without a participant, such as a bye).
 
 ### Changed
 - The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).
@@ -41,8 +42,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Bracket: a waiting series with a missing player says "Waiting for the previous round." instead of offering to start the game.
 - Bracket: the Final's result says "*name* wins the tournament" instead of "advances", also when the draw policy decided it ("wins the tournament on the draw policy (1-1)").
 - Bracket: in a best-of series, a ready or running later game can open the previous finished game with *Review Previous*, and the result text and *Review* use the last finished game instead of the next waiting one.
-- Bracket: a series card shows the colours of the current game when a later game swaps them; series wins stay with the right participant.
+- Bracket: a series card shows the colours of the current game when a later game swaps them; series wins stay with the right participant, identified by participant id, so two participants with the same name are no longer mixed up (names are only compared for data without ids).
 - Bracket: the score in draw-policy results, such as "(0-0)", no longer wraps across lines.
+- Bracket: a completed Final shows its result ("*name* wins the tournament 2-0"), also when it ended by forfeit, not only when it was level.
+- Bracket: sudden-death tiebreak games beyond best of N no longer count toward the series score (1-1 plus a tiebreak showed 2-1); a series decided by a tiebreak says "*name* wins the tiebreak (1-1 after 3 games)" instead of naming the draw policy.
+- Bracket: only a side without a participant is a bye; a real participant named "BYE" can play and shows a score.
+- Bracket: a pending card shows "Waiting for the previous round." instead of "Waiting for an opponent" or "Waiting for both players".
 - System status: a failed refresh no longer leaves the page loading, and while the backend is unreachable the OpenRouter and Stockfish cards show *Unknown* instead of a failure.
 - Moves that share a move number are ordered White first everywhere (`Game.moves`, the moves and attempts endpoints (attempts of a ply by time, since attempt numbers restart after a resume), the board rebuild on resume, and the game view), also when they were stored Black-first or with equal timestamps.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
