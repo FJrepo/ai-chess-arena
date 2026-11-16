@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Every model attempt is stored in the new `move_attempts` table (migration V10), including illegal, unparseable, empty, cut-off, timed-out and provider-failed answers, with tokens, reasoning tokens, cost, finish reason and the raw answer.
 - `GET /api/games/{id}/attempts` returns a game's attempts ordered by move number; the game feed shows failed attempts per move, and plies that ended without a move.
 - Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
+- When a game is paused because an answer was cut off at the output-token limit, the game view offers a *Max output tokens per answer* field (prefilled with double the current limit) and a *Save and resume* button that updates the tournament and resumes the game.
 
 ### Changed
 - The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).

@@ -64,3 +64,35 @@ export function summarizeFailedAttempts(attempts: MoveAttempt[]): string | null 
   const noun = failed.length === 1 ? 'failed attempt' : 'failed attempts';
   return `${failed.length} ${noun}: ${failed.map(describeAttempt).join(', ')}`;
 }
+
+/** The ply to be played after {@code moves}: White's first move when there are none. */
+export function nextPly(moves: Array<{ moveNumber: number; color: 'WHITE' | 'BLACK' }>): {
+  moveNumber: number;
+  color: 'WHITE' | 'BLACK';
+} {
+  const last = moves[moves.length - 1];
+  if (!last) {
+    return { moveNumber: 1, color: 'WHITE' };
+  }
+  return last.color === 'WHITE'
+    ? { moveNumber: last.moveNumber, color: 'BLACK' }
+    : { moveNumber: last.moveNumber + 1, color: 'WHITE' };
+}
+
+/** The most recent attempt for the given ply, or null. */
+export function latestAttemptFor(
+  attempts: MoveAttempt[],
+  moveNumber: number,
+  color: 'WHITE' | 'BLACK',
+): MoveAttempt | null {
+  let latest: MoveAttempt | null = null;
+  for (const attempt of attempts) {
+    if (attempt.moveNumber !== moveNumber || attempt.color !== color) {
+      continue;
+    }
+    if (!latest || Date.parse(attempt.createdAt) >= Date.parse(latest.createdAt)) {
+      latest = attempt;
+    }
+  }
+  return latest;
+}

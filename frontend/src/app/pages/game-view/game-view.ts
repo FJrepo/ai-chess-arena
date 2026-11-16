@@ -25,11 +25,17 @@ import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboa
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
 import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
-import { Subscription } from 'rxjs';
+import { Subscription, switchMap } from 'rxjs';
 import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
-import { failedAttemptsByPly, plyKey, summarizeFailedAttempts } from '../../utils/move-attempts';
+import {
+  failedAttemptsByPly,
+  latestAttemptFor,
+  nextPly,
+  plyKey,
+  summarizeFailedAttempts,
+} from '../../utils/move-attempts';
 
 type TimelineEvent = {
   id: string;
@@ -42,6 +48,9 @@ type TimelineEvent = {
   createdAtLabel: string;
   moveIndex: number | null;
 };
+
+/** Backend default for a tournament's output-token limit. */
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
 const WHITE_PIECE_GLYPHS: Record<CapturablePiece, string> = {
   Q: '\u2655',
@@ -91,6 +100,25 @@ export class GameView implements OnInit, OnDestroy {
   chatMessages = signal<ChatMessage[]>([]);
   /** Every model answer of the game, including rejected ones. */
   attempts = signal<MoveAttempt[]>([]);
+  /** The tournament's output-token limit, once loaded. */
+  tournamentMaxOutputTokens = signal<number | null>(null);
+  savingLimit = signal(false);
+  /**
+   * The current output-token limit when the game is paused because the latest answer for the ply to be
+   * played was cut off at it (outcome TRUNCATED); null otherwise.
+   */
+  truncationPauseLimit = computed<number | null>(() => {
+    const game = this.game();
+    if (!game || game.status !== 'PAUSED' || !game.statusDetail || !game.tournamentId) {
+      return null;
+    }
+    const ply = nextPly(this.moves());
+    const latest = latestAttemptFor(this.attempts(), ply.moveNumber, ply.color);
+    if (latest?.outcome !== 'TRUNCATED') {
+      return null;
+    }
+    return this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  });
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -348,8 +376,12 @@ export class GameView implements OnInit, OnDestroy {
 
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
-            next: (tournament) =>
-              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds || 60),
+            next: (tournament) => {
+              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds || 60);
+              this.tournamentMaxOutputTokens.set(
+                tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+              );
+            },
             error: () => this.turnState.setMoveTimeoutSeconds(60),
           });
         } else {
@@ -531,19 +563,34 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
+  /** Saves a raised output-token limit for the game's tournament, then resumes the game. */
+  saveLimitAndResume(maxOutputTokens: number) {
+    const tournamentId = this.game()?.tournamentId;
+    if (!tournamentId || this.savingLimit()) {
+      return;
+    }
+    this.savingLimit.set(true);
+    this.api
+      .updateTournament(tournamentId, { maxOutputTokens })
+      .pipe(
+        switchMap((tournament) => {
+          this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens);
+          return this.api.startGame(this.gameId);
+        }),
+      )
+      .subscribe({
+        next: () => this.savingLimit.set(false),
+        error: (err) => {
+          this.savingLimit.set(false);
+          this.showServerError(err, 'Failed to save the limit and resume the game.');
+        },
+      });
+  }
+
   resumeGame() {
     this.api.startGame(this.gameId).subscribe({
       error: (err) => {
-        const serverError = err?.error;
-        const message =
-          typeof serverError === 'string'
-            ? serverError
-            : (serverError?.error ?? 'Failed to resume the game.');
-        this.snackbar.open(message, 'Dismiss', {
-          duration: 4000,
-          horizontalPosition: 'right',
-          verticalPosition: 'top',
-        });
+        this.showServerError(err, 'Failed to resume the game.');
       },
     });
   }
@@ -700,6 +747,17 @@ export class GameView implements OnInit, OnDestroy {
       return game?.whitePlayerName || fallbackModel || 'White';
     }
     return game?.blackPlayerName || fallbackModel || 'Black';
+  }
+
+  private showServerError(err: { error?: unknown } | null | undefined, fallback: string): void {
+    const serverError = err?.error as string | { error?: string } | null | undefined;
+    const message =
+      typeof serverError === 'string' ? serverError : (serverError?.error ?? fallback);
+    this.snackbar.open(message, 'Dismiss', {
+      duration: 4000,
+      horizontalPosition: 'right',
+      verticalPosition: 'top',
+    });
   }
 
   private normalizeMessage(value: string): string | null {

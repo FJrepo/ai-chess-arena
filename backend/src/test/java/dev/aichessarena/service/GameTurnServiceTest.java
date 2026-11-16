@@ -166,6 +166,8 @@ class GameTurnServiceTest {
         assertTrue(fixture.lifecycle.pauseDetail.contains("2048-token output limit"), fixture.lifecycle.pauseDetail);
         assertTrue(fixture.lifecycle.pauseDetail.contains("1800 of them reasoning"), fixture.lifecycle.pauseDetail);
         assertTrue(fixture.lifecycle.pauseDetail.contains("Max output tokens per answer"));
+        assertTrue(fixture.lifecycle.pauseDetail.contains("'Save and resume' in the game view"));
+        assertTrue(fixture.lifecycle.pauseDetail.contains("PUT /api/tournaments/{id}"));
         assertNull(fixture.lifecycle.lastForfeitColor);
         assertFalse(fixture.lifecycle.invalidMovesForfeited);
         assertEquals(1, fixture.openRouter.calls);

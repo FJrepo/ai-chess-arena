@@ -355,6 +355,103 @@ describe('GameView', () => {
     });
     expect(component.retryInfo()).toBe('BLACK attempt 1: Failed to parse response as JSON');
   });
+
+  it('offers the raise-limit control only when the latest attempt was cut off', () => {
+    const { component } = createComponent();
+    component.tournamentMaxOutputTokens.set(4096);
+    component.game.set(
+      gameFixture({ tournamentId: 't-1', status: 'PAUSED', statusDetail: 'Answer cut off' }),
+    );
+    component.moves.set([moveFixture()]);
+
+    // Black's move 1 is next; its latest answer was cut off.
+    component.attempts.set([
+      attemptFixture({ color: 'BLACK', outcome: 'ILLEGAL_MOVE', proposedMove: 'Ke7' }),
+      attemptFixture({
+        color: 'BLACK',
+        attemptNumber: 2,
+        outcome: 'TRUNCATED',
+        createdAt: '2026-03-06T10:02:00Z',
+      }),
+    ]);
+    expect(component.truncationPauseLimit()).toBe(4096);
+
+    // A later provider failure for the same ply caused this pause instead.
+    component.attempts.update((list) => [
+      ...list,
+      attemptFixture({
+        color: 'BLACK',
+        attemptNumber: 3,
+        outcome: 'PROVIDER_FATAL',
+        createdAt: '2026-03-06T10:03:00Z',
+      }),
+    ]);
+    expect(component.truncationPauseLimit()).toBeNull();
+
+    // A cut-off answer for an earlier ply that was later played does not count.
+    component.attempts.set([attemptFixture({ outcome: 'TRUNCATED' })]);
+    expect(component.truncationPauseLimit()).toBeNull();
+
+    // Not paused: no control.
+    component.attempts.set([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]);
+    expect(component.truncationPauseLimit()).toBe(4096);
+    component.game.update((g) => (g ? { ...g, status: 'IN_PROGRESS' } : g));
+    expect(component.truncationPauseLimit()).toBeNull();
+  });
+
+  it('saves the raised limit, then resumes the game', () => {
+    const calls: string[] = [];
+    const updateTournament = vi.fn(() => {
+      calls.push('update');
+      return of({ id: 't-1', maxOutputTokens: 8192 });
+    });
+    const startGame = vi.fn(() => {
+      calls.push('start');
+      return of(void 0);
+    });
+    const { component, snackbar } = createComponent({ api: { updateTournament, startGame } });
+    (component as any).gameId = 'g-1';
+    component.game.set(
+      gameFixture({ tournamentId: 't-1', status: 'PAUSED', statusDetail: 'Answer cut off' }),
+    );
+
+    component.saveLimitAndResume(8192);
+
+    expect(updateTournament).toHaveBeenCalledWith('t-1', { maxOutputTokens: 8192 });
+    expect(startGame).toHaveBeenCalledWith('g-1');
+    expect(calls).toEqual(['update', 'start']);
+    expect(component.tournamentMaxOutputTokens()).toBe(8192);
+    expect(component.savingLimit()).toBe(false);
+    expect(snackbar.open).not.toHaveBeenCalled();
+  });
+
+  it('shows the server error and does not resume when saving the limit fails', () => {
+    const startGame = vi.fn(() => of(void 0));
+    const { component, snackbar } = createComponent({
+      api: {
+        updateTournament: () =>
+          throwError(() => ({
+            status: 400,
+            error: { error: 'maxOutputTokens must be between 128 and 32768' },
+          })),
+        startGame,
+      },
+    });
+    (component as any).gameId = 'g-1';
+    component.game.set(
+      gameFixture({ tournamentId: 't-1', status: 'PAUSED', statusDetail: 'Answer cut off' }),
+    );
+
+    component.saveLimitAndResume(99999);
+
+    expect(startGame).not.toHaveBeenCalled();
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'maxOutputTokens must be between 128 and 32768',
+      'Dismiss',
+      expect.any(Object),
+    );
+    expect(component.savingLimit()).toBe(false);
+  });
 });
 
 function gameFixture(overrides: Partial<Game> = {}): Game {
