@@ -158,6 +158,16 @@ export class GameView implements OnInit, OnDestroy {
       ? (this.tournamentMaxOutputTokens() ?? DEFAULT_MAX_OUTPUT_TOKENS)
       : null,
   );
+  /** The model maximum captured on the cut-off request, independent of later catalog changes. */
+  truncationModelMaximum = computed<number | null>(() => {
+    if (!this.truncatedSide()) {
+      return null;
+    }
+    const ply = nextPly(this.moves());
+    return (
+      latestAttemptFor(this.attempts(), ply.moveNumber, ply.color)?.modelMaxCompletionTokens ?? null
+    );
+  });
   /**
    * The cut-off side's reasoning effort for the pause banner: its participant, the level it asks for and the
    * levels its model offers (every level until, or unless, the catalog tells). Null without a cut-off answer,

@@ -75,7 +75,7 @@ export class GameInfoBar {
   static readonly MIN_OUTPUT_TOKENS = 128;
   static readonly MAX_OUTPUT_TOKENS = 262144;
 
-  /** Value of the raise-limit input; prefilled with double the current limit. */
+  /** Value of the raise-limit input; double the current limit, bounded by the model maximum. */
   newMaxOutputTokens: number | null = null;
   private currentLimit: number | null = null;
 
@@ -89,12 +89,36 @@ export class GameInfoBar {
       return;
     }
     this.currentLimit = value;
-    this.newMaxOutputTokens =
-      value == null ? null : Math.min(GameInfoBar.MAX_OUTPUT_TOKENS, value * 2);
+    this.prefillOutputLimit();
   }
 
   get truncationLimit(): number | null {
     return this.currentLimit;
+  }
+
+  private modelMaximum: number | null = null;
+
+  @Input()
+  set truncationModelMaximum(value: number | null) {
+    if (value !== this.modelMaximum) {
+      this.modelMaximum = value;
+      this.prefillOutputLimit();
+    }
+  }
+
+  /** Highest useful value for this model, bounded by the application limit. */
+  allowedOutputMaximum(): number {
+    return Math.min(
+      GameInfoBar.MAX_OUTPUT_TOKENS,
+      this.modelMaximum ?? GameInfoBar.MAX_OUTPUT_TOKENS,
+    );
+  }
+
+  private prefillOutputLimit(): void {
+    this.newMaxOutputTokens =
+      this.currentLimit == null
+        ? null
+        : Math.min(this.allowedOutputMaximum(), this.currentLimit * 2);
   }
 
   readonly reasoningEffortLabel = reasoningEffortLabel;
@@ -166,7 +190,7 @@ export class GameInfoBar {
       value != null &&
       Number.isInteger(value) &&
       value >= GameInfoBar.MIN_OUTPUT_TOKENS &&
-      value <= GameInfoBar.MAX_OUTPUT_TOKENS
+      value <= this.allowedOutputMaximum()
     );
   }
 

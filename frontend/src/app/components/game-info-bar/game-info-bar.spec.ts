@@ -62,6 +62,53 @@ describe('GameInfoBar raise-limit control', () => {
     expect(bar.newMaxOutputTokens).toBeNull();
   });
 
+  it('caps suggestions and submitted values at the model maximum regardless of input arrival order', () => {
+    const bar = new GameInfoBar();
+    bar.game = pausedGame();
+    bar.truncationLimit = 16384;
+    bar.truncationModelMaximum = 8192;
+    expect(bar.newMaxOutputTokens).toBe(8192);
+    expect(bar.allowedOutputMaximum()).toBe(8192);
+
+    const emitted: RaiseLimitRequest[] = [];
+    bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
+    bar.newMaxOutputTokens = 8193;
+    expect(bar.canSaveLimit()).toBe(false);
+    bar.saveAndResume();
+    bar.newMaxOutputTokens = 8192;
+    bar.saveAndResume();
+    expect(emitted).toEqual([{ maxOutputTokens: 8192 }]);
+
+    bar.truncationLimit = 4096;
+    expect(bar.newMaxOutputTokens).toBe(8192);
+    bar.truncationModelMaximum = null;
+    expect(bar.allowedOutputMaximum()).toBe(262144);
+    bar.truncationModelMaximum = 6000;
+    expect(bar.newMaxOutputTokens).toBe(6000);
+    bar.truncationLimit = 8192;
+    expect(bar.newMaxOutputTokens).toBe(6000);
+  });
+
+  it('renders the model-maximum explanation and bounds the input to that maximum', async () => {
+    const detail =
+      "Alpha's answer was cut off at the model's maximum of 8,192 output tokens. " +
+      'Raising the tournament limit cannot help. Lower the reasoning effort and resume.';
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentInstance.game = pausedGame(detail);
+    fixture.componentInstance.truncationLimit = 16384;
+    fixture.componentInstance.truncationModelMaximum = 8192;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+    const input = element.querySelector<HTMLInputElement>('input[type="number"]');
+    expect(input?.max).toBe('8192');
+    expect(input?.value).toBe('8192');
+    expect(element.querySelector('.pause-detail')?.textContent).toBe(detail);
+    expect(element.querySelector('mat-hint')?.textContent).toContain('128–8192');
+  });
+
   it('emits a valid limit and refuses out-of-range values or a save in progress', () => {
     const bar = new GameInfoBar();
     bar.game = pausedGame();

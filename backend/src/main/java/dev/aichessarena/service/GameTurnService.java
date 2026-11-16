@@ -370,13 +370,26 @@ public class GameTurnService {
                                           String proposedMove, OpenRouterService.LlmResponse response) {
         boolean reasoned = response.reasoningTokens() != null && response.reasoningTokens() > 0;
         String reasoning = reasoned ? " (%d of them reasoning)".formatted(response.reasoningTokens()) : "";
-        // Shown as-is (a full sentence) above the raise-limit and reasoning-effort fields; the API routes are
-        // documented in the README only. A model that spent the answer thinking is better helped by less effort.
-        String remedy = reasoned ? "Raise the limit or lower the reasoning effort and resume."
-                : "Raise the limit and resume.";
-        String detail = "%s's answer was cut off at the %d-token output limit%s. %s"
+        int effective = response.effectiveMaxOutputTokens() != null
+                ? response.effectiveMaxOutputTokens() : request.maxOutputTokens();
+        boolean atModelMaximum = response.modelMaxCompletionTokens() != null
+                && effective == response.modelMaxCompletionTokens();
+        String remedy;
+        if (atModelMaximum) {
+            remedy = "Raising the tournament limit cannot help. "
+                    + (openRouterService.offersReasoningEffort(request.modelId())
+                    ? "Lower the reasoning effort and resume."
+                    : "This model cannot finish within its own output maximum.");
+        } else {
+            remedy = reasoned ? "Raise the limit or lower the reasoning effort and resume."
+                    : "Raise the limit and resume.";
+        }
+        String limit = atModelMaximum
+                ? String.format(java.util.Locale.ROOT, "model's maximum of %,d output tokens", effective)
+                : "%d-token output limit".formatted(effective);
+        String detail = "%s's answer was cut off at the %s%s. %s"
                 .formatted(request.playerName() != null ? request.playerName() : request.modelId(),
-                        request.maxOutputTokens(), reasoning, remedy);
+                        limit, reasoning, remedy);
         LOG.warnf("Game %s: %s", request.gameId(), detail);
         recordAttempt(request, effort, attempt, Outcome.TRUNCATED, proposedMove, detail, response);
         gameLifecycleService.pauseWithReason(request.gameId(), detail);

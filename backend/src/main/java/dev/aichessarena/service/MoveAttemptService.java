@@ -79,6 +79,8 @@ public class MoveAttemptService {
                 row.promptTokens = response.promptTokens() > 0 ? response.promptTokens() : null;
                 row.completionTokens = response.completionTokens() > 0 ? response.completionTokens() : null;
                 row.reasoningTokens = response.reasoningTokens();
+                row.effectiveMaxOutputTokens = response.effectiveMaxOutputTokens();
+                row.modelMaxCompletionTokens = response.modelMaxCompletionTokens();
                 row.costUsd = response.costUsd() != null ? BigDecimal.valueOf(response.costUsd()) : null;
                 row.responseTimeMs = response.responseTimeMs() > 0 ? response.responseTimeMs() : null;
                 row.finishReason = truncate(response.finishReason(), MAX_FINISH_REASON_CHARS);

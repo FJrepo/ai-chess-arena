@@ -1,6 +1,9 @@
 package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -20,6 +23,7 @@ class OpenRouterOutputTokenTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private HttpServer server;
     private volatile String lastChatBody;
+    private String chatResponse = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}";
     private final AtomicInteger catalogRequests = new AtomicInteger();
 
     @AfterEach
@@ -40,7 +44,10 @@ class OpenRouterOutputTokenTest {
         service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
 
         for (int i = 0; i < 2; i++) {
-            service.chat("example/model", messages(), (OpenRouterService.AnswerDeadline) null, configured);
+            var response = service.chat("example/model", messages(), (OpenRouterService.AnswerDeadline) null, configured);
+            assertEquals(expected, response.effectiveMaxOutputTokens());
+            Integer maximum = List.of("null", "0", "-1", "invalid").contains(cap) ? null : Integer.valueOf(cap);
+            assertEquals(maximum, response.modelMaxCompletionTokens());
             assertEquals(expected, JSON.readTree(lastChatBody).path("max_tokens").asInt());
         }
         assertEquals(1, catalogRequests.get(), "chat reads the cached catalog without fetching it again");
@@ -51,7 +58,9 @@ class OpenRouterOutputTokenTest {
         OpenRouterService service = serviceWithCatalog("{\"data\":[{\"id\":\"example/model\"}]}");
         service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
         for (String id : List.of("example/model", "unknown/model")) {
-            service.chat(id, messages(), (OpenRouterService.AnswerDeadline) null, 262144);
+            var response = service.chat(id, messages(), (OpenRouterService.AnswerDeadline) null, 262144);
+            assertEquals(262144, response.effectiveMaxOutputTokens());
+            assertNull(response.modelMaxCompletionTokens());
             assertEquals(262144, JSON.readTree(lastChatBody).path("max_tokens").asInt());
         }
         assertEquals(1, catalogRequests.get());
@@ -63,6 +72,27 @@ class OpenRouterOutputTokenTest {
         service.chat("unknown/model", messages(), (OpenRouterService.AnswerDeadline) null, 262144);
         assertEquals(262144, JSON.readTree(lastChatBody).path("max_tokens").asInt());
         assertEquals(0, catalogRequests.get());
+    }
+
+    @Test
+    void truncatedResponseCarriesTheSentCapAndTheModelMaximum() throws IOException {
+        OpenRouterService service = serviceWithCatalog("""
+                {"data":[{"id":"example/model","top_provider":{"max_completion_tokens":8192}}]}
+                """);
+        service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+        chatResponse = """
+                {"choices":[{"message":{"content":null},"finish_reason":"length"}]}
+                """;
+
+        var response = service.chat("example/model", messages(), (OpenRouterService.AnswerDeadline) null, 16384);
+
+        assertEquals(8192, JSON.readTree(lastChatBody).path("max_tokens").asInt());
+        assertTrue(response.truncated());
+        assertEquals(8192, response.effectiveMaxOutputTokens());
+        assertEquals(8192, response.modelMaxCompletionTokens());
+        assertFalse(service.offersReasoningEffort("example/model"));
+        assertTrue(service.offersReasoningEffort("unknown/model"));
+        assertEquals(1, catalogRequests.get());
     }
 
     private static List<OpenRouterService.ChatMsg> messages() {
@@ -82,7 +112,7 @@ class OpenRouterOutputTokenTest {
         });
         server.createContext("/chat/completions", exchange -> {
             lastChatBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            byte[] bytes = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}".getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = chatResponse.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);
             try (var out = exchange.getResponseBody()) {
                 out.write(bytes);

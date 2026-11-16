@@ -231,6 +231,10 @@ export interface MoveAttempt {
   createdAt: string;
   /** The reasoning effort sent with this attempt; null or absent when none was sent. */
   reasoningEffort?: ReasoningEffort | null;
+  /** The max_tokens cap sent for this attempt; absent on historical attempts. */
+  effectiveMaxOutputTokens?: number | null;
+  /** The model's catalog maximum when this request was prepared, if known. */
+  modelMaxCompletionTokens?: number | null;
 }
 
 export interface ChatMessage {

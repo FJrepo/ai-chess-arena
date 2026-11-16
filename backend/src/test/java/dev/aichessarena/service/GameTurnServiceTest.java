@@ -217,6 +217,57 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void clampedTruncationReportsTheModelMaximumAndSuggestsLessReasoning() {
+        assertModelMaximumPause(16384, true);
+    }
+
+    @Test
+    void truncationAtAnEqualTournamentAndModelCapAlsoCannotBeFixedByRaisingTheLimit() {
+        assertModelMaximumPause(8192, true);
+    }
+
+    @Test
+    void modelWithoutEffortSelectionExplainsThatItCannotFinishWithinItsMaximum() {
+        assertModelMaximumPause(16384, false);
+    }
+
+    private void assertModelMaximumPause(int configured, boolean offersEffort) {
+        Fixture fixture = new Fixture(truncated(null, 8000).withOutputTokenLimits(8192, 8192));
+        fixture.openRouter.offersEffort = offersEffort;
+        var r = request(new ArrayList<>(), 1, 30);
+        var request = new GameTurnService.TurnRequest(r.gameId(), r.pgn(), r.fen(), r.board(), r.sideToMove(),
+                r.moveNumber(), r.legalMoves(), r.modelId(), r.playerName(), r.opponentName(), r.history(),
+                r.lastMoveSan(), r.lastMessage(), r.isFirstMove(), r.maxRetries(), r.moveTimeoutSeconds(),
+                r.promptVersion(), r.promptHash(), r.totalCostUsd(), r.shouldContinue(), configured,
+                r.chatMode(), r.tournamentChatMode(), r.resignationAllowed(), r.reasoningEffort());
+
+        assertTrue(fixture.service.playTurn(request).pausedGame());
+
+        String detail = fixture.lifecycle.pauseDetail;
+        assertTrue(detail.contains("cut off at the model's maximum of 8,192 output tokens"), detail);
+        assertTrue(detail.contains("Raising the tournament limit cannot help."), detail);
+        assertTrue(detail.endsWith(offersEffort ? "Lower the reasoning effort and resume."
+                : "This model cannot finish within its own output maximum."), detail);
+        var recorded = fixture.attempts.recorded.getFirst();
+        assertEquals(Outcome.TRUNCATED, recorded.outcome());
+        assertEquals(detail, recorded.errorMessage());
+        assertEquals(8192, recorded.response().effectiveMaxOutputTokens());
+        assertEquals(8192, recorded.response().modelMaxCompletionTokens());
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
+    @Test
+    void truncationBelowTheModelMaximumKeepsTheExistingRecoveryHint() {
+        Fixture fixture = new Fixture(truncated(null, 0).withOutputTokenLimits(2048, 8192));
+
+        fixture.service.playTurn(request(new ArrayList<>(), 1, 30));
+
+        assertTrue(fixture.lifecycle.pauseDetail.endsWith(
+                "answer was cut off at the 2048-token output limit. Raise the limit and resume."),
+                fixture.lifecycle.pauseDetail);
+    }
+
+    @Test
     void truncatedUnparseableAnswerAlsoPauses() {
         Fixture fixture = new Fixture(truncated("{\"move\": \"e", null));
 
@@ -912,6 +963,13 @@ class GameTurnServiceTest {
         private final Deque<LlmResponse> responses;
         private LlmResponse last;
         private int calls;
+        private boolean offersEffort = true;
+
+        @Override
+        boolean offersReasoningEffort(String modelId) {
+            return offersEffort;
+        }
+
 
         private ScriptedOpenRouterService(LlmResponse... responses) {
             this.responses = new ArrayDeque<>(List.of(responses));

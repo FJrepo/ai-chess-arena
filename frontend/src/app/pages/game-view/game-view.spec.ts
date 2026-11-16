@@ -654,6 +654,35 @@ describe('GameView', () => {
     expect(component.retryInfo()).toBe('BLACK attempt 1: Failed to parse response as JSON');
   });
 
+  it('passes the latest truncated request maximum to the pause banner', () => {
+    const { component } = createComponent();
+    component.tournamentMaxOutputTokens.set(16384);
+    component.game.set(
+      gameFixture({ tournamentId: 't-1', status: 'PAUSED', statusDetail: 'Model maximum reached' }),
+    );
+    component.attempts.set([
+      attemptFixture({
+        outcome: 'TRUNCATED',
+        effectiveMaxOutputTokens: 8192,
+        modelMaxCompletionTokens: 8192,
+      }),
+    ]);
+
+    expect(component.truncationModelMaximum()).toBe(8192);
+    const bar = new GameInfoBar();
+    bar.game = component.game()!;
+    bar.truncationLimit = component.truncationPauseLimit();
+    bar.truncationModelMaximum = component.truncationModelMaximum();
+    expect(bar.newMaxOutputTokens).toBe(8192);
+
+    component.attempts.set([attemptFixture({ outcome: 'TRUNCATED' })]);
+    expect(component.truncationModelMaximum()).toBeNull();
+    component.attempts.set([
+      attemptFixture({ outcome: 'PROVIDER_FATAL', modelMaxCompletionTokens: 8192 }),
+    ]);
+    expect(component.truncationModelMaximum()).toBeNull();
+  });
+
   it('offers the raise-limit control only when the latest attempt was cut off', () => {
     const { component } = createComponent();
     component.tournamentMaxOutputTokens.set(4096);
