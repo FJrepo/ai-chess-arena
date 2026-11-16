@@ -1,0 +1,57 @@
+:host {
+  display: block;
+}
+
+.model-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(150px, 1fr) minmax(150px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.match-count {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// Rendered in the autocomplete overlay; the classes still carry this component's scope.
+.group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--mat-sys-label-large);
+}
+
+.group-count {
+  font: var(--mat-sys-label-small);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.option-text {
+  display: grid;
+  gap: 1px;
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.option-title {
+  font-weight: 600;
+}
+
+.option-meta {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+}

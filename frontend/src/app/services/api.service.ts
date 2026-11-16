@@ -131,6 +131,7 @@ export class ApiService {
   }
 
   // Models
+  /** `limit: 0` returns every matching model (no cap). */
   getModels(params?: {
     featuredOnly?: boolean;
     q?: string;

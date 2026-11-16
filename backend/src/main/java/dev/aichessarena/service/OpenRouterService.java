@@ -19,6 +19,9 @@ import java.io.IOException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -41,6 +44,9 @@ public class OpenRouterService {
     private static final Logger LOG = Logger.getLogger(OpenRouterService.class);
     private static final int DEFAULT_LIMIT = 120;
     private static final int MAX_LIMIT = 300;
+    /** {@code limit} value for "no cap": the whole (normalized) catalog in one response. */
+    public static final int NO_LIMIT = 0;
+    static final int DESCRIPTION_MAX_LENGTH = 400;
     private static final long MODELS_CACHE_TTL_MS = 5 * 60 * 1000L;
 
     @ConfigProperty(name = "openrouter.api-key")
@@ -388,7 +394,7 @@ public class OpenRouterService {
         JsonNode data = rawModels.get("data");
         if (data == null || !data.isArray()) {
             String error = rawModels.path("error").asText("Failed to fetch OpenRouter models");
-            return new OpenRouterModelsResponseDto(List.of(), 0, 0, error);
+            return new OpenRouterModelsResponseDto(List.of(), 0, 0, error, parseCsv(featuredProvidersConfig));
         }
 
         ModelFilterPolicy policy = buildModelFilterPolicy();
@@ -400,13 +406,14 @@ public class OpenRouterService {
                 policy.excludedKeywords()
         );
 
-        int featuredCount = (int) candidates.stream().filter(ModelCandidate::featured).count();
+        int featuredCount = (int) candidates.stream().filter(candidate -> candidate.option().featured()).count();
 
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         String normalizedProvider = provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
         List<ModelCandidate> filtered = candidates.stream()
-                .filter(candidate -> !featuredOnly || candidate.featured())
-                .filter(candidate -> normalizedProvider.isEmpty() || normalizedProvider.equals(candidate.provider()))
+                .filter(candidate -> !featuredOnly || candidate.option().featured())
+                .filter(candidate -> normalizedProvider.isEmpty()
+                        || normalizedProvider.equals(candidate.option().provider()))
                 .filter(candidate -> normalizedQuery.isEmpty() || candidate.searchText().contains(normalizedQuery))
                 .sorted(buildComparator(policy.providerOrder()))
                 .toList();
@@ -415,18 +422,11 @@ public class OpenRouterService {
         int normalizedLimit = normalizeLimit(limit);
         List<OpenRouterModelOptionDto> result = filtered.stream()
                 .limit(normalizedLimit)
-                .map(candidate -> new OpenRouterModelOptionDto(
-                        candidate.id(),
-                        candidate.name(),
-                        candidate.provider(),
-                        candidate.contextLength(),
-                        candidate.promptPricePerMillion(),
-                        candidate.completionPricePerMillion(),
-                        candidate.featured()
-                ))
+                .map(ModelCandidate::option)
                 .toList();
 
-        return new OpenRouterModelsResponseDto(result, totalMatched, featuredCount, null);
+        return new OpenRouterModelsResponseDto(result, totalMatched, featuredCount, null,
+                parseCsv(featuredProvidersConfig));
     }
 
     public boolean isModelAllowed(String modelId) {
@@ -450,7 +450,7 @@ public class OpenRouterService {
                 policy.featuredProviderSet(),
                 policy.featuredKeywords(),
                 policy.excludedKeywords()
-        ).stream().anyMatch(candidate -> normalizedModelId.equals(candidate.id()));
+        ).stream().anyMatch(candidate -> normalizedModelId.equals(candidate.option().id()));
     }
 
     public boolean checkApiKey() {
@@ -552,21 +552,31 @@ public class OpenRouterService {
             String provider = extractProvider(id);
             String name = buildDisplayName(id, node.path("name").asText(null));
             Integer contextLength = extractContextLength(node);
-            Double promptPricePerMillion = parsePricePerMillion(node.path("pricing").path("prompt").asText(null));
-            Double completionPricePerMillion = parsePricePerMillion(
-                    node.path("pricing").path("completion").asText(null)
-            );
+            JsonNode pricing = node.path("pricing");
             boolean featured = featuredProviderSet.contains(provider) || containsAny(idLower, featuredKeywords);
             String searchText = (name + " " + id + " " + provider).toLowerCase(Locale.ROOT);
+            JsonNode reasoning = node.path("reasoning");
+            JsonNode mandatory = reasoning.path("mandatory");
 
             result.add(new ModelCandidate(
-                    id,
-                    name,
-                    provider,
-                    contextLength,
-                    promptPricePerMillion,
-                    completionPricePerMillion,
-                    featured,
+                    new OpenRouterModelOptionDto(
+                            id,
+                            name,
+                            provider,
+                            contextLength,
+                            parsePricePerMillion(pricing.path("prompt")),
+                            parsePricePerMillion(pricing.path("completion")),
+                            featured,
+                            parseReleaseDate(node.path("created")),
+                            parsePricePerMillion(pricing.path("input_cache_read")),
+                            positiveInt(node.path("top_provider").path("max_completion_tokens")),
+                            supportsReasoning(node),
+                            mandatory.isBoolean() ? mandatory.booleanValue() : null,
+                            parseStringList(reasoning.path("supported_efforts")),
+                            finiteNumber(node.path("benchmarks").path("artificial_analysis")
+                                    .path("intelligence_index")),
+                            trimDescription(node.path("description").asText(null))
+                    ),
                     searchText
             ));
             seenIds.add(id);
@@ -576,12 +586,13 @@ public class OpenRouterService {
     }
 
     private Comparator<ModelCandidate> buildComparator(List<String> providerOrder) {
-        return Comparator
-                .comparing(ModelCandidate::featured).reversed()
-                .thenComparingInt(candidate -> providerRank(candidate.provider(), providerOrder))
-                .thenComparing(candidate -> candidate.contextLength() == null ? 0 : candidate.contextLength(),
+        Comparator<OpenRouterModelOptionDto> options = Comparator
+                .comparing(OpenRouterModelOptionDto::featured).reversed()
+                .thenComparingInt(option -> providerRank(option.provider(), providerOrder))
+                .thenComparing(option -> option.contextLength() == null ? 0 : option.contextLength(),
                         Comparator.reverseOrder())
-                .thenComparing(ModelCandidate::name);
+                .thenComparing(OpenRouterModelOptionDto::name);
+        return Comparator.comparing(ModelCandidate::option, options);
     }
 
     private int providerRank(String provider, List<String> providerOrder) {
@@ -589,9 +600,13 @@ public class OpenRouterService {
         return index == -1 ? Integer.MAX_VALUE : index;
     }
 
+    /** {@code 0} means no cap (the whole matching catalog); other values are clamped to 1..{@value #MAX_LIMIT}. */
     private int normalizeLimit(Integer limit) {
         if (limit == null) {
             return DEFAULT_LIMIT;
+        }
+        if (limit == NO_LIMIT) {
+            return Integer.MAX_VALUE;
         }
         if (limit < 1) {
             return 1;
@@ -646,19 +661,100 @@ public class OpenRouterService {
         return null;
     }
 
-    private Double parsePricePerMillion(String rawPrice) {
-        if (rawPrice == null || rawPrice.isBlank()) {
+    /**
+     * USD per million tokens from a per-token price (a string such as "0.0000015", or a number). {@code 0} stays
+     * {@code 0} (a free model); negative values (OpenRouter uses "-1" for routers with variable pricing),
+     * non-numeric, missing and null prices are unknown ({@code null}).
+     */
+    static Double parsePricePerMillion(JsonNode priceNode) {
+        if (priceNode == null || priceNode.isMissingNode() || priceNode.isNull()) {
+            return null;
+        }
+        String rawPrice = priceNode.asText("").trim();
+        if (rawPrice.isEmpty()) {
             return null;
         }
         try {
             double pricePerToken = Double.parseDouble(rawPrice);
-            if (pricePerToken <= 0) {
+            if (!Double.isFinite(pricePerToken) || pricePerToken < 0) {
                 return null;
             }
             return pricePerToken * 1_000_000d;
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    /** UTC calendar date (YYYY-MM-DD) of a unix timestamp in seconds; null when missing or not positive. */
+    static String parseReleaseDate(JsonNode createdNode) {
+        if (createdNode == null || !createdNode.isNumber() || createdNode.asLong() <= 0) {
+            return null;
+        }
+        return LocalDate.ofInstant(Instant.ofEpochSecond(createdNode.asLong()), ZoneOffset.UTC).toString();
+    }
+
+    private static Integer positiveInt(JsonNode node) {
+        if (node == null || !node.isNumber() || !node.canConvertToInt() || node.asInt() <= 0) {
+            return null;
+        }
+        return node.asInt();
+    }
+
+    private static Double finiteNumber(JsonNode node) {
+        if (node == null || !node.isNumber() || !Double.isFinite(node.asDouble())) {
+            return null;
+        }
+        return node.asDouble();
+    }
+
+    private static List<String> parseStringList(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (JsonNode element : node) {
+            if (element.isTextual() && !element.asText().isBlank()) {
+                values.add(element.asText().trim());
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    /** A model supports reasoning when it lists the "reasoning" parameter or carries a reasoning object. */
+    private static boolean supportsReasoning(JsonNode modelNode) {
+        if (modelNode.path("reasoning").isObject()) {
+            return true;
+        }
+        JsonNode parameters = modelNode.path("supported_parameters");
+        if (parameters.isArray()) {
+            for (JsonNode parameter : parameters) {
+                if ("reasoning".equals(parameter.asText())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Collapses whitespace and shortens the text to at most {@value #DESCRIPTION_MAX_LENGTH} characters, cut at
+     * a word boundary and ending with "…"; null for a missing or blank description.
+     */
+    static String trimDescription(String rawDescription) {
+        if (rawDescription == null) {
+            return null;
+        }
+        String text = rawDescription.replaceAll("\\s+", " ").trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (text.length() <= DESCRIPTION_MAX_LENGTH) {
+            return text;
+        }
+        int limit = DESCRIPTION_MAX_LENGTH - 1;
+        int cut = text.lastIndexOf(' ', limit);
+        String head = cut > limit / 2 ? text.substring(0, cut) : text.substring(0, limit);
+        return head.replaceAll("[\\s,;:.\\-]+$", "") + "…";
     }
 
     private boolean supportsTextOutput(JsonNode modelNode) {
@@ -799,16 +895,7 @@ public class OpenRouterService {
         }
     }
 
-    private record ModelCandidate(
-            String id,
-            String name,
-            String provider,
-            Integer contextLength,
-            Double promptPricePerMillion,
-            Double completionPricePerMillion,
-            boolean featured,
-            String searchText
-    ) {}
+    private record ModelCandidate(OpenRouterModelOptionDto option, String searchText) {}
 
     private record ModelFilterPolicy(
             Set<String> featuredProviderSet,

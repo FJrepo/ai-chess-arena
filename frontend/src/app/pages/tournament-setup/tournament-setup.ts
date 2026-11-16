@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -14,6 +14,8 @@ import { ApiService, PromptTemplateResponse } from '../../services/api.service';
 import { Participant, Tournament } from '../../models/tournament.model';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
+import { ModelPicker } from '../../components/model-picker/model-picker';
+import { ModelDetails } from '../../components/model-details/model-details';
 import { providerDisplayName as resolveProviderDisplayName } from '../../utils/provider-brand';
 
 /**
@@ -69,11 +71,13 @@ type TournamentConfidence = {
     MatProgressSpinnerModule,
     CurrencyPipe,
     ProviderLogoComponent,
+    ModelPicker,
+    ModelDetails,
   ],
   templateUrl: './tournament-setup.html',
   styleUrl: './tournament-setup.scss',
 })
-export class TournamentSetup implements OnInit, OnDestroy {
+export class TournamentSetup implements OnInit {
   private static readonly PROMPT_FALLBACK = `You are playing chess in a tournament match. This is a real competition.
 
 Respond with valid JSON only:
@@ -112,18 +116,16 @@ Your opponent is %s (%s).`;
   newControlType: Participant['controlType'] = 'AI';
   newModelId = '';
   newCustomInstructions = '';
-  modelSearch = '';
-  showAllModels = false;
 
   participants = signal<SetupParticipant[]>([]);
+  /** The whole OpenRouter catalog, loaded once; the picker filters it client-side. */
   models = signal<OpenRouterModelOption[]>([]);
+  featuredProviders = signal<string[]>([]);
   modelsLoading = signal(false);
   modelsError = signal<string | null>(null);
   openRouterReady = signal<boolean | null>(null);
   promptTemplateVersion = signal<string | null>(null);
   promptTemplateLoadError = signal<string | null>(null);
-  featuredCount = signal(0);
-  totalMatched = signal(0);
   drawPolicyOptions: Array<{ value: Tournament['drawPolicy']; label: string }> = [
     { value: 'WHITE_ADVANCES', label: 'White Advances' },
     { value: 'BLACK_ADVANCES', label: 'Black Advances' },
@@ -133,7 +135,6 @@ Your opponent is %s (%s).`;
   ];
   bestOfOptions: Tournament['matchupBestOf'][] = [1, 3, 5, 7];
 
-  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly presets: Record<
     string,
     {
@@ -198,13 +199,6 @@ Your opponent is %s (%s).`;
     this.loadModels();
   }
 
-  ngOnDestroy(): void {
-    if (this.searchDebounceTimer) {
-      clearTimeout(this.searchDebounceTimer);
-      this.searchDebounceTimer = null;
-    }
-  }
-
   private loadOpenRouterStatus(): void {
     this.api.checkOpenRouterStatus().subscribe({
       next: (status) => this.openRouterReady.set(status.valid),
@@ -229,64 +223,32 @@ Your opponent is %s (%s).`;
     });
   }
 
-  private loadModels(): void {
+  /** Loads the whole catalog (every text-output model, no cap) once; the picker filters it client-side. */
+  loadModels(): void {
     this.modelsLoading.set(true);
     this.modelsError.set(null);
-    const limit = this.showAllModels ? 250 : 120;
 
-    this.api
-      .getModels({
-        featuredOnly: !this.showAllModels,
-        q: this.modelSearch,
-        limit,
-      })
-      .subscribe({
-        next: (response) => {
-          const models = response.data ?? [];
-          this.models.set(models);
-          this.totalMatched.set(response.totalMatched ?? models.length);
-          this.featuredCount.set(
-            response.featuredCount ?? models.filter((model) => model.featured).length,
-          );
-          if (response.error) {
-            this.modelsError.set(response.error);
-            return;
-          }
-
-          if (models.length === 0) {
-            this.modelsError.set('No models match the current filters.');
-          }
-        },
-        error: () => {
-          this.models.set([]);
-          this.totalMatched.set(0);
-          this.featuredCount.set(0);
-          this.modelsError.set('Failed to fetch models from OpenRouter.');
-          this.modelsLoading.set(false);
-        },
-        complete: () => this.modelsLoading.set(false),
-      });
+    this.api.getModels({ featuredOnly: false, limit: 0 }).subscribe({
+      next: (response) => {
+        const models = response.data ?? [];
+        this.models.set(models);
+        this.featuredProviders.set(response.featuredProviders ?? []);
+        if (response.error) {
+          this.modelsError.set(response.error);
+        } else if (models.length === 0) {
+          this.modelsError.set('OpenRouter returned no models.');
+        }
+        this.modelsLoading.set(false);
+      },
+      error: () => {
+        this.models.set([]);
+        this.modelsError.set('Failed to fetch models from OpenRouter.');
+        this.modelsLoading.set(false);
+      },
+    });
   }
 
-  onSearchChanged(): void {
-    if (this.searchDebounceTimer) {
-      clearTimeout(this.searchDebounceTimer);
-    }
-    this.searchDebounceTimer = setTimeout(() => this.loadModels(), 250);
-  }
-
-  onShowAllModelsChanged(): void {
-    this.loadModels();
-  }
-
-  visibleModels(): OpenRouterModelOption[] {
-    return this.models();
-  }
-
-  featuredModelCount(): number {
-    return this.featuredCount();
-  }
-
+  /** Selection from the picker ('' when cleared); fills an empty display name with the model's name. */
   onModelChanged(modelId: string): void {
     this.newModelId = modelId;
     if (this.newPlayerName.trim().length > 0) {
@@ -301,29 +263,6 @@ Your opponent is %s (%s).`;
 
   selectedModel(): OpenRouterModelOption | null {
     return this.models().find((model) => model.id === this.newModelId) ?? null;
-  }
-
-  formatContextLength(contextLength: number | null): string {
-    if (!contextLength) {
-      return 'n/a';
-    }
-
-    if (contextLength >= 1_000_000) {
-      return `${(contextLength / 1_000_000).toFixed(1)}M`;
-    }
-
-    if (contextLength >= 1_000) {
-      return `${Math.round(contextLength / 1_000)}K`;
-    }
-
-    return `${contextLength}`;
-  }
-
-  formatPrice(pricePerMillion: number | null): string {
-    if (!pricePerMillion) {
-      return 'n/a';
-    }
-    return `$${pricePerMillion.toFixed(2)}/1M`;
   }
 
   providerDisplayName(provider?: string | null, modelId?: string | null): string {
@@ -371,7 +310,6 @@ Your opponent is %s (%s).`;
     this.newControlType = 'AI';
     this.newModelId = '';
     this.newCustomInstructions = '';
-    this.modelSearch = '';
   }
 
   removeParticipant(index: number) {

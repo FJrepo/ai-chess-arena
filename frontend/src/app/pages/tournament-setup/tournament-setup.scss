@@ -129,7 +129,6 @@
 }
 
 .caption,
-.selected-model-meta,
 .participant-meta,
 .participant-empty,
 .confidence-empty p,
@@ -140,7 +139,6 @@
   color: var(--setup-caption);
 }
 
-.model-option-meta,
 .confidence-note,
 .confidence-metric span:not(.metric-label),
 .confidence-footnotes p {
@@ -161,7 +159,6 @@
 }
 
 .group-heading,
-.selected-model-title,
 .participant-name,
 .confidence-empty strong {
   margin: 0;
@@ -171,7 +168,6 @@
 
 // Inset surfaces inside the cards.
 .rules-preview,
-.selected-model,
 .participant-seed,
 .confidence-metric {
   border: 1px solid var(--setup-line);
@@ -304,44 +300,27 @@
   }
 }
 
-// Two by two on narrower desktops, one row of four on wide ones.
+.retry-button {
+  margin-left: auto;
+}
+
+// Display name and control type side by side; the model picker gets its own full-width row.
 .add-participant {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px 16px;
   align-items: start;
+  margin-bottom: 4px;
+}
+
+.model-picker {
   margin-bottom: 14px;
 }
 
-@media (min-width: 1600px) {
-  .add-participant.is-ai {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.4fr);
-  }
+.model-details-card {
+  margin: 0 0 18px;
 }
 
-.model-option-row,
-.selected-model {
-  display: flex;
-  align-items: flex-start;
-}
-
-.model-option-row {
-  gap: 8px;
-  padding: 2px 0;
-}
-
-.model-option-title {
-  font-weight: 600;
-}
-
-.selected-model {
-  gap: 10px;
-  margin: 2px 0 18px;
-  padding: 12px 14px;
-}
-
-.model-option-content,
-.selected-model-text,
 .participant-text {
   display: grid;
   gap: 2px;

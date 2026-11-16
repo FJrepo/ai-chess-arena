@@ -30,6 +30,10 @@ public class ModelResource {
     @ConfigProperty(name = "quarkus.application.version", defaultValue = "unknown")
     String applicationVersion;
 
+    /**
+     * Text-output OpenRouter models. {@code limit} defaults to 120 and is capped at 300; {@code limit=0} returns
+     * every matching model (the setup page loads the whole catalog once and filters it client-side).
+     */
     @GET
     @Path("/models")
     public Response listModels(

@@ -203,3 +203,8 @@ mat-chip {
     -webkit-text-stroke: 0.04em var(--app-piece-black-edge);
   }
 }
+
+// Model picker suggestions (rendered in the overlay): a taller list than the 256 px default.
+.mat-mdc-autocomplete-panel.model-picker-panel {
+  max-height: min(480px, 60vh);
+}
