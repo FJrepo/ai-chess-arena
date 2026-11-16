@@ -151,11 +151,11 @@ body.dark-theme {
 }
 
 mat-chip {
-  --mdc-chip-label-text-size: 0.72rem;
-  --mdc-chip-label-text-weight: 700;
+  --mat-chip-label-text-size: 0.72rem;
+  --mat-chip-label-text-weight: 700;
+  --mat-chip-label-text-tracking: 0.05em;
+  --mat-chip-container-height: 24px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  height: 24px;
 }
 
 @media (max-width: 800px) {
