@@ -239,7 +239,7 @@
               type="button"
               class="delete-action"
               [disabled]="deletingIds().has(tournament.id)"
-              (click)="deleteTournament(tournament.id, $event)"
+              (click)="deleteTournament(tournament.id)"
             >
               <mat-icon>delete</mat-icon>
               <span>Delete tournament</span>

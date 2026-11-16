@@ -135,9 +135,7 @@ export class TournamentList implements OnInit {
     this.sortBy.set('newest');
   }
 
-  deleteTournament(id: string, event: MouseEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
+  deleteTournament(id: string): void {
     if (this.deletingIds().has(id)) {
       return;
     }
