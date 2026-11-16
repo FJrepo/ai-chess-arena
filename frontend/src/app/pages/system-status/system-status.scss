@@ -91,13 +91,6 @@ $warning: mat.$orange-palette;
   gap: 16px;
 }
 
-.last-checked {
-  font: var(--mat-sys-body-medium);
-  color: var(--mat-sys-on-surface-variant);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 .loading-state,
 .error-card {
   display: flex;

@@ -10,10 +10,6 @@
     </div>
 
     <div class="system-header-actions">
-      @if (lastCheckedAt(); as checkedAt) {
-        <span class="last-checked">Last checked {{ checkedAt | date: 'mediumTime' }}</span>
-      }
-
       <button mat-flat-button color="primary" (click)="refresh()" [disabled]="loading()">
         <mat-icon>refresh</mat-icon>
         Refresh
