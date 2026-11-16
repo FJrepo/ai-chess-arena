@@ -73,7 +73,7 @@ export class GameInfoBar {
   readonly sideQualityTooltip = sideQualityTooltip;
 
   static readonly MIN_OUTPUT_TOKENS = 128;
-  static readonly MAX_OUTPUT_TOKENS = 32768;
+  static readonly MAX_OUTPUT_TOKENS = 262144;
 
   /** Value of the raise-limit input; prefilled with double the current limit. */
   newMaxOutputTokens: number | null = null;

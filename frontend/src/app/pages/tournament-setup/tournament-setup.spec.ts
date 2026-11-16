@@ -55,7 +55,42 @@ describe('TournamentSetup', () => {
     expect(participants[1]['customInstructions']).toBe('Avoid trades.');
     expect(api.addedParticipants).toHaveLength(0);
     expect(typeof api.createTournamentPayload?.['clientRequestId']).toBe('string');
-    expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(4096);
+    expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(16384);
+  });
+
+  it('renders the token bounds and credit-balance hint and validates the boundaries', async () => {
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: createApiService() },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element: HTMLElement = fixture.nativeElement;
+    const input = element.querySelector<HTMLInputElement>('input[max="262144"]')!;
+    expect(input.min).toBe('128');
+    expect(input.value).toBe('16384');
+    const hint = input.closest('mat-form-field')?.textContent?.replace(/\s+/g, ' ');
+    expect(hint).toContain(
+      'OpenRouter checks your credit balance against max_tokens × output price',
+    );
+    expect(hint).toContain('even if far fewer tokens are used');
+    for (const [value, valid] of [
+      [127, false],
+      [128, true],
+      [262144, true],
+      [262145, false],
+    ] as const) {
+      input.value = String(value);
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(input.classList.contains('ng-valid')).toBe(valid);
+    }
   });
 
   it('sends the chosen max output tokens per answer', () => {
@@ -69,24 +104,25 @@ describe('TournamentSetup', () => {
     expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(16384);
   });
 
-  it('starts with a 120-second time limit per move and sends it by default', () => {
+  it('starts without a time limit per move and sends no limit by default', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());
     component.name = 'Default Arena';
 
-    expect(component.limitMoveTime).toBe(true);
+    expect(component.limitMoveTime).toBe(false);
     expect(component.moveTimeout).toBe(120);
-    expect(component.moveTimeout).toBe(DEFAULT_MOVE_TIMEOUT_SECONDS);
+    expect(DEFAULT_MOVE_TIMEOUT_SECONDS).toBeNull();
 
     component.create();
 
-    expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(120);
+    expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(0);
   });
 
   it('sends the move time limit in seconds while the limit is on', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());
     component.name = 'Timed Arena';
+    component.limitMoveTime = true;
     component.moveTimeout = 45;
 
     component.create();
@@ -191,39 +227,24 @@ describe('TournamentSetup', () => {
     expect(component.finalsBestOf).toBe(5);
     expect(component.drawPolicy).toBe('REPLAY_GAME');
     expect(component.sharedCustomInstructions).toContain('Play your strongest chess');
-    expect(component.maxOutputTokens).toBe(8192);
-    expect(component.limitMoveTime).toBe(true);
-    expect(component.moveTimeout).toBe(300);
-  });
-
-  it('presets give 120, 180 and 300 seconds per move, from quickest to most thorough', () => {
-    const timeoutOf = (preset: string) => {
-      const component = new TournamentSetup(
-        createApiService(),
-        createRouter(),
-        createRoute({ preset }),
-      );
-      component.ngOnInit();
-      return component.moveTimeout;
-    };
-
-    expect(timeoutOf('quickstart')).toBe(120);
-    expect(timeoutOf('balanced')).toBe(180);
-    expect(timeoutOf('showcase')).toBe(300);
-  });
-
-  it('presets switch the move time limit back on with their seconds', () => {
-    const component = new TournamentSetup(
-      createApiService(),
-      createRouter(),
-      createRoute({ preset: 'quickstart' }),
-    );
-    component.limitMoveTime = false;
-
-    component.ngOnInit();
-
-    expect(component.limitMoveTime).toBe(true);
+    expect(component.maxOutputTokens).toBe(32768);
+    expect(component.limitMoveTime).toBe(false);
     expect(component.moveTimeout).toBe(120);
+  });
+
+  it('all presets switch the move time limit off and provide at least 16k output tokens', () => {
+    for (const preset of ['quickstart', 'balanced', 'showcase']) {
+      const api = createApiService();
+      const component = new TournamentSetup(api, createRouter(), createRoute({ preset }));
+      component.limitMoveTime = true;
+      component.moveTimeout = 45;
+      component.ngOnInit();
+      expect(component.limitMoveTime).toBe(false);
+      expect(component.moveTimeout).toBe(120);
+      expect(component.maxOutputTokens).toBe(preset === 'showcase' ? 32768 : 16384);
+      component.create();
+      expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(0);
+    }
   });
 
   it('warns about forfeits on time only while the limit is on and below 90 seconds', () => {
@@ -231,6 +252,7 @@ describe('TournamentSetup', () => {
 
     expect(component.showShortMoveTimeoutWarning()).toBe(false);
 
+    component.limitMoveTime = true;
     component.moveTimeout = 89;
     expect(component.showShortMoveTimeoutWarning()).toBe(true);
     component.moveTimeout = 90;
@@ -262,6 +284,14 @@ describe('TournamentSetup', () => {
     const movesSection = () => element.querySelector('[aria-labelledby="setup-moves-heading"]');
 
     expect(movesSection()?.querySelector('.timeout-warning')).toBeNull();
+    expect(movesSection()?.querySelector('input[max="3600"]')).toBeNull();
+    const toggle = movesSection()?.querySelector<HTMLButtonElement>('mat-slide-toggle button');
+    expect(toggle?.getAttribute('aria-checked')).toBe('false');
+    toggle?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.limitMoveTime).toBe(true);
+    expect(movesSection()?.querySelector<HTMLInputElement>('input[max="3600"]')?.value).toBe('120');
     expect(movesSection()?.textContent).toContain(
       '10–3600; a model that runs out of time forfeits',
     );
@@ -283,6 +313,7 @@ describe('TournamentSetup', () => {
       pricedParticipant('Alpha', 'model-alpha', 1, 1),
       pricedParticipant('Beta', 'model-beta', 1, 1),
     ]);
+    component.limitMoveTime = true;
     const paceAt = (seconds: number) => {
       component.moveTimeout = seconds;
       return component.confidenceSummary()?.paceLabel;
@@ -307,6 +338,7 @@ describe('TournamentSetup', () => {
       pricedParticipant('Alpha', 'model-alpha', 1, 1),
       pricedParticipant('Beta', 'model-beta', 1, 1),
     ]);
+    component.limitMoveTime = true;
     const runtimeAt = (seconds: number) => {
       component.moveTimeout = seconds;
       const summary = component.confidenceSummary();
@@ -365,6 +397,7 @@ describe('TournamentSetup', () => {
     expect(summary?.likelyRuntimeMinutes).toBe(35);
     expect(summary?.maxRuntimeMinutes).toBeNull();
     expect(summary?.paceLabel).toBe('No limit');
+    expect(summary?.riskBand).toBe('Safe');
 
     component.limitMoveTime = true;
     component.moveTimeout = 120;

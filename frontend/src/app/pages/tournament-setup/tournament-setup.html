@@ -54,12 +54,15 @@
                   matInput
                   type="number"
                   min="128"
-                  max="32768"
+                  max="262144"
                   step="128"
                   [(ngModel)]="maxOutputTokens"
                 />
                 <mat-hint
-                  >Includes reasoning tokens; answers cut off at this limit pause the game</mat-hint
+                  >Includes reasoning tokens; answers cut off at this limit pause the game.
+                  OpenRouter checks your credit balance against max_tokens × output price before a
+                  request. Very high limits with expensive models can fail on a low balance even if
+                  far fewer tokens are used.</mat-hint
                 >
               </mat-form-field>
 

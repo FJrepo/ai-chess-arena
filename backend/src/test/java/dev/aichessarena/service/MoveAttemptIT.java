@@ -103,7 +103,7 @@ class MoveAttemptIT {
         given().contentType("application/json").body("{\"name\":\"Token limit " + UUID.randomUUID() + "\"}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
-                .body("maxOutputTokens", equalTo(4096));
+                .body("maxOutputTokens", equalTo(16384));
         given().contentType("application/json")
                 .body("{\"name\":\"Token limit " + UUID.randomUUID() + "\",\"maxOutputTokens\":16384}")
                 .when().post("/api/tournaments")

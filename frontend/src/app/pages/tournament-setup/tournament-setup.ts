@@ -12,12 +12,7 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
-import {
-  ChatMode,
-  DEFAULT_MOVE_TIMEOUT_SECONDS,
-  Participant,
-  Tournament,
-} from '../../models/tournament.model';
+import { ChatMode, Participant, Tournament } from '../../models/tournament.model';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
@@ -121,13 +116,13 @@ Your opponent is %s (%s).`;
   private promptTemplates: PromptTemplateResponse | null = null;
   sharedCustomInstructions = '';
   /** Off: no time limit per move (sent as moveTimeoutSeconds 0). */
-  limitMoveTime = true;
+  limitMoveTime = false;
   readonly typicalMoveSeconds = TYPICAL_MOVE_SECONDS;
   /** Seconds per move (10-3600) while limitMoveTime is on. */
-  moveTimeout = DEFAULT_MOVE_TIMEOUT_SECONDS;
+  moveTimeout = 120;
   maxRetries = 3;
-  /** Cap on generated tokens per answer (128-32768); includes reasoning tokens. */
-  maxOutputTokens = 4096;
+  /** Cap on generated tokens per answer (128-262144); includes reasoning tokens. */
+  maxOutputTokens = 16384;
   /**
    * Reasoning effort for every model unless a participant overrides it; null is each model's default (the field
    * is then left out of the request, so nothing is sent to OpenRouter).
@@ -210,7 +205,7 @@ Your opponent is %s (%s).`;
       name: 'Quick Start Arena',
       moveTimeout: 120,
       maxRetries: 2,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384,
       drawPolicy: 'WHITE_ADVANCES',
       matchupBestOf: 1,
       finalsBestOf: null,
@@ -219,9 +214,9 @@ Your opponent is %s (%s).`;
     },
     balanced: {
       name: 'Balanced Ladder',
-      moveTimeout: 180,
+      moveTimeout: 120,
       maxRetries: 3,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384,
       drawPolicy: 'HIGHER_SEED_ADVANCES',
       matchupBestOf: 3,
       finalsBestOf: null,
@@ -230,9 +225,9 @@ Your opponent is %s (%s).`;
     },
     showcase: {
       name: 'Series Showcase',
-      moveTimeout: 300,
+      moveTimeout: 120,
       maxRetries: 3,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 32768,
       drawPolicy: 'REPLAY_GAME',
       matchupBestOf: 3,
       finalsBestOf: 5,
@@ -618,8 +613,8 @@ Your opponent is %s (%s).`;
       (participantCount >= 16 ? 3 : participantCount >= 8 ? 2 : 1) +
       (this.matchupBestOf >= 5 ? 2 : this.matchupBestOf >= 3 ? 1 : 0) +
       (this.finalsBestOf != null && this.finalsBestOf > this.matchupBestOf ? 1 : 0) +
-      // Longer limits mostly lengthen the slow end; no limit leaves runtime open-ended.
-      (!this.limitMoveTime ? 3 : this.moveTimeout >= 300 ? 2 : this.moveTimeout >= 180 ? 1 : 0) +
+      // No limit is the default; size, series length and pricing determine the run's risk.
+      (this.limitMoveTime ? (this.moveTimeout >= 300 ? 2 : this.moveTimeout >= 180 ? 1 : 0) : 0) +
       (drawCanExtendSeries ? 1 : 0) +
       (likelyRuntimeMinutes >= 360 ? 2 : likelyRuntimeMinutes >= 120 ? 1 : 0) +
       (likelyCostUsd != null ? (likelyCostUsd >= 5 ? 2 : likelyCostUsd >= 1 ? 1 : 0) : 0);
@@ -627,7 +622,7 @@ Your opponent is %s (%s).`;
     const riskBand = riskScore >= 8 ? 'Expensive' : riskScore >= 5 ? 'Moderate' : 'Safe';
     const riskReason =
       riskBand === 'Expensive'
-        ? 'High timeout, longer series, or pricier models make this a heavier run.'
+        ? 'A larger field, longer series, or pricier models make this a heavier run.'
         : riskBand === 'Moderate'
           ? 'This should be manageable, but it is no longer a quick smoke test.'
           : 'Good fit for a first pass or low-risk validation run.';
@@ -687,7 +682,7 @@ Your opponent is %s (%s).`;
     }
 
     this.name = preset.name;
-    this.limitMoveTime = true;
+    this.limitMoveTime = false;
     this.moveTimeout = preset.moveTimeout;
     this.maxRetries = preset.maxRetries;
     this.maxOutputTokens = preset.maxOutputTokens;

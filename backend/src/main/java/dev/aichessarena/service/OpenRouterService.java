@@ -92,7 +92,7 @@ public class OpenRouterService {
     @ConfigProperty(name = "game.default-temperature", defaultValue = "0.7")
     double defaultTemperature;
 
-    @ConfigProperty(name = "game.default-max-tokens", defaultValue = "4096")
+    @ConfigProperty(name = "game.default-max-tokens", defaultValue = "16384")
     int defaultMaxTokens;
 
     /**
@@ -119,7 +119,7 @@ public class OpenRouterService {
     private volatile long cachedModelsAtMs;
 
     public LlmResponse chat(String modelId, List<ChatMsg> messages) {
-        return chat(modelId, messages, Duration.ofSeconds(120));
+        return chat(modelId, messages, (AnswerDeadline) null, defaultMaxTokens);
     }
 
     /** Sends one chat completion whose complete answer must arrive within {@code answerTime} from now. */
@@ -165,7 +165,7 @@ public class OpenRouterService {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("model", modelId);
             body.put("temperature", defaultTemperature);
-            body.put("max_tokens", maxOutputTokens);
+            body.put("max_tokens", clampOutputTokens(modelId, maxOutputTokens));
             if (reasoningEffort != null) {
                 body.putObject("reasoning").put("effort", reasoningEffort.apiValue());
             }
@@ -489,6 +489,25 @@ public class OpenRouterService {
             LOG.debugf("Reasoning effort %s for %s: %s", requested.apiValue(), modelId, decision.reason());
         }
         return decision.effort();
+    }
+
+    /** Uses the cached catalog only: preparing a move must not wait on a catalog refresh. */
+    private int clampOutputTokens(String modelId, int configured) {
+        JsonNode snapshot = cachedModels;
+        if (snapshot == null || snapshot.hasNonNull("error")) {
+            return configured;
+        }
+        for (JsonNode model : snapshot.path("data")) {
+            if (modelId.equals(model.path("id").asText(null))) {
+                Integer cap = positiveInt(model.path("top_provider").path("max_completion_tokens"));
+                if (cap != null && cap < configured) {
+                    LOG.infof("Clamping max_tokens for %s from %d to catalog maximum %d", modelId, configured, cap);
+                    return cap;
+                }
+                break;
+            }
+        }
+        return configured;
     }
 
     /** The model's raw catalog entry; null when the catalog is unavailable or does not list the model. */

@@ -79,7 +79,7 @@ type TimelineEvent = {
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** Backend default for a tournament's output-token limit. */
-const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
 
 // Solid glyphs for both colours; the stylesheet colours them (white pieces get a light fill
 // and a dark edge).

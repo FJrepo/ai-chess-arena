@@ -141,11 +141,13 @@ class GameEngineServiceTest {
     }
 
     @Test
-    void aTurnOfATimedTournamentUsesItsLimitAndAGameWithoutATournamentUsesTheDefaultOf120Seconds() {
+    void aTurnOfATimedTournamentUsesItsLimitAndAGameWithoutATournamentHasNoLimit() {
         assertEquals(45, runOneTurnFor(tournamentWithTimeout(45)).moveTimeoutSeconds());
         assertEquals(60, runOneTurnFor(tournamentWithTimeout(60)).moveTimeoutSeconds(),
                 "a tournament stored with the old default keeps it");
-        assertEquals(120, runOneTurnFor(null).moveTimeoutSeconds());
+        GameTurnService.TurnRequest standalone = runOneTurnFor(null);
+        assertNull(standalone.moveTimeoutSeconds());
+        assertEquals(16384, standalone.maxOutputTokens());
     }
 
     @Test

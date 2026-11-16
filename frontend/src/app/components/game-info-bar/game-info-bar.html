@@ -127,12 +127,12 @@
               matInput
               type="number"
               min="128"
-              max="32768"
+              max="262144"
               step="128"
               [(ngModel)]="newMaxOutputTokens"
             />
             <mat-hint
-              >Currently {{ truncationLimit }}; 128–32768, includes reasoning tokens</mat-hint
+              >Currently {{ truncationLimit }}; 128–262144, includes reasoning tokens</mat-hint
             >
           </mat-form-field>
           @if (showEffortSelect()) {

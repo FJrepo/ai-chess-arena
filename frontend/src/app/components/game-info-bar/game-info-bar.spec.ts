@@ -46,14 +46,17 @@ describe('GameInfoBar raise-limit control', () => {
     expect(bar.showRaiseLimit()).toBe(false);
   });
 
-  it('prefills double the current limit, capped at 32768', () => {
+  it('prefills double the current limit, capped at 262144', () => {
     const bar = new GameInfoBar();
 
     bar.truncationLimit = 4096;
     expect(bar.newMaxOutputTokens).toBe(8192);
 
-    bar.truncationLimit = 20000;
+    bar.truncationLimit = 16384;
     expect(bar.newMaxOutputTokens).toBe(32768);
+
+    bar.truncationLimit = 200000;
+    expect(bar.newMaxOutputTokens).toBe(262144);
 
     bar.truncationLimit = null;
     expect(bar.newMaxOutputTokens).toBeNull();
@@ -67,7 +70,7 @@ describe('GameInfoBar raise-limit control', () => {
     bar.raiseLimitAndResume.subscribe((value) => emitted.push(value));
 
     bar.saveAndResume();
-    bar.newMaxOutputTokens = 40000;
+    bar.newMaxOutputTokens = 262145;
     bar.saveAndResume();
     bar.newMaxOutputTokens = 100;
     bar.saveAndResume();
@@ -75,7 +78,16 @@ describe('GameInfoBar raise-limit control', () => {
     bar.saving = true;
     bar.saveAndResume();
 
-    expect(emitted).toEqual([{ maxOutputTokens: 8192 }]);
+    bar.saving = false;
+    bar.newMaxOutputTokens = 128;
+    bar.saveAndResume();
+    bar.newMaxOutputTokens = 262144;
+    bar.saveAndResume();
+    expect(emitted).toEqual([
+      { maxOutputTokens: 8192 },
+      { maxOutputTokens: 128 },
+      { maxOutputTokens: 262144 },
+    ]);
   });
 });
 
@@ -108,8 +120,8 @@ describe('GameInfoBar reasoning effort for a cut-off answer', () => {
     bar.saveAndResume();
 
     expect(emitted).toEqual([
-      { maxOutputTokens: 32768, reasoningEffort: 'low' },
-      { maxOutputTokens: 32768, reasoningEffort: null },
+      { maxOutputTokens: 60000, reasoningEffort: 'low' },
+      { maxOutputTokens: 60000, reasoningEffort: null },
     ]);
   });
 
@@ -185,6 +197,10 @@ describe('GameInfoBar reasoning effort for a cut-off answer', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const element: HTMLElement = fixture.nativeElement;
+
+    const tokenInput = element.querySelector<HTMLInputElement>('input[max="262144"]');
+    expect(tokenInput?.min).toBe('128');
+    expect(tokenInput?.value).toBe('60000');
 
     expect(element.querySelector('.effort-field mat-label')?.textContent?.trim()).toBe(
       'Reasoning effort for Ember',

@@ -564,6 +564,19 @@ describe('GameView', () => {
     expect(component.activeColor()).toBe('WHITE');
   });
 
+  it('shows no countdown for a game outside a tournament', () => {
+    const { component } = createComponent({
+      api: {
+        getGame: () =>
+          of(gameFixture({ status: 'IN_PROGRESS', tournamentId: null, currentFen: START_FEN })),
+      },
+    });
+    (component as any).gameId = 'g-1';
+    component.loadGame();
+    expect(component.noMoveTimeLimit()).toBe(true);
+    expect(component.moveTimerSeconds()).toBeNull();
+  });
+
   it('counts down the move time when the tournament has a limit', () => {
     const { component } = createComponent({
       api: {
@@ -717,7 +730,7 @@ describe('GameView', () => {
         updateTournament: () =>
           throwError(() => ({
             status: 400,
-            error: { error: 'maxOutputTokens must be between 128 and 32768' },
+            error: { error: 'maxOutputTokens must be between 128 and 262144' },
           })),
         startGame,
       },
@@ -731,7 +744,7 @@ describe('GameView', () => {
 
     expect(startGame).not.toHaveBeenCalled();
     expect(snackbar.open).toHaveBeenCalledWith(
-      'maxOutputTokens must be between 128 and 32768',
+      'maxOutputTokens must be between 128 and 262144',
       'Dismiss',
       expect.any(Object),
     );
