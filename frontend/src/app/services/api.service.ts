@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  BracketDrawMode,
   ChatMode,
   Tournament,
   Participant,
@@ -98,10 +99,11 @@ export class ApiService {
     );
   }
 
-  generateBracket(tournamentId: string): Observable<Game[]> {
+  generateBracket(tournamentId: string, drawMode: BracketDrawMode = 'ORDER'): Observable<Game[]> {
     return this.http.post<Game[]>(
       `${this.baseUrl}/tournaments/${tournamentId}/generate-bracket`,
       {},
+      { params: { drawMode } },
     );
   }
 

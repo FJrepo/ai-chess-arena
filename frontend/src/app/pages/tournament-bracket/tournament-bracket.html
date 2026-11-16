@@ -102,6 +102,13 @@
       <div class="generate-section">
         <mat-icon class="generate-icon">hub</mat-icon>
         <p>{{ t.participants.length }} participants are ready to compete.</p>
+        <mat-form-field appearance="outline">
+          <mat-label>Bracket draw</mat-label>
+          <mat-select [(ngModel)]="drawMode" [disabled]="generating()">
+            <mat-option value="ORDER">In added order</mat-option>
+            <mat-option value="RANDOM">Random draw</mat-option>
+          </mat-select>
+        </mat-form-field>
         <button
           mat-raised-button
           color="primary"
@@ -115,6 +122,17 @@
     }
 
     @if (t.games.length > 0) {
+      <mat-expansion-panel>
+        <mat-expansion-panel-header>
+          <mat-panel-title>Participants by seed</mat-panel-title>
+        </mat-expansion-panel-header>
+        <p>Lower seed numbers receive byes and advance under “Higher seed advances”.</p>
+        <ul class="participant-seeds">
+          @for (participant of drawnParticipants(); track participant.id) {
+            <li>Seed {{ participant.seed }}: {{ participant.playerName }}</li>
+          }
+        </ul>
+      </mat-expansion-panel>
       <div class="bracket-container">
         <app-bracket-display
           [games]="t.games"

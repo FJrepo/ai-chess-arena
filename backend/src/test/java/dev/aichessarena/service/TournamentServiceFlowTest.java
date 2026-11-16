@@ -2,9 +2,12 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
@@ -12,13 +15,151 @@ import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class TournamentServiceFlowTest {
+
+    @Test
+    void randomDrawReassignsSeedsAndPairsTheSeededPermutation() {
+        DrawFixture fixture = drawFixture(4);
+
+        List<Game> games = fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.RANDOM);
+
+        assertEquals(List.of("Player 3", "Player 1", "Player 0", "Player 2"), fixture.drawnNames());
+        assertEquals(List.of(2, 1, 3, 0), fixture.participants.stream().map(p -> p.seed).toList());
+        assertSame(fixture.participants.get(3), games.get(0).whiteParticipant);
+        assertSame(fixture.participants.get(1), games.get(0).blackParticipant);
+        assertSame(fixture.participants.get(0), games.get(1).whiteParticipant);
+        assertSame(fixture.participants.get(2), games.get(1).blackParticipant);
+        assertEquals(3, games.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 5, 6, 7, 9})
+    void randomDrawGivesByesToTheLowestDrawnSeedsAndAdvancesThem(int count) {
+        DrawFixture fixture = drawFixture(count);
+
+        List<Game> games = fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.RANDOM);
+
+        List<TournamentParticipant> drawn = fixture.drawnParticipants();
+        assertEquals(java.util.stream.IntStream.range(0, count).boxed().toList(),
+                drawn.stream().map(p -> p.seed).toList());
+        assertEquals(count, drawn.stream().map(p -> p.id).distinct().count());
+        int bracketSize = Integer.highestOneBit(count - 1) * 2;
+        int byes = bracketSize - count;
+        assertEquals(bracketSize - 1, games.size());
+        for (int i = 0; i < byes; i++) {
+            Game bye = games.get(i);
+            assertSame(drawn.get(i), bye.whiteParticipant);
+            assertNull(bye.blackParticipant);
+            assertEquals(Game.GameStatus.COMPLETED, bye.status);
+            assertSame(drawn.get(i), bye.advancedParticipant);
+            Game next = fixture.games.findByRoundAndPosition(
+                    TournamentService.getNextRound(bye.bracketRound), i / 2);
+            assertSame(drawn.get(i), i % 2 == 0 ? next.whiteParticipant : next.blackParticipant);
+        }
+        for (int i = byes; i < bracketSize / 2; i++) {
+            int seed = byes + (i - byes) * 2;
+            assertSame(drawn.get(seed), games.get(i).whiteParticipant);
+            assertSame(drawn.get(seed + 1), games.get(i).blackParticipant);
+        }
+    }
+
+    @Test
+    void higherSeedPolicyUsesDrawnSeedsInsteadOfOriginalSeeds() {
+        DrawFixture fixture = drawFixture(4);
+        fixture.tournament.drawPolicy = Tournament.DrawPolicy.HIGHER_SEED_ADVANCES;
+        Game game = fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.RANDOM).getFirst();
+        game.status = Game.GameStatus.COMPLETED;
+        game.result = Game.GameResult.DRAW;
+
+        fixture.service.advanceWinner(game.id);
+
+        // Player 1 was added earlier, but Player 3 drew seed 0 and wins this level series.
+        assertSame(fixture.participants.get(3), game.advancedParticipant);
+        assertSame(fixture.participants.get(3), fixture.games.findByRoundAndPosition("Final", 0).whiteParticipant);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void defaultAndExplicitOrderKeepOriginalSeedsAndPairings(boolean explicit) {
+        DrawFixture fixture = drawFixture(4);
+        // Repository order is not significant; only the original seeds decide ORDER.
+        fixture.service.participantRepository = new FakeParticipantRepository(List.of(
+                fixture.participants.get(3), fixture.participants.get(0),
+                fixture.participants.get(2), fixture.participants.get(1)));
+
+        List<Game> games = explicit
+                ? fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.ORDER)
+                : fixture.service.generateBracket(fixture.tournament.id);
+
+        assertEquals(List.of(10, 20, 30, 40), fixture.participants.stream().map(p -> p.seed).toList());
+        assertSame(fixture.participants.get(0), games.get(0).whiteParticipant);
+        assertSame(fixture.participants.get(1), games.get(0).blackParticipant);
+        assertSame(fixture.participants.get(2), games.get(1).whiteParticipant);
+        assertSame(fixture.participants.get(3), games.get(1).blackParticipant);
+    }
+
+    @Test
+    void retryCannotShuffleSeedsOrReplaceAnExistingBracket() {
+        DrawFixture fixture = drawFixture(5);
+        List<Game> games = fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.RANDOM);
+        List<String> originalDraw = fixture.drawnNames();
+        assertEquals(List.of("Player 1", "Player 2", "Player 3", "Player 4", "Player 0"), originalDraw);
+
+        WebApplicationException error = assertThrows(WebApplicationException.class,
+                () -> fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.RANDOM));
+
+        assertEquals(409, error.getResponse().getStatus());
+        assertEquals(originalDraw, fixture.drawnNames());
+        assertEquals(games.size(), fixture.games.findByTournamentId(fixture.tournament.id).size());
+    }
+
+    @Test
+    void randomDrawRejectsTooFewParticipantsBeforeReassigningSeeds() {
+        DrawFixture fixture = drawFixture(1);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> fixture.service.generateBracket(fixture.tournament.id, BracketDrawMode.RANDOM));
+
+        assertEquals(10, fixture.participants.getFirst().seed);
+        assertEquals(Tournament.TournamentStatus.CREATED, fixture.tournament.status);
+        assertEquals(0, fixture.games.findByTournamentId(fixture.tournament.id).size());
+    }
+
+    private DrawFixture drawFixture(int count) {
+        Tournament tournament = new Tournament();
+        tournament.id = UUID.randomUUID();
+        List<TournamentParticipant> participants = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            participants.add(participant(tournament, "Player " + i, "model-" + i, (i + 1) * 10));
+        }
+        InMemoryGameRepository games = new InMemoryGameRepository();
+        TournamentService service = new TournamentService(new Random(42));
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
+        service.participantRepository = new FakeParticipantRepository(participants);
+        service.gameRepository = games;
+        return new DrawFixture(service, tournament, participants, games);
+    }
+
+    private record DrawFixture(TournamentService service, Tournament tournament,
+                               List<TournamentParticipant> participants, InMemoryGameRepository games) {
+        List<TournamentParticipant> drawnParticipants() {
+            return participants.stream().sorted(Comparator.comparingInt(p -> p.seed)).toList();
+        }
+
+        List<String> drawnNames() {
+            return drawnParticipants().stream().map(p -> p.playerName).toList();
+        }
+    }
 
     @Test
     void generateBracketAdvancesByeWinnersIntoSemifinals() {
