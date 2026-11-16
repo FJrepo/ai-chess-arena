@@ -16,6 +16,7 @@ import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
+import dev.aichessarena.websocket.GameWebSocket;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -49,6 +50,9 @@ class ResignationIT {
 
     @Inject
     GameRepository gameRepository;
+
+    @Inject
+    GameLifecycleService gameLifecycleService;
 
     @Inject
     TournamentRepository tournamentRepository;
@@ -158,8 +162,8 @@ class ResignationIT {
     /**
      * A final played by a scripted model: Black tries to resign while it is not allowed (retried), the operator then
      * allows resignation mid-game (applies from the next turn), Black tries again before move 10 (retried), sends a
-     * move along with a flag that is not allowed yet (played), and finally resigns at move 10 with last words and an
-     * ignored move. The game, the tournament, the attempts, the API and the analytics all show the resignation.
+     * move along with a flag that is not allowed yet (played), and finally resigns at move 10, after an illegal answer,
+     * with last words and an ignored move. The game, the tournament, the attempts, the API and the analytics all show the resignation.
      */
     @Test
     void aModelResignsInARunningGameAndTheTournamentIsDecided() throws InterruptedException {
@@ -223,8 +227,8 @@ class ResignationIT {
                 // Stockfish does not run in the tests: the winning chance is unknown, nothing breaks.
                 .body("resignation.winChance", nullValue())
                 .body("resignation.notLosing", equalTo(false))
-                // 22 answers at 0.01 each, the rejected and the resigning ones included.
-                .body("totalCostUsd", equalTo(0.22f));
+                // 23 answers at 0.01 each, the rejected and the resigning ones included.
+                .body("totalCostUsd", equalTo(0.23f));
 
         given().when().get("/api/games/{id}/attempts", ids[1].toString())
                 .then().statusCode(200)
@@ -260,7 +264,63 @@ class ResignationIT {
                 .body("models.find { it.modelId == 'test/black' }.resignationsWhileNotLosing", equalTo(1))
                 .body("models.find { it.modelId == 'test/black' }.wonByResignation", equalTo(0))
                 .body("models.find { it.modelId == 'test/white' }.wonByResignation", equalTo(1))
-                .body("models.find { it.modelId == 'test/white' }.resignations", equalTo(0));
+                .body("models.find { it.modelId == 'test/white' }.resignations", equalTo(0))
+                // Black: 9 moves, two of them retried once (e5, Nf6), and the illegal Qxh7 before resigning:
+                // 7 first-try turns of 10, 3 retries over 10 turns.
+                .body("models.find { it.modelId == 'test/black' }.movesSampled", equalTo(9))
+                .body("models.find { it.modelId == 'test/black' }.firstTryLegalRate", equalTo(0.7f))
+                .body("models.find { it.modelId == 'test/black' }.averageRetriesPerMove", equalTo(0.3f));
+        given().queryParam("tournamentId", ids[0].toString())
+                .when().get("/api/analytics/reliability")
+                .then().statusCode(200)
+                .body("models.find { it.modelId == 'test/black' }.firstTryLegalRate", equalTo(0.7f))
+                .body("models.find { it.modelId == 'test/black' }.averageRetriesPerMove", equalTo(0.3f))
+                .body("models.find { it.modelId == 'test/white' }.firstTryLegalRate", equalTo(1.0f));
+    }
+
+    /**
+     * Regression: the game-over update went out before the resignation was committed, so a game view that reloaded
+     * the game on it could read the game as still running. At the moment of the broadcast, another transaction must
+     * already see the result.
+     */
+    @Test
+    void theGameOverUpdateIsSentOnlyOnceTheResultIsVisible() {
+        String fen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 10";
+        UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.whitePlayerName = "White";
+            game.whiteModelId = "test/white";
+            game.blackPlayerName = "Black";
+            game.blackModelId = "test/black";
+            game.status = GameStatus.IN_PROGRESS;
+            game.currentFen = fen;
+            gameRepository.persist(game);
+            return game.id;
+        });
+        List<String> seenAtBroadcast = Collections.synchronizedList(new ArrayList<>());
+        QuarkusMock.installMockForType(new GameWebSocket() {
+            @Override
+            public void broadcastGameStatus(UUID id, String status, String result, String resultReason,
+                                            int totalMoves, java.math.BigDecimal totalCostUsd, String activeColor,
+                                            java.time.Instant turnStartedAt, java.time.Instant turnDeadlineAt,
+                                            String detail, String tournamentChatMode) {
+                seenAtBroadcast.add(status + " announced, stored "
+                        + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));
+            }
+
+            @Override
+            public void broadcastChat(UUID id, int moveNumber, String senderColor, String senderModel,
+                                      String senderName, String message) {
+                seenAtBroadcast.add("chat announced, stored "
+                        + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));
+            }
+        }, GameWebSocket.class);
+
+        gameLifecycleService.resign(new GameLifecycleService.Resignation(gameId, 10, "BLACK", "test/black",
+                "Black", "gg", null, fen));
+
+        assertEquals(List.of("chat announced, stored COMPLETED", "COMPLETED announced, stored COMPLETED"),
+                seenAtBroadcast);
     }
 
     private TournamentParticipant participant(Tournament tournament, String name, String modelId, int seed) {
@@ -310,6 +370,7 @@ class ResignationIT {
                 "{\"move\":\"h3\"}",
                 "{\"move\":\"Nb8\"}",
                 "{\"move\":\"d4\",\"message\":\"White 10\"}",
+                "{\"move\":\"Qxh7\"}",
                 "{\"resign\":true,\"message\":\"Good game\",\"move\":\"Bb7\"}");
         /** During this call (White's 3rd move) the operator allows resignation. */
         static final int SETTING_CHANGED_DURING_CALL = 5;

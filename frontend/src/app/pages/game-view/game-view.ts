@@ -165,6 +165,11 @@ export class GameView implements OnInit, OnDestroy {
   private bufferedLiveMessages: WsMessage[] = [];
   private attemptsGeneration = 0;
   private attemptsSub?: Subscription;
+  /** Reloads in a row that returned a finished game as still running (see keepAnnouncedResult). */
+  private staleReloads = 0;
+  private staleReloadTimer?: ReturnType<typeof setTimeout>;
+  static readonly STALE_RELOAD_DELAY_MS = 1000;
+  static readonly MAX_STALE_RELOADS = 5;
 
   /** The position shown on the board: the start position before the first move, else the selected move. */
   currentFen = computed(() => {
@@ -410,6 +415,7 @@ export class GameView implements OnInit, OnDestroy {
     this.reconnectSub?.unsubscribe();
     this.loadSub?.unsubscribe();
     this.attemptsSub?.unsubscribe();
+    clearTimeout(this.staleReloadTimer);
     this.turnState.stopTicker();
   }
 
@@ -423,7 +429,7 @@ export class GameView implements OnInit, OnDestroy {
           return;
         }
         this.loadInFlight = false;
-        this.game.set(game);
+        this.game.set(this.keepAnnouncedResult(game));
         const moves = sortMovesInPlayOrder(game.moves || []);
         this.moves.set(moves);
         this.chatMessages.set(game.chatMessages || []);
@@ -467,6 +473,37 @@ export class GameView implements OnInit, OnDestroy {
         void this.router.navigate(['/tournaments']);
       },
     });
+  }
+
+  /**
+   * A game never goes back from finished to running. A reload that still shows it running was read before the
+   * result was stored: keep the result already announced and ask again a little later (a few times at most), so
+   * the details only the stored game carries (e.g. a resignation's) arrive too.
+   */
+  private keepAnnouncedResult(loaded: Game): Game {
+    const previous = this.game();
+    if (
+      !previous ||
+      previous.id !== loaded.id ||
+      !isFinishedStatus(previous.status) ||
+      isFinishedStatus(loaded.status)
+    ) {
+      this.staleReloads = 0;
+      return loaded;
+    }
+    if (this.staleReloads < GameView.MAX_STALE_RELOADS) {
+      this.staleReloads++;
+      clearTimeout(this.staleReloadTimer);
+      this.staleReloadTimer = setTimeout(() => this.loadGame(), GameView.STALE_RELOAD_DELAY_MS);
+    }
+    return {
+      ...loaded,
+      status: previous.status,
+      result: previous.result,
+      resultReason: previous.resultReason,
+      statusDetail: null,
+      completedAt: previous.completedAt ?? loaded.completedAt,
+    };
   }
 
   /**
@@ -894,6 +931,10 @@ export class GameView implements OnInit, OnDestroy {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+}
+
+function isFinishedStatus(status: Game['status']): boolean {
+  return status === 'COMPLETED' || status === 'FORFEIT';
 }
 
 /** The colour that resigned, from the result; null when the game did not end by resignation. */

@@ -12,8 +12,8 @@ public class ResponseParserService {
 
     private static final Pattern JSON_BLOCK = Pattern.compile("```(?:json)?\\s*(\\{.*?})\\s*```", Pattern.DOTALL);
     private static final Pattern JSON_OBJECT = Pattern.compile("\\{[^{}]*\"move\"\\s*:\\s*\"[^\"]+\"[^{}]*}");
-    private static final Pattern RESIGN_OBJECT =
-            Pattern.compile("\\{[^{}]*\"resign\"\\s*:\\s*(?:true|\"true\")[^{}]*}");
+    /** Any flat JSON object with a "resign" field; its value is judged by {@link #isResignation}. */
+    private static final Pattern RESIGN_OBJECT = Pattern.compile("\\{[^{}]*\"resign\"\\s*:[^{}]*}");
     private static final Pattern MOVE_PATTERN = Pattern.compile(
             "\\b([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?)\\b"
     );
@@ -44,9 +44,10 @@ public class ResponseParserService {
             if (result != null) return result;
         }
 
-        // 3b. Try finding a JSON object that resigns (it may have no "move" field)
+        // 3b. Try every JSON object with a "resign" field (it may have no "move" field). Whether it resigns is
+        // decided by the same rule as for a raw answer (isResignation), before any move is taken from plain text.
         Matcher resignMatcher = RESIGN_OBJECT.matcher(rawResponse);
-        if (resignMatcher.find()) {
+        while (resignMatcher.find()) {
             result = tryParseJson(resignMatcher.group().trim());
             if (result != null) return result;
         }

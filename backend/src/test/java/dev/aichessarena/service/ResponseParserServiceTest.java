@@ -112,6 +112,37 @@ class ResponseParserServiceTest {
         }
     }
 
+    /**
+     * Regression: wrapped in text, only a lowercase, unpadded "true" was recognised, so
+     * {@code Answer: {"resign":"TRUE","message":"e4"}} played e4 from the message instead of resigning.
+     */
+    @Test
+    void theResignFlagIsRecognisedTheSameWayRawInACodeBlockAndWrappedInText() {
+        for (String value : new String[] {"true", "\"true\"", "\"TRUE\"", "\"True\"", "\" true \"", "\"  TRUE\""}) {
+            String json = "{\"resign\":" + value + ",\"message\":\"e4\"}";
+            for (String answer : new String[] {json, "```json\n" + json + "\n```", "Answer: " + json,
+                    "I resign. " + json + " Good game."}) {
+                ResponseParserService.ParseResult result = parser.parse(answer);
+                assertTrue(result.resign(), answer);
+                assertNull(result.move(), answer);
+                assertEquals("e4", result.message(), answer);
+            }
+        }
+    }
+
+    @Test
+    void aWrappedNonResigningObjectFallsBackLikeARawOne() {
+        for (String json : new String[] {"{\"resign\":\"no\",\"message\":\"e4\"}", "{\"resign\":false,\"message\":\"e4\"}"}) {
+            ResponseParserService.ParseResult raw = parser.parse(json);
+            ResponseParserService.ParseResult wrapped = parser.parse("Answer: " + json);
+            assertFalse(raw.resign(), json);
+            assertFalse(wrapped.resign(), json);
+            assertEquals(raw.move(), wrapped.move(), json);
+        }
+        // A later object in the text that does resign is still found.
+        assertTrue(parser.parse("Draft {\"resign\":false} final {\"resign\":\"TRUE\"}").resign());
+    }
+
     @Test
     void aResignationWithANullOrBlankMoveHasNoMove() {
         assertNull(parser.parse("{\"resign\":true,\"move\":null}").move());

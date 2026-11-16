@@ -239,6 +239,107 @@ class GameLifecycleServiceTest {
         assertNull(tournamentService.advancedGameId);
     }
 
+    /**
+     * Regression: the game-over update went out inside the transaction, so a game view that reloaded on it could
+     * read the game before the result was committed and keep showing it as running.
+     */
+    @Test
+    void gameOverUpdatesGoOutOnlyAfterTheTransactionCommitted() {
+        Game game = resignableGame();
+        RecordingGameWebSocket websocket = new RecordingGameWebSocket();
+        GameLifecycleService service = service(game, websocket, new RecordingTournamentService());
+        service.chatMessageRepository = new RecordingChatMessageRepository(new ArrayList<>());
+        FakeTransactionRegistry transaction = new FakeTransactionRegistry();
+        service.transactionRegistry = transaction;
+
+        service.resign(new GameLifecycleService.Resignation(game.id, 10, "BLACK", "model-b", "Model B",
+                "gg", null, POSITION));
+
+        assertNull(websocket.lastStatus, "nothing is sent before the commit");
+        assertNull(websocket.lastChat);
+        transaction.complete(jakarta.transaction.Status.STATUS_COMMITTED);
+        assertEquals("COMPLETED", websocket.lastStatus);
+        assertEquals("RESIGNATION", websocket.lastResultReason);
+        assertEquals("gg", websocket.lastChat);
+    }
+
+    @Test
+    void checkmatesForfeitsAndPausesAreAlsoAnnouncedAfterTheCommitAndNeverAfterARollback() {
+        Game checkmate = resignableGame();
+        RecordingGameWebSocket websocket = new RecordingGameWebSocket();
+        GameLifecycleService service = service(checkmate, websocket, new RecordingTournamentService());
+        FakeTransactionRegistry transaction = new FakeTransactionRegistry();
+        service.transactionRegistry = transaction;
+
+        service.completeGame(checkmate.id, new ChessService.GameEndInfo("WHITE_WINS", "CHECKMATE"));
+        assertNull(websocket.lastStatus);
+        transaction.complete(jakarta.transaction.Status.STATUS_COMMITTED);
+        assertEquals("COMPLETED", websocket.lastStatus);
+
+        Game forfeit = resignableGame();
+        RecordingGameWebSocket forfeitSocket = new RecordingGameWebSocket();
+        GameLifecycleService forfeitService = service(forfeit, forfeitSocket, new RecordingTournamentService());
+        FakeTransactionRegistry rolledBack = new FakeTransactionRegistry();
+        forfeitService.transactionRegistry = rolledBack;
+        forfeitService.forfeitTimeout(forfeit.id, "BLACK", 60);
+        rolledBack.complete(jakarta.transaction.Status.STATUS_ROLLEDBACK);
+        assertNull(forfeitSocket.lastStatus, "a rolled-back forfeit is never announced");
+        assertNull(forfeitSocket.lastForfeitColor);
+
+        Game paused = resignableGame();
+        RecordingGameWebSocket pauseSocket = new RecordingGameWebSocket();
+        GameLifecycleService pauseService = service(paused, pauseSocket, new RecordingTournamentService());
+        FakeTransactionRegistry pauseTransaction = new FakeTransactionRegistry();
+        pauseService.transactionRegistry = pauseTransaction;
+        pauseService.pauseWithReason(paused.id, "Rate limited");
+        assertNull(pauseSocket.lastStatus);
+        pauseTransaction.complete(jakarta.transaction.Status.STATUS_COMMITTED);
+        assertEquals("PAUSED", pauseSocket.lastStatus);
+        assertEquals("Rate limited", pauseSocket.lastDetail);
+    }
+
+    /** One active transaction whose synchronizations run when the test completes it. */
+    private static final class FakeTransactionRegistry implements jakarta.transaction.TransactionSynchronizationRegistry {
+        private final List<jakarta.transaction.Synchronization> synchronizations = new ArrayList<>();
+
+        void complete(int status) {
+            synchronizations.forEach(sync -> sync.afterCompletion(status));
+        }
+
+        @Override
+        public Object getTransactionKey() {
+            return "tx";
+        }
+
+        @Override
+        public void putResource(Object key, Object value) {
+        }
+
+        @Override
+        public Object getResource(Object key) {
+            return null;
+        }
+
+        @Override
+        public void registerInterposedSynchronization(jakarta.transaction.Synchronization sync) {
+            synchronizations.add(sync);
+        }
+
+        @Override
+        public int getTransactionStatus() {
+            return jakarta.transaction.Status.STATUS_ACTIVE;
+        }
+
+        @Override
+        public void setRollbackOnly() {
+        }
+
+        @Override
+        public boolean getRollbackOnly() {
+            return false;
+        }
+    }
+
     private static Game resignableGame() {
         Game game = new Game();
         game.id = UUID.randomUUID();

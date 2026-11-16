@@ -19,6 +19,7 @@ import dev.aichessarena.dto.TournamentCostSummaryDto;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
@@ -28,6 +29,7 @@ import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -554,6 +556,59 @@ class AnalyticsServiceTest {
         assertEquals(2, alpha.losses(), "alpha lost both games it resigned");
     }
 
+    /**
+     * Regression: 9 first-try moves, then an illegal answer, then a resignation showed 100% first-try legal and no
+     * retries, because the resigned turn has no move to carry the retry. Both reliability views count it now; a
+     * resignation on the first try changes nothing.
+     */
+    @Test
+    void failedAttemptsBeforeAResignationCountInBothReliabilityViews() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.BLACK_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        Game clean = finishedGame("model.gamma", "model.beta", Game.GameResult.BLACK_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        List<Move> moves = new ArrayList<>();
+        for (int number = 1; number <= 9; number++) {
+            moves.add(chatMove(game, "model.alpha", number, "WHITE", ChatMode.OPTIONAL));
+            moves.add(chatMove(game, "model.beta", number, "BLACK", ChatMode.OPTIONAL));
+            moves.add(chatMove(clean, "model.gamma", number, "WHITE", ChatMode.OPTIONAL));
+            moves.add(chatMove(clean, "model.beta", number, "BLACK", ChatMode.OPTIONAL));
+        }
+        AnalyticsService service = service(List.of(game, clean), moves, List.of());
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).resignationAttempts = List.of(
+                // alpha: an illegal answer and a disallowed resignation, then the resignation at move 10.
+                resignationAttempt(game, "model.alpha", MoveAttempt.Outcome.ILLEGAL_MOVE),
+                resignationAttempt(game, "model.alpha", MoveAttempt.Outcome.RESIGN_NOT_ALLOWED),
+                resignationAttempt(game, "model.alpha", MoveAttempt.Outcome.RESIGNED),
+                // gamma resigned on its first try: nothing to count.
+                resignationAttempt(clean, "model.gamma", MoveAttempt.Outcome.RESIGNED),
+                // Failures of a ply that did not end in a resignation are already on a move (or a forfeit).
+                new MoveAttemptRepository.ResignationTurnAttempt(game.id, 3, "WHITE", "model.alpha",
+                        MoveAttempt.Outcome.PARSE_FAILURE)
+        );
+
+        AnalyticsModelComparisonRowDto alpha = row(service.getComparison(30, null, 0), "model.alpha");
+        // 9 first-try moves out of 10 turns; 2 retries over 10 turns.
+        assertEquals(new BigDecimal("0.9000"), alpha.firstTryLegalRate());
+        assertEquals(new BigDecimal("0.200000"), alpha.averageRetriesPerMove());
+        assertEquals(9, alpha.movesSampled(), "moves stay moves");
+        ModelReliabilityDto alphaReliability = reliabilityRow(service.getReliability(30, null, 0), "model.alpha");
+        assertEquals(new BigDecimal("0.9000"), alphaReliability.firstTryLegalRate());
+        assertEquals(new BigDecimal("0.2000"), alphaReliability.averageRetriesPerMove());
+
+        AnalyticsModelComparisonRowDto gamma = row(service.getComparison(30, null, 0), "model.gamma");
+        assertEquals(new BigDecimal("1.0000"), gamma.firstTryLegalRate());
+        assertEquals(new BigDecimal("0.000000"), gamma.averageRetriesPerMove());
+        ModelReliabilityDto gammaReliability = reliabilityRow(service.getReliability(30, null, 0), "model.gamma");
+        assertEquals(new BigDecimal("1.0000"), gammaReliability.firstTryLegalRate());
+        assertEquals(new BigDecimal("0.0000"), gammaReliability.averageRetriesPerMove());
+    }
+
+    private static MoveAttemptRepository.ResignationTurnAttempt resignationAttempt(Game game, String modelId,
+                                                                                    MoveAttempt.Outcome outcome) {
+        return new MoveAttemptRepository.ResignationTurnAttempt(game.id, 10, "WHITE", modelId, outcome);
+    }
+
     @Test
     void theNotLosingThresholdIsThirtyFivePercent() {
         assertTrue(ResignationAnalysis.notLosing(0.35));
@@ -729,6 +784,14 @@ class AnalyticsServiceTest {
         @Override
         public List<RejectedAttemptCost> findRejectedCostsByTournamentId(UUID tournamentId) {
             return costs;
+        }
+
+        private List<MoveAttemptRepository.ResignationTurnAttempt> resignationAttempts = List.of();
+
+        @Override
+        public List<MoveAttemptRepository.ResignationTurnAttempt> findResignationTurnAttemptsInWindow(
+                LocalDateTime cutoff, UUID tournamentId) {
+            return resignationAttempts;
         }
     }
 }

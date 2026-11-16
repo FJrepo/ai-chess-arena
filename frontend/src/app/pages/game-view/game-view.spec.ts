@@ -1121,6 +1121,69 @@ describe('GameView resignation', () => {
     component.ngOnDestroy();
   });
 
+  it('keeps the announced result when the reload still reads the game as running, and asks again', () => {
+    vi.useFakeTimers();
+    try {
+      const { component, gameLoad, messages, getGame } = createSpectator();
+      component.ngOnInit();
+      gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
+
+      messages.next({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'COMPLETED',
+        result: 'WHITE_WINS',
+        resultReason: 'RESIGNATION',
+      });
+      // The reload was read before the result was committed.
+      gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
+
+      expect(component.game()?.status).toBe('COMPLETED');
+      expect(component.game()?.result).toBe('WHITE_WINS');
+      expect(component.game()?.resultReason).toBe('RESIGNATION');
+      expect(getGame).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
+      expect(getGame).toHaveBeenCalledTimes(3);
+      gameLoad.next(resigned());
+      expect(component.game()?.resignation?.color).toBe('BLACK');
+
+      // Once the stored game agrees, nothing is reloaded any more.
+      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS * 3);
+      expect(getGame).toHaveBeenCalledTimes(3);
+      component.ngOnDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up asking again after a few stale reloads but keeps the result', () => {
+    vi.useFakeTimers();
+    try {
+      const { component, gameLoad, messages, getGame } = createSpectator();
+      component.ngOnInit();
+      gameLoad.next(gameWith());
+      messages.next({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'FORFEIT',
+        result: 'BLACK_FORFEIT',
+      });
+      component.loadGame();
+      for (let i = 0; i < GameView.MAX_STALE_RELOADS + 2; i++) {
+        gameLoad.next(gameWith());
+        vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
+      }
+
+      expect(getGame).toHaveBeenCalledTimes(2 + GameView.MAX_STALE_RELOADS);
+      expect(component.game()?.status).toBe('FORFEIT');
+      expect(component.game()?.result).toBe('BLACK_FORFEIT');
+      component.ngOnDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not reload for other results', () => {
     const { component, gameLoad, messages, getGame } = createSpectator();
     component.ngOnInit();
