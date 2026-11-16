@@ -105,6 +105,8 @@ class GameLoopFreshStateIT {
             checks.add(() -> assertEquals(changed ? CHANGED_MAX_RETRIES : 3, request.maxRetries(), "retries" + label));
             checks.add(() -> assertEquals(changed ? ChatMode.MANDATORY : ChatMode.OPTIONAL, request.chatMode(),
                     "chat mode" + label));
+            checks.add(() -> assertEquals(changed ? ChatMode.MANDATORY : ChatMode.OPTIONAL,
+                    request.tournamentChatMode(), "tournament chat mode" + label));
             if (turn < SCRIPT.size()) {
                 played.add(SCRIPT.get(turn));
             }
