@@ -260,9 +260,8 @@ class GameEngineServiceTest {
         }
 
         @Override
-        public ChatMode findChatMode(UUID gameId) {
-            Game game = games.get(gameId);
-            return game.tournament != null ? game.tournament.chatMode : ChatMode.OPTIONAL;
+        public void detachAll() {
+            // The fake hands out the same objects; there is no session to forget.
         }
     }
 
