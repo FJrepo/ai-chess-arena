@@ -122,6 +122,41 @@ class TournamentSeriesRulesTest {
         assertEquals(Game.GameResult.DRAW, drawn.result);
     }
 
+    @ParameterizedTest(name = "legacy single game without series id: draw, then {0} -> {1}")
+    @CsvSource({
+            "WHITE_WINS,    Seed 2",
+            "BLACK_WINS,    Seed 1",
+            "BLACK_FORFEIT, Seed 2",
+            "WHITE_FORFEIT, Seed 1",
+    })
+    void aDrawnSingleGameWithoutSeriesIdIsDecidedByItsFirstTiebreak(Game.GameResult tiebreakResult, String winner) {
+        Fixture fixture = new Fixture(1, DrawPolicy.REPLAY_GAME);
+        Game drawn = fixture.slot("Semifinal", 0);
+        drawn.seriesId = null; // rows from before series support
+
+        drawn.status = Game.GameStatus.COMPLETED;
+        drawn.result = Game.GameResult.DRAW;
+        fixture.service.advanceWinner(drawn.id);
+
+        assertEquals(drawn.id, drawn.seriesId);
+        List<Game> series = fixture.gameRepository.findBySeriesId(drawn.id);
+        assertEquals(2, series.size());
+        Game tiebreak = series.getLast();
+        assertEquals("Seed 2", tiebreak.whitePlayerName);
+
+        boolean forfeit = tiebreakResult == Game.GameResult.WHITE_FORFEIT
+                || tiebreakResult == Game.GameResult.BLACK_FORFEIT;
+        tiebreak.status = forfeit ? Game.GameStatus.FORFEIT : Game.GameStatus.COMPLETED;
+        tiebreak.result = tiebreakResult;
+        fixture.service.advanceWinner(tiebreak.id);
+
+        assertEquals(winner, fixture.advanced());
+        assertEquals(winner, tiebreak.advancedParticipant.playerName);
+        List<Game> after = fixture.gameRepository.findBySeriesId(drawn.id);
+        assertEquals(2, after.size(), "no third game after a decisive tiebreak");
+        assertEquals(0, after.stream().filter(g -> g.status == Game.GameStatus.WAITING).count());
+    }
+
     @Test
     void anExtraGameLeftByAnOlderVersionCannotChangeTheResult() {
         Fixture fixture = new Fixture(3, DrawPolicy.BLACK_ADVANCES);

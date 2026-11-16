@@ -479,6 +479,54 @@ describe('GameView', () => {
     component.ngOnDestroy();
   });
 
+  it('applies live moves directly once the latest load succeeded, even if an older load never answers', () => {
+    const { component, getGame, messages, reconnected } = createSpectator();
+    const initialLoad = new Subject<Game>();
+    const reconnectLoad = new Subject<Game>();
+    getGame.mockReturnValueOnce(initialLoad).mockReturnValueOnce(reconnectLoad);
+    component.ngOnInit();
+
+    reconnected.next();
+    reconnectLoad.next(
+      gameWith({ currentFen: AFTER_E4, moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }),
+    );
+    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
+    messages.next({
+      type: 'evaluationUpdate',
+      gameId: 'g-1',
+      moveNumber: 1,
+      color: 'BLACK',
+      evaluationCp: -10,
+    });
+
+    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+    expect(component.moves()[1].evaluationCp).toBe(-10);
+    expect(component.game()?.currentFen).toBe(AFTER_E5);
+    expect(component.currentMoveIndex()).toBe(1);
+    expect(initialLoad.observed).toBe(false);
+  });
+
+  it('ignores an older load that answers after a newer one', () => {
+    const { component, getGame, reconnected } = createSpectator();
+    const olderLoad = new Subject<Game>();
+    const newerLoad = new Subject<Game>();
+    getGame.mockReturnValueOnce(olderLoad).mockReturnValueOnce(newerLoad);
+    component.ngOnInit();
+    reconnected.next();
+
+    newerLoad.next(
+      gameWith({
+        currentFen: AFTER_E5,
+        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
+      }),
+    );
+    olderLoad.next(gameWith({ currentFen: START_FEN, moves: [] }));
+    olderLoad.error(new Error('late failure'));
+
+    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+    expect(component.game()?.currentFen).toBe(AFTER_E5);
+  });
+
   it('marks live override moves from the flag, falling back to the override model id', () => {
     const { component } = createComponent();
     component.game.set(gameWith());

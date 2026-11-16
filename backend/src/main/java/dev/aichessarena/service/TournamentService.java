@@ -313,8 +313,13 @@ public class TournamentService {
     }
 
     private List<Game> seriesGamesFor(Game game) {
-        UUID seriesId = game.seriesId != null ? game.seriesId : game.id;
-        List<Game> games = gameRepository.findBySeriesId(seriesId);
+        if (game.seriesId == null) {
+            // Rows without a series id are a series of their own. Store that id so tiebreak games created
+            // for this game and later lookups by series id find it.
+            game.seriesId = game.id;
+            gameRepository.persist(game);
+        }
+        List<Game> games = gameRepository.findBySeriesId(game.seriesId);
         return games.isEmpty() ? List.of(game) : games;
     }
 
@@ -418,7 +423,7 @@ public class TournamentService {
         nextGame.tournament = completedGame.tournament;
         nextGame.bracketRound = completedGame.bracketRound;
         nextGame.bracketPosition = completedGame.bracketPosition;
-        nextGame.seriesId = completedGame.seriesId != null ? completedGame.seriesId : completedGame.id;
+        nextGame.seriesId = completedGame.seriesId;
         nextGame.seriesGameNumber = nextGameNumber;
         nextGame.seriesBestOf = completedGame.seriesBestOf;
         nextGame.status = Game.GameStatus.WAITING;

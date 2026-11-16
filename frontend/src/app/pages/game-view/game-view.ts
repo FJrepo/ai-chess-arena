@@ -106,8 +106,13 @@ export class GameView implements OnInit, OnDestroy {
   private wsSub?: Subscription;
 
   private reconnectSub?: Subscription;
-  /** Game loads in flight; live moves that arrive meanwhile are buffered and merged afterwards. */
-  private pendingLoads = 0;
+  /**
+   * Only the latest game load counts: a newer load cancels the older request, and a response from a
+   * superseded load is ignored. Live moves that arrive while it is in flight are buffered and merged afterwards.
+   */
+  private loadGeneration = 0;
+  private loadInFlight = false;
+  private loadSub?: Subscription;
   private bufferedLiveMessages: WsMessage[] = [];
 
   /** The position shown on the board: the start position before the first move, else the selected move. */
@@ -310,14 +315,20 @@ export class GameView implements OnInit, OnDestroy {
     this.ws.unsubscribeFromGame(this.gameId);
     this.wsSub?.unsubscribe();
     this.reconnectSub?.unsubscribe();
+    this.loadSub?.unsubscribe();
     this.turnState.stopTicker();
   }
 
   loadGame() {
-    this.pendingLoads++;
-    this.api.getGame(this.gameId).subscribe({
+    const generation = ++this.loadGeneration;
+    this.loadInFlight = true;
+    this.loadSub?.unsubscribe();
+    this.loadSub = this.api.getGame(this.gameId).subscribe({
       next: (game) => {
-        this.pendingLoads--;
+        if (generation !== this.loadGeneration) {
+          return;
+        }
+        this.loadInFlight = false;
         this.game.set(game);
         this.moves.set(game.moves || []);
         this.chatMessages.set(game.chatMessages || []);
@@ -337,7 +348,10 @@ export class GameView implements OnInit, OnDestroy {
         }
       },
       error: () => {
-        this.pendingLoads--;
+        if (generation !== this.loadGeneration) {
+          return;
+        }
+        this.loadInFlight = false;
         this.replayBufferedLiveMessages();
         this.snackbar.open('Failed to load the game.', 'Dismiss', {
           duration: 4000,
@@ -363,7 +377,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   handleWsMessage(msg: WsMessage) {
-    if (this.pendingLoads > 0 && (msg.type === 'move' || msg.type === 'evaluationUpdate')) {
+    if (this.loadInFlight && (msg.type === 'move' || msg.type === 'evaluationUpdate')) {
       // The loaded game replaces the move list; apply these on top of it once it arrives.
       this.bufferedLiveMessages.push(msg);
       return;
@@ -472,9 +486,6 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   private replayBufferedLiveMessages() {
-    if (this.pendingLoads > 0) {
-      return;
-    }
     const buffered = this.bufferedLiveMessages;
     this.bufferedLiveMessages = [];
     buffered.forEach((msg) => this.handleWsMessage(msg));
