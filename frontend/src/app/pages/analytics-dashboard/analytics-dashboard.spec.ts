@@ -20,6 +20,38 @@ describe('AnalyticsDashboard', () => {
     ]);
   });
 
+  it('sorts comparison rows by first-try legal rate', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 6,
+      models: [
+        comparisonRow('model.alpha', { winRate: 0.75, firstTryLegalRate: 0.6 }),
+        comparisonRow('model.beta', { winRate: 0.5, firstTryLegalRate: 0.95 }),
+      ],
+    });
+
+    component.comparisonSortBy.set('firstTryLegalRate');
+
+    expect(component.comparisonRows().map((row) => row.modelId)).toEqual([
+      'model.beta',
+      'model.alpha',
+    ]);
+    expect(component.comparisonSortOptions.map((option) => option.label)).toContain(
+      'First-try legal',
+    );
+  });
+
+  it('explains the reliability score without latency', () => {
+    const component = new AnalyticsDashboard({} as any);
+
+    expect(component.scoreExplanation).toBe(
+      'Score: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.',
+    );
+  });
+
   it('picks best value only from models with pricing and wins', () => {
     const component = new AnalyticsDashboard({} as any);
     component.comparison.set({
@@ -70,6 +102,7 @@ type AnalyticsComparisonRow = {
   movesSampled: number;
   averageResponseTimeMs: number | null;
   averageRetriesPerMove: number;
+  firstTryLegalRate: number;
   totalCostUsd: number | null;
   averageCostPerMoveUsd: number | null;
   costPerWinUsd: number | null;
@@ -104,6 +137,7 @@ function baseRow(modelId: string): AnalyticsComparisonRow {
     movesSampled: 30,
     averageResponseTimeMs: 1200,
     averageRetriesPerMove: 0.1,
+    firstTryLegalRate: 0.9,
     totalCostUsd: 2.5,
     averageCostPerMoveUsd: 0.08,
     costPerWinUsd: 1.25,

@@ -655,6 +655,21 @@ describe('GameView', () => {
     expect(component.game()?.pgn).toBe('1. e4 e5');
   });
 
+  it('orders loaded moves White first within a move number', () => {
+    const { component, gameLoad } = createSpectator();
+    component.ngOnInit();
+
+    gameLoad.next(
+      gameWith({
+        currentFen: AFTER_E5,
+        moves: [storedMove(1, 'BLACK', 'e5', AFTER_E5), storedMove(1, 'WHITE', 'e4', AFTER_E4)],
+      }),
+    );
+
+    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+    expect(component.currentMoveIndex()).toBe(1);
+  });
+
   it('ignores a live move that is already in the move list', () => {
     const { component, gameLoad, messages } = createSpectator();
     component.ngOnInit();

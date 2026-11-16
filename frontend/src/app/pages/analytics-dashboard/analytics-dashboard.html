@@ -129,6 +129,7 @@
                     <th>Record</th>
                     <th>Win Rate</th>
                     <th>Reliability</th>
+                    <th>First-try legal</th>
                     <th>Latency</th>
                     <th>Forfeits</th>
                     <th>White</th>
@@ -152,6 +153,7 @@
                         {{ row.reliabilityScore | number: '1.1-2' }}
                         <div class="table-note">{{ row.reliabilityBand }}</div>
                       </td>
+                      <td>{{ percent(row.firstTryLegalRate) }}</td>
                       <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
                       <td>
                         {{ row.forfeits }}
@@ -166,7 +168,7 @@
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="10" class="empty">
+                      <td colspan="11" class="empty">
                         No comparison data found for the selected period.
                       </td>
                     </tr>
@@ -362,6 +364,7 @@
                     <th>Score</th>
                     <th>Stability</th>
                     <th>Games</th>
+                    <th>First-try legal</th>
                     <th>Forfeit Rate</th>
                     <th>Avg Retries</th>
                     <th>Avg Latency</th>
@@ -380,13 +383,14 @@
                         </mat-chip>
                       </td>
                       <td>{{ row.gamesPlayed }}</td>
+                      <td>{{ percent(row.firstTryLegalRate) }}</td>
                       <td>{{ row.forfeitRate * 100 | number: '1.1-2' }}%</td>
                       <td>{{ row.averageRetriesPerMove | number: '1.2-4' }}</td>
                       <td>{{ formatMs(row.averageResponseTimeMs) }}</td>
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="7" class="empty">
+                      <td colspan="8" class="empty">
                         No reliability data available for current criteria.
                       </td>
                     </tr>
@@ -394,6 +398,7 @@
                 </tbody>
               </table>
             </div>
+            <p>{{ scoreExplanation }}</p>
           </div>
         }
       </section>

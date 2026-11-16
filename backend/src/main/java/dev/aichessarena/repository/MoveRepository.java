@@ -10,19 +10,21 @@ import java.util.UUID;
 @ApplicationScoped
 public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
 
+    /** The game's moves in play order: White and Black share a move number, and "WHITE" sorts after "BLACK". */
     public List<Move> findByGameId(UUID gameId) {
-        return list("game.id = ?1 order by moveNumber, createdAt", gameId);
-    }
-
-    public List<Move> findCreatedAfter(LocalDateTime cutoff) {
-        return list("createdAt >= ?1", cutoff);
+        return list("game.id = ?1 order by moveNumber, color desc, createdAt", gameId);
     }
 
     public List<Move> findByTournamentId(UUID tournamentId) {
         return list("game.tournament.id = ?1", tournamentId);
     }
 
-    public List<Move> findByTournamentIdAndCreatedAfter(UUID tournamentId, LocalDateTime cutoff) {
-        return list("game.tournament.id = ?1 and createdAt >= ?2", tournamentId, cutoff);
+    /** Moves of the games in an analytics window (see {@link GameRepository#findInWindow}). */
+    public List<Move> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        return list(
+                "from Move m where " + GameRepository.windowPredicate("m.game")
+                        + GameRepository.tournamentPredicate("m.game", tournamentId),
+                GameRepository.windowParameters(cutoff, tournamentId)
+        );
     }
 }

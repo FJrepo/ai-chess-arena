@@ -14,6 +14,8 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -43,6 +45,9 @@ public class AnalyticsService {
     MoveRepository moveRepository;
 
     @Inject
+    MoveAttemptRepository moveAttemptRepository;
+
+    @Inject
     AnalyticsWindowLoader windowLoader;
 
     @Inject
@@ -57,17 +62,21 @@ public class AnalyticsService {
     public TournamentCostSummaryDto getTournamentCostSummary(UUID tournamentId) {
         List<Game> games = gameRepository.findByTournamentId(tournamentId);
         List<Move> moves = moveRepository.findByTournamentId(tournamentId);
+        Map<String, BigDecimal> rejectedCostByModel =
+                rejectedCostByModel(moveAttemptRepository.findRejectedCostsByTournamentId(tournamentId));
 
         BigDecimal totalCost = games.stream()
                 .map(game -> nonNull(game.totalCostUsd))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal averageCostPerGame = divide(totalCost, games.size());
+        // Byes and bracket slots nobody reached cost nothing and are not games anyone played.
+        long playedGames = games.stream().filter(game -> !AnalyticsGameOutcomeClassifier.isBye(game)).count();
+        BigDecimal averageCostPerGame = divide(totalCost, playedGames);
 
         BigDecimal totalMoveCost = moves.stream()
                 .map(move -> move.costUsd)
                 .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(totalOf(rejectedCostByModel), BigDecimal::add);
         long pricedMoveCount = moves.stream().filter(move -> move.costUsd != null).count();
         BigDecimal averageCostPerMove = divide(totalMoveCost, pricedMoveCount);
 
@@ -97,6 +106,10 @@ public class AnalyticsService {
                 accumulator.pricedMoves++;
             }
         }
+        rejectedCostByModel.forEach((modelId, cost) -> {
+            CostAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new CostAccumulator());
+            accumulator.totalCost = accumulator.totalCost.add(cost);
+        });
 
         List<ModelCostBreakdownDto> topModels = byModel.entrySet().stream()
                 .map(entry -> new ModelCostBreakdownDto(
@@ -148,27 +161,21 @@ public class AnalyticsService {
             return null;
         }
 
-        double completionRate = model.gamesPlayed() == 0
-                ? 0
-                : (double) model.gamesCompleted() / (double) model.gamesPlayed();
-        double forfeitRate = model.forfeitRate().doubleValue();
-        double avgRetries = model.averageRetriesPerMove().doubleValue();
         AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
                 model.gamesPlayed(),
-                completionRate,
-                forfeitRate,
-                avgRetries,
-                model.averageResponseTimeMs()
+                model.movesSampled(),
+                model.firstTryLegalRate().doubleValue(),
+                model.forfeitRate().doubleValue(),
+                model.averageRetriesPerMove().doubleValue()
         );
 
         return new ModelReliabilityDetailDto(
                 days,
                 tournamentId,
                 model,
-                decimal(score.completionScore(), 2),
+                decimal(score.firstTryLegalScore(), 2),
                 decimal(score.forfeitScore(), 2),
                 decimal(score.retryScore(), 2),
-                decimal(score.latencyScore(), 2),
                 decimal(score.rawScore(), 2),
                 decimal(score.sampleWeight(), 4)
         );
@@ -215,10 +222,11 @@ public class AnalyticsService {
                 .mapToLong(Integer::longValue)
                 .sum();
 
+        Map<String, BigDecimal> rejectedCostByModel = rejectedCostByModel(scope.rejectedAttemptCosts());
         BigDecimal costTotalUsd = moves.stream()
                 .map(move -> move.costUsd)
                 .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(totalOf(rejectedCostByModel), BigDecimal::add);
 
         Map<String, HealthAccumulator> byModel = new HashMap<>();
         for (Move move : moves) {
@@ -244,6 +252,10 @@ public class AnalyticsService {
                 accumulator.pricedMoves++;
             }
         }
+        rejectedCostByModel.forEach((modelId, cost) -> {
+            HealthAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new HealthAccumulator());
+            accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
+        });
 
         List<AnalyticsHealthModelRowDto> modelRows = byModel.entrySet().stream()
                 .map(entry -> new AnalyticsHealthModelRowDto(
@@ -306,6 +318,9 @@ public class AnalyticsService {
             ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
             accumulator.movesSampled++;
             accumulator.retriesTotal += Math.max(move.retryCount, 0);
+            if (move.retryCount <= 0) {
+                accumulator.firstTryMoves++;
+            }
 
             if (move.responseTimeMs != null) {
                 accumulator.responseTimeTotal += move.responseTimeMs;
@@ -317,6 +332,10 @@ public class AnalyticsService {
                 accumulator.pricedMoves++;
             }
         }
+        rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
+            ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
+            accumulator.costTotalUsd = accumulator.costTotalUsd.add(cost);
+        });
 
         List<ModelReliabilityDto> rows = new ArrayList<>();
         for (Map.Entry<String, ReliabilityAccumulator> entry : byModel.entrySet()) {
@@ -325,9 +344,11 @@ public class AnalyticsService {
                 continue;
             }
 
-            double completionRate = accumulator.gamesPlayed == 0
-                    ? 0
-                    : (double) accumulator.gamesCompleted / (double) accumulator.gamesPlayed;
+            double firstTryLegalRate = AnalyticsReliabilityScorer.firstTryLegalRate(
+                    accumulator.firstTryMoves,
+                    accumulator.movesSampled,
+                    accumulator.invalidMoveForfeitCount
+            );
             double forfeitRate = accumulator.gamesPlayed == 0
                     ? 0
                     : (double) accumulator.forfeitCount / (double) accumulator.gamesPlayed;
@@ -343,10 +364,10 @@ public class AnalyticsService {
             BigDecimal avgCostPerMove = divide(accumulator.costTotalUsd, accumulator.pricedMoves);
             AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
                     accumulator.gamesPlayed,
-                    completionRate,
+                    accumulator.movesSampled,
+                    firstTryLegalRate,
                     forfeitRate,
-                    avgRetriesPerMove,
-                    avgResponseTimeMs
+                    avgRetriesPerMove
             );
 
             rows.add(new ModelReliabilityDto(
@@ -357,6 +378,7 @@ public class AnalyticsService {
                     decimal(forfeitRate, 4),
                     decimal(timeoutForfeitRate, 4),
                     decimal(avgRetriesPerMove, 4),
+                    decimal(firstTryLegalRate, 4),
                     avgResponseTimeMs,
                     avgCostPerMove,
                     accumulator.movesSampled,
@@ -395,6 +417,9 @@ public class AnalyticsService {
             ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
             accumulator.movesSampled++;
             accumulator.retriesTotal += Math.max(move.retryCount, 0);
+            if (move.retryCount <= 0) {
+                accumulator.firstTryMoves++;
+            }
             if (move.responseTimeMs != null) {
                 accumulator.responseTimeTotal += move.responseTimeMs;
                 accumulator.responseTimeCount++;
@@ -404,6 +429,10 @@ public class AnalyticsService {
                 accumulator.pricedMoves++;
             }
         }
+        rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
+            ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
+            accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
+        });
 
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
@@ -435,17 +464,17 @@ public class AnalyticsService {
                     ? divide(accumulator.totalCostUsd, accumulator.wins)
                     : null;
 
-            double completionRate = accumulator.gamesPlayed == 0
-                    ? 0
-                    : (double) accumulator.gamesCompleted / (double) accumulator.gamesPlayed;
-            double forfeitRateDouble = forfeitRate.doubleValue();
-            double avgRetries = averageRetriesPerMove.doubleValue();
+            double firstTryLegalRate = AnalyticsReliabilityScorer.firstTryLegalRate(
+                    accumulator.firstTryMoves,
+                    accumulator.movesSampled,
+                    accumulator.invalidMoveForfeits
+            );
             AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
                     accumulator.gamesPlayed,
-                    completionRate,
-                    forfeitRateDouble,
-                    avgRetries,
-                    averageResponseTimeMs
+                    accumulator.movesSampled,
+                    firstTryLegalRate,
+                    forfeitRate.doubleValue(),
+                    averageRetriesPerMove.doubleValue()
             );
 
             rows.add(new AnalyticsModelComparisonRowDto(
@@ -468,6 +497,7 @@ public class AnalyticsService {
                     accumulator.movesSampled,
                     averageResponseTimeMs,
                     averageRetriesPerMove,
+                    decimal(firstTryLegalRate, 4),
                     totalCostUsd,
                     averageCostPerMoveUsd,
                     costPerWinUsd,
@@ -487,8 +517,9 @@ public class AnalyticsService {
         return new AnalyticsModelComparisonDto(days, tournamentId, minGames, terminalGames.size(), rows);
     }
 
+    /** Counts a finished, non-bye game; unfinished games are not games played yet and are ignored. */
     private void registerGame(Map<String, ReliabilityAccumulator> byModel, String modelId, Game game, boolean isWhite) {
-        if (modelId == null || modelId.isBlank()) {
+        if (modelId == null || modelId.isBlank() || !countsAsPlayed(game)) {
             return;
         }
 
@@ -505,7 +536,14 @@ public class AnalyticsService {
             if (outcome.timeoutForfeit()) {
                 accumulator.timeoutForfeitCount++;
             }
+            if (outcome.invalidMoveForfeit()) {
+                accumulator.invalidMoveForfeitCount++;
+            }
         }
+    }
+
+    private static boolean countsAsPlayed(Game game) {
+        return AnalyticsGameOutcomeClassifier.isTerminal(game.status) && !AnalyticsGameOutcomeClassifier.isBye(game);
     }
 
     private void registerComparisonGame(
@@ -514,7 +552,7 @@ public class AnalyticsService {
             Game game,
             boolean isWhite
     ) {
-        if (modelId == null || modelId.isBlank()) {
+        if (modelId == null || modelId.isBlank() || !countsAsPlayed(game)) {
             return;
         }
 
@@ -522,8 +560,8 @@ public class AnalyticsService {
         accumulator.gamesPlayed++;
         AnalyticsGameOutcomeClassifier.ComparisonOutcome outcome = outcomeClassifier.classifyComparison(game, isWhite);
 
-        if (outcome.completed()) {
-            accumulator.gamesCompleted++;
+        if (outcomeClassifier.isInvalidMoveForfeit(game, isWhite)) {
+            accumulator.invalidMoveForfeits++;
         }
         if (outcome.whiteGame()) {
             accumulator.whiteGames++;
@@ -587,6 +625,25 @@ public class AnalyticsService {
 
     private BigDecimal nonNull(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    /**
+     * Cost of rejected attempts per model. Accepted attempts are never included (their cost is already on the
+     * move), so adding this to the move cost counts every paid answer exactly once.
+     */
+    private Map<String, BigDecimal> rejectedCostByModel(List<RejectedAttemptCost> costs) {
+        Map<String, BigDecimal> byModel = new HashMap<>();
+        for (RejectedAttemptCost cost : costs) {
+            if (!hasTrackedModelId(cost.modelId()) || cost.costUsd() == null) {
+                continue;
+            }
+            byModel.merge(normalizeModelId(cost.modelId()), cost.costUsd(), BigDecimal::add);
+        }
+        return byModel;
+    }
+
+    private BigDecimal totalOf(Map<String, BigDecimal> costs) {
+        return costs.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private boolean pricingAvailable(ComparisonAccumulator accumulator) {
@@ -657,7 +714,7 @@ public class AnalyticsService {
 
     private static final class ComparisonAccumulator {
         private long gamesPlayed;
-        private long gamesCompleted;
+        private long invalidMoveForfeits;
         private long wins;
         private long draws;
         private long losses;
@@ -668,6 +725,7 @@ public class AnalyticsService {
         private long blackGames;
         private long blackWins;
         private long movesSampled;
+        private long firstTryMoves;
         private long retriesTotal;
         private long responseTimeCount;
         private long responseTimeTotal;
@@ -680,8 +738,10 @@ public class AnalyticsService {
         private long gamesCompleted;
         private long forfeitCount;
         private long timeoutForfeitCount;
+        private long invalidMoveForfeitCount;
 
         private long movesSampled;
+        private long firstTryMoves;
         private long retriesTotal;
         private long responseTimeCount;
         private long responseTimeTotal;

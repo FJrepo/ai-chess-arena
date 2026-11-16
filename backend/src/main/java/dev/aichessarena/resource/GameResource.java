@@ -90,7 +90,7 @@ public class GameResource {
         ).build();
     }
 
-    /** Every model attempt of the game, including rejected ones, ordered by move number and time. */
+    /** Every model attempt of the game, including rejected ones, in play order (White first) and by attempt number. */
     @GET
     @Path("/{id}/attempts")
     public Response getAttempts(@PathParam("id") UUID id) {

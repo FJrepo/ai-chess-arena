@@ -13,14 +13,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `GET /api/games/{id}/attempts` returns a game's attempts ordered by move number; the game feed shows failed attempts per move, and plies that ended without a move.
 - Live retry events carry `outcome` and `proposedMove`; the retry banner names the rejected move.
 - When a game is paused because an answer was cut off at the output-token limit, the game view offers a *Max output tokens per answer* field (prefilled with double the current limit) and a *Save and resume* button that updates the tournament and resumes the game.
+- Analytics: a *First-try legal* column (share of turns answered with a legal move on the first attempt) in the reliability and comparison tables, a matching sort option, and a one-line explanation of the score under the reliability table. The reliability and comparison API rows carry `firstTryLegalRate`.
 
 ### Changed
 - The default output-token limit is 4096 instead of 500 (`game.default-max-tokens`).
 - Only the system prompt, the last six prior messages and the current turn are sent to a model, instead of the whole game's conversation.
-- The cost of rejected answers is added to the game's (and so the tournament's) total cost. Per-model analytics still count accepted moves only.
+- The cost of rejected answers is added to the game's (and so the tournament's) total cost.
 - `games.total_cost_usd` now has 8 decimal places (`NUMERIC(12,8)`, migration V10), like per-attempt costs, so small rejected charges are no longer rounded away.
 - *Replay game* for a single-game match (best of 1) no longer wipes and replays the drawn game. The drawn game is kept with its moves, chat and cost, and a tiebreak game with swapped colors is added to the match; the first decisive tiebreak game decides, as in longer series.
 - Live move updates now carry an `isOverride` flag, and moves set by an operator override are evaluated by Stockfish like regular moves.
+- Reliability score: 50% first-try legal moves, 30% games not forfeited, 20% few retries (`100 - 50 × average retries per move`). Latency is no longer scored (it gave no points above 11.5 s and penalised reasoning models) but is still shown. Low samples are pulled toward 60 until 60 moves instead of 20 games, which brackets rarely reach; *Insufficient data* still applies below 3 games. `GET /api/analytics/reliability/{modelId}` returns `firstTryLegalScore` instead of `latencyScore` and no longer returns `completionScore`.
+- Per-model cost in analytics (comparison, health, reliability and the tournament cost summary) now includes rejected attempts from `move_attempts`; accepted attempts are not counted twice. The health total and the tournament's average cost per move include them too, and the average cost per game ignores byes.
+- *Max Retries* is labelled *Max attempts per move* in the setup page and README; the API field stays `maxRetries` for compatibility.
+- The setup estimate prices a move with about 1,400 prompt tokens (system prompt, last six prior messages and the current turn, measured by a backend test) instead of 900, and its footnote warns that reasoning models can use far more output tokens, up to the tournament's max output tokens.
+- Deleting a tournament asks for confirmation first; for a tournament in progress the prompt warns that all its games, moves, chat and history are deleted.
 
 ### Fixed
 - Reasoning models no longer lose games because a 500-token limit cut off their answer: an answer cut off at the limit without a usable legal move pauses the game with a hint instead of counting as a failed attempt; a cut-off answer with a legal move is played.
@@ -30,6 +36,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Game view: moves that arrive over the live connection while the game is still loading are merged into the loaded move list instead of being lost or shown twice; a live move that is already listed is ignored.
 - Game view: live override moves are marked as overrides immediately instead of only after a reload.
 - Game view: reviewing earlier moves no longer changes whose turn the page shows when the server has not reported it.
+- Analytics no longer count byes or waiting, running and paused games as games played, so unfinished games no longer lower completion; finished games are selected by completion time instead of creation time, and moves follow their games.
+- Setup estimate: the final is no longer counted twice when no separate final format is set (4 players, best of 3: 6–9 games instead of 8–12).
+- System status: a failed refresh no longer leaves the page loading, and while the backend is unreachable the OpenRouter and Stockfish cards show *Unknown* instead of a failure.
+- Moves that share a move number are ordered White first everywhere (`Game.moves`, the moves and attempts endpoints, the board rebuild on resume, and the game view), also when they were stored Black-first or with equal timestamps.
 - Third-party notices now list chesslib (Apache License 2.0); the security-advisory link in the issue template points to this repository; the CI workflow runs with a read-only `contents` token permission.
 
 ## [1.2.0] - 2026-11-16

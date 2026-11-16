@@ -18,6 +18,15 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { providerDisplayName as resolveProviderDisplayName } from '../../utils/provider-brand';
 
+/**
+ * Prompt tokens one model call sends: system prompt, the last six prior messages and the current turn (the
+ * backend bounds the history). Measured by PromptServiceTest over a 70-ply game: about 4,500 characters on
+ * average (about 1,600 at the first move, about 5,000 late in the game), roughly 1,400 tokens.
+ */
+const PROMPT_TOKENS_PER_MOVE = 1400;
+/** Completion tokens of a typical non-reasoning answer (JSON move plus a short message). */
+const COMPLETION_TOKENS_PER_MOVE = 140;
+
 type SetupParticipant = Partial<Participant> & {
   promptPricePerMillion?: number | null;
   completionPricePerMillion?: number | null;
@@ -445,9 +454,9 @@ Your opponent is %s (%s).`;
       return null;
     }
 
+    // A knockout bracket with n participants has n - 1 series; the last one is the final.
     const totalSeries = participantCount - 1;
-    const usesFinalsOverride = this.finalsBestOf !== null;
-    const openingSeries = Math.max(0, totalSeries - (usesFinalsOverride ? 1 : 0));
+    const openingSeries = totalSeries - 1;
     const finalBestOf = this.finalsBestOf ?? this.matchupBestOf;
     const minGames =
       openingSeries * this.winsRequired(this.matchupBestOf) + this.winsRequired(finalBestOf);
@@ -469,8 +478,10 @@ Your opponent is %s (%s).`;
     let averageMoveCostUsd: number | null = null;
     if (participantsWithPricing.length > 0) {
       const totalMoveCost = participantsWithPricing.reduce((sum, participant) => {
-        const promptCost = ((participant.promptPricePerMillion ?? 0) * 900) / 1_000_000;
-        const completionCost = ((participant.completionPricePerMillion ?? 0) * 140) / 1_000_000;
+        const promptCost =
+          ((participant.promptPricePerMillion ?? 0) * PROMPT_TOKENS_PER_MOVE) / 1_000_000;
+        const completionCost =
+          ((participant.completionPricePerMillion ?? 0) * COMPLETION_TOKENS_PER_MOVE) / 1_000_000;
         return sum + promptCost + completionCost;
       }, 0);
       averageMoveCostUsd = totalMoveCost / participantsWithPricing.length;

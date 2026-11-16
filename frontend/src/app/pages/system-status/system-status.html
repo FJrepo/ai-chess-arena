@@ -65,14 +65,14 @@
           <div>
             <span class="card-kicker">OpenRouter</span>
             <h2>
-              {{ statusLabel(status()?.openRouterValid ?? false, 'Configured', 'Needs attention') }}
+              {{ dependencyLabel(openRouterTone(), 'Configured', 'Needs attention') }}
             </h2>
           </div>
           <mat-chip
-            [class.healthy]="status()?.openRouterValid"
-            [class.degraded]="!status()?.openRouterValid"
+            [class.healthy]="openRouterTone() === 'healthy'"
+            [class.degraded]="openRouterTone() === 'degraded'"
           >
-            {{ statusTone(status()?.openRouterValid ?? false) }}
+            {{ openRouterTone() }}
           </mat-chip>
         </div>
         <p class="card-summary">{{ openRouterSummary() }}</p>
@@ -88,20 +88,14 @@
           <div>
             <span class="card-kicker">Stockfish</span>
             <h2>
-              {{
-                statusLabel(
-                  status()?.stockfishAvailable ?? false,
-                  'Eval online',
-                  'Eval unavailable'
-                )
-              }}
+              {{ dependencyLabel(stockfishTone(), 'Eval online', 'Eval unavailable') }}
             </h2>
           </div>
           <mat-chip
-            [class.healthy]="status()?.stockfishAvailable"
-            [class.degraded]="!status()?.stockfishAvailable"
+            [class.healthy]="stockfishTone() === 'healthy'"
+            [class.degraded]="stockfishTone() === 'degraded'"
           >
-            {{ statusTone(status()?.stockfishAvailable ?? false) }}
+            {{ stockfishTone() }}
           </mat-chip>
         </div>
         <p class="card-summary">{{ stockfishSummary() }}</p>

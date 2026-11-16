@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.github.bhlangonijr.chesslib.Board;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -191,5 +193,59 @@ class PromptServiceTest {
     @Test
     void computePromptHashReturnsNullForNullPrompt() {
         assertNull(promptService.computePromptHash(null));
+    }
+
+    /**
+     * Measures what one side sends per move over a 70-ply game: system prompt, the last six prior messages and
+     * the current turn (see {@link ConversationWindow}). The setup page estimates spend with
+     * {@code PROMPT_TOKENS_PER_MOVE = 1400} in tournament-setup.ts; at roughly 3.2 characters per token for
+     * FEN, SAN lists and the ASCII board this averages about 4,500 characters (about 1,600 at the first move,
+     * about 5,000 late in the game). Update both if the prompts change a lot.
+     */
+    @Test
+    void boundedTurnWindowAveragesAboutFourteenHundredPromptTokens() {
+        ChessService chess = new ChessService();
+        Board board = chess.createBoard();
+        List<List<OpenRouterService.ChatMsg>> histories = List.of(
+                new ArrayList<>(List.of(system("WHITE", "Beta"))),
+                new ArrayList<>(List.of(system("BLACK", "Alpha")))
+        );
+        String pgn = null;
+        String lastMove = null;
+        long totalChars = 0;
+        int plies = 0;
+
+        for (int ply = 0; ply < 70 && !chess.isGameOver(board); ply++) {
+            boolean white = ply % 2 == 0;
+            List<String> legalMoves = chess.getLegalMovesAsSan(board);
+            int moveNumber = chess.getMoveNumber(board);
+            List<OpenRouterService.ChatMsg> history = histories.get(white ? 0 : 1);
+            int turnStart = history.size();
+            history.add(new OpenRouterService.ChatMsg("user", promptService.buildTurnPrompt(
+                    pgn, board.getFen(), chess.toAsciiBoard(board), white ? "WHITE" : "BLACK", moveNumber,
+                    legalMoves, white ? "Beta" : "Alpha", lastMove, "Nice try.", ply == 0)));
+            totalChars += ConversationWindow.trim(history, turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES)
+                    .stream()
+                    .mapToInt(message -> message.content().length())
+                    .sum();
+            plies++;
+
+            String san = legalMoves.get((ply * 7 + 3) % legalMoves.size());
+            history.add(new OpenRouterService.ChatMsg("assistant",
+                    "{\"move\": \"" + san + "\", \"message\": \"Watch your king.\"}"));
+            chess.validateAndApply(board, san);
+            pgn = (pgn == null ? "" : pgn + " ") + (white ? moveNumber + ". " + san : san);
+            lastMove = san;
+        }
+
+        double averageTokens = (double) totalChars / plies / 3.2;
+        assertTrue(plies >= 40, "the sample game should last long enough: " + plies);
+        assertTrue(averageTokens > 1150 && averageTokens < 1650, "average prompt tokens: " + averageTokens);
+    }
+
+    private OpenRouterService.ChatMsg system(String color, String opponent) {
+        return new OpenRouterService.ChatMsg("system",
+                promptService.buildSystemPrompt(null, null, color, opponent, "vendor/" + opponent.toLowerCase())
+                        .prompt());
     }
 }
