@@ -91,6 +91,19 @@ curl http://127.0.0.1:8081/q/health/ready
 
 The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default: widening a bind address requires an operator-provided authentication boundary, TLS, authorization for mutations, and appropriate firewall/rate-limit controls.
 
+### Host names (`ALLOWED_HOSTS`)
+The frontend answers only to the host names `localhost`, `127.0.0.1` and `[::1]`, on any port. Requests for any other name (static files, `/api` and `/ws` alike) get `421 Misdirected Request`. This blocks DNS rebinding: a web page whose domain is made to resolve to `127.0.0.1` cannot use the app as a same-origin client, for example to start games that spend OpenRouter credits.
+
+If you have widened the frontend's bind address yourself (still unsupported, see above) and open the UI as `http://chess-server:4200` or `http://192.168.1.20:4200`, add those names to `.env`:
+
+```bash
+ALLOWED_HOSTS="chess-server 192.168.1.20"
+```
+
+Entries are space-separated, without scheme or port: host names and IPv4 addresses, bracketed IPv6 addresses in hex-group notation (`[fd00::1]`), or a wildcard at the start or end of a name (`*.lan`, `chess.*`). The frontend container refuses to start on anything else, including `*` on its own, a wildcard in the middle (`foo.*.lan`) and nginx's `.example.lan` shorthand. A request whose `Host` header names a different host than its request line (an absolute-form request such as `GET http://localhost/api/... HTTP/1.1` with a foreign `Host`) also gets 421. Loopback names stay allowed. Recreate the frontend afterwards (`docker compose -f docker-compose.prod.yml up -d`). The source-build `docker-compose.yml` reads the same variable.
+
+The allowlist lives in the frontend's nginx. The backend's own port (the source-build stack's `127.0.0.1:8081`, the debug override above, `mvn quarkus:dev`) does not check host names, so publish it only while you need it.
+
 ## Upgrading Volumes Created Before `DB_PASSWORD` Was Required
 
 Older production volumes may have been initialized with the former fallback database password `chess`. PostgreSQL applies `POSTGRES_PASSWORD` only when it initializes an empty data directory, so changing `.env` alone does not change the password stored in an existing volume.
@@ -267,7 +280,7 @@ docker compose -f docker-compose.prod.yml logs --tail=200 backend frontend
 The default frontend image expects the backend service to be reachable as `backend:8080` within the same Compose project.
 
 ### Ports are already in use
-Change `FRONTEND_PORT` in `.env` (the released-image stack publishes no other host ports).
+Change `FRONTEND_PORT` in `.env` (the released-image stack publishes no other host ports). No CORS change is needed: the frontend proxy forwards the browser's `Host` header including the port, so the backend treats requests from the new address as same-origin (host names other than loopback still need [`ALLOWED_HOSTS`](#host-names-allowed_hosts)). Versions up to 1.3.1 dropped the port, which made every POST/PUT/DELETE and the live-update WebSocket fail with 403 on any port other than 4200.
 
 Then recreate the stack:
 

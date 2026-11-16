@@ -1,0 +1,74 @@
+# Template: the image's entrypoint runs envsubst on it at container start and replaces only the ALLOWED_HOSTS
+# variable (NGINX_ENVSUBST_FILTER in the Dockerfile); nginx's own $variables are left alone.
+
+# Requests for any host name not listed below get 421 Misdirected Request, for static files, /api and /ws
+# alike. This blocks DNS rebinding: a web page whose domain is made to resolve to 127.0.0.1 would otherwise
+# reach the app as a same-origin client (its Origin matches the Host forwarded to the backend).
+server {
+    listen 8080 default_server;
+    server_name _;
+    return 421;
+}
+
+# nginx selects the server (and sets $host) from the request line when it is in absolute form
+# ("GET http://localhost/... HTTP/1.1"), but /api and /ws forward the Host header ($http_host). Compare the
+# Host header's name, without port, to $host so a foreign Host header cannot ride on an allowed request line.
+map $http_host $host_header_name {
+    default "";
+    "~^(?<name>\[[0-9A-Fa-f:.]*\]|[^:]*)(:[0-9]*)?$" $name;
+}
+map "$host|$host_header_name" $host_header_mismatch {
+    default 1;
+    # $host is lower-case and has no trailing dot; the header may have either.
+    "~*^([^|]*)\|\1\.?$" 0;
+}
+
+server {
+    listen 8080;
+    # Loopback names are always allowed; ALLOWED_HOSTS adds more (space-separated, e.g. a LAN host name or IP).
+    # server_name ignores the port, so any FRONTEND_PORT works.
+    server_name localhost 127.0.0.1 [::1] ${ALLOWED_HOSTS};
+    if ($host_header_mismatch) {
+        return 421;
+    }
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Security headers
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    # Local-first deployment: relaxed script policy to avoid CSP friction on user machines.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
+
+    # Angular routing - serve index.html for all routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Forward the Host header exactly as the browser sent it, port included ($http_host, not $host).
+    # The backend's CORS filter accepts a request whose Origin matches its Host as same-origin, so the
+    # app works on any host and port it is opened on (FRONTEND_PORT, a hostname, an IP) without listing
+    # each address in quarkus.http.cors.origins. With $host the port is dropped and such requests get 403.
+
+    # Proxy API requests to backend
+    location /api/ {
+        proxy_pass http://backend:8080/api/;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Proxy WebSocket
+    location /ws/ {
+        proxy_pass http://backend:8080/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
+}
