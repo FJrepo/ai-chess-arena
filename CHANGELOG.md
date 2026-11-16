@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- The frontend now answers only to `localhost`, `127.0.0.1` and `[::1]` (any port) and returns 421 for other host names. If you open the UI by a LAN host name or IP, add it to `ALLOWED_HOSTS` in `.env` (space-separated, e.g. `ALLOWED_HOSTS="chess-server 192.168.1.20"`) and recreate the frontend. Network exposure remains unsupported.
+
 ### Added
 - Model picker in tournament setup: one *Model* field that suggests models while you type. Every word must match the model's name, id or provider, in any order ("anthropic sonnet", "sonnet 5.5", "gpt 6"); "-", "." and spaces are interchangeable. Suggestions are grouped by provider and show the release date, input/output price per 1M tokens, context window, a *Reasoning* marker and the Artificial Analysis Intelligence Index ("AA 61.2") when known. Filters for provider (featured providers first), *Reasoning only* and *Free only*, and sorting by *Newest* (default), *Cheapest* (input + output price) or *Intelligence Index*; models without the value go last. Arrow keys and Enter select; editing or clearing the field clears the selection.
 - A details card for the selected model: release date, input, output and cache-read price per 1M tokens, context window, max output tokens, reasoning (supported, always on or optional, effort levels), Intelligence Index (by Artificial Analysis, via OpenRouter) and a short description; missing values show "n/a".
@@ -20,8 +23,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `GET /api/models` reports a free model's prices as `0` instead of `null`, so free models count as priced in the setup estimate; unknown and variable prices (OpenRouter's `-1`) stay `null`.
 
 ### Fixed
-- Creating tournaments, starting games and every other change (POST/PUT/DELETE) failed with an empty 403 when the Docker stack was opened on any address other than `http://localhost:4200`, for example after changing `FRONTEND_PORT`, or via `127.0.0.1`, a hostname or an IP. Live updates (`/ws/games`) were rejected the same way. The bundled nginx dropped the port from the `Host` header it forwards to the backend, so the backend's CORS filter did not recognise the browser's request as same-origin. nginx now forwards the `Host` header unchanged, and the app works on whatever host and port it is opened on, without adding that address to `quarkus.http.cors.origins`. Other origins are still rejected.
-- The release smoke test runs the stack on a non-default port and checks that a same-origin POST and the WebSocket handshake through the frontend proxy are not rejected.
+- Creating tournaments, starting games and every other change (POST/PUT/DELETE) failed with an empty 403 when the Docker stack was opened on any address other than `http://localhost:4200`, for example after changing `FRONTEND_PORT`, or via `127.0.0.1`, a hostname or an IP. Live updates (`/ws/games`) were rejected the same way. The bundled nginx dropped the port from the `Host` header it forwards to the backend, so the backend's CORS filter did not recognise the browser's request as same-origin. nginx now forwards the `Host` header unchanged, so the app works on any port and on every allowed host name (see *Security*) without adding that address to `quarkus.http.cors.origins`. Other origins are still rejected.
+- The release smoke test runs the stack on a non-default port and checks that a same-origin POST and the WebSocket handshake through the frontend proxy are not rejected, and that requests for an unknown host name are.
+
+### Security
+- DNS rebinding is blocked: the frontend's nginx serves the UI, `/api` and `/ws` only for the host names `localhost`, `127.0.0.1`, `[::1]` and those listed in the new `ALLOWED_HOSTS` setting, and answers 421 Misdirected Request for any other name. Before, a web page whose domain was made to resolve to 127.0.0.1 could read data through `GET` requests, and on port 80 also change it; with the `Host` fix above it could have changed data on any port. Invalid `ALLOWED_HOSTS` entries (with a scheme, a port, commas and so on) stop the frontend container at start with a clear message.
+- The frontend service has a container healthcheck in both Compose files.
 
 ## [1.3.1] - 2026-11-16
 

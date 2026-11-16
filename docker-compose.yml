@@ -42,8 +42,17 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    environment:
+      # Extra host names or IPs the UI may be opened on (space-separated, no port); loopback always works.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
     ports:
       - "127.0.0.1:4200:8080"
+    healthcheck:
+      # 127.0.0.1 (IPv4: nginx does not listen on ::1) is always on the frontend's host allowlist.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       backend:
         condition: service_healthy

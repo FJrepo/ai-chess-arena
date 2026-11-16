@@ -215,6 +215,29 @@ jobs:
             exit 1
           fi
 
+      - name: Check that unknown host names are rejected (DNS rebinding)
+        # A page on a foreign domain that resolves to 127.0.0.1 sends its own name as Host and a matching
+        # Origin. The frontend must refuse such requests before they reach the backend.
+        run: |
+          base="http://127.0.0.1:${FRONTEND_PORT:-4200}"
+          evil="evil.example:${FRONTEND_PORT:-4200}"
+          check_rejected() {
+            local what="$1" status
+            shift
+            status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $evil" "$@" 2>/dev/null || true)"
+            echo "$what with Host $evil -> $status"
+            if [[ "$status" != "421" ]]; then
+              echo "::error::$what with an unknown Host returned $status, expected 421."
+              exit 1
+            fi
+          }
+          check_rejected "GET /" "$base/"
+          check_rejected "POST /api/tournaments" -X POST -H "Origin: http://$evil" \
+            -H 'Content-Type: application/json' --data '{}' "$base/api/tournaments"
+          check_rejected "WebSocket handshake /ws/games" -H "Origin: http://$evil" \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$base/ws/games"
+
       - name: Show logs on failure
         if: failure()
         env:

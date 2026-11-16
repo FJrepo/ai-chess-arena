@@ -1,6 +1,20 @@
+# Template: the image's entrypoint runs envsubst on it at container start and replaces only the ALLOWED_HOSTS
+# variable (NGINX_ENVSUBST_FILTER in the Dockerfile); nginx's own $variables are left alone.
+
+# Requests for any host name not listed below get 421 Misdirected Request, for static files, /api and /ws
+# alike. This blocks DNS rebinding: a web page whose domain is made to resolve to 127.0.0.1 would otherwise
+# reach the app as a same-origin client (its Origin matches the Host forwarded to the backend).
+server {
+    listen 8080 default_server;
+    server_name _;
+    return 421;
+}
+
 server {
     listen 8080;
-    server_name _;
+    # Loopback names are always allowed; ALLOWED_HOSTS adds more (space-separated, e.g. a LAN host name or IP).
+    # server_name ignores the port, so any FRONTEND_PORT works.
+    server_name localhost 127.0.0.1 [::1] ${ALLOWED_HOSTS};
     root /usr/share/nginx/html;
     index index.html;
 
