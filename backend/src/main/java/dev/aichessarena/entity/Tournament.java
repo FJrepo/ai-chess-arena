@@ -66,6 +66,16 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "trash_talk_enabled", nullable = false)
     boolean legacyTrashTalkEnabled = true;
 
+    /**
+     * Whether models may resign instead of moving, from their {@value #MIN_RESIGNATION_MOVE}th move on. Off by
+     * default (every game is played to the end); a change applies from the next turn of running games.
+     */
+    @Column(name = "resignation_allowed", nullable = false)
+    public boolean resignationAllowed;
+
+    /** The first move number at which a side may resign: a game cannot end on move 3 because a model gives up. */
+    public static final int MIN_RESIGNATION_MOVE = 10;
+
     /** Cap on generated tokens per model answer (OpenRouter max_tokens; includes reasoning tokens). */
     @Column(name = "max_output_tokens", nullable = false)
     public int maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS;

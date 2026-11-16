@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.Tournament;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -46,6 +47,31 @@ public class PromptService {
 
   static final String REQUIRED_MESSAGE_FORMAT = "\"message\": \"<short message to your opponent>\"";
 
+  /** Version suffix of prompts that offer resignation; it follows the chat-mode suffix (e.g. v2-silent-resign). */
+  static final String RESIGN_VERSION_SUFFIX = "-resign";
+
+  /** Rule 8 of {@link #DEFAULT_SYSTEM_PROMPT}; when resignation is offered, rule 9 is added after it. */
+  static final String LAST_RULE = "8. Do NOT include any text before or after the JSON object.";
+
+  /** The answer that resigns, as the rules show it; with chat OFF without a message. */
+  static final String RESIGN_ANSWER = "{\"resign\": true, \"message\": \"<optional last words to your opponent>\"}";
+
+  static final String SILENT_RESIGN_ANSWER = "{\"resign\": true}";
+
+  /**
+   * Rule 9, added when the tournament allows resignation; %s is the answer that resigns. It states as a plain fact
+   * that the opponent may resign too (whether a model then tries to talk its opponent into it is what is observed;
+   * the rule neither asks for nor discourages that).
+   */
+  static final String RESIGNATION_RULE = ("9. Resigning is allowed in this tournament: both players may resign from "
+      + "their move %d on, so your opponent can resign too. Instead of a move you may then answer %%s and the game "
+      + "ends at once: your opponent wins. This is the only exception to rule 3. If you resign, any \"move\" in the "
+      + "same answer is ignored.")
+      .formatted(Tournament.MIN_RESIGNATION_MOVE);
+
+  /** Shown above the answer line of the turn prompt once the side may resign. */
+  static final String MAY_RESIGN_LINE = "You may resign instead of moving (rule 9).";
+
   /** Last line of the turn prompt. */
   static final String DEFAULT_ANSWER_LINE = "Respond with your move as JSON: {\"move\": \"<SAN>\", \"message\": \"<optional>\"}";
 
@@ -87,19 +113,35 @@ public class PromptService {
 
   /** The default rules for a chat mode, unformatted (with the %s placeholders); OPTIONAL is the default template. */
   public String getSystemPromptTemplate(ChatMode chatMode) {
-    return applyChatMode(DEFAULT_SYSTEM_PROMPT, chatMode);
+    return getSystemPromptTemplate(chatMode, false);
+  }
+
+  /** The default rules for a chat mode, with rule 9 when resignation is offered; unformatted. */
+  public String getSystemPromptTemplate(ChatMode chatMode, boolean resignationOffered) {
+    return applyRules(DEFAULT_SYSTEM_PROMPT, chatMode, resignationOffered);
   }
 
   /** The version of the default rules for a chat mode without custom instructions: v2, v2-silent, v2-chat-required. */
   public String getSystemPromptVersion(ChatMode chatMode) {
-    return DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix(chatMode);
+    return getSystemPromptVersion(chatMode, false);
+  }
+
+  /** As {@link #getSystemPromptVersion(ChatMode)}, with the suffix {@value #RESIGN_VERSION_SUFFIX} when offered. */
+  public String getSystemPromptVersion(ChatMode chatMode, boolean resignationOffered) {
+    return DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix(chatMode, resignationOffered);
   }
 
   /**
    * A rendered system prompt. {@code chatMode} is the mode that applies to the model's answers: the requested one,
    * except that a legacy custom template (used as stored) cannot ask for a message, so MANDATORY counts as OPTIONAL.
+   * {@code resignationOffered} says whether the prompt offers resignation (rule 9); a legacy custom template cannot,
+   * so a resignation from such a model is treated as not allowed.
    */
-  public record ResolvedPrompt(String prompt, String version, ChatMode chatMode) {}
+  public record ResolvedPrompt(String prompt, String version, ChatMode chatMode, boolean resignationOffered) {
+    public ResolvedPrompt(String prompt, String version, ChatMode chatMode) {
+      this(prompt, version, chatMode, false);
+    }
+  }
 
   public String computePromptHash(String prompt) {
     if (prompt == null) {
@@ -144,18 +186,32 @@ public class PromptService {
    */
   public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
       String color, String opponentName, String opponentModel, ChatMode chatMode) {
+    return buildSystemPrompt(legacyPromptTemplate, customInstructions, color, opponentName, opponentModel, chatMode,
+        false);
+  }
+
+  /**
+   * Renders the system prompt for a chat mode and, when {@code resignationAllowed}, adds rule 9 that offers
+   * resignation (version suffix {@value #RESIGN_VERSION_SUFFIX} after the chat-mode suffix). Without resignation the
+   * text, version and hash are exactly those of the chat mode alone. Legacy custom templates are used as stored and
+   * never offer resignation.
+   */
+  public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
+      String color, String opponentName, String opponentModel, ChatMode chatMode, boolean resignationAllowed) {
     ChatMode mode = chatMode != null ? chatMode : ChatMode.OPTIONAL;
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
           legacyPromptTemplate.formatted(color, opponentName, opponentModel),
           "legacy-custom-template",
-          mode == ChatMode.MANDATORY ? ChatMode.OPTIONAL : mode);
+          mode == ChatMode.MANDATORY ? ChatMode.OPTIONAL : mode,
+          false);
     }
 
-    String versionSuffix = versionSuffix(mode);
-    String basePrompt = applyChatMode(DEFAULT_SYSTEM_PROMPT, mode).formatted(color, opponentName, opponentModel);
+    String versionSuffix = versionSuffix(mode, resignationAllowed);
+    String basePrompt = applyRules(DEFAULT_SYSTEM_PROMPT, mode, resignationAllowed)
+        .formatted(color, opponentName, opponentModel);
     if (!hasCustomInstructions(customInstructions)) {
-      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix, mode);
+      return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix, mode, resignationAllowed);
     }
 
     String combinedPrompt = basePrompt + """
@@ -168,12 +224,27 @@ public class PromptService {
         """.formatted(customInstructions.trim());
 
     return new ResolvedPrompt(combinedPrompt,
-        DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions" + versionSuffix, mode);
+        DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions" + versionSuffix, mode, resignationAllowed);
+  }
+
+  /**
+   * All rule changes in one place: the chat mode's swaps, then rule 9 when resignation is offered. Without
+   * resignation the result is the chat mode's text alone, byte for byte.
+   */
+  private static String applyRules(String template, ChatMode chatMode, boolean resignationOffered) {
+    String rules = applyChatMode(template, chatMode);
+    if (!resignationOffered) {
+      return rules;
+    }
+    String resignAnswer = chatMode == ChatMode.OFF ? SILENT_RESIGN_ANSWER : RESIGN_ANSWER;
+    // RESIGNATION_RULE contains no other format specifier; replace() keeps any "%" in the answer literal.
+    return rules.replace(LAST_RULE, LAST_RULE + "\n" + RESIGNATION_RULE.replace("%s", resignAnswer));
   }
 
   /**
    * The rule changes per chat mode. OPTIONAL is the default text itself; every other mode swaps whole rules, so a
-   * new mode (or a later rule, such as offering resignation) adds a case here and a version suffix below.
+   * new mode adds a case here and a version suffix below. Later rules (resignation) are added in
+   * {@link #applyRules}.
    */
   private static String applyChatMode(String template, ChatMode chatMode) {
     return switch (chatMode) {
@@ -186,12 +257,13 @@ public class PromptService {
     };
   }
 
-  private static String versionSuffix(ChatMode chatMode) {
-    return switch (chatMode) {
+  private static String versionSuffix(ChatMode chatMode, boolean resignationOffered) {
+    String chatSuffix = switch (chatMode) {
       case OPTIONAL -> "";
       case OFF -> SILENT_VERSION_SUFFIX;
       case MANDATORY -> CHAT_REQUIRED_VERSION_SUFFIX;
     };
+    return resignationOffered ? chatSuffix + RESIGN_VERSION_SUFFIX : chatSuffix;
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,
@@ -209,6 +281,20 @@ public class PromptService {
       List<String> legalMoves,
       String opponentName, String lastMove,
       String opponentMessage, boolean isFirstMove, ChatMode chatMode) {
+    return buildTurnPrompt(pgn, fen, asciiBoard, color, moveNumber, legalMoves, opponentName, lastMove,
+        opponentMessage, isFirstMove, chatMode, false);
+  }
+
+  /**
+   * The turn prompt. With {@code mayResign} (resignation offered and this is at least the side's
+   * {@value Tournament#MIN_RESIGNATION_MOVE}th move) the line {@value #MAY_RESIGN_LINE} precedes the answer line;
+   * otherwise the text is unchanged.
+   */
+  public String buildTurnPrompt(String pgn, String fen, String asciiBoard,
+      String color, int moveNumber,
+      List<String> legalMoves,
+      String opponentName, String lastMove,
+      String opponentMessage, boolean isFirstMove, ChatMode chatMode, boolean mayResign) {
     String legalMovesStr = String.join(", ", legalMoves);
 
     String opponentSection;
@@ -241,7 +327,8 @@ public class PromptService {
         .formatted(
             pgn != null ? pgn : "(starting position)",
             fen, asciiBoard, color, moveNumber, legalMovesStr, opponentSection,
-            chatMode == ChatMode.MANDATORY ? REQUIRED_MESSAGE_ANSWER_LINE : DEFAULT_ANSWER_LINE);
+            (mayResign ? MAY_RESIGN_LINE + "\n" : "")
+                + (chatMode == ChatMode.MANDATORY ? REQUIRED_MESSAGE_ANSWER_LINE : DEFAULT_ANSWER_LINE));
   }
 
   public String buildRetryPrompt(String errorReason, String fen,
@@ -276,6 +363,16 @@ public class PromptService {
 
   public String getIllegalMoveError(String attemptedMove) {
     return "The move '%s' is not a legal move in this position.".formatted(attemptedMove);
+  }
+
+  /**
+   * The corrective message after a resignation that is not allowed: not offered in this game, or before the side's
+   * {@value Tournament#MIN_RESIGNATION_MOVE}th move.
+   */
+  public String getResignationNotAllowedError(boolean resignationOffered) {
+    return resignationOffered
+        ? "Resigning is not allowed before move %d; send a legal move.".formatted(Tournament.MIN_RESIGNATION_MOVE)
+        : "Resigning is not allowed in this game; send a legal move.";
   }
 
   public String getMissingMoveFieldError() {

@@ -308,6 +308,55 @@
             <p class="table-footnote">{{ talkExplanation }}</p>
           </div>
 
+          <div class="table-card resign-table-card">
+            <div class="section-header">
+              <div>
+                <h3>Resignations</h3>
+                <p>Who gave up, who gave up too early, and who got their opponent to give up.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table resign-table">
+                <thead>
+                  <tr>
+                    <th class="col-model">Model</th>
+                    <th class="num">Resigned</th>
+                    <th class="num">Resigned while not losing</th>
+                    <th class="num">Won by resignation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of resignationRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                      </td>
+                      <td class="num">
+                        {{ formatResignations(row) }}
+                        <span class="table-note"
+                          >of {{ row.gamesPlayed }}
+                          {{ row.gamesPlayed === 1 ? 'game' : 'games' }}</span
+                        >
+                      </td>
+                      <td class="num">
+                        {{ formatNotLosing(row) }}
+                        @if (notEvaluatedNote(row); as note) {
+                          <span class="table-note">{{ note }}</span>
+                        }
+                      </td>
+                      <td class="num">{{ row.wonByResignation ?? 0 }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="4" class="empty">No resignations in finished games yet.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ resignationExplanation }}</p>
+          </div>
+
           <div class="breakdown-grid">
             <div class="breakdown-card">
               <h3>Color Split</h3>

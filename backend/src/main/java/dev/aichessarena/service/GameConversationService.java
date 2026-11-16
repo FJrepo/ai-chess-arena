@@ -31,19 +31,21 @@ public class GameConversationService {
     public ConversationState initializeConversation(UUID gameId) {
         Game game = gameRepository.findById(gameId);
         Board board = initializeBoard(gameId, game);
-        ConversationState empty = new ConversationState(board, new ArrayList<>(), new ArrayList<>(), null, null, null);
+        ConversationState empty =
+                new ConversationState(board, new ArrayList<>(), new ArrayList<>(), null, null, null, false);
         return refreshSystemPrompts(game, empty);
     }
 
     /**
-     * Builds both system prompts for the game's current chat mode and puts them at the start of the histories,
-     * replacing earlier ones. The game loop calls this again when the tournament's chat mode changes, so a side's
-     * prompt, the handling of its messages and the mode recorded on its moves always agree.
+     * Builds both system prompts for the game's current chat mode and resignation setting and puts them at the start
+     * of the histories, replacing earlier ones. The game loop calls this again when either setting changes, so a
+     * side's prompt, the handling of its answers and the prompt version recorded on its moves always agree.
      */
     public ConversationState refreshSystemPrompts(Game game, ConversationState state) {
         ChatMode chatMode = configuredChatMode(game);
-        PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE", chatMode);
-        PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK", chatMode);
+        boolean resignationAllowed = configuredResignationAllowed(game);
+        PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE", chatMode, resignationAllowed);
+        PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK", chatMode, resignationAllowed);
         setSystemPrompt(state.whiteHistory(), whitePrompt.prompt());
         setSystemPrompt(state.blackHistory(), blackPrompt.prompt());
         return new ConversationState(
@@ -52,7 +54,8 @@ public class GameConversationService {
                 state.blackHistory(),
                 promptContext(whitePrompt),
                 promptContext(blackPrompt),
-                chatMode
+                chatMode,
+                resignationAllowed
         );
     }
 
@@ -63,8 +66,14 @@ public class GameConversationService {
                 : ChatMode.OPTIONAL;
     }
 
+    /** Whether the tournament lets models resign; games outside a tournament do not. */
+    static boolean configuredResignationAllowed(Game game) {
+        return game.tournament != null && game.tournament.resignationAllowed;
+    }
+
     private PromptContext promptContext(PromptService.ResolvedPrompt prompt) {
-        return new PromptContext(prompt.version(), promptService.computePromptHash(prompt.prompt()), prompt.chatMode());
+        return new PromptContext(prompt.version(), promptService.computePromptHash(prompt.prompt()), prompt.chatMode(),
+                prompt.resignationOffered());
     }
 
     private static void setSystemPrompt(List<OpenRouterService.ChatMsg> history, String prompt) {
@@ -91,10 +100,11 @@ public class GameConversationService {
     }
 
     PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color) {
-        return resolveSystemPrompt(game, color, configuredChatMode(game));
+        return resolveSystemPrompt(game, color, configuredChatMode(game), configuredResignationAllowed(game));
     }
 
-    private PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color, ChatMode chatMode) {
+    private PromptService.ResolvedPrompt resolveSystemPrompt(Game game, String color, ChatMode chatMode,
+                                                             boolean resignationAllowed) {
         if (game.tournament == null) {
             return promptService.buildSystemPrompt(
                     null,
@@ -105,7 +115,8 @@ public class GameConversationService {
                             "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
                             "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
                     ),
-                    chatMode
+                    chatMode,
+                    false
             );
         }
 
@@ -137,7 +148,8 @@ public class GameConversationService {
                 color,
                 opponentName,
                 opponentModel,
-                chatMode
+                chatMode,
+                resignationAllowed
         );
     }
 
@@ -149,8 +161,8 @@ public class GameConversationService {
     }
 
     /**
-     * The game loop's conversation. {@code chatMode} is the tournament's chat mode the prompts were built for; each
-     * side's {@link PromptContext#chatMode()} is the mode that applies to that side's answers.
+     * The game loop's conversation. {@code chatMode} and {@code resignationAllowed} are the tournament's settings the
+     * prompts were built for; each side's {@link PromptContext} says what applies to that side's answers.
      */
     public record ConversationState(
             Board board,
@@ -158,19 +170,33 @@ public class GameConversationService {
             List<OpenRouterService.ChatMsg> blackHistory,
             PromptContext whitePrompt,
             PromptContext blackPrompt,
-            ChatMode chatMode
+            ChatMode chatMode,
+            boolean resignationAllowed
     ) {
         public ConversationState(Board board, List<OpenRouterService.ChatMsg> whiteHistory,
                                  List<OpenRouterService.ChatMsg> blackHistory, PromptContext whitePrompt,
                                  PromptContext blackPrompt) {
-            this(board, whiteHistory, blackHistory, whitePrompt, blackPrompt, ChatMode.OPTIONAL);
+            this(board, whiteHistory, blackHistory, whitePrompt, blackPrompt, ChatMode.OPTIONAL, false);
+        }
+
+        public ConversationState(Board board, List<OpenRouterService.ChatMsg> whiteHistory,
+                                 List<OpenRouterService.ChatMsg> blackHistory, PromptContext whitePrompt,
+                                 PromptContext blackPrompt, ChatMode chatMode) {
+            this(board, whiteHistory, blackHistory, whitePrompt, blackPrompt, chatMode, false);
         }
     }
 
-    /** A side's system prompt: version, hash and the chat mode that applies to its answers. */
-    public record PromptContext(String version, String hash, ChatMode chatMode) {
+    /**
+     * A side's system prompt: version, hash, the chat mode that applies to its answers and whether it offers
+     * resignation (never with a legacy custom template).
+     */
+    public record PromptContext(String version, String hash, ChatMode chatMode, boolean resignationOffered) {
         public PromptContext(String version, String hash) {
-            this(version, hash, ChatMode.OPTIONAL);
+            this(version, hash, ChatMode.OPTIONAL, false);
+        }
+
+        public PromptContext(String version, String hash, ChatMode chatMode) {
+            this(version, hash, chatMode, false);
         }
     }
 }

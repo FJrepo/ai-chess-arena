@@ -2,10 +2,12 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Game.ResultReason;
+import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
@@ -14,6 +16,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -30,6 +33,9 @@ public class GameLifecycleService {
 
     @Inject
     MoveRepository moveRepository;
+
+    @Inject
+    ChatMessageRepository chatMessageRepository;
 
     @Inject
     TournamentService tournamentService;
@@ -136,6 +142,76 @@ public class GameLifecycleService {
 
         advanceTournamentWinnerIfNeeded(game);
     }
+
+    /**
+     * Ends an IN_PROGRESS game because {@code resigningColor} resigned: COMPLETED, the opponent wins, reason
+     * RESIGNATION. Like a recorded move it requires the position the model answered for, and in the same transaction
+     * it adds the answer's cost to the game and stores the resigning side's last words ({@code message}, null for
+     * none) as a chat message of the ply it did not play. Tournament advancement follows as for any other result.
+     *
+     * @throws GameStateConflictException when the game is no longer in progress or the position changed meanwhile
+     */
+    @Transactional
+    public void resign(Resignation resignation) {
+        UUID gameId = resignation.gameId();
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || game.status != GameStatus.IN_PROGRESS) {
+            throw new GameStateConflictException("Game is no longer in progress");
+        }
+        if (!GameMoveService.samePosition(game.currentFen, resignation.expectedFen())) {
+            throw new GameStateConflictException("Position changed while the model was thinking");
+        }
+        if (resignation.costUsd() != null) {
+            game.totalCostUsd = game.totalCostUsd.add(resignation.costUsd());
+        }
+        String color = resignation.color();
+        String message = resignation.message();
+        if (message != null && !message.isBlank()) {
+            ChatMessage chat = new ChatMessage();
+            chat.game = game;
+            chat.moveNumber = resignation.moveNumber();
+            chat.senderModel = resignation.modelId();
+            chat.senderColor = color;
+            chat.message = message;
+            chatMessageRepository.persist(chat);
+        }
+        game.status = GameStatus.COMPLETED;
+        game.result = "WHITE".equals(color) ? GameResult.BLACK_WINS : GameResult.WHITE_WINS;
+        game.resultReason = ResultReason.RESIGNATION;
+        game.statusDetail = null;
+        game.completedAt = LocalDateTime.now();
+        gameRepository.persist(game);
+        LOG.infof("Game %s: %s resigned at move %d", gameId, color, resignation.moveNumber());
+
+        if (message != null && !message.isBlank()) {
+            gameWebSocket.broadcastChat(gameId, resignation.moveNumber(), color, resignation.modelId(),
+                    resignation.playerName(), message);
+        }
+        gameWebSocket.broadcastGameStatus(
+                gameId,
+                "COMPLETED",
+                game.result.name(),
+                game.resultReason.name(),
+                totalMoves(gameId),
+                game.totalCostUsd
+        );
+        advanceTournamentWinnerIfNeeded(game);
+    }
+
+    /**
+     * A model's resignation: the ply it did not play ({@code moveNumber}, {@code color}), the position it answered for,
+     * its last words (null for none, or when chat is off) and the answer's cost (null when unknown).
+     */
+    public record Resignation(
+            UUID gameId,
+            int moveNumber,
+            String color,
+            String modelId,
+            String playerName,
+            String message,
+            BigDecimal costUsd,
+            String expectedFen
+    ) {}
 
     @Transactional
     public void forfeitInvalidMoves(UUID gameId, String forfeitColor, int maxRetries) {

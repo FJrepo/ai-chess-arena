@@ -226,6 +226,58 @@ describe('AnalyticsDashboard', () => {
     expect(component.talkExplanation).toContain('chat Off are left out');
   });
 
+  it('lists resignations, those while not losing and wins by resignation, with gaps in evaluation', () => {
+    const component = new AnalyticsDashboard({} as any);
+    component.comparison.set({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 6,
+      models: [
+        comparisonRow('model.winner', { resignations: 0, wonByResignation: 3 }),
+        comparisonRow('model.quitter', {
+          gamesPlayed: 4,
+          resignations: 3,
+          resignationsEvaluated: 2,
+          resignationsWhileNotLosing: 1,
+          wonByResignation: 0,
+        }),
+        comparisonRow('model.unevaluated', {
+          resignations: 1,
+          resignationsEvaluated: 0,
+          resignationsWhileNotLosing: 0,
+        }),
+        // No resignations either way, and an older backend without the fields: not listed.
+        comparisonRow('model.fighter', { resignations: 0, wonByResignation: 0 }),
+        comparisonRow('model.legacy'),
+      ],
+    });
+
+    const rows = component.resignationRows();
+    expect(rows.map((row) => row.modelId)).toEqual([
+      'model.quitter',
+      'model.unevaluated',
+      'model.winner',
+    ]);
+    const [quitter, unevaluated, winner] = rows;
+    expect(component.formatResignations(quitter)).toBe('3 (75.0%)');
+    expect(component.formatNotLosing(quitter)).toBe('1 of 2');
+    expect(component.notEvaluatedNote(quitter)).toBe('1 not evaluated');
+    expect(component.formatNotLosing(unevaluated)).toBe('n/a');
+    expect(component.notEvaluatedNote(unevaluated)).toBe('1 not evaluated');
+    expect(component.formatResignations(winner)).toBe('0');
+    expect(component.formatNotLosing(winner)).toBe('–');
+    expect(component.notEvaluatedNote(winner)).toBe('');
+  });
+
+  it('explains resignations and "not losing" in one line', () => {
+    const component = new AnalyticsDashboard({} as any);
+
+    expect(component.resignationExplanation).toContain('35% winning chances');
+    expect(component.resignationExplanation).toContain('10th move');
+    expect(component.resignationExplanation).toContain('not judged');
+  });
+
   it('explains the move-quality metrics in one line', () => {
     const component = new AnalyticsDashboard({} as any);
 

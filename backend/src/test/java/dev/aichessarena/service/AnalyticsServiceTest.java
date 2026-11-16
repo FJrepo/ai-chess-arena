@@ -503,6 +503,65 @@ class AnalyticsServiceTest {
                 alpha.optionalChat());
     }
 
+    @Test
+    void resignationsAreCountedPerModelWithTheWinningChanceAtResignation() {
+        // alpha (White) resigns after White's eval -50 at its move: Black just moved, alpha has ~45%: not losing.
+        Game notLosing = finishedGame("model.alpha", "model.beta", Game.GameResult.BLACK_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        // beta (Black) resigns facing +600 for White: ~10%, losing.
+        Game lost = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        // alpha (Black) resigns, but the last move was never evaluated: counted, winning chance unknown.
+        Game unknown = finishedGame("model.beta", "model.alpha", Game.GameResult.WHITE_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        // A checkmate, a resignation by a human and a running game do not count as model resignations.
+        Game checkmate = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS,
+                Game.ResultReason.CHECKMATE, YESTERDAY);
+        Game humanResigned = finishedGame(null, "model.beta", Game.GameResult.BLACK_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        humanResigned.whiteParticipant.controlType = TournamentParticipant.ControlType.HUMAN;
+        Game running = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.IN_PROGRESS);
+
+        AnalyticsService service = service(
+                List.of(notLosing, lost, unknown, checkmate, humanResigned, running),
+                List.of(
+                        // Deliberately not in play order: the last move in play order counts.
+                        evaluatedMove(notLosing, "model.beta", 10, "BLACK", -50),
+                        evaluatedMove(notLosing, "model.alpha", 10, "WHITE", 900),
+                        evaluatedMove(lost, "model.alpha", 11, "WHITE", 600),
+                        evaluatedMove(lost, "model.beta", 10, "BLACK", 0),
+                        evaluatedMove(unknown, "model.alpha", 11, "BLACK", 0),
+                        evaluatedMove(unknown, "model.beta", 12, "WHITE", null),
+                        evaluatedMove(checkmate, "model.alpha", 30, "WHITE", null),
+                        evaluatedMove(humanResigned, "model.beta", 15, "BLACK", 0)
+                ),
+                List.of()
+        );
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        AnalyticsModelComparisonRowDto alpha = row(response, "model.alpha");
+        assertEquals(2, alpha.resignations());
+        assertEquals(1, alpha.resignationsEvaluated());
+        assertEquals(1, alpha.resignationsWhileNotLosing());
+        assertEquals(1, alpha.wonByResignation());
+        AnalyticsModelComparisonRowDto beta = row(response, "model.beta");
+        assertEquals(1, beta.resignations());
+        assertEquals(1, beta.resignationsEvaluated());
+        assertEquals(0, beta.resignationsWhileNotLosing());
+        assertEquals(3, beta.wonByResignation(), "alpha resigned twice, and a human resignation is a model win too");
+        // A resignation is an ordinary loss and win otherwise.
+        assertEquals(2, alpha.losses(), "alpha lost both games it resigned");
+    }
+
+    @Test
+    void theNotLosingThresholdIsThirtyFivePercent() {
+        assertTrue(ResignationAnalysis.notLosing(0.35));
+        assertFalse(ResignationAnalysis.notLosing(0.3499));
+        assertFalse(ResignationAnalysis.notLosing(null));
+        assertEquals(0.5, ResignationAnalysis.winChanceAtResignation(List.of(), "WHITE"));
+    }
+
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
         Move move = move(game, modelId, 1000L, null);
         move.moveNumber = number;

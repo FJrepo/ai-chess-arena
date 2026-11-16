@@ -15,6 +15,7 @@ import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
@@ -443,6 +444,7 @@ public class AnalyticsService {
         });
         registerMoveQuality(byModel, moves);
         registerTalkativeness(byModel, moves, scope.messages());
+        registerResignations(byModel, terminalGames, moves);
 
         List<AnalyticsModelComparisonRowDto> rows = new ArrayList<>();
         for (Map.Entry<String, ComparisonAccumulator> entry : byModel.entrySet()) {
@@ -529,7 +531,11 @@ public class AnalyticsService {
                             ? null
                             : decimal((double) accumulator.blunders / accumulator.analyzedGameIds.size(), 2),
                     talkativeness(accumulator.optionalChat),
-                    talkativeness(accumulator.mandatoryChat)
+                    talkativeness(accumulator.mandatoryChat),
+                    accumulator.resignations,
+                    accumulator.resignationsEvaluated,
+                    accumulator.resignationsWhileNotLosing,
+                    accumulator.wonByResignation
             ));
         }
 
@@ -693,6 +699,57 @@ public class AnalyticsService {
                 talk.messageLengthTotal += length;
             }
         }
+    }
+
+    /**
+     * Counts resignations in finished, non-bye games (see {@link ResignationAnalysis}): for the model that resigned,
+     * the resignation, whether the position it resigned in was evaluated and whether its winning chance there was at
+     * least 35% ("resigned while not losing"); for the model on the other side, a win by resignation. Human sides
+     * are skipped.
+     */
+    private void registerResignations(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
+        Map<UUID, List<Move>> movesByGame = new HashMap<>();
+        for (Move move : moves) {
+            if (move.game != null) {
+                movesByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(move);
+            }
+        }
+        for (Game game : games) {
+            String color = ResignationAnalysis.resigningColor(game);
+            if (color == null || !countsAsPlayed(game)) {
+                continue;
+            }
+            boolean whiteResigned = "WHITE".equals(color);
+            String resignedModel = modelSide(game, whiteResigned);
+            if (resignedModel != null) {
+                List<Move> gameMoves = new ArrayList<>(movesByGame.getOrDefault(game.id, List.of()));
+                gameMoves.sort(MoveQualityClassifier.PLAY_ORDER);
+                Double winChance = ResignationAnalysis.winChanceAtResignation(gameMoves, color);
+                ComparisonAccumulator accumulator =
+                        byModel.computeIfAbsent(resignedModel, ignored -> new ComparisonAccumulator());
+                accumulator.resignations++;
+                if (winChance != null) {
+                    accumulator.resignationsEvaluated++;
+                }
+                if (ResignationAnalysis.notLosing(winChance)) {
+                    accumulator.resignationsWhileNotLosing++;
+                }
+            }
+            String winnerModel = modelSide(game, !whiteResigned);
+            if (winnerModel != null) {
+                byModel.computeIfAbsent(winnerModel, ignored -> new ComparisonAccumulator()).wonByResignation++;
+            }
+        }
+    }
+
+    /** The model id of a side played by a model; null for a human side or a side without a model. */
+    private String modelSide(Game game, boolean white) {
+        var participant = white ? game.whiteParticipant : game.blackParticipant;
+        if (participant != null && participant.controlType == TournamentParticipant.ControlType.HUMAN) {
+            return null;
+        }
+        String modelId = white ? game.whiteModelId : game.blackModelId;
+        return hasTrackedModelId(modelId) ? normalizeModelId(modelId) : null;
     }
 
     /** Earliest stored first; the id only breaks ties so the choice does not depend on load order. */
@@ -865,6 +922,10 @@ public class AnalyticsService {
         private long blunders;
         private final TalkAccumulator optionalChat = new TalkAccumulator();
         private final TalkAccumulator mandatoryChat = new TalkAccumulator();
+        private long resignations;
+        private long resignationsEvaluated;
+        private long resignationsWhileNotLosing;
+        private long wonByResignation;
     }
 
     private static final class TalkAccumulator {

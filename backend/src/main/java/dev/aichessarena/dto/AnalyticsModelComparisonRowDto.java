@@ -46,5 +46,12 @@ public record AnalyticsModelComparisonRowDto(
         BigDecimal blundersPerGame,
         // Talkativeness per chat mode; moves made with chat OFF are left out.
         TalkativenessDto optionalChat,
-        TalkativenessDto mandatoryChat
+        TalkativenessDto mandatoryChat,
+        // Games the model resigned; of those, how many had a Stockfish evaluation of the position it resigned in and
+        // how many it resigned with at least 35% winning chances ("while not losing").
+        long resignations,
+        long resignationsEvaluated,
+        long resignationsWhileNotLosing,
+        // Games the model won because its opponent (a model) resigned.
+        long wonByResignation
 ) {}

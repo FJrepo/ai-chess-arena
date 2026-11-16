@@ -10,6 +10,7 @@ const FAILED_OUTCOMES: ReadonlySet<MoveAttemptOutcome> = new Set([
   'PARSE_FAILURE',
   'EMPTY_RESPONSE',
   'TIMEOUT',
+  'RESIGN_NOT_ALLOWED',
 ]);
 
 /** Outcomes worth showing in the game feed: model failures plus cut-off and discarded answers. */
@@ -61,6 +62,10 @@ export function describeAttempt(attempt: MoveAttempt): string {
       return attempt.proposedMove
         ? `${attempt.proposedMove} discarded (position changed)`
         : 'answer discarded (position changed)';
+    case 'RESIGN_NOT_ALLOWED':
+      return 'resignation not allowed';
+    case 'RESIGNED':
+      return 'resigned';
     case 'ACCEPTED':
       return attempt.proposedMove ? `played ${attempt.proposedMove}` : 'accepted';
   }

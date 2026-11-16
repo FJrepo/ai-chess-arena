@@ -129,6 +129,11 @@ Your opponent is %s (%s).`;
       hint: 'Models are asked for a short message with every move; a missing one is recorded, never penalized.',
     },
   ];
+  /**
+   * Whether models may resign instead of moving (from their 10th move on); sent as resignationAllowed. Off by
+   * default and in every preset, so games are played to the end.
+   */
+  resignationAllowed = false;
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
   matchupBestOf: Tournament['matchupBestOf'] = 1;
   finalsBestOf: Tournament['finalsBestOf'] = null;
@@ -244,20 +249,37 @@ Your opponent is %s (%s).`;
     });
   }
 
-  /** The system rules for the selected chat mode (the default rules from an older backend). */
+  /**
+   * The rules variant for the selected chat mode and resignation setting; undefined for an older backend
+   * without it (then the chat mode's rules, or the default rules, are shown).
+   */
+  private selectedRules(): { template: string; version: string } | undefined {
+    const templates = this.promptTemplates;
+    if (this.resignationAllowed && templates?.resignationChatModes?.[this.chatMode]) {
+      return templates.resignationChatModes[this.chatMode];
+    }
+    return templates?.chatModes?.[this.chatMode];
+  }
+
+  /** The system rules for the selected chat mode and resignation setting (default rules from an older backend). */
   get systemRulesTemplate(): string {
     const templates = this.promptTemplates;
     if (!templates) {
       return this.promptTemplateVersion() === 'fallback' ? TournamentSetup.PROMPT_FALLBACK : '';
     }
-    return templates.chatModes?.[this.chatMode]?.template ?? templates.template;
+    return this.selectedRules()?.template ?? templates.template;
   }
 
-  /** The prompt version of the rules shown, e.g. v2-chat-required for MANDATORY. */
+  /** The prompt version of the rules shown, e.g. v2-chat-required for MANDATORY, v2-resign with resignation. */
   systemRulesVersion(): string | null {
-    return (
-      this.promptTemplates?.chatModes?.[this.chatMode]?.version ?? this.promptTemplateVersion()
-    );
+    return this.selectedRules()?.version ?? this.promptTemplateVersion();
+  }
+
+  /** One line under the resignation switch. */
+  resignationHint(): string {
+    return this.resignationAllowed
+      ? 'Both models may resign instead of moving from their 10th move on, and are told so.'
+      : 'Every game is played to the end; a model that tries to resign must send a move instead.';
   }
 
   chatModeHint(): string {
@@ -397,6 +419,7 @@ Your opponent is %s (%s).`;
       matchupBestOf: this.matchupBestOf,
       finalsBestOf: this.finalsBestOf,
       chatMode: this.chatMode,
+      resignationAllowed: this.resignationAllowed,
       drawPolicy: this.drawPolicy,
       participants: this.participants().map((p) => ({
         playerName: p.playerName,
@@ -601,6 +624,8 @@ Your opponent is %s (%s).`;
     this.matchupBestOf = preset.matchupBestOf;
     this.finalsBestOf = preset.finalsBestOf;
     this.chatMode = preset.chatMode;
+    // Presets play every game to the end.
+    this.resignationAllowed = false;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
   }
 

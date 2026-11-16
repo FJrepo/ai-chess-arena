@@ -89,8 +89,96 @@ describe('GameInfoBar result text', () => {
       resultReason: 'RESIGNATION',
     };
 
-    expect(bar.getResultText()).toBe(`${bar.game.blackPlayerName} wins by resignation`);
+    expect(bar.getResultText()).toBe('Alpha resigned; Beta wins');
     expect(bar.statusLabel(bar.game.status)).toBe('Completed');
+
+    bar.game = { ...bar.game, result: 'WHITE_WINS' };
+    expect(bar.getResultText()).toBe('Beta resigned; Alpha wins');
+    bar.game = { ...bar.game, resultReason: 'CHECKMATE' };
+    expect(bar.getResultText()).toBe('Alpha wins by checkmate');
+  });
+});
+
+describe('GameInfoBar resignation', () => {
+  function resignedGame(resignation: Game['resignation']): Game {
+    return {
+      ...pausedGame(null),
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'RESIGNATION',
+      resignation,
+    };
+  }
+
+  it('shows the winning chance at resignation, last words and the last opponent message', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentRef.setInput(
+      'game',
+      resignedGame({
+        color: 'BLACK',
+        moveNumber: 23,
+        winChance: 0.4612,
+        notLosing: true,
+        lastWords: 'Well played.',
+        opponentMessage: 'Your position is hopeless.',
+        opponentMessageMoveNumber: 23,
+      }),
+    );
+    fixture.detectChanges();
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.resignation-panel');
+
+    expect(panel?.querySelector('.resignation-title')?.textContent?.trim()).toBe(
+      'Beta resigned instead of playing move 23, at 46% winning chances (not losing)',
+    );
+    const lines = Array.from(panel?.querySelectorAll('.resignation-line') ?? []).map((line) =>
+      line.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(lines).toEqual([
+      'Last words: “Well played.”',
+      'Last message from Alpha (move 23): “Your position is hopeless.”',
+    ]);
+  });
+
+  it('leaves out what is unknown or missing', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentRef.setInput(
+      'game',
+      resignedGame({
+        color: 'BLACK',
+        moveNumber: 12,
+        winChance: null,
+        notLosing: false,
+        lastWords: null,
+        opponentMessage: null,
+        opponentMessageMoveNumber: null,
+      }),
+    );
+    fixture.detectChanges();
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.resignation-panel');
+
+    expect(panel?.querySelector('.resignation-title')?.textContent?.trim()).toBe(
+      'Beta resigned instead of playing move 12',
+    );
+    expect(panel?.querySelectorAll('.resignation-line').length).toBe(0);
+  });
+
+  it('says nothing about winning chances below 35% beyond the number, and nothing for other results', () => {
+    const bar = new GameInfoBar();
+    bar.game = resignedGame({
+      color: 'WHITE',
+      moveNumber: 30,
+      winChance: 0.08,
+      notLosing: false,
+      lastWords: null,
+      opponentMessage: null,
+      opponentMessageMoveNumber: null,
+    });
+    expect(bar.resignationText(bar.resignation()!)).toBe(
+      'Alpha resigned instead of playing move 30, at 8% winning chances',
+    );
+
+    bar.game = { ...bar.game, resultReason: 'CHECKMATE' };
+    expect(bar.resignation()).toBeNull();
   });
 });
 

@@ -58,21 +58,27 @@ public class ModelResource {
     @Path("/config/prompt-template")
     public Response getPromptTemplate() {
         String template = promptService.getDefaultSystemPromptTemplate();
-        java.util.Map<String, PromptTemplateDto.Variant> chatModes = new java.util.LinkedHashMap<>();
-        for (ChatMode mode : ChatMode.values()) {
-            String modeTemplate = promptService.getSystemPromptTemplate(mode);
-            chatModes.put(mode.name(), new PromptTemplateDto.Variant(
-                    modeTemplate,
-                    promptService.getSystemPromptVersion(mode),
-                    promptService.computePromptHash(modeTemplate)));
-        }
         PromptTemplateDto dto = new PromptTemplateDto(
                 template,
                 promptService.getDefaultSystemPromptVersion(),
                 promptService.computePromptHash(template),
-                chatModes
+                promptVariants(false),
+                promptVariants(true)
         );
         return Response.ok(dto).build();
+    }
+
+    /** The rules of every chat mode, with or without resignation, by mode name. */
+    private java.util.Map<String, PromptTemplateDto.Variant> promptVariants(boolean resignationAllowed) {
+        java.util.Map<String, PromptTemplateDto.Variant> variants = new java.util.LinkedHashMap<>();
+        for (ChatMode mode : ChatMode.values()) {
+            String modeTemplate = promptService.getSystemPromptTemplate(mode, resignationAllowed);
+            variants.put(mode.name(), new PromptTemplateDto.Variant(
+                    modeTemplate,
+                    promptService.getSystemPromptVersion(mode, resignationAllowed),
+                    promptService.computePromptHash(modeTemplate)));
+        }
+        return variants;
     }
 
     @GET

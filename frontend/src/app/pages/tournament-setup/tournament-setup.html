@@ -107,6 +107,17 @@
               </mat-button-toggle-group>
               <span class="caption chat-mode-hint" id="chat-mode-hint">{{ chatModeHint() }}</span>
             </div>
+            <div class="resignation-row">
+              <mat-slide-toggle
+                class="resignation-toggle"
+                [(ngModel)]="resignationAllowed"
+                aria-describedby="resignation-hint"
+                >Allow resignation</mat-slide-toggle
+              >
+              <span class="caption resignation-hint" id="resignation-hint">{{
+                resignationHint()
+              }}</span>
+            </div>
           </section>
 
           <section class="field-group rules-block" aria-labelledby="setup-rules-heading">

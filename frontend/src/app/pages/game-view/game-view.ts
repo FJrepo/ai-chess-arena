@@ -340,10 +340,12 @@ export class GameView implements OnInit, OnDestroy {
     });
 
     if (game && (game.status === 'COMPLETED' || game.status === 'FORFEIT')) {
-      const resultLabel =
-        game.resultReason ||
-        game.result?.replaceAll('_', ' ').toLowerCase() ||
-        game.status.toLowerCase();
+      const resignedColor = resigningColor(game);
+      const resultLabel = resignedColor
+        ? `${this.timelinePlayerName(resignedColor, null)} resigned`
+        : game.resultReason ||
+          game.result?.replaceAll('_', ' ').toLowerCase() ||
+          game.status.toLowerCase();
       events.push({
         id: `result-${game.id}`,
         type: 'result',
@@ -525,6 +527,18 @@ export class GameView implements OnInit, OnDestroy {
           const qualitySummary = msg.qualitySummary;
           this.game.update((g) => (g ? { ...g, qualitySummary } : g));
         }
+        // The evaluation of the position a side resigned in may arrive after the resignation: reload so the
+        // resignation shows its winning chance.
+        const resignation = this.game()?.resignation;
+        const last = this.moves()[this.moves().length - 1];
+        if (
+          resignation &&
+          resignation.winChance == null &&
+          last?.moveNumber === msg.moveNumber &&
+          last.color === msg.color
+        ) {
+          this.loadGame();
+        }
         break;
       }
 
@@ -572,7 +586,11 @@ export class GameView implements OnInit, OnDestroy {
         if (msg.tournamentChatMode) {
           this.tournamentChatMode.set(msg.tournamentChatMode);
         }
-        if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
+        if (status === 'COMPLETED' && msg.resultReason === 'RESIGNATION') {
+          // A resignation has details (winning chance, last words) that only the game itself carries; the
+          // reload also brings the attempts.
+          this.loadGame();
+        } else if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
           this.loadAttempts();
         }
         break;
@@ -876,6 +894,17 @@ export class GameView implements OnInit, OnDestroy {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+}
+
+/** The colour that resigned, from the result; null when the game did not end by resignation. */
+function resigningColor(game: Game): 'WHITE' | 'BLACK' | null {
+  if (game.resultReason !== 'RESIGNATION') {
+    return null;
+  }
+  if (game.result === 'WHITE_WINS') {
+    return 'BLACK';
+  }
+  return game.result === 'BLACK_WINS' ? 'WHITE' : null;
 }
 
 function retryText(msg: RetryWsMessage): string {

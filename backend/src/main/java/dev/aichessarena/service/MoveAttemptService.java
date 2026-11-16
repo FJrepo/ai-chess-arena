@@ -47,7 +47,7 @@ public class MoveAttemptService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void record(AttemptRecord attempt) {
         try {
-            Game game = attempt.outcome() == Outcome.ACCEPTED
+            Game game = attempt.outcome().isCostedElsewhere()
                     ? gameRepository.findById(attempt.gameId())
                     : gameRepository.findByIdForUpdate(attempt.gameId());
             if (game == null) {
@@ -74,8 +74,9 @@ public class MoveAttemptService {
             }
             moveAttemptRepository.persist(row);
 
-            // Accepted moves are costed by GameMoveService.recordModelMove; count only rejected answers here.
-            if (attempt.outcome() != Outcome.ACCEPTED && row.costUsd != null) {
+            // Accepted moves are costed by GameMoveService.recordModelMove and resignations by
+            // GameLifecycleService.resign; count only the other answers here.
+            if (!attempt.outcome().isCostedElsewhere() && row.costUsd != null) {
                 game.totalCostUsd = game.totalCostUsd.add(row.costUsd);
             }
         } catch (RuntimeException e) {

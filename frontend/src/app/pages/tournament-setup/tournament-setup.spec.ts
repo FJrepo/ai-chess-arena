@@ -548,6 +548,110 @@ describe('TournamentSetup', () => {
     expect(fixture.componentInstance.chatMode).toBe('MANDATORY');
     expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
   });
+
+  it('sends resignation off by default and on when allowed', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Resign Arena';
+
+    expect(component.resignationAllowed).toBe(false);
+    component.create();
+    expect(api.createTournamentPayload?.['resignationAllowed']).toBe(false);
+
+    component.resignationAllowed = true;
+    component.create();
+    expect(api.createTournamentPayload?.['resignationAllowed']).toBe(true);
+  });
+
+  it('explains the resignation setting in one line', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+
+    expect(component.resignationHint()).toContain('played to the end');
+    component.resignationAllowed = true;
+    expect(component.resignationHint()).toContain('10th move');
+    expect(component.resignationHint()).toContain('Both models');
+  });
+
+  it('presets keep resignation off', () => {
+    const component = new TournamentSetup(
+      createApiService(),
+      createRouter(),
+      createRoute({ preset: 'showcase' }),
+    );
+    component.resignationAllowed = true;
+
+    component.ngOnInit();
+
+    expect(component.resignationAllowed).toBe(false);
+  });
+
+  it('shows the rules with resignation for the selected chat mode, and without for older backends', () => {
+    const api = createApiService();
+    api.getPromptTemplate = () =>
+      of({
+        template: 'Rules optional',
+        version: 'v2',
+        hash: 'h',
+        chatModes: {
+          OFF: { template: 'Rules off', version: 'v2-silent', hash: 'h0' },
+          OPTIONAL: { template: 'Rules optional', version: 'v2', hash: 'h1' },
+          MANDATORY: { template: 'Rules mandatory', version: 'v2-chat-required', hash: 'h2' },
+        },
+        resignationChatModes: {
+          OFF: { template: 'Rules off + 9', version: 'v2-silent-resign', hash: 'h3' },
+          OPTIONAL: { template: 'Rules optional + 9', version: 'v2-resign', hash: 'h4' },
+          MANDATORY: {
+            template: 'Rules mandatory + 9',
+            version: 'v2-chat-required-resign',
+            hash: 'h5',
+          },
+        },
+      });
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+
+    component.resignationAllowed = true;
+    expect(component.systemRulesTemplate).toBe('Rules optional + 9');
+    expect(component.systemRulesVersion()).toBe('v2-resign');
+    component.chatMode = 'MANDATORY';
+    expect(component.systemRulesTemplate).toBe('Rules mandatory + 9');
+    expect(component.systemRulesVersion()).toBe('v2-chat-required-resign');
+    component.resignationAllowed = false;
+    expect(component.systemRulesVersion()).toBe('v2-chat-required');
+
+    const older = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    older.ngOnInit();
+    older.resignationAllowed = true;
+    expect(older.systemRulesTemplate).toBe('Rules');
+  });
+
+  it('renders the resignation switch with its hint next to the chat control', async () => {
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: createApiService() },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element: HTMLElement = fixture.nativeElement;
+
+    const section = element.querySelector('[aria-labelledby="setup-chat-heading"]');
+    expect(section?.querySelector('.resignation-toggle')?.textContent).toContain(
+      'Allow resignation',
+    );
+    expect(element.querySelector('#resignation-hint')?.textContent).toContain('played to the end');
+
+    element.querySelector<HTMLButtonElement>('.resignation-toggle button')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.resignationAllowed).toBe(true);
+    expect(element.querySelector('#resignation-hint')?.textContent).toContain('10th move');
+  });
 });
 
 type FakeTournamentSetupApi = ApiService & {

@@ -1058,6 +1058,122 @@ function attemptFixture(overrides: Partial<MoveAttempt> = {}): MoveAttempt {
   };
 }
 
+describe('GameView resignation', () => {
+  const resigned = (overrides: Partial<Game> = {}) =>
+    gameWith({
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'RESIGNATION',
+      completedAt: '2026-03-06T10:05:00Z',
+      moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
+      resignation: {
+        color: 'BLACK',
+        moveNumber: 1,
+        winChance: null,
+        notLosing: false,
+        lastWords: null,
+        opponentMessage: null,
+        opponentMessageMoveNumber: null,
+      },
+      ...overrides,
+    });
+
+  it('names who resigned in the feed', () => {
+    const { component } = createComponent();
+    component.game.set(resigned());
+
+    const result = component.feedEvents().find((event) => event.type === 'result');
+
+    expect(result?.label).toBe('Game Complete');
+    expect(result?.detail).toBe('Beta resigned');
+  });
+
+  it('lists a resignation that was not allowed as a failed attempt of the move played instead', () => {
+    const { component } = createComponent();
+    component.game.set(gameWith());
+    component.moves.set([storedMove(1, 'WHITE', 'e4', AFTER_E4)]);
+    component.attempts.set([
+      attemptFixture({ outcome: 'RESIGN_NOT_ALLOWED' }),
+      attemptFixture({ attemptNumber: 2, outcome: 'ACCEPTED', proposedMove: 'e4' }),
+    ]);
+
+    const move = component.feedEvents().find((event) => event.type === 'move');
+
+    expect(move?.attemptSummary).toBe('1 failed attempt: resignation not allowed');
+  });
+
+  it('reloads the game when it ends by resignation, to show its details', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
+
+    messages.next({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'RESIGNATION',
+    });
+    gameLoad.next(resigned({ chatMessages: [] }));
+
+    expect(getGame).toHaveBeenCalledTimes(2);
+    expect(component.game()?.resignation?.color).toBe('BLACK');
+    component.ngOnDestroy();
+  });
+
+  it('does not reload for other results', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith());
+
+    messages.next({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'CHECKMATE',
+    });
+
+    expect(getGame).toHaveBeenCalledTimes(1);
+    component.ngOnDestroy();
+  });
+
+  it('reloads once the position a side resigned in is evaluated', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(resigned());
+
+    // An evaluation of another move does not decide the resignation.
+    messages.next({ type: 'evaluationUpdate', gameId: 'g-1', moveNumber: 5, color: 'WHITE' });
+    expect(getGame).toHaveBeenCalledTimes(1);
+
+    messages.next({
+      type: 'evaluationUpdate',
+      gameId: 'g-1',
+      moveNumber: 1,
+      color: 'WHITE',
+      evaluationCp: 30,
+    });
+    expect(getGame).toHaveBeenCalledTimes(2);
+    gameLoad.next(
+      resigned({
+        resignation: { ...resigned().resignation!, winChance: 0.46, notLosing: true },
+      }),
+    );
+
+    // Known now: further evaluations do not reload again.
+    messages.next({
+      type: 'evaluationUpdate',
+      gameId: 'g-1',
+      moveNumber: 1,
+      color: 'WHITE',
+      evaluationCp: 31,
+    });
+    expect(getGame).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+  });
+});
+
 describe('GameView promotion picker', () => {
   function renderPicker(currentFen: string) {
     TestBed.configureTestingModule({

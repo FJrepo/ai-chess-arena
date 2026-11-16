@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -73,7 +74,8 @@ public class GameTurnService {
                 request.lastMoveSan(),
                 request.lastMessage(),
                 request.isFirstMove(),
-                request.chatMode()
+                request.chatMode(),
+                mayResign(request)
         );
 
         int turnStart = request.history().size();
@@ -217,6 +219,41 @@ public class GameTurnService {
                 continue;
             }
 
+            if (parseResult.resign()) {
+                if (mayResign(request)) {
+                    // Resign wins: a move sent along is ignored.
+                    return resign(request, attempt, parseResult, llmResponse);
+                }
+                if (parseResult.move() == null) {
+                    if (llmResponse.truncated()) {
+                        return pauseForTruncation(request, attempt, null, llmResponse);
+                    }
+                    // Not allowed and nothing else to play: an invalid answer like an illegal move.
+                    String error = promptService.getResignationNotAllowedError(request.resignationAllowed());
+                    LOG.warnf("Game %s: %s tried to resign at move %d: %s",
+                            request.gameId(), request.modelId(), request.moveNumber(), error);
+                    recordAttempt(request, attempt, Outcome.RESIGN_NOT_ALLOWED, null, error, llmResponse);
+                    broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Tried to resign: " + error,
+                            Outcome.RESIGN_NOT_ALLOWED, null);
+                    if (attempt < request.maxRetries()) {
+                        request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
+                        request.history().add(new OpenRouterService.ChatMsg(
+                                "user",
+                                promptService.buildRetryPrompt(
+                                        error,
+                                        request.fen(),
+                                        request.legalMoves(),
+                                        attempt + 1,
+                                        request.maxRetries()
+                                )
+                        ));
+                    }
+                    continue;
+                }
+                // Not allowed, but a move came along: the flag is ignored and the move is played (or rejected) as
+                // usual.
+            }
+
             ChessService.ValidMoveResult moveResult = chessService.validateAndApply(request.board(), parseResult.move());
             if (!moveResult.valid()) {
                 if (llmResponse.truncated()) {
@@ -285,6 +322,42 @@ public class GameTurnService {
         }
 
         gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), request.maxRetries());
+        return TurnResult.terminal();
+    }
+
+    /** Whether this side may resign now: offered by its prompt and at least its {@code MIN_RESIGNATION_MOVE}th move. */
+    static boolean mayResign(TurnRequest request) {
+        return request.resignationAllowed() && request.moveNumber() >= Tournament.MIN_RESIGNATION_MOVE;
+    }
+
+    /**
+     * Ends the game by this side's resignation. Its message is kept as last words under the chat-mode rules (dropped
+     * with chat OFF). The answer is recorded as RESIGNED, with any move sent along as the ignored proposal; if the game
+     * changed meanwhile it is recorded as DISCARDED instead, like a move that could not be played.
+     */
+    private TurnResult resign(TurnRequest request, int attempt, ResponseParserService.ParseResult parseResult,
+                              OpenRouterService.LlmResponse llmResponse) {
+        request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
+        ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
+        String message = chatMode.allowsMessages() && parseResult.message() != null
+                && !parseResult.message().isBlank() ? parseResult.message() : null;
+        try {
+            gameLifecycleService.resign(new GameLifecycleService.Resignation(
+                    request.gameId(),
+                    request.moveNumber(),
+                    request.sideToMove(),
+                    request.modelId(),
+                    request.playerName(),
+                    message,
+                    llmResponse.costUsd() != null ? BigDecimal.valueOf(llmResponse.costUsd()) : null,
+                    request.fen()
+            ));
+        } catch (GameStateConflictException e) {
+            LOG.warnf("Game %s: discarding %s resignation: %s", request.gameId(), request.sideToMove(), e.getMessage());
+            recordAttempt(request, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
+            return TurnResult.stopped();
+        }
+        recordAttempt(request, attempt, Outcome.RESIGNED, parseResult.move(), null, llmResponse);
         return TurnResult.terminal();
     }
 
@@ -412,8 +485,22 @@ public class GameTurnService {
             // the prompt, whether the message is kept and the mode recorded on the move.
             ChatMode chatMode,
             // The tournament's configured chat mode, shown live in the game view.
-            ChatMode tournamentChatMode
+            ChatMode tournamentChatMode,
+            // Whether this side's prompt offers resignation (see GameConversationService.PromptContext); it may resign
+            // from move Tournament.MIN_RESIGNATION_MOVE on.
+            boolean resignationAllowed
     ) {
+        /** A request for a game without resignation. */
+        public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
+                           List<String> legalMoves, String modelId, String playerName, String opponentName,
+                           List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
+                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
+                           int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode) {
+            this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode, false);
+        }
     }
 
     public record TurnResult(Status status, String moveSan, String message) {

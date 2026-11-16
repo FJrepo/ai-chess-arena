@@ -10,6 +10,9 @@ import java.util.UUID;
  *
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
+ *
+ * <p>{@code resignationAllowed} lets models resign from their 10th move on; null keeps the default (false) on create
+ * and the current value on update.
  */
 public record CreateTournamentRequest(
         String name,
@@ -23,5 +26,16 @@ public record CreateTournamentRequest(
         List<AddParticipantRequest> participants,
         UUID clientRequestId,
         Integer maxOutputTokens,
-        String chatMode
-) {}
+        String chatMode,
+        Boolean resignationAllowed
+) {
+    /** A request without {@code resignationAllowed}: create keeps the default (false), update the current value. */
+    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
+                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
+                                   Boolean trashTalkEnabled, String drawPolicy,
+                                   List<AddParticipantRequest> participants, UUID clientRequestId,
+                                   Integer maxOutputTokens, String chatMode) {
+        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
+                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode, null);
+    }
+}

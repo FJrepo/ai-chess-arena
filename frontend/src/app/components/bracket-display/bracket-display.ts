@@ -276,11 +276,18 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     if (!game?.result) return '';
     const white = whiteOf(game);
     const black = blackOf(game);
+    const resigned = game.resultReason === 'RESIGNATION';
     switch (game.result) {
       case 'WHITE_WINS':
-        return `${white.name} wins ${this.winsOf(card, white)}-${this.winsOf(card, black)}`;
+        return (
+          `${white.name} wins ${this.winsOf(card, white)}-${this.winsOf(card, black)}` +
+          (resigned ? ` (${black.name} resigned)` : '')
+        );
       case 'BLACK_WINS':
-        return `${black.name} wins ${this.winsOf(card, black)}-${this.winsOf(card, white)}`;
+        return (
+          `${black.name} wins ${this.winsOf(card, black)}-${this.winsOf(card, white)}` +
+          (resigned ? ` (${white.name} resigned)` : '')
+        );
       case 'WHITE_FORFEIT':
         return `${white.name} forfeits`;
       case 'BLACK_FORFEIT':
