@@ -32,7 +32,8 @@ html {
     color-mix(in srgb, var(--mat-sys-surface-container-low) 92%, transparent),
     color-mix(in srgb, var(--mat-sys-surface-container-high) 96%, transparent)
   );
-  --app-surface-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
+  /* Light: a soft lift, so hero surfaces don't look smudged on the pale page. */
+  --app-surface-shadow: 0 8px 24px color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent);
 }
 
 :root[data-theme='dark'],
@@ -49,6 +50,8 @@ body.dark-theme {
       density: 0,
     )
   );
+
+  --app-surface-shadow: 0 18px 48px rgba(0, 0, 0, 0.16);
 }
 
 body {

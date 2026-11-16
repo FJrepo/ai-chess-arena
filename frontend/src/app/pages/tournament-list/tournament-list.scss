@@ -9,15 +9,6 @@
   --list-card-radius: 20px;
 }
 
-/* Softer than the shared hero shadow so the light page does not look smudged. */
-.tournament-hero {
-  box-shadow: 0 8px 24px
-    light-dark(
-      color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent),
-      color-mix(in srgb, var(--mat-sys-shadow) 28%, transparent)
-    );
-}
-
 .tournament-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
