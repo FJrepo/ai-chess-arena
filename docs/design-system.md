@@ -44,6 +44,7 @@ chess or shared page patterns need a name. Consume semantic roles rather than pa
 | `--app-surface-bg`, `--app-surface-border`, `--app-surface-shadow` | Page hero and other raised surface treatment. |
 | `--app-surface-radius-lg`, `--app-surface-radius-md` | Shared surface corners. |
 | `--app-page-max-width`, `--app-page-gap` | Page width and main content rhythm. |
+| `--app-space-*` | Shared spacing scale for compact card content, fields and supporting metrics. |
 | `--app-banner-gap`, `--app-banner-padding`, `--app-banner-radius` | Shared connection banner geometry. |
 | `--app-board-light-square`, `--app-board-dark-square`, `--app-board-last-move` | Board squares, captured-piece trays, promotion backplates and last-move wash. |
 | `--app-board-ring-edge`, `--app-board-selection`, `--app-board-drop-target`, `--app-board-hover` | Board interaction cues that remain visible over both square tones and highlights. |

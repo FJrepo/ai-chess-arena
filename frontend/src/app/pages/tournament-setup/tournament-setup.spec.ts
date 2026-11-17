@@ -368,7 +368,7 @@ describe('TournamentSetup', () => {
     expect(input.min).toBe('128');
     expect(input.value).toBe('16384');
     const hint = input.closest('mat-form-field')?.textContent?.replace(/\s+/g, ' ');
-    expect(hint).toContain('Cut-off answers pause the game.');
+    expect(hint).toContain('Cut-offs pause the game.');
     const help = fixture.debugElement.query(
       By.css('button[aria-label="About the output token limit"]'),
     );
@@ -704,6 +704,9 @@ describe('TournamentSetup', () => {
     expect(summary?.maxRuntimeMinutes).toBeNull();
     expect(summary?.paceLabel).toBe('No limit');
     expect(summary?.riskBand).toBe('Safe');
+    expect(summary?.riskReason).toBe(
+      'Low cost risk; runtime is open-ended without a move time limit.',
+    );
 
     component.limitMoveTime = true;
     component.moveTimeout = 120;
@@ -711,6 +714,7 @@ describe('TournamentSetup', () => {
     expect(timed?.likelyRuntimeMinutes).toBe(35);
     expect(timed?.maxRuntimeMinutes).toBe(70);
     expect(timed?.paceLabel).toBe('Balanced');
+    expect(timed?.riskReason).toBe('Good fit for a first pass or low-risk validation run.');
   });
 
   it('builds a confidence summary with finals override and pricing data', () => {
@@ -949,6 +953,86 @@ describe('TournamentSetup', () => {
     expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
   });
 
+  it('puts model search before participant fields and keeps the add action beside its hint', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const card = element.querySelector('.participants-card')!;
+    const picker = card.querySelector('app-model-picker')!;
+    const name = card.querySelector('input[placeholder="e.g. Claude Opus 4.6"]')!;
+    const toggle = card.querySelector('.instructions-toggle')!;
+    const add = card.querySelector<HTMLButtonElement>('.add-button')!;
+    const follows = (before: Element, after: Element) =>
+      Boolean(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(picker, name)).toBe(true);
+    expect(follows(name, toggle)).toBe(true);
+    expect(follows(toggle, add)).toBe(true);
+    expect(add.nextElementSibling?.id).toBe('add-participant-reason');
+    expect(add.disabled).toBe(true);
+    expect(card.querySelector('#add-participant-reason')?.textContent).toContain(
+      'Enter a display name',
+    );
+    const search = picker.querySelector<HTMLInputElement>('input')!;
+    search.focus();
+    search.value = 'Fixture';
+    search.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    document.querySelector<HTMLElement>('mat-option')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.newPlayerName).toBe('Fixture model');
+    expect(add.disabled).toBe(false);
+    add.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.participants()).toEqual([
+      expect.objectContaining({ playerName: 'Fixture model', modelId: 'acme/model' }),
+    ]);
+    expect(element.querySelector('.participant-name')?.textContent).toBe('Fixture model');
+  });
+
+  it('shows the participant count and minimum for empty, singular and populated lineups', async () => {
+    const fixture = await renderSetup();
+    const element: HTMLElement = fixture.nativeElement;
+    const count = () =>
+      element
+        .querySelector('.participants-list-head .caption')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim();
+    expect(count()).toBe('0 participants · min. 2');
+    for (const size of [1, 4]) {
+      fixture.componentInstance.participants.set(
+        Array.from({ length: size }, (_, i) =>
+          pricedParticipant(`Player ${i}`, `model/${i}`, 1, 2),
+        ),
+      );
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(count()).toBe(`${size} ${size === 1 ? 'participant' : 'participants'} · min. 2`);
+    }
+  });
+
+  it('starts estimate assumptions closed and allows expanding and closing them', async () => {
+    const fixture = await renderSetup();
+    fixture.componentInstance.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element: HTMLElement = fixture.nativeElement;
+    const details = element.querySelector<HTMLDetailsElement>('.confidence-assumptions')!;
+    const summary = details.querySelector('summary')!;
+    expect(details.open).toBe(false);
+    expect(summary.textContent?.trim()).toBe('Assumptions');
+    summary.click();
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain('70 moves per game');
+    expect(details.textContent).toContain('Without move limits, runtime is open-ended');
+    summary.click();
+    expect(details.open).toBe(false);
+  });
+
   it('reveals and focuses instructions, submits a collapsed draft and resets after adding', async () => {
     const fixture = await renderSetup();
     const component = fixture.componentInstance;
@@ -1112,7 +1196,7 @@ describe('TournamentSetup', () => {
     expect(create.disabled).toBe(false);
     expect(aside.querySelector('.launch-checklist')?.textContent).toContain('Tournament named');
     expect(aside.querySelector('.participants-list-head')?.textContent).toContain(
-      '2 of at least 2',
+      '2 participants · min. 2',
     );
     expect(
       Array.from(aside.querySelectorAll('.participant-seed')).map((seed) =>
@@ -1219,6 +1303,27 @@ describe('TournamentSetup', () => {
     );
     expect(element.querySelector('.confidence-band')?.textContent?.trim()).toBe('Low risk');
     expect(element.querySelector('.confidence-band')?.classList).toContain('low-risk');
+    expect(element.querySelector('.confidence-note')?.textContent).toBe(
+      'Low cost risk; runtime is open-ended without a move time limit.',
+    );
+    expect(
+      Array.from(element.querySelectorAll('.confidence-primary .metric-label')).map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Estimated Spend', 'Estimated Runtime', 'Projected Games']);
+    expect(
+      Array.from(element.querySelectorAll('.confidence-secondary .metric-label')).map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(['Series', 'Move Pace', 'Pricing Coverage']);
+    expect(metric('Move Pace').querySelector('.num')).toBeNull();
+    expect(metric('Move Pace').querySelector('strong')?.textContent).toBe('No limit');
+    expect(metric('Pricing Coverage').querySelector('.num')?.textContent).toBe('2/2');
+    expect(metric('Pricing Coverage').querySelector('strong')?.textContent).toContain(
+      'models priced',
+    );
+    expect(metric('Estimated Spend').querySelector('.num')?.textContent).toMatch(/^\$/);
+    expect(metric('Estimated Runtime').querySelector('.num')?.textContent).not.toContain('about');
     expect(metric('Estimated Spend').querySelector('strong')?.textContent).toContain('about $');
     expect(metric('Estimated Spend').textContent).toContain('can be higher with reasoning models');
     expect(metric('Estimated Runtime').querySelector('strong')?.textContent).toContain('about ');
@@ -1250,6 +1355,35 @@ describe('TournamentSetup', () => {
       expect(element.querySelector('.confidence-band')?.textContent?.trim()).toBe(label);
       expect(element.querySelector('.confidence-band')?.classList).toContain(className);
     }
+  });
+
+  it('qualifies every cost band when runtime has no move limit', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.limitMoveTime = false;
+    component.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ]);
+    component.matchupBestOf = 7;
+    component.finalsBestOf = null;
+    component.drawPolicy = 'REPLAY_GAME';
+    expect(component.confidenceSummary()).toMatchObject({
+      riskBand: 'Moderate',
+      riskReason: 'Moderate cost risk; runtime is open-ended without a move time limit.',
+    });
+    component.participants.set(
+      Array.from({ length: 16 }, (_, i) =>
+        pricedParticipant(`Player ${i}`, `model/${i}`, 100, 100),
+      ),
+    );
+    expect(component.confidenceSummary()).toMatchObject({
+      riskBand: 'Expensive',
+      riskReason: 'High cost; runtime is open-ended without a move time limit.',
+    });
+    component.limitMoveTime = true;
+    expect(component.confidenceSummary()?.riskReason).toBe(
+      'A larger field, longer series, or pricier models make this a heavier run.',
+    );
   });
 
   it('sends chat mode Optional by default and the chosen mode otherwise, without the old flag', () => {

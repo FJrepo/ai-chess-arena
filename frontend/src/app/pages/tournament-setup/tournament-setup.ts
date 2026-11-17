@@ -771,8 +771,9 @@ Your opponent is %s (%s).`;
       (likelyCostUsd != null ? (likelyCostUsd >= 5 ? 2 : likelyCostUsd >= 1 ? 1 : 0) : 0);
 
     const riskBand = riskScore >= 8 ? 'Expensive' : riskScore >= 5 ? 'Moderate' : 'Safe';
-    const riskReason =
-      riskBand === 'Expensive'
+    const riskReason = !this.limitMoveTime
+      ? `${riskBand === 'Safe' ? 'Low cost risk' : riskBand === 'Moderate' ? 'Moderate cost risk' : 'High cost'}; runtime is open-ended without a move time limit.`
+      : riskBand === 'Expensive'
         ? 'A larger field, longer series, or pricier models make this a heavier run.'
         : riskBand === 'Moderate'
           ? 'Longer series or higher costs may need a closer look.'

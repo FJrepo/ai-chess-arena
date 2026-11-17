@@ -65,35 +65,20 @@
             </div>
           }
 
-          <div class="add-participant">
-            <mat-form-field appearance="outline" floatLabel="always">
-              <mat-label>Display Name</mat-label>
-              <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
-            </mat-form-field>
-
-            <mat-form-field appearance="outline" floatLabel="always">
-              <mat-label>Control Type</mat-label>
-              <mat-select [(ngModel)]="newControlType">
-                <mat-option value="AI">AI Model</mat-option>
-                <mat-option value="HUMAN" [disabled]="hasHumanParticipant()"
-                  >Human Player</mat-option
-                >
-              </mat-select>
-            </mat-form-field>
-          </div>
-
           @if (newControlType === 'AI') {
             <app-model-picker
-              class="model-picker"
+              class="model-picker setup-model-picker"
               [models]="models()"
               [featuredProviders]="featuredProviders()"
               [disabled]="modelsLoading() || models().length === 0"
               [selectedId]="newModelId"
               (selectedIdChange)="onModelChanged($event)"
             />
+          }
 
+          @if (newControlType === 'AI') {
             @if (selectedModel(); as model) {
-              <app-model-details class="model-details-card" [model]="model" />
+              <app-model-details class="model-details-card setup-model-details" [model]="model" />
 
               <div class="add-participant participant-effort">
                 @if (selectedModelEfforts().length > 0) {
@@ -135,6 +120,23 @@
               </div>
             }
           }
+
+          <div class="add-participant">
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+              <mat-label>Display Name</mat-label>
+              <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+              <mat-label>Control Type</mat-label>
+              <mat-select [(ngModel)]="newControlType">
+                <mat-option value="AI">AI Model</mat-option>
+                <mat-option value="HUMAN" [disabled]="hasHumanParticipant()"
+                  >Human Player</mat-option
+                >
+              </mat-select>
+            </mat-form-field>
+          </div>
 
           @if (newControlType === 'AI') {
             <button
@@ -179,6 +181,16 @@
 
           <div class="add-row">
             <div class="add-action">
+              <button
+                mat-stroked-button
+                class="add-button"
+                (click)="addParticipant()"
+                [disabled]="!canAddParticipant()"
+                [attr.aria-describedby]="canAddParticipant() ? null : 'add-participant-reason'"
+              >
+                <mat-icon>add</mat-icon>
+                <span>Add Participant</span>
+              </button>
               @if (!canAddParticipant()) {
                 <span class="caption" id="add-participant-reason">
                   @if (newPlayerName.trim().length === 0) {
@@ -190,16 +202,6 @@
                   }
                 </span>
               }
-              <button
-                mat-stroked-button
-                class="add-button"
-                (click)="addParticipant()"
-                [disabled]="!canAddParticipant()"
-                [attr.aria-describedby]="canAddParticipant() ? null : 'add-participant-reason'"
-              >
-                <mat-icon>add</mat-icon>
-                <span>Add Participant</span>
-              </button>
             </div>
           </div>
         </mat-card-content>
@@ -283,7 +285,7 @@
                   [(ngModel)]="maxOutputTokens"
                 />
                 <mat-hint
-                  >Cut-off answers pause the
+                  >Cut-offs pause the
                   <span class="hint-tail"
                     >game.
                     <button
@@ -291,7 +293,7 @@
                       type="button"
                       class="hint-help"
                       aria-label="About the output token limit"
-                      matTooltip="Includes reasoning tokens. OpenRouter checks the credit balance against max_tokens × output price before a request. Very high limits with expensive models can fail on a low balance even if far fewer tokens are used."
+                      matTooltip="Cut-off answers pause the game. Includes reasoning tokens. OpenRouter checks the credit balance against max_tokens × output price before a request. Very high limits with expensive models can fail on a low balance even if far fewer tokens are used."
                     >
                       <mat-icon>help_outline</mat-icon>
                     </button></span
@@ -334,7 +336,7 @@
           <section class="field-group" aria-labelledby="setup-matches-heading">
             <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
             <div class="settings-grid matches-grid">
-              <mat-form-field appearance="outline" floatLabel="always">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Bracket draw</mat-label>
                 <mat-select [(ngModel)]="drawMode">
                   <mat-option value="RANDOM">Random draw</mat-option>
@@ -342,7 +344,7 @@
                 </mat-select>
               </mat-form-field>
 
-              <mat-form-field appearance="outline" floatLabel="always">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Draw Policy</mat-label>
                 <mat-select [(ngModel)]="drawPolicy">
                   @for (option of drawPolicyOptions; track option.value) {
@@ -351,7 +353,7 @@
                 </mat-select>
               </mat-form-field>
 
-              <mat-form-field appearance="outline" floatLabel="always">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Matchups</mat-label>
                 <mat-select [(ngModel)]="matchupBestOf">
                   @for (bestOf of bestOfOptions; track bestOf) {
@@ -360,7 +362,7 @@
                 </mat-select>
               </mat-form-field>
 
-              <mat-form-field appearance="outline" floatLabel="always">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Final round</mat-label>
                 <mat-select [(ngModel)]="finalsBestOf" placeholder="Same as matchups">
                   <mat-option [value]="null">Same as matchups</mat-option>
@@ -605,7 +607,10 @@
       <mat-card class="panel lineup-card">
         <mat-card-header class="participants-list-head">
           <h2 mat-card-title>Tournament lineup</h2>
-          <span class="caption">{{ participants().length }} of at least 2</span>
+          <span class="caption"
+            >{{ participants().length }}
+            {{ participants().length === 1 ? 'participant' : 'participants' }} · min. 2</span
+          >
         </mat-card-header>
         <mat-card-content>
           <mat-form-field
@@ -641,7 +646,7 @@
                     @if (p.controlType === 'HUMAN') {
                       Human-controlled
                     } @else {
-                      <span class="mono">{{ p.modelId }}</span>
+                      <span>{{ p.modelId }}</span>
                       @if (p.reasoningEffort) {
                         <span class="participant-effort-meta">
                           · effort: {{ reasoningEffortLabel(p.reasoningEffort) }}
@@ -730,44 +735,15 @@
               <span class="confidence-note">{{ summary.riskReason }}</span>
             </div>
 
-            <div class="confidence-grid">
-              <div class="confidence-metric">
-                <span class="metric-label">Series</span>
-                <strong class="num">{{ summary.totalSeries }}</strong>
-                <span>{{ summary.participantCount }} participants</span>
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Projected Games</span>
-                <strong class="num">{{ summary.likelyGames }}</strong>
-                <span
-                  >{{ summary.minGames }} min · {{ summary.maxGames
-                  }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
-                >
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Estimated Runtime</span>
-                <strong class="num"
-                  >about {{ formatDuration(summary.likelyRuntimeMinutes) }}</strong
-                >
-                <span>
-                  @if (summary.maxRuntimeMinutes !== null) {
-                    {{ summary.drawCanExtendSeries ? 'at least about' : 'up to about' }}
-                    {{ formatDuration(summary.maxRuntimeMinutes) }}
-                  } @else {
-                    open-ended
-                  }
-                </span>
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Move Pace</span>
-                <strong class="num">{{ summary.paceLabel }}</strong>
-                <span>{{ limitMoveTime ? moveTimeout + 's timeout' : 'no time limit' }}</span>
-              </div>
+            <div class="confidence-grid confidence-primary">
               <div class="confidence-metric">
                 <span class="metric-label">Estimated Spend</span>
-                <strong class="num">
+                <strong>
                   @if (summary.likelyCostUsd !== null) {
-                    about {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                    about
+                    <span class="num">{{
+                      summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2'
+                    }}</span>
                   } @else {
                     n/a
                   }
@@ -788,35 +764,78 @@
                 </span>
               </div>
               <div class="confidence-metric">
+                <span class="metric-label">Estimated Runtime</span>
+                <strong
+                  >about
+                  <span class="num">{{
+                    formatDuration(summary.likelyRuntimeMinutes)
+                  }}</span></strong
+                >
+                <span>
+                  @if (summary.maxRuntimeMinutes !== null) {
+                    {{ summary.drawCanExtendSeries ? 'at least about' : 'up to about' }}
+                    {{ formatDuration(summary.maxRuntimeMinutes) }}
+                  } @else {
+                    open-ended
+                  }
+                </span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Projected Games</span>
+                <strong class="num">{{ summary.likelyGames }}</strong>
+                <span
+                  >{{ summary.minGames }} min · {{ summary.maxGames
+                  }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
+                >
+              </div>
+            </div>
+            <div class="confidence-secondary">
+              <div class="confidence-metric">
+                <span class="metric-label">Series</span>
+                <strong class="num">{{ summary.totalSeries }}</strong>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Move Pace</span>
+                <strong>{{ summary.paceLabel }}</strong>
+              </div>
+              <div class="confidence-metric">
                 <span class="metric-label">Pricing Coverage</span>
-                <strong class="num">{{ pricingCoverageLabel(summary) }}</strong>
-                <span>based on OpenRouter list prices</span>
+                <strong
+                  ><span class="num"
+                    >{{ summary.pricingCoverage }}/{{ summary.participantCount }}</span
+                  >
+                  models priced</strong
+                >
               </div>
             </div>
 
-            <div class="confidence-footnotes">
-              <p>
-                Rough estimates use 70 moves per game, 1,400 prompt and 140 output tokens per move,
-                and OpenRouter list prices. Model behavior and retries change actual usage.
-              </p>
-              <p>
-                Reasoning can cost many times this rough estimate, using up to {{ maxOutputTokens }}
-                output tokens per answer.
-              </p>
-              @if (!limitMoveTime) {
+            <details class="confidence-assumptions">
+              <summary>Assumptions</summary>
+              <div class="confidence-footnotes">
                 <p>
-                  Without move limits, runtime is open-ended. This rough estimate uses
-                  {{ typicalMoveSeconds }} seconds per answer; reasoning can take much longer.
+                  Rough estimates use 70 moves per game, 1,400 prompt and 140 output tokens per
+                  move, and OpenRouter list prices. Model behavior and retries change actual usage.
                 </p>
-              }
-              @if (summary.drawCanExtendSeries) {
-                <p class="confidence-warning">
-                  Replay Game adds games until a tied series has a decisive result, with no fixed
-                  maximum games, runtime or cost. Other draw policies cap games at the best-of
-                  count; runtime and spend remain rough estimates.
+                <p>
+                  Reasoning can cost many times this rough estimate, using up to
+                  {{ maxOutputTokens }}
+                  output tokens per answer.
                 </p>
-              }
-            </div>
+                @if (!limitMoveTime) {
+                  <p>
+                    Without move limits, runtime is open-ended. This rough estimate uses
+                    {{ typicalMoveSeconds }} seconds per answer; reasoning can take much longer.
+                  </p>
+                }
+                @if (summary.drawCanExtendSeries) {
+                  <p class="confidence-warning">
+                    Replay Game adds games until a tied series has a decisive result, with no fixed
+                    maximum games, runtime or cost. Other draw policies cap games at the best-of
+                    count; runtime and spend remain rough estimates.
+                  </p>
+                }
+              </div>
+            </details>
           } @else {
             <div class="confidence-empty">
               <mat-icon>insights</mat-icon>

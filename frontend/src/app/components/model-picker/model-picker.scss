@@ -1,3 +1,5 @@
+@use '@angular/material' as mat;
+
 :host {
   display: block;
 }
@@ -48,7 +50,8 @@
 }
 
 .group-count {
-  font: var(--mat-sys-label-small);
+  font: var(--mat-sys-label-large);
+  font-size: var(--app-text-secondary-size);
   color: var(--mat-sys-on-surface-variant);
 }
 
@@ -65,5 +68,62 @@
 
 .option-meta {
   font: var(--mat-sys-body-small);
+  font-size: var(--app-text-secondary-size);
   color: var(--mat-sys-on-surface-variant);
+}
+
+// Setup gives model search a full row and keeps its filters together below it.
+:host(.setup-model-picker) {
+  @include mat.form-field-overrides(
+    (
+      outlined-disabled-input-text-color: var(--mat-sys-on-surface-variant),
+      outlined-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+      outlined-disabled-outline-color: var(--mat-sys-outline),
+    )
+  );
+  @include mat.select-overrides(
+    (
+      disabled-trigger-text-color: var(--mat-sys-on-surface-variant),
+    )
+  );
+  .model-picker {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+    gap: var(--app-space-3) var(--app-space-2);
+    align-items: center;
+  }
+
+  .picker-row,
+  .filter-row {
+    display: contents;
+  }
+
+  .model-field {
+    grid-column: 1 / -1;
+  }
+
+  .model-field,
+  .provider-field,
+  .sort-field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .provider-field,
+  .sort-field {
+    @include mat.form-field-density(-3);
+  }
+
+  .match-count {
+    font-size: var(--app-text-secondary-size);
+  }
+
+  mat-chip-listbox {
+    @include mat.chips-overrides(
+      (
+        label-text-size: var(--app-text-secondary-size),
+        disabled-label-text-color: var(--mat-sys-on-surface-variant),
+        disabled-outline-color: var(--mat-sys-outline),
+      )
+    );
+  }
 }
