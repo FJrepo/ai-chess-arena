@@ -1,6 +1,7 @@
 package dev.aichessarena.resource;
 
 import dev.aichessarena.dto.PromptTemplateDto;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.service.OpenRouterService;
 import dev.aichessarena.service.PromptService;
@@ -63,19 +64,34 @@ public class ModelResource {
                 promptService.getDefaultSystemPromptVersion(),
                 promptService.computePromptHash(template),
                 promptVariants(false),
-                promptVariants(true)
+                promptVariants(true),
+                banterVariants(false),
+                banterVariants(true)
         );
         return Response.ok(dto).build();
     }
 
     /** The rules of every chat mode, with or without resignation, by mode name. */
     private java.util.Map<String, PromptTemplateDto.Variant> promptVariants(boolean resignationAllowed) {
+        return promptVariants(resignationAllowed, null);
+    }
+
+    private java.util.Map<String, java.util.Map<String, PromptTemplateDto.Variant>> banterVariants(boolean resign) {
+        java.util.Map<String, java.util.Map<String, PromptTemplateDto.Variant>> levels = new java.util.LinkedHashMap<>();
+        for (BanterLevel level : BanterLevel.values()) {
+            levels.put(level.name(), promptVariants(resign, level));
+        }
+        return levels;
+    }
+
+    private java.util.Map<String, PromptTemplateDto.Variant> promptVariants(boolean resignationAllowed,
+                                                                          BanterLevel level) {
         java.util.Map<String, PromptTemplateDto.Variant> variants = new java.util.LinkedHashMap<>();
         for (ChatMode mode : ChatMode.values()) {
-            String modeTemplate = promptService.getSystemPromptTemplate(mode, resignationAllowed);
+            String modeTemplate = promptService.getSystemPromptTemplate(mode, resignationAllowed, level);
             variants.put(mode.name(), new PromptTemplateDto.Variant(
                     modeTemplate,
-                    promptService.getSystemPromptVersion(mode, resignationAllowed),
+                    promptService.getSystemPromptVersion(mode, resignationAllowed, level),
                     promptService.computePromptHash(modeTemplate)));
         }
         return variants;

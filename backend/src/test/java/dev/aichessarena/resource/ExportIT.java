@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.github.bhlangonijr.chesslib.Board;
 import com.github.bhlangonijr.chesslib.pgn.PgnHolder;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
@@ -256,6 +257,7 @@ class ExportIT {
                 .body("id", equalTo(f.tournamentId.toString()))
                 .body("settings.maxRetries", equalTo(3))
                 .body("settings.reasoningEffort", equalTo("low"))
+                .body("settings.banterLevel", equalTo("PLAYFUL"))
                 .body("participants.size()", equalTo(2))
                 .body("games.size()", equalTo(2))
                 .body("games[0].moves.size()", equalTo(2))
@@ -312,6 +314,7 @@ class ExportIT {
             t.defaultSystemPrompt = "PRIVATE_PROMPT_SENTINEL";
             t.sharedCustomInstructions = "PRIVATE_PROMPT_SENTINEL";
             t.reasoningEffort = ReasoningEffort.LOW;
+            t.banterLevel = BanterLevel.PLAYFUL;
             t.persist();
             TournamentParticipant white = participant(t, "=Alpha, \"Ω\"", "test/alpha", 0);
             TournamentParticipant black = participant(t, "Beta", "test/beta", 1);

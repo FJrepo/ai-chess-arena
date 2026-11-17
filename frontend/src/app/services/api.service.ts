@@ -5,6 +5,7 @@ import {
   TournamentRunSettings,
   BracketDrawMode,
   ChatMode,
+  BanterLevel,
   Tournament,
   Participant,
   Game,
@@ -23,7 +24,13 @@ import {
   TournamentCostSummary,
 } from '../models/analytics.model';
 
+type PromptVariant = { template: string; version: string; hash: string };
+
 export interface PromptTemplateResponse {
+  banterChatModes?: Partial<Record<BanterLevel, Partial<Record<ChatMode, PromptVariant>>>>;
+  resignationBanterChatModes?: Partial<
+    Record<BanterLevel, Partial<Record<ChatMode, PromptVariant>>>
+  >;
   template: string;
   version: string;
   hash: string;

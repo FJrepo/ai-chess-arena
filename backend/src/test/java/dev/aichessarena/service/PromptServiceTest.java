@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.BanterLevel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -601,5 +602,100 @@ class PromptServiceTest {
         return new OpenRouterService.ChatMsg("system",
                 promptService.buildSystemPrompt(null, null, color, opponent, "vendor/" + opponent.toLowerCase())
                         .prompt());
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("banterPins")
+    void banterVariantsHavePinnedTextsVersionsAndHashes(BanterLevel level, ChatMode mode, boolean resign,
+                                                       boolean custom, String version, String hash) {
+        var resolved = promptService.buildSystemPrompt(null, custom ? "Play the London." : null,
+                "WHITE", "Opponent Bot", "model/opponent", mode, resign, level);
+        assertEquals(version, resolved.version());
+        assertEquals(hash, promptService.computePromptHash(resolved.prompt()));
+        assertEquals(mode, resolved.chatMode());
+        assertEquals(resign, resolved.resignationOffered());
+        assertTrue(resolved.prompt().contains(PromptService.toneSentence(level)));
+        if (!custom) {
+            assertEquals(resolved.prompt(), promptService.getSystemPromptTemplate(mode, resign, level)
+                    .formatted("WHITE", "Opponent Bot", "model/opponent"));
+            assertEquals(version, promptService.getSystemPromptVersion(mode, resign, level));
+        }
+    }
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> banterPins() {
+        return java.util.stream.Stream.of(
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.OPTIONAL, false, false,
+                        "v2-banter-polite", "995ef8bc61567c840528cef34da594c45fc594cb68a3d65428c7139f827991d8"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.OPTIONAL, false, true,
+                        "v2+custom-instructions-banter-polite", "faa27d85a8387dec37d23005c8b058aea672c25137c083a5efe829751d7704e6"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.OPTIONAL, true, false,
+                        "v2-resign-banter-polite", "4ae1e0e058d8ffe20753ce08a83cf13e4d4b9021b6f47c3776c015853520ca0a"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.OPTIONAL, true, true,
+                        "v2+custom-instructions-resign-banter-polite", "408db590a72512e4e714a44132f4f00dc42f1661b8258f63de5468c687e20b97"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.MANDATORY, false, false,
+                        "v2-chat-required-banter-polite", "dd00735b113b6ac7983195f2287b528516c075a3df19f56f6c47d9934d6cbb20"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.MANDATORY, false, true,
+                        "v2+custom-instructions-chat-required-banter-polite", "bf57adccb94965bbbaff112f69d6a446bd311b7fee8943c45c2613907d42113a"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.MANDATORY, true, false,
+                        "v2-chat-required-resign-banter-polite", "d839a3362d35afbc781ba63520381c4a863c04c5e3f7aabc3323979d4ae15076"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.POLITE, ChatMode.MANDATORY, true, true,
+                        "v2+custom-instructions-chat-required-resign-banter-polite", "5051206cf24630d2f5ace817f90de7cfa7342db64ab04ddd872f78e44264b7ee"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.OPTIONAL, false, false,
+                        "v2-banter-playful", "a00b90ae67b5e618788dff9eeeea758e0770bea4f69baa2309e0981fe5a93fb8"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.OPTIONAL, false, true,
+                        "v2+custom-instructions-banter-playful", "c4d241a3c7b93742815d13fbccdc5cf703bc950e1277c0aa529aa6605fd6b3cd"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.OPTIONAL, true, false,
+                        "v2-resign-banter-playful", "07c6c1f30acefa6f45a7e58f45926535f0b9f64eff0930e5cc7b6d70d59f723c"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.OPTIONAL, true, true,
+                        "v2+custom-instructions-resign-banter-playful", "2a1c6347ec13b3f3cad7354887a23b31e80f4558ccf7cf72c21de0248bfb55be"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.MANDATORY, false, false,
+                        "v2-chat-required-banter-playful", "94992bbbedb3b5180c474f0c5da08db2e714151c8494855eed8d0efe5865dc6f"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.MANDATORY, false, true,
+                        "v2+custom-instructions-chat-required-banter-playful", "91419a0ed96754649c3e0a58cb33daf7428792bf857cf12e5a05e2c130b6b52f"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.MANDATORY, true, false,
+                        "v2-chat-required-resign-banter-playful", "589196cbef5f8bd05aee042cc4c2cddd75de5643c88f27b3eb310a739df7f97c"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.PLAYFUL, ChatMode.MANDATORY, true, true,
+                        "v2+custom-instructions-chat-required-resign-banter-playful", "0ed164c68b1e0609ef8e38fa39ad93c247fe64041c5d73bc0195f17950a30fbc"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.OPTIONAL, false, false,
+                        "v2-banter-spicy", "613e8aa068d5478d7cc7a6314fc037fc742657de156b3fe5cd59e5857a6962f7"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.OPTIONAL, false, true,
+                        "v2+custom-instructions-banter-spicy", "fd4e030e2dc63111a6822b102fd232e882c9046815a73154d34361d07ddef726"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.OPTIONAL, true, false,
+                        "v2-resign-banter-spicy", "3f8b886fe6628b866ff5d039e055253fc871ad25bd4c16e47d5c320cc592fd3a"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.OPTIONAL, true, true,
+                        "v2+custom-instructions-resign-banter-spicy", "7b5c188536c5e3ac9cbd2ce67682f00886c2ae8bd8f16f1064ebe32e61759e57"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.MANDATORY, false, false,
+                        "v2-chat-required-banter-spicy", "2dc647f16a499540bbc4d4224da34f786139bfe6067c1f7887fbeb81c0849048"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.MANDATORY, false, true,
+                        "v2+custom-instructions-chat-required-banter-spicy", "23528bc052ab5f7204e9db2bec556301473e9e0da807fbfb9a7df17314be2735"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.MANDATORY, true, false,
+                        "v2-chat-required-resign-banter-spicy", "cd9487e50af01974c6f46ceaf0baa900ae250613e3f19de519ac9413ccdae44e"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.MANDATORY, true, true,
+                        "v2+custom-instructions-chat-required-resign-banter-spicy", "19f120b2a0593de8fe1451a7b9a8700e0a318ce426229084f70e21e448b6abb3"));
+    }
+
+    @Test
+    void nullBanterOffAndLegacyTemplatesPreserveAllExistingPrompts() {
+        String legacy = "Play %s against %s (%s).";
+        for (ChatMode mode : ChatMode.values()) {
+            for (boolean resign : new boolean[] {false, true}) {
+                for (String custom : new String[] {null, "Play the London."}) {
+                    var original = promptService.buildSystemPrompt(null, custom, "WHITE", "Opponent Bot",
+                            "model/opponent", mode, resign);
+                    assertEquals(original, promptService.buildSystemPrompt(null, custom, "WHITE", "Opponent Bot",
+                            "model/opponent", mode, resign, null));
+                    for (BanterLevel level : BanterLevel.values()) {
+                        if (mode == ChatMode.OFF) {
+                            assertEquals(original, promptService.buildSystemPrompt(null, custom, "WHITE", "Opponent Bot",
+                                    "model/opponent", mode, resign, level));
+                        }
+                        assertEquals(promptService.buildSystemPrompt(legacy, custom, "WHITE", "Opponent Bot",
+                                        "model/opponent", mode, resign),
+                                promptService.buildSystemPrompt(legacy, custom, "WHITE", "Opponent Bot",
+                                        "model/opponent", mode, resign, level));
+                    }
+                }
+            }
+        }
     }
 }

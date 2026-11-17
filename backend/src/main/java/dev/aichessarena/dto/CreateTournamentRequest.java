@@ -1,5 +1,6 @@
 package dev.aichessarena.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.List;
 import java.util.UUID;
@@ -14,6 +15,9 @@ import java.util.UUID;
  *
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
+ *
+ * <p>{@code banterLevel} accepts POLITE, PLAYFUL, SPICY or explicit JSON null (clear to original tone). Omitted
+ * retains the current tone on update; chat OFF and legacy full templates ignore it.
  *
  * <p>{@code resignationAllowed} lets models resign from their 10th move on; null keeps the default (false) on create
  * and the current value on update.
@@ -48,9 +52,11 @@ public record CreateTournamentRequest(
         String openingMode,
         String openingId,
         String drawMode,
-        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket
+        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket,
+        // Omitted retains the current tone on update; explicit JSON null clears it. Only strings/null are valid.
+        JsonNode banterLevel
 ) {
-    /** Compatibility constructor for callers without creation-time bracket settings. */
+    /** Compatibility constructor for callers without creation-time bracket or banter settings. */
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
                                    Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
                                    Boolean trashTalkEnabled, String drawPolicy,
@@ -60,7 +66,7 @@ public record CreateTournamentRequest(
                                    String openingMode, String openingId) {
         this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
                 trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null);
+                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null);
     }
 
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,

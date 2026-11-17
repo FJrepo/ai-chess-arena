@@ -311,7 +311,9 @@ class GameWebSocketTest {
 
         java.time.Instant now = java.time.Instant.now();
         endpoint.broadcastGameStatus(gameId, "IN_PROGRESS", null, null, 3, java.math.BigDecimal.ZERO,
-                "WHITE", now, null, null, "MANDATORY");
+                "WHITE", now, null, null, "MANDATORY", "SPICY");
+        endpoint.broadcastGameStatus(gameId, "IN_PROGRESS", null, null, 3, java.math.BigDecimal.ZERO,
+                "BLACK", now, null, null, "MANDATORY", null);
         endpoint.broadcastGameStatus(gameId, "PAUSED", null, null, 3, java.math.BigDecimal.ZERO);
 
         ObjectMapper mapper = new ObjectMapper();
@@ -322,9 +324,12 @@ class GameWebSocketTest {
                 statuses.add(node);
             }
         }
-        assertEquals(2, statuses.size());
+        assertEquals(3, statuses.size());
         assertEquals("MANDATORY", statuses.get(0).get("tournamentChatMode").asText());
-        assertFalse(statuses.get(1).has("tournamentChatMode"));
+        assertEquals("SPICY", statuses.get(0).get("tournamentBanterLevel").asText());
+        assertTrue(statuses.get(1).get("tournamentBanterLevel").isNull());
+        assertFalse(statuses.get(2).has("tournamentChatMode"));
+        assertFalse(statuses.get(2).has("tournamentBanterLevel"));
     }
 
     /** An open connection that records every text frame sent to it. */

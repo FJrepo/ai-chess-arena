@@ -32,4 +32,32 @@ describe('ChatPanel', () => {
     panel.chatMode = 'OPTIONAL';
     expect(panel.chatModeLabel()).toBe('Chat optional');
   });
+  it('shows each tone next to the chat mode, hides it while Off, and clears it', async () => {
+    TestBed.configureTestingModule({ imports: [ChatPanel] });
+    const fixture = TestBed.createComponent(ChatPanel);
+    fixture.componentRef.setInput('chatMode', 'OPTIONAL');
+    for (const [level, label] of [
+      ['POLITE', 'Polite'],
+      ['PLAYFUL', 'Playful'],
+      ['SPICY', 'Spicy'],
+    ]) {
+      fixture.componentRef.setInput('banterLevel', level);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('.chat-mode-label').textContent).toContain(
+        `Chat optional · ${label}`,
+      );
+    }
+    fixture.componentRef.setInput('chatMode', 'OFF');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.chat-mode-label').textContent).not.toContain(
+      'Spicy',
+    );
+    fixture.componentRef.setInput('chatMode', 'MANDATORY');
+    fixture.componentRef.setInput('banterLevel', null);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.chat-mode-label').textContent.trim()).toBe(
+      '· Chat mandatory',
+    );
+  });
 });

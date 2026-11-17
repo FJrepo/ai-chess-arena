@@ -2,6 +2,7 @@ package dev.aichessarena.resource;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.aichessarena.dto.*;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.ReasoningEffort;
@@ -68,6 +69,7 @@ public class TournamentResource {
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
         if (chatMode != null) t.chatMode = chatMode;
+        if (req.banterLevel() != null) t.banterLevel = parseBanterLevel(req.banterLevel());
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.adjudicationEnabled() != null) t.adjudicationEnabled = req.adjudicationEnabled();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
@@ -135,6 +137,7 @@ public class TournamentResource {
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
         if (chatMode != null) t.chatMode = chatMode;
+        if (req.banterLevel() != null) t.banterLevel = parseBanterLevel(req.banterLevel());
         // A change applies to running games from their next turn.
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.adjudicationEnabled() != null) t.adjudicationEnabled = req.adjudicationEnabled();
@@ -332,6 +335,18 @@ public class TournamentResource {
             }
         }
         return trashTalkEnabled != null ? ChatMode.fromTrashTalkEnabled(trashTalkEnabled) : null;
+    }
+
+    static BanterLevel parseBanterLevel(JsonNode value) {
+        if (value.isNull()) return null;
+        if (value.isTextual()) {
+            try {
+                return BanterLevel.valueOf(value.textValue().trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+                // Report the accepted values for blank and unknown strings alike.
+            }
+        }
+        throw new IllegalArgumentException("banterLevel must be POLITE, PLAYFUL, SPICY or null");
     }
 
     private Tournament.DrawPolicy parseDrawPolicy(String value) {

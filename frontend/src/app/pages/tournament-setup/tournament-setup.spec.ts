@@ -1177,6 +1177,70 @@ describe('TournamentSetup', () => {
     }
   });
 
+  it('sends Original by default, each chosen tone, and retains it while chat is Off', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Banter Arena';
+    component.create();
+    expect(api.createTournamentPayload?.['banterLevel']).toBeNull();
+    for (const level of ['POLITE', 'PLAYFUL', 'SPICY'] as const) {
+      component.banterLevel = level;
+      component.create();
+      expect(api.createTournamentPayload?.['banterLevel']).toBe(level);
+      expect(component.banterHint()).toBe(component.banterHints[level]);
+    }
+    component.chatMode = 'OFF';
+    component.create();
+    expect(api.createTournamentPayload?.['banterLevel']).toBe('SPICY');
+    component.banterLevel = null;
+    component.create();
+    expect(api.createTournamentPayload?.['banterLevel']).toBeNull();
+  });
+
+  it('shows tone-specific rules including resignation, and ignores tone when chat is Off', () => {
+    const api = createApiService();
+    api.getPromptTemplate = () =>
+      of({
+        template: 'Original rules',
+        version: 'v2',
+        hash: 'h',
+        chatModes: { OFF: { template: 'Silent', version: 'v2-silent', hash: 'h0' } },
+        banterChatModes: {
+          SPICY: {
+            MANDATORY: {
+              template: 'Bold tone',
+              version: 'v2-chat-required-banter-spicy',
+              hash: 'h1',
+            },
+          },
+        },
+        resignationBanterChatModes: {
+          SPICY: {
+            MANDATORY: {
+              template: 'Bold with resignation',
+              version: 'v2-chat-required-resign-banter-spicy',
+              hash: 'h2',
+            },
+          },
+        },
+      });
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+    component.chatMode = 'MANDATORY';
+    component.banterLevel = 'SPICY';
+    expect(component.systemRulesTemplate).toBe('Bold tone');
+    expect(component.systemRulesVersion()).toBe('v2-chat-required-banter-spicy');
+    component.resignationAllowed = true;
+    expect(component.systemRulesTemplate).toBe('Bold with resignation');
+    expect(component.systemRulesVersion()).toBe('v2-chat-required-resign-banter-spicy');
+    component.chatMode = 'OFF';
+    expect(component.systemRulesTemplate).toBe('Silent');
+    expect(component.systemRulesVersion()).toBe('v2-silent');
+    component.chatMode = 'OPTIONAL';
+    component.banterLevel = null;
+    expect(component.systemRulesTemplate).toBe('Original rules');
+  });
+
   it('offers Off, Optional and Mandatory with a one-line hint for the selected mode', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
 
@@ -1199,10 +1263,12 @@ describe('TournamentSetup', () => {
       createRoute({ preset: 'balanced' }),
     );
     component.chatMode = 'OFF';
+    component.banterLevel = 'SPICY';
 
     component.ngOnInit();
 
     expect(component.chatMode).toBe('OPTIONAL');
+    expect(component.banterLevel).toBeNull();
   });
 
   it('shows the system rules and version of the selected chat mode', () => {
@@ -1267,6 +1333,32 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
 
     expect(fixture.componentInstance.chatMode).toBe('MANDATORY');
+    const banterSelect: HTMLElement = element.querySelector('#banter-level')!;
+    expect(banterSelect).toBeTruthy();
+    expect(banterSelect.textContent).toContain('Original');
+    banterSelect.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const options = Array.from(document.querySelectorAll<HTMLElement>('mat-option'));
+    expect(options.map((option) => option.textContent?.trim())).toEqual([
+      'Original',
+      'Polite',
+      'Playful',
+      'Spicy',
+    ]);
+    options[3].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.banterLevel).toBe('SPICY');
+    expect(element.querySelector('#banter-hint')?.textContent).toContain('no slurs');
+    buttons[0].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(element.querySelector('#banter-level')).toBeNull();
+    expect(fixture.componentInstance.banterLevel).toBe('SPICY');
+    buttons[2].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
     expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
   });
 

@@ -49,6 +49,12 @@ For native runs, export these variables in the backend process environment. For 
 
 Back up before upgrading. Rebuild and recreate backend and frontend together. Flyway V21 adds nullable `tournaments.creation_draw_mode`, preserving the original create intent so a retry with the same `clientRequestId` can finish generation after an interrupted request. Existing tournaments receive null and keep their current draft/bracket state; no generation backfill runs. Games, seeds, results and spend remain unchanged. Restore the pre-upgrade database backup to roll back. See [Bracket](how-it-works.md#bracket) for API defaults, draft opt-out and recovery.
 
+## Banter level migration (V21)
+
+Back up before upgrading. Flyway `V21__banter_level.sql` adds nullable, checked `tournaments.banter_level` on backend startup. Existing tournaments keep Original (`null`), preserving their prompt texts, versions and hashes. Existing moves, games, results and spend remain unchanged; no backfill is needed.
+
+Rebuild/recreate both backend and frontend to deploy the setting, prompt variants and controls. Backend restart discards in-memory conversations as usual. Restore the pre-upgrade backup to roll back. No bundled third-party software changes. See [Chat mode and banter](how-it-works.md#chat-mode) for live-change and legacy-template behavior.
+
 ## Auto-run migration (V20)
 
 Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend startup and adds tournament run state (`OFF` for every existing tournament), concurrency (default 2), optional budget (null/no cap), and pause reason. Existing game positions, attempts, results and spend remain unchanged; no historical backfill is needed. No bundled third-party software changes.
