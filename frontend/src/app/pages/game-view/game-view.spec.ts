@@ -91,7 +91,7 @@ function createSpectator() {
   const api = {
     getGame,
     getSystemStatus: () => EMPTY,
-    getGameAttempts: () => of([]),
+    getGameAttempts: vi.fn(() => of([] as MoveAttempt[])),
     getModels: () => of({ data: [] }),
   };
   const ws = {
@@ -113,7 +113,7 @@ function createSpectator() {
     { open: vi.fn() } as any,
     turnState,
   );
-  return { component, gameLoad, messages, reconnected, getGame };
+  return { component, gameLoad, messages, reconnected, getGame, api };
 }
 
 function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<any> }) {
@@ -2041,6 +2041,7 @@ describe('GameView promotion picker', () => {
             getGame: () => of(gameWith({ currentFen })),
             getSystemStatus: () => EMPTY,
             getGameAttempts: () => of([]),
+            submitHumanMoveCoordinates: vi.fn(() => of({})),
           },
         },
         {
@@ -2077,6 +2078,68 @@ describe('GameView promotion picker', () => {
 
     expect(pieces.map((piece) => piece.textContent?.trim())).toEqual(['♛', '♜', '♝', '♞']);
     expect(pieces.every((piece) => piece.classList.contains(pieceClass))).toBe(true);
+    fixture.destroy();
+  });
+
+  it.each(['CANCELLED', 'COMPLETED', 'FORFEIT'] as Game['status'][])(
+    'closes the open picker on live %s and prevents a stale promotion click',
+    (status) => {
+      const fixture = renderPicker(START_FEN);
+      const component = fixture.componentInstance;
+      component.game.set(gameWith({ whiteControlType: 'HUMAN' }));
+      component.onBoardMoveAttempt({ from: 'e7', to: 'e8', promotionRequired: true });
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.promotion-picker')).not.toBeNull();
+      component.handleWsMessage({ type: 'gameStatus', gameId: 'g-1', status, statusRevision: 1 });
+      fixture.detectChanges();
+      expect(component.pendingPromotion()).toBeNull();
+      expect(fixture.nativeElement.querySelector('.promotion-picker')).toBeNull();
+      component.selectPromotion('Q');
+      component.onBoardMoveAttempt({ from: 'e2', to: 'e4', promotionRequired: false });
+      expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).not.toHaveBeenCalled();
+      fixture.destroy();
+    },
+  );
+
+  it('closes an open picker when a reload discovers cancellation', () => {
+    const fixture = renderPicker(START_FEN);
+    vi.spyOn(TestBed.inject(ApiService), 'getGame').mockReturnValue(
+      of(gameWith({ status: 'CANCELLED', statusRevision: 1 })),
+    );
+    fixture.componentInstance.loadGame();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.pendingPromotion()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.promotion-picker')).toBeNull();
+    fixture.destroy();
+  });
+
+  it.each(['PAUSED', 'WAITING', 'IN_PROGRESS'] as Game['status'][])(
+    'guards promotion and coordinates outside an active human turn: %s',
+    (status) => {
+      const fixture = renderPicker(START_FEN);
+      const component = fixture.componentInstance;
+      component.game.set(gameWith({ status })); // AI to move, even if IN_PROGRESS
+      component.selectPromotion('Q');
+      component.onBoardMoveAttempt({ from: 'e2', to: 'e4', promotionRequired: false });
+      component.onBoardMoveAttempt({ from: 'e7', to: 'e8', promotionRequired: true });
+      expect(component.pendingPromotion()).toBeNull();
+      expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).not.toHaveBeenCalled();
+      fixture.destroy();
+    },
+  );
+
+  it('submits a selected promotion during an active human turn', () => {
+    const fixture = renderPicker(START_FEN);
+    const component = fixture.componentInstance;
+    component.game.set(gameWith({ whiteControlType: 'HUMAN' }));
+    component.selectPromotion('Q');
+    expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).toHaveBeenCalledExactlyOnceWith(
+      'g-1',
+      'e7',
+      'e8',
+      'Q',
+      null,
+    );
     fixture.destroy();
   });
 });
@@ -2140,6 +2203,38 @@ describe('GameView adjudication and missed mate updates', () => {
 });
 
 describe('GameView cancellation', () => {
+  it('reloads late discarded attempts and spend on invalidation without changing the cancelled revision', () => {
+    const { component, gameLoad, messages, getGame, api } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith({ statusRevision: 3, totalCostUsd: 1.25 }));
+    messages.next({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'CANCELLED',
+      statusRevision: 4,
+      totalCostUsd: 1.25,
+    });
+    expect(component.attempts()).toEqual([]);
+    const stale = new Subject<Game>();
+    getGame.mockReturnValueOnce(stale);
+    component.loadGame();
+    const refreshed = new Subject<Game>();
+    getGame.mockReturnValueOnce(refreshed);
+    const discarded = attemptFixture({ outcome: 'DISCARDED', costUsd: 0.25 });
+    api.getGameAttempts.mockReturnValue(of([discarded]));
+    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
+    refreshed.next(gameWith({ status: 'CANCELLED', statusRevision: 4, totalCostUsd: 1.5 }));
+    stale.next(gameWith({ status: 'CANCELLED', statusRevision: 4, totalCostUsd: 1.25 }));
+    expect(getGame).toHaveBeenCalledTimes(3);
+    expect(component.game()?.status).toBe('CANCELLED');
+    expect(component.game()?.statusRevision).toBe(4);
+    expect(component.game()?.totalCostUsd).toBe(1.5);
+    expect(component.attempts()).toEqual([discarded]);
+    expect(component.isAwaitingHumanMove()).toBe(false);
+    expect(component.activeColor()).toBeNull();
+    component.ngOnDestroy();
+  });
+
   it('applies the cancelled revision, clears turn controls and ignores a delayed running status or reload', () => {
     const { component, gameLoad } = createSpectator();
     component.ngOnInit();

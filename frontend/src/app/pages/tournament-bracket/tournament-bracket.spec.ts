@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { MatSelectHarness } from '@angular/material/select/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { EMPTY, of, Subject, throwError } from 'rxjs';
 import { TournamentBracket } from './tournament-bracket';
 import { ApiService } from '../../services/api.service';
@@ -154,6 +154,49 @@ describe('TournamentBracket', () => {
     );
     expect(fixture.nativeElement.querySelector('.card-footer').textContent).not.toContain('Resume');
     expect(fixture.nativeElement.querySelector('.card-footer').textContent).toContain('Review');
+  });
+
+  it.each(['CREATED', 'IN_PROGRESS'] as Tournament['status'][])(
+    'ignores a delayed pre-cancel GET for %s and keeps cancelled controls',
+    (status) => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const cancellation = new Subject<Tournament>();
+      const stale = new Subject<Tournament>();
+      const { fixture, api, button } = cancelPage(status, cancellation);
+      const component = fixture.componentInstance;
+      api.getTournament.mockReturnValue(stale);
+      component.loadTournament();
+      component.cancelTournament();
+      component.loadTournament();
+      expect(api.getTournament).toHaveBeenCalledTimes(2); // no poll during cancellation
+      cancellation.next(
+        tournament('CANCELLED', null, finalGame({ status: 'CANCELLED', result: null })),
+      );
+      stale.next(tournament(status, null, finalGame({ status: 'PAUSED', result: null })));
+      fixture.detectChanges();
+      expect(component.tournament()?.status).toBe('CANCELLED');
+      expect(component.tournament()?.games[0].status).toBe('CANCELLED');
+      expect(button().disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.generate-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.card-footer').textContent).not.toContain(
+        'Resume',
+      );
+      fixture.destroy();
+    },
+  );
+
+  it('ignores an obsolete poll error after cancellation succeeds', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { fixture, api } = cancelPage('IN_PROGRESS');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    const stale = new Subject<Tournament>();
+    api.getTournament.mockReturnValue(stale);
+    fixture.componentInstance.loadTournament();
+    fixture.componentInstance.cancelTournament();
+    stale.error(new Error('obsolete request failed'));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.tournament()?.status).toBe('CANCELLED');
+    fixture.destroy();
   });
 
   it('clears pending cancellation and reloads after an API conflict', () => {

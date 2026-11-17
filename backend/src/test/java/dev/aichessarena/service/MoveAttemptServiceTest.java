@@ -12,6 +12,7 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
 import dev.aichessarena.service.OpenRouterService.ProviderOutcome;
+import dev.aichessarena.websocket.GameWebSocket;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -205,6 +206,12 @@ class MoveAttemptServiceTest {
             game.totalCostUsd = totalCost;
             service.gameRepository = games;
             service.moveAttemptRepository = attempts;
+            service.gameWebSocket = new GameWebSocket() {
+                @Override
+                public void broadcastAttemptsUpdated(UUID gameId) {
+                    // No viewer in these persistence unit tests.
+                }
+            };
         }
     }
 

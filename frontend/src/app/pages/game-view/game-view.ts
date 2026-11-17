@@ -533,6 +533,7 @@ export class GameView implements OnInit, OnDestroy {
         this.game.set(
           keptLive && liveSummary ? { ...reconciled, qualitySummary: liveSummary } : reconciled,
         );
+        if (isFinishedStatus(reconciled.status)) this.pendingPromotion.set(null);
         this.moves.set(moves);
         this.chatMessages.set(game.chatMessages || []);
         if (moves.length) {
@@ -691,6 +692,12 @@ export class GameView implements OnInit, OnDestroy {
       return;
     }
     switch (msg.type) {
+      case 'attemptsUpdated':
+        // The attempt and any added cost are committed, including answers discarded after cancellation.
+        // loadGame also reloads attempts and supersedes any earlier snapshot still in flight.
+        this.loadGame();
+        break;
+
       case 'move':
         this.applyLiveMove(msg);
         break;
@@ -746,6 +753,7 @@ export class GameView implements OnInit, OnDestroy {
         }
         this.knownStatusRevision = msg.statusRevision;
         const status = msg.status;
+        if (status && isFinishedStatus(status)) this.pendingPromotion.set(null);
         this.game.update((g) =>
           g
             ? {
@@ -796,6 +804,7 @@ export class GameView implements OnInit, OnDestroy {
         break;
 
       case 'forfeit':
+        this.pendingPromotion.set(null);
         this.turnState.clearServerTurnState();
         this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
         this.loadAttempts();
@@ -1103,6 +1112,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   onBoardMoveAttempt(attempt: BoardMoveAttempt) {
+    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     if (attempt.promotionRequired) {
       this.pendingPromotion.set({ from: attempt.from, to: attempt.to });
       return;
@@ -1112,8 +1122,8 @@ export class GameView implements OnInit, OnDestroy {
 
   selectPromotion(piece: string) {
     const pending = this.pendingPromotion();
-    if (!pending) return;
     this.pendingPromotion.set(null);
+    if (!pending || !this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     this.submitCoordinateMove(pending.from, pending.to, piece);
   }
 
@@ -1122,7 +1132,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   private submitCoordinateMove(from: string, to: string, promotion: string | null) {
-    if (this.humanMoveSubmitting()) return;
+    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     this.humanMoveSubmitting.set(true);
     this.api
       .submitHumanMoveCoordinates(

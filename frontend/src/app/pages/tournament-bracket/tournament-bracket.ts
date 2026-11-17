@@ -49,6 +49,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   );
   readonly statusLabel = tournamentStatusLabel;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private loadGeneration = 0;
 
   constructor(
     private route: ActivatedRoute,
@@ -65,6 +66,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    ++this.loadGeneration;
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
@@ -72,9 +74,14 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   loadTournament() {
+    if (this.cancelling()) return;
+    const generation = ++this.loadGeneration;
     this.api.getTournament(this.tournamentId).subscribe({
-      next: (t) => this.tournament.set(t),
+      next: (t) => {
+        if (generation === this.loadGeneration) this.tournament.set(t);
+      },
       error: () => {
+        if (generation !== this.loadGeneration) return;
         this.snackBar.open('Failed to load tournament.', 'Dismiss', { duration: 4000 });
         this.router.navigate(['/tournaments']);
       },
@@ -129,8 +136,10 @@ export class TournamentBracket implements OnInit, OnDestroy {
     )
       return;
     this.cancelling.set(true);
+    ++this.loadGeneration;
     this.api.cancelTournament(this.tournamentId).subscribe({
       next: (tournament) => {
+        ++this.loadGeneration;
         this.tournament.set(tournament);
         this.cancelling.set(false);
         this.loadCostSummary();

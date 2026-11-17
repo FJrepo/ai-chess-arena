@@ -343,6 +343,14 @@ public class GameWebSocket {
         return msg;
     }
 
+    /** Invalidates attempts and game spend after an attempt commits; carries no status or status revision. */
+    public void broadcastAttemptsUpdated(UUID gameId) {
+        ObjectNode msg = objectMapper.createObjectNode();
+        msg.put("type", "attemptsUpdated");
+        msg.put("gameId", gameId.toString());
+        broadcast(gameId, msg.toString());
+    }
+
     public void broadcastRetry(UUID gameId, String color, int attemptNumber, String reason) {
         broadcastRetry(gameId, color, attemptNumber, reason, null, null);
     }

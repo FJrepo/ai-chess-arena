@@ -347,6 +347,7 @@ class TournamentServiceFlowTest {
 
         TournamentService service = new TournamentService();
         service.participantRepository = new SingleParticipantRepository(participant);
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.gameRepository = new CountingGameRepository(1);
 
         assertThrows(WebApplicationException.class, () -> service.removeParticipant(tournamentId, participant.id));

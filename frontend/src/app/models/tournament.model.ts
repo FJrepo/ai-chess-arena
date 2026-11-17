@@ -335,13 +335,20 @@ export interface ForfeitWsMessage {
   gameId: string;
 }
 
+/** A committed attempt invalidates both the attempt list and game spend, without changing status. */
+export interface AttemptsUpdatedWsMessage {
+  type: 'attemptsUpdated';
+  gameId: string;
+}
+
 export type WsMessage =
   | MoveWsMessage
   | EvaluationUpdateWsMessage
   | ChatWsMessage
   | GameStatusWsMessage
   | RetryWsMessage
-  | ForfeitWsMessage;
+  | ForfeitWsMessage
+  | AttemptsUpdatedWsMessage;
 
 export interface WsOutgoingMessage {
   type: 'subscribe' | 'unsubscribe';

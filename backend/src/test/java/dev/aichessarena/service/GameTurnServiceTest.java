@@ -158,6 +158,12 @@ class GameTurnServiceTest {
         game.totalCostUsd = new BigDecimal("0.01");
         List<dev.aichessarena.entity.MoveAttempt> stored = new ArrayList<>();
         MoveAttemptService attempts = new MoveAttemptService();
+        attempts.gameWebSocket = new GameWebSocket() {
+            @Override
+            public void broadcastAttemptsUpdated(UUID gameId) {
+                // No viewer in this turn unit test.
+            }
+        };
         attempts.gameRepository = new dev.aichessarena.repository.GameRepository() {
             @Override
             public dev.aichessarena.entity.Game findById(UUID id) {

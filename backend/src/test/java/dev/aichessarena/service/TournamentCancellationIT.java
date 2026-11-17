@@ -4,6 +4,7 @@ import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.aichessarena.dto.DtoMapper;
+import dev.aichessarena.dto.CreateTournamentRequest;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.dto.TournamentDto;
 import dev.aichessarena.entity.ChatMessage;
@@ -18,13 +19,18 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentRepository;
+import dev.aichessarena.resource.TournamentResource;
 import dev.aichessarena.websocket.GameWebSocket;
+import dev.aichessarena.websocket.LiveGameClient;
 import io.quarkus.arc.ClientProxy;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.common.http.TestHTTPResource;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Real transactions and running virtual-thread loops against Dev Services PostgreSQL; no provider requests. */
 @QuarkusTest
@@ -44,11 +51,14 @@ class TournamentCancellationIT {
     @Inject MoveRepository moves;
     @Inject MoveAttemptRepository attempts;
     @Inject TournamentService tournamentService;
+    @Inject TournamentResource tournamentResource;
     @Inject GameLifecycleService lifecycle;
     @Inject GameEngineService engine;
     @Inject GameTurnService turns;
     @Inject AnalyticsWindowLoader analytics;
     @Inject AnalyticsService analyticsService;
+    @Inject GameWebSocket socket;
+    @TestHTTPResource("/ws/games") URI socketUri;
 
     @ParameterizedTest
     @EnumSource(TournamentStatus.class)
@@ -187,6 +197,123 @@ class TournamentCancellationIT {
         assertEquals(8, snapshots(id).getFirst().statusRevision());
     }
 
+    @ParameterizedTest
+    @EnumSource(TournamentStatus.class)
+    void settingsAndEffortApiOnlyAcceptUnfinishedTournaments(TournamentStatus status) {
+        UUID id = seed(status);
+        UUID participantId = participantId(id);
+        boolean editable = status == TournamentStatus.CREATED || status == TournamentStatus.IN_PROGRESS;
+        given().contentType("application/json").body("{\"name\":\"Renamed\"}")
+                .put("/api/tournaments/{id}", id).then().statusCode(editable ? 200 : 409);
+        given().contentType("application/json").body("{\"reasoningEffort\":\"low\"}")
+                .put("/api/tournaments/{id}/participants/{pid}", id, participantId)
+                .then().statusCode(editable ? 200 : 409);
+        assertEquals(status, QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).status));
+        assertEquals(editable ? "Renamed" : "Cancellation test",
+                QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).name));
+        assertEquals(editable ? ReasoningEffort.LOW : null,
+                QuarkusTransaction.requiringNew().call(() -> tournamentService.findParticipant(id, participantId).reasoningEffort));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"CREATED,false", "CREATED,true", "IN_PROGRESS,false", "IN_PROGRESS,true"})
+    void writerWithCachedStateCannotUndoCancellation(TournamentStatus status, boolean participantUpdate) throws Exception {
+        UUID id = seed(status);
+        UUID participantId = participantId(id);
+        LocalDateTime updatedAt = QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).updatedAt);
+        CountDownLatch loaded = new CountDownLatch(1);
+        CountDownLatch cancelled = new CountDownLatch(1);
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var writer = pool.submit(() -> {
+                WebApplicationException rejected = assertThrows(WebApplicationException.class,
+                        () -> QuarkusTransaction.requiringNew().run(() -> {
+                            assertEquals(status, tournaments.findById(id).status);
+                            tournamentService.findParticipant(id, participantId);
+                            loaded.countDown();
+                            await(cancelled);
+                            updateSettings(id, participantId, participantUpdate);
+                        }));
+                assertEquals(409, rejected.getResponse().getStatus());
+            });
+            try {
+                assertTrue(loaded.await(10, TimeUnit.SECONDS), "writer cached the old state");
+                tournamentService.cancelTournament(id);
+            } finally {
+                cancelled.countDown();
+            }
+            writer.get(20, TimeUnit.SECONDS);
+        }
+        assertCancellationIsFinal(id);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Tournament stored = tournaments.findById(id);
+            assertEquals("Cancellation test", stored.name);
+            assertTrue(stored.updatedAt.isAfter(updatedAt));
+            assertNull(tournamentService.findParticipant(id, participantId).reasoningEffort);
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void cancellationFollowsASettingsWriterHoldingTheRowLock(boolean participantUpdate) throws Exception {
+        UUID id = seed(TournamentStatus.CREATED);
+        UUID participantId = participantId(id);
+        CountDownLatch written = new CountDownLatch(1);
+        CountDownLatch cancelStarted = new CountDownLatch(1);
+        CountDownLatch releaseWriter = new CountDownLatch(1);
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var writer = pool.submit(() -> QuarkusTransaction.requiringNew().run(() -> {
+                updateSettings(id, participantId, participantUpdate);
+                assertEquals(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE,
+                        tournaments.getEntityManager().getLockMode(tournaments.findById(id)));
+                written.countDown();
+                await(releaseWriter);
+            }));
+            try {
+                assertTrue(written.await(10, TimeUnit.SECONDS), "settings writer holds the tournament lock");
+                var cancel = pool.submit(() -> {
+                    cancelStarted.countDown();
+                    tournamentService.cancelTournament(id);
+                });
+                assertTrue(cancelStarted.await(10, TimeUnit.SECONDS));
+                releaseWriter.countDown();
+                writer.get(20, TimeUnit.SECONDS);
+                cancel.get(20, TimeUnit.SECONDS);
+            } finally {
+                releaseWriter.countDown();
+            }
+        }
+        assertCancellationIsFinal(id);
+    }
+
+    private UUID participantId(UUID id) {
+        return QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).participants.getFirst().id);
+    }
+
+    private void updateSettings(UUID id, UUID participantId, boolean participantUpdate) {
+        if (participantUpdate) {
+            tournamentService.updateParticipantReasoningEffort(id, participantId, ReasoningEffort.LOW);
+        } else {
+            tournamentResource.update(id, new CreateTournamentRequest("Renamed", null, null, null, null,
+                    null, null, null, null, null, null, null));
+        }
+    }
+
+    private void assertCancellationIsFinal(UUID id) {
+        assertEquals(TournamentStatus.CANCELLED,
+                QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).status));
+        given().contentType("application/json").post("/api/tournaments/{id}/generate-bracket", id).then().statusCode(409);
+        assertTrue(snapshots(id).isEmpty(), "no bracket can be created after cancellation");
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            assertTrue(latch.await(10, TimeUnit.SECONDS), "transaction ordering latch released");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
     @Test
     void completionWithAnAlreadyCachedGameAndTournamentCannotUndoCommittedCancellation() throws Exception {
         UUID id = seed(TournamentStatus.IN_PROGRESS, GameStatus.IN_PROGRESS);
@@ -244,30 +371,50 @@ class TournamentCancellationIT {
                 }
             }
         }, GameTurnService.class);
-        engine.startGame(before.id());
-        try {
-            assertTrue(thinking.await(15, TimeUnit.SECONDS), "loop reached model request");
-            given().when().post("/api/tournaments/{id}/cancel", id).then().statusCode(200);
-            assertFalse(engine.isRunning(before.id()));
-            assertNull(engine.tryClaimLoop(before.id()), "the stopped owner still holds its claim");
-        } finally {
-            answer.countDown();
+        try (var client = new LiveGameClient(socketUri, before.id(), socket)) {
+            engine.startGame(before.id());
+            try {
+                assertTrue(thinking.await(15, TimeUnit.SECONDS), "loop reached model request");
+                given().when().post("/api/tournaments/{id}/cancel", id).then().statusCode(200);
+                com.fasterxml.jackson.databind.JsonNode cancelledStatus;
+                do {
+                    cancelledStatus = client.awaitType("gameStatus");
+                } while (!"CANCELLED".equals(cancelledStatus.path("status").asText()));
+                assertEquals(9, cancelledStatus.path("statusRevision").asLong());
+                assertTrue(QuarkusTransaction.requiringNew().call(() -> attempts.findByGameId(before.id()).isEmpty()),
+                        "cancellation's initial reload cannot see the still-pending answer");
+                assertFalse(engine.isRunning(before.id()));
+                assertNull(engine.tryClaimLoop(before.id()), "the stopped owner still holds its claim");
+            } finally {
+                answer.countDown();
+            }
+            assertTrue(turnFinished.await(15, TimeUnit.SECONDS), "late answer processed");
+            var invalidation = client.awaitType("attemptsUpdated");
+            assertEquals(before.id().toString(), invalidation.path("gameId").asText());
+            assertFalse(invalidation.has("statusRevision"), "cost notification is not a status change");
+            // A live viewer reloading on this event sees both the attempt and its spend already committed.
+            given().get("/api/games/{id}/attempts", before.id()).then().statusCode(200)
+                    .body("[0].outcome", org.hamcrest.Matchers.equalTo("DISCARDED"));
+            GameDto liveSnapshot = given().get("/api/games/{id}", before.id()).then().statusCode(200)
+                    .extract().as(GameDto.class);
+            assertEquals(9, liveSnapshot.statusRevision());
+            assertEquals("CANCELLED", liveSnapshot.status());
+            assertEquals(0, new BigDecimal("1.50").compareTo(liveSnapshot.totalCostUsd()));
+            awaitReleased(before.id());
+            GameDto cancelled = snapshots(id).getFirst();
+            assertEquals("CANCELLED", cancelled.status());
+            assertEquals(9, cancelled.statusRevision()); // initial 7, start, cancel; no late pause
+            assertNull(cancelled.result());
+            assertNull(cancelled.advancedParticipantId());
+            assertEquals(before.moves(), cancelled.moves());
+            assertEquals(before.chatMessages(), cancelled.chatMessages());
+            assertEquals(before.currentFen(), cancelled.currentFen());
+            assertEquals(1, snapshots(id).size(), "no best-of or tiebreak game created");
+            assertEquals("DISCARDED", QuarkusTransaction.requiringNew().call(
+                    () -> attempts.findByGameId(before.id()).getFirst().outcome.name()));
+            assertEquals(0, new BigDecimal("1.50").compareTo(cancelled.totalCostUsd()),
+                    "paid late answers remain costed, never counted as a played move");
         }
-        assertTrue(turnFinished.await(15, TimeUnit.SECONDS), "late answer processed");
-        awaitReleased(before.id());
-        GameDto cancelled = snapshots(id).getFirst();
-        assertEquals("CANCELLED", cancelled.status());
-        assertEquals(9, cancelled.statusRevision()); // initial 7, start, cancel; no late pause
-        assertNull(cancelled.result());
-        assertNull(cancelled.advancedParticipantId());
-        assertEquals(before.moves(), cancelled.moves());
-        assertEquals(before.chatMessages(), cancelled.chatMessages());
-        assertEquals(before.currentFen(), cancelled.currentFen());
-        assertEquals(1, snapshots(id).size(), "no best-of or tiebreak game created");
-        assertEquals("DISCARDED", QuarkusTransaction.requiringNew().call(
-                () -> attempts.findByGameId(before.id()).getFirst().outcome.name()));
-        assertEquals(0, new BigDecimal("1.50").compareTo(cancelled.totalCostUsd()),
-                "paid late answers remain costed, never counted as a played move");
     }
 
     private void awaitReleased(UUID gameId) throws InterruptedException {
