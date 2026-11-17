@@ -151,7 +151,9 @@ describe('TournamentList', () => {
     );
     expect(component.openRouterConnected()).toBe(false);
     expect(component.onboardingReady()).toBe(false);
-    expect(component.onboardingSummary()).toContain('Connect OpenRouter');
+    expect(component.onboardingSummary()).toBe(
+      'Connect your OpenRouter account to create and run tournaments.',
+    );
 
     const status = statusWithKey({
       source: 'env',

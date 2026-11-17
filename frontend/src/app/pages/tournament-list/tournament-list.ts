@@ -16,6 +16,7 @@ import { Tournament } from '../../models/tournament.model';
 import { finalize } from 'rxjs';
 import { tournamentStatusLabel } from '../../utils/status-labels';
 import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
+import { OpenRouterAccess } from '../../services/openrouter-access';
 
 @Component({
   selector: 'app-tournament-list',
@@ -72,8 +73,9 @@ export class TournamentList implements OnInit {
   statusFilter = signal<'ALL' | Tournament['status']>('ALL');
   bestOfFilter = signal<'ALL' | Tournament['matchupBestOf']>('ALL');
   sortBy = signal<'newest' | 'oldest' | 'participants' | 'games' | 'name'>('newest');
-  openRouterConnected = computed(() => openRouterConnected(this.systemStatus()?.key));
-  openRouterValidation = computed(() => openRouterValidation(this.systemStatus()?.key));
+  openRouterKey = computed(() => this.connection?.keyStatus() ?? this.systemStatus()?.key ?? null);
+  openRouterConnected = computed(() => openRouterConnected(this.openRouterKey()));
+  openRouterValidation = computed(() => openRouterValidation(this.openRouterKey()));
   onboardingReady = computed(
     () =>
       this.openRouterConnected() &&
@@ -127,7 +129,10 @@ export class TournamentList implements OnInit {
 
   readonly statusLabel = tournamentStatusLabel;
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    protected connection: OpenRouterAccess = null!,
+  ) {}
 
   ngOnInit() {
     this.api.getTournaments().subscribe((t) => this.tournaments.set(t));
@@ -218,7 +223,7 @@ export class TournamentList implements OnInit {
     if (this.openRouterValidation() === 'invalid') {
       return 'OpenRouter key failed its last validation. Test or replace it in System settings.';
     }
-    return 'Connect OpenRouter when you are ready to create or run a tournament.';
+    return 'Connect your OpenRouter account to create and run tournaments.';
   }
 
   /** Separate so specs can answer the browser confirmation. */

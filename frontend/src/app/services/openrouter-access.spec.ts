@@ -1,12 +1,16 @@
 import { of, throwError } from 'rxjs';
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { OpenRouterAccess, ConnectOpenRouterDialog } from './openrouter-access';
 import { OpenRouterClient, OpenRouterStatus } from './openrouter-client';
 import { TournamentSetup } from '../pages/tournament-setup/tournament-setup';
+import { TournamentList } from '../pages/tournament-list/tournament-list';
 import { TournamentBracket } from '../pages/tournament-bracket/tournament-bracket';
 import { ApiService } from './api.service';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { Game } from '../models/tournament.model';
 
 const missing: OpenRouterStatus = {
@@ -27,6 +31,16 @@ function harness(status = missing) {
 }
 
 describe('OpenRouter action prompts', () => {
+  it('opens the shared dialog directly without a status preflight', () => {
+    const { access, client, dialog } = harness();
+    access.openConnectDialog();
+    expect(client.status).not.toHaveBeenCalled();
+    expect(dialog.open).toHaveBeenCalledWith(ConnectOpenRouterDialog, {
+      width: '560px',
+      maxWidth: '95vw',
+    });
+  });
+
   it('opens the shared prompt instead of performing a no-key action', () => {
     const { access, dialog } = harness();
     const action = vi.fn();
@@ -113,5 +127,123 @@ describe('OpenRouter action prompts', () => {
     expect(api.runTournament).not.toHaveBeenCalled();
     expect(api.startGame).not.toHaveBeenCalled();
     expect(bracket.runBusy()).toBe(false);
+  });
+});
+
+describe.each([
+  ['setup', TournamentSetup],
+  ['list', TournamentList],
+] as const)('%s connection banner', (_name, page) => {
+  afterEach(() => {
+    TestBed.inject(HttpTestingController).verify();
+    TestBed.inject(MatDialog).closeAll();
+    vi.unstubAllGlobals();
+  });
+
+  async function render(status: OpenRouterStatus | null) {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    TestBed.configureTestingModule({
+      imports: [page],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ApiService,
+          useValue: {
+            getTournaments: () => of([]),
+            getSystemStatus: () =>
+              status
+                ? of({ key: status.key, stockfishAvailable: true })
+                : throwError(() => new Error('offline')),
+            checkOpenRouterStatus: () =>
+              status ? of({ key: status.key }) : throwError(() => new Error('offline')),
+            getPromptTemplate: () => of({ template: 'Rules', version: 'v2', hash: 'hash' }),
+            getOpenings: () => of([]),
+            getModels: () =>
+              of({ data: [{ id: 'acme/model', name: 'Fixture', provider: 'acme' }] }),
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent<TournamentSetup | TournamentList>(page);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  it.each(['missing', 'invalid'] as const)(
+    'opens the shared dialog from the %s-key banner and clears it immediately after saving',
+    async (state) => {
+      const initial: OpenRouterStatus =
+        state === 'missing'
+          ? missing
+          : { ...missing, key: { ...missing.key, source: 'ui', validation: 'invalid' } };
+      const fixture = await render(initial);
+      const element: HTMLElement = fixture.nativeElement;
+      const banner = element.querySelector<HTMLElement>('.openrouter-status')!;
+      expect(banner.classList.contains(state === 'missing' ? 'info' : 'warn')).toBe(true);
+      expect(banner.getAttribute('role')).toBe(state === 'missing' ? 'status' : 'alert');
+      expect(banner.querySelector('mat-icon')!.textContent).toBe(
+        state === 'missing' ? 'info' : 'warning',
+      );
+      const button = banner.querySelector('button')!;
+      expect(button.textContent!.trim()).toBe(
+        state === 'missing' ? 'Connect OpenRouter' : 'Fix connection',
+      );
+      if (state === 'missing') {
+        expect(banner.textContent).toContain(
+          'Connect your OpenRouter account to create and run tournaments.',
+        );
+      }
+      const dialogs = TestBed.inject(MatDialog);
+      button.click();
+      fixture.detectChanges();
+      const http = TestBed.inject(HttpTestingController);
+      http.expectOne('/api/config/openrouter').flush(initial);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(dialogs.openDialogs[0].componentInstance).toBeInstanceOf(ConnectOpenRouterDialog);
+
+      const dialogElement = document.querySelector('app-connect-openrouter-dialog')!;
+      const input = dialogElement.querySelector('input')!;
+      const form = dialogElement.querySelector('form')!;
+      input.value = 'fixture-private-key';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      http.expectOne('/api/config/openrouter/key').flush({
+        ...missing,
+        key: { ...missing.key, source: 'ui', validation: 'valid' },
+      });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(element.querySelector('.openrouter-status')).toBeNull();
+      expect(dialogs.openDialogs).toHaveLength(1);
+    },
+  );
+
+  it.each(['valid', 'unknown', 'unavailable'] as const)(
+    'shows no banner for a connected key with %s validation',
+    async (validation) => {
+      const fixture = await render({
+        ...missing,
+        key: { ...missing.key, source: 'ui', validation },
+      });
+      expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
+    },
+  );
+
+  it('shows no connection banner when status is unknown', async () => {
+    const fixture = await render(null);
+    expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
   });
 });

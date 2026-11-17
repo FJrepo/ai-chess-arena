@@ -59,6 +59,22 @@
   color: var(--mat-sys-primary);
 }
 
+.openrouter-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+
+  &.warn {
+    background: color-mix(in srgb, var(--mat-sys-tertiary-container) 70%, transparent);
+    color: var(--mat-sys-on-tertiary-container);
+  }
+}
+
 .onboarding-chip-row {
   display: flex;
   flex-wrap: wrap;

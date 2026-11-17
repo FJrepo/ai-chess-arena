@@ -288,10 +288,11 @@ Your opponent is %s (%s).`;
   modelsLoading = signal(false);
   modelsError = signal<string | null>(null);
   openRouterKey = signal<OpenRouterKeyStatus | null>(null);
+  currentOpenRouterKey = computed(() => this.connection?.keyStatus() ?? this.openRouterKey());
   openRouterReady = computed(() =>
-    this.openRouterKey() === null ? null : openRouterConnected(this.openRouterKey()),
+    this.currentOpenRouterKey() === null ? null : openRouterConnected(this.currentOpenRouterKey()),
   );
-  openRouterValidation = computed(() => openRouterValidation(this.openRouterKey()));
+  openRouterValidation = computed(() => openRouterValidation(this.currentOpenRouterKey()));
   promptTemplateVersion = signal<string | null>(null);
   promptTemplateLoadError = signal<string | null>(null);
   drawPolicyOptions: Array<{ value: Tournament['drawPolicy']; label: string }> = [
@@ -356,7 +357,7 @@ Your opponent is %s (%s).`;
     private api: ApiService,
     private router: Router,
     private route: ActivatedRoute,
-    private connection: OpenRouterAccess = null!,
+    protected connection: OpenRouterAccess = null!,
   ) {}
 
   ngOnInit(): void {

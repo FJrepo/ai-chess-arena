@@ -31,11 +31,11 @@ describe('TournamentSetup', () => {
       );
       expect(fixture.componentInstance.openRouterReady()).toBe(true);
       expect(fixture.componentInstance.openRouterValidation()).toBe('unknown');
-      expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
     },
   );
 
-  it('prompts connection only when the status confirms there is no key', async () => {
+  it('shows an info hint only when the status confirms there is no key', async () => {
     const fixture = await renderSetup(
       createStatusApi({
         source: 'none',
@@ -45,9 +45,13 @@ describe('TournamentSetup', () => {
       }),
     );
     expect(fixture.componentInstance.openRouterReady()).toBe(false);
-    const alert = fixture.nativeElement.querySelector('.openrouter-status[role="alert"]');
-    expect(alert.textContent).toContain('Connect OpenRouter');
-    expect(alert.textContent).not.toContain('failed its last validation');
+    const banner = fixture.nativeElement.querySelector('.openrouter-status.info[role="status"]');
+    expect(banner.textContent).toContain(
+      'Connect your OpenRouter account to create and run tournaments.',
+    );
+    expect(banner.querySelector('mat-icon').textContent).toBe('info');
+    expect(banner.querySelector('button').textContent.trim()).toBe('Connect OpenRouter');
+    expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
   });
 
   it('shows an invalid-key hint while keeping a failed key connected', async () => {
@@ -63,6 +67,8 @@ describe('TournamentSetup', () => {
     const alert = fixture.nativeElement.querySelector('.openrouter-status[role="alert"]');
     expect(alert.textContent).toContain('failed its last validation');
     expect(alert.textContent).not.toContain('Connect OpenRouter');
+    expect(alert.classList.contains('warn')).toBe(true);
+    expect(alert.querySelector('button').textContent.trim()).toBe('Fix connection');
   });
 
   it('does not warn about an invalid or missing key when a check was unavailable', async () => {
@@ -76,7 +82,7 @@ describe('TournamentSetup', () => {
     );
     expect(fixture.componentInstance.openRouterReady()).toBe(true);
     expect(fixture.componentInstance.openRouterValidation()).toBe('unknown');
-    expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
   });
 
   it('does not mistake a failed status fetch for a missing key', async () => {
@@ -84,7 +90,7 @@ describe('TournamentSetup', () => {
     vi.spyOn(api, 'checkOpenRouterStatus').mockReturnValue(throwError(() => new Error('offline')));
     const fixture = await renderSetup(api);
     expect(fixture.componentInstance.openRouterReady()).toBeNull();
-    expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
   });
 
   it('sticks only while the measured aside fits and cleans up observation on destroy', async () => {
@@ -241,7 +247,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -342,7 +351,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -559,7 +571,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1384,7 +1399,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1463,7 +1481,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1565,7 +1586,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1722,7 +1746,10 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
-        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        {
+          provide: OpenRouterAccess,
+          useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+        },
         { provide: ApiService, useValue: api },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1885,7 +1912,10 @@ async function renderSetup(api = createApiService()) {
   TestBed.configureTestingModule({
     imports: [TournamentSetup],
     providers: [
-      { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+      {
+        provide: OpenRouterAccess,
+        useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
+      },
       { provide: ApiService, useValue: api },
       { provide: Router, useValue: createRouter() },
       { provide: ActivatedRoute, useValue: createRoute() },

@@ -1,6 +1,6 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, finalize, shareReplay } from 'rxjs';
+import { Observable, finalize, shareReplay, tap } from 'rxjs';
 
 export interface OpenRouterKeyStatus {
   /** Key presence determines connection; validation is independent. */
@@ -20,11 +20,17 @@ export interface OpenRouterStatus {
 export class OpenRouterClient {
   private readonly url = '/api/config/openrouter';
   private pendingStatus?: Observable<OpenRouterStatus>;
+  private readonly currentKey = signal<OpenRouterKeyStatus | null>(null);
+  readonly keyStatus = this.currentKey.asReadonly();
+  private readonly updateKeyStatus = tap<OpenRouterStatus>((status) =>
+    this.currentKey.set(status.key),
+  );
   constructor(private http: HttpClient) {}
 
   status() {
     // Initial app and route loads must establish one browser cookie, even when concurrent.
     this.pendingStatus ??= this.http.get<OpenRouterStatus>(this.url).pipe(
+      this.updateKeyStatus,
       finalize(() => (this.pendingStatus = undefined)),
       shareReplay({ bufferSize: 1, refCount: false }),
     );
@@ -34,18 +40,22 @@ export class OpenRouterClient {
     return this.http.post<{ authUrl: string }>(`${this.url}/connect`, {});
   }
   complete(code: string, state: string) {
-    return this.http.post<OpenRouterStatus>(`${this.url}/complete`, { code, state });
+    return this.http
+      .post<OpenRouterStatus>(`${this.url}/complete`, { code, state })
+      .pipe(this.updateKeyStatus);
   }
   manual(key: string) {
-    return this.http.post<OpenRouterStatus>(`${this.url}/key`, { key });
+    return this.http.post<OpenRouterStatus>(`${this.url}/key`, { key }).pipe(this.updateKeyStatus);
   }
   delete() {
-    return this.http.delete<OpenRouterStatus>(`${this.url}/key`);
+    return this.http.delete<OpenRouterStatus>(`${this.url}/key`).pipe(this.updateKeyStatus);
   }
   test() {
-    return this.http.post<OpenRouterStatus>(`${this.url}/test`, {});
+    return this.http.post<OpenRouterStatus>(`${this.url}/test`, {}).pipe(this.updateKeyStatus);
   }
   claim(token: string) {
-    return this.http.post<OpenRouterStatus>(`${this.url}/claim`, { token });
+    return this.http
+      .post<OpenRouterStatus>(`${this.url}/claim`, { token })
+      .pipe(this.updateKeyStatus);
   }
 }

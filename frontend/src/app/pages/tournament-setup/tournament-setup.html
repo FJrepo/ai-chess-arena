@@ -37,9 +37,12 @@
               <span>Loading models from OpenRouter...</span>
             </div>
           } @else if (openRouterReady() === false) {
-            <div class="openrouter-status fail" role="alert">
-              <mat-icon>error</mat-icon>
-              <span>Connect OpenRouter when you are ready to create or run a tournament.</span>
+            <div class="openrouter-status info" role="status">
+              <mat-icon>info</mat-icon>
+              <span>Connect your OpenRouter account to create and run tournaments.</span>
+              <button mat-button type="button" (click)="connection.openConnectDialog()">
+                Connect OpenRouter
+              </button>
             </div>
           } @else if (openRouterValidation() === 'invalid') {
             <div class="openrouter-status warn" role="alert">
@@ -48,6 +51,9 @@
                 >OpenRouter key failed its last validation. Test or replace it in System
                 settings.</span
               >
+              <button mat-button type="button" (click)="connection.openConnectDialog()">
+                Fix connection
+              </button>
             </div>
           } @else if (modelsError()) {
             <div class="openrouter-status warn" role="alert">
