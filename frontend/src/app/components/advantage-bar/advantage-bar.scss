@@ -1,6 +1,8 @@
 .advantage-container {
   height: 100%;
-  width: 24px;
+  // Five monospace glyphs fit with room on both sides, independent of the current score.
+  font: 800 0.65rem var(--app-font-numeric);
+  inline-size: 6ch;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -45,9 +47,7 @@
   left: 0;
   right: 0;
   text-align: center;
-  font-size: 0.65rem;
-  font-weight: 800;
-  font-family: var(--app-font-numeric);
+  white-space: nowrap;
   z-index: 3;
   pointer-events: none;
   text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);

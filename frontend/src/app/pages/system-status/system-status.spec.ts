@@ -1,10 +1,12 @@
+import { signal } from '@angular/core';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { SystemStatus } from './system-status';
 import { ApiService, SystemStatusResponse } from '../../services/api.service';
+import { OpenRouterClient, OpenRouterKeyStatus } from '../../services/openrouter-client';
 
 describe('SystemStatus', () => {
   it('exposes healthy status details from the backend response', () => {
-    const component = new SystemStatus(createApiService(() => of(healthyStatus())));
+    const component = createComponent(() => of(healthyStatus()));
 
     component.ngOnInit();
 
@@ -20,15 +22,13 @@ describe('SystemStatus', () => {
   });
 
   it('reports a failed dependency as degraded when the backend answers', () => {
-    const component = new SystemStatus(
-      createApiService(() =>
-        of({
-          ...healthyStatus(),
-          openRouterValid: false,
-          key: { ...healthyStatus().key, validation: 'invalid' },
-          stockfishAvailable: false,
-        }),
-      ),
+    const component = createComponent(() =>
+      of({
+        ...healthyStatus(),
+        openRouterValid: false,
+        key: { ...healthyStatus().key, validation: 'invalid' },
+        stockfishAvailable: false,
+      }),
     );
 
     component.ngOnInit();
@@ -40,14 +40,15 @@ describe('SystemStatus', () => {
     ).toBe('Eval unavailable');
   });
 
-  it('shows an untested env key as connected without a validation warning', () => {
+  it('shows an untested env key with neutral health', () => {
     const status = healthyStatus();
     status.openRouterValid = false;
     status.key = { ...status.key, source: 'env', validation: 'unknown', lastValidatedAt: null };
-    const component = new SystemStatus(createApiService(() => of(status)));
+    const component = createComponent(() => of(status));
     component.refresh();
-    expect(component.openRouterTone()).toBe('healthy');
-    expect(component.openRouterSummary()).toContain('connected');
+    expect(component.openRouterTone()).toBe('unknown');
+    expect(component.openRouterLabel()).toBe('Key configured');
+    expect(component.openRouterBadge()).toBe('validation unknown');
     expect(component.openRouterSummary()).toContain('has not been tested yet');
     expect(component.openRouterSummary()).not.toContain('Connect OpenRouter');
     expect(component.openRouterSummary()).not.toContain('failed');
@@ -57,26 +58,42 @@ describe('SystemStatus', () => {
     const status = healthyStatus();
     status.openRouterValid = false;
     status.key = { ...status.key, validation: 'unavailable' };
-    const component = new SystemStatus(createApiService(() => of(status)));
+    const component = createComponent(() => of(status));
     component.refresh();
-    expect(component.openRouterTone()).toBe('healthy');
+    expect(component.openRouterTone()).toBe('unknown');
     expect(component.openRouterSummary()).toContain('validation is unknown');
     expect(component.openRouterSummary()).not.toContain('invalid');
     expect(component.openRouterSummary()).not.toContain('Connect OpenRouter');
+  });
+
+  it('updates the status card after a key test without another status request', () => {
+    const status = healthyStatus();
+    status.key = { ...status.key, source: 'file', validation: 'unknown' };
+    const keyStatus = signal<OpenRouterKeyStatus | null>(status.key);
+    const getSystemStatus = vi.fn(() => of(status));
+    const component = createComponent(getSystemStatus, keyStatus);
+    component.refresh();
+    expect(component.openRouterTone()).toBe('unknown');
+
+    keyStatus.set({ ...status.key, validation: 'valid' });
+
+    expect(component.openRouterTone()).toBe('healthy');
+    expect(component.openRouterSummary()).toContain('validated successfully');
+    expect(getSystemStatus).toHaveBeenCalledTimes(1);
   });
 
   it('reports no key as needing a connection', () => {
     const status = healthyStatus();
     status.openRouterValid = false;
     status.key = { source: 'none', maskedSuffix: null, validation: 'none', lastValidatedAt: null };
-    const component = new SystemStatus(createApiService(() => of(status)));
+    const component = createComponent(() => of(status));
     component.refresh();
     expect(component.openRouterTone()).toBe('degraded');
     expect(component.openRouterSummary()).toContain('Connect OpenRouter');
   });
 
   it('surfaces backend status fetch failures clearly', () => {
-    const component = new SystemStatus(createApiService(() => throwError(() => new Error('boom'))));
+    const component = createComponent(() => throwError(() => new Error('boom')));
 
     component.ngOnInit();
 
@@ -85,7 +102,7 @@ describe('SystemStatus', () => {
   });
 
   it('stops loading after an error so the page can be refreshed again', () => {
-    const component = new SystemStatus(createApiService(() => throwError(() => new Error('boom'))));
+    const component = createComponent(() => throwError(() => new Error('boom')));
 
     component.refresh();
 
@@ -94,8 +111,8 @@ describe('SystemStatus', () => {
 
   it('shows OpenRouter and Stockfish as unknown while the backend is unreachable', () => {
     let fail = false;
-    const component = new SystemStatus(
-      createApiService(() => (fail ? throwError(() => new Error('down')) : of(healthyStatus()))),
+    const component = createComponent(() =>
+      fail ? throwError(() => new Error('down')) : of(healthyStatus()),
     );
     component.refresh();
     expect(component.openRouterTone()).toBe('healthy');
@@ -117,7 +134,7 @@ describe('SystemStatus', () => {
 
   it('is loading while the request is pending', () => {
     const pending = new Subject<SystemStatusResponse>();
-    const component = new SystemStatus(createApiService(() => pending));
+    const component = createComponent(() => pending);
 
     component.refresh();
     expect(component.loading()).toBe(true);
@@ -144,6 +161,12 @@ function healthyStatus(): SystemStatusResponse {
   };
 }
 
-function createApiService(getSystemStatus: () => Observable<SystemStatusResponse>): ApiService {
-  return { getSystemStatus } as unknown as ApiService;
+function createComponent(
+  getSystemStatus: () => Observable<SystemStatusResponse>,
+  keyStatus = signal<OpenRouterKeyStatus | null>(null),
+): SystemStatus {
+  return new SystemStatus(
+    { getSystemStatus } as unknown as ApiService,
+    { keyStatus } as unknown as OpenRouterClient,
+  );
 }

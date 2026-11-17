@@ -8,6 +8,8 @@ import {
   ElementRef,
   ViewChild,
   AfterViewChecked,
+  OnChanges,
+  SimpleChanges,
 } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { Move } from '../../models/tournament.model';
@@ -32,14 +34,14 @@ interface MovePair {
   templateUrl: './move-list.html',
   styleUrl: './move-list.scss',
 })
-export class MoveListComponent implements AfterViewChecked {
+export class MoveListComponent implements AfterViewChecked, OnChanges {
   @Input() set moves(value: Move[]) {
     this._moves.set(value);
   }
   @Input() currentIndex = -1;
   @Input() compact = false;
   @Output() moveSelected = new EventEmitter<number>();
-  @ViewChild('scrollContainer') scrollContainer?: ElementRef;
+  @ViewChild('scrollContainer') scrollContainer?: ElementRef<HTMLElement>;
 
   private _moves = signal<Move[]>([]);
   private shouldScroll = false;
@@ -60,11 +62,25 @@ export class MoveListComponent implements AfterViewChecked {
     return pairs;
   });
 
+  ngOnChanges(changes: SimpleChanges<MoveListComponent>) {
+    if (changes.currentIndex) {
+      this.shouldScroll = this.currentIndex >= 0;
+    }
+  }
+
   ngAfterViewChecked() {
-    if (this.shouldScroll && this.scrollContainer) {
-      const el = this.scrollContainer.nativeElement;
-      el.scrollTop = el.scrollHeight;
-      this.shouldScroll = false;
+    if (!this.shouldScroll || !this.scrollContainer) return;
+    const list = this.scrollContainer.nativeElement;
+    const selected = list.querySelector<HTMLElement>('.move.active');
+    if (!selected) return;
+    this.shouldScroll = false;
+
+    const viewport = list.getBoundingClientRect();
+    const move = selected.getBoundingClientRect();
+    if (move.top < viewport.top) {
+      list.scrollTop += move.top - viewport.top;
+    } else if (move.bottom > viewport.bottom) {
+      list.scrollTop += move.bottom - viewport.bottom;
     }
   }
 

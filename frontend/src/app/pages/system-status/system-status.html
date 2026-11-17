@@ -66,15 +66,13 @@
         <div class="card-header">
           <div>
             <span class="card-kicker">OpenRouter</span>
-            <h2>
-              {{ dependencyLabel(openRouterTone(), 'Connected', 'Needs attention') }}
-            </h2>
+            <h2>{{ openRouterLabel() }}</h2>
           </div>
           <mat-chip
             [class.healthy]="openRouterTone() === 'healthy'"
             [class.degraded]="openRouterTone() === 'degraded'"
           >
-            {{ openRouterTone() }}
+            {{ openRouterBadge() }}
           </mat-chip>
         </div>
         <p class="card-summary">{{ openRouterSummary() }}</p>

@@ -526,9 +526,13 @@ app-advantage-bar {
     flex-direction: column;
   }
 
-  .feed-column,
-  .moves-area {
+  .feed-column {
     contain: none;
     max-height: 520px;
+  }
+
+  .moves-area {
+    contain: none;
+    --move-list-max-height: min(28rem, 60dvh);
   }
 }
