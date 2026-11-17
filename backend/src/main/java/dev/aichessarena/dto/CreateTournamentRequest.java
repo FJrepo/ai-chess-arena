@@ -59,7 +59,7 @@ public record CreateTournamentRequest(
         @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket,
         // Omitted retains the current tone on update; explicit JSON null clears it. Only strings/null are valid.
         JsonNode banterLevel,
-        JsonNode runSettings
+        @JsonDeserialize(using = ExactDecimalTreeDeserializer.class) JsonNode runSettings
 ) {
     /** Compatibility constructor for callers without creation-time bracket or banter settings. */
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,

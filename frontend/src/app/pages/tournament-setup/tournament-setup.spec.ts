@@ -172,6 +172,138 @@ describe('TournamentSetup', () => {
     expect(setup.readiness().canCreate).toBe(true);
   });
 
+  it('disowns creation when the same setup route opens a different source', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    const response = new Subject<Tournament>();
+    const params = new Subject<ReturnType<typeof convertToParamMap>>();
+    Object.assign(api, {
+      getTournament: (id: string) => of({ ...source, id, name: id }),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+      createTournament: vi.fn(() => response),
+    });
+    const fixture = await renderSetup(api, 'old', params);
+    const setup = fixture.componentInstance;
+    params.next(convertToParamMap({ sourceId: 'old' }));
+    setup.create();
+    expect(setup.creating()).toBe(true);
+    params.next(convertToParamMap({ sourceId: 'other' }));
+    expect(setup.creating()).toBe(false);
+    response.next(source);
+    expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    expect(setup.name).toBe('other (rematch)');
+  });
+
+  it.each([
+    [0, 1],
+    [21, 20],
+  ])('copies the effective attempt limit from legacy %s', async (stored, effective) => {
+    const api = createApiService();
+    const source = { ...rematchSource(), maxRetries: stored };
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(setup.maxRetries()).toBe(effective);
+    expect(setup.rematchChanges(source)).toContainEqual({
+      setting: 'Attempts per move',
+      before: String(stored),
+      after: String(effective),
+    });
+  });
+
+  it('fits the rematch suffix and blocks invalid edited rules before submitting', async () => {
+    const api = createApiService();
+    const source = { ...rematchSource(), name: '♟️'.repeat(127) + ' ', moveTimeoutSeconds: 0 };
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(Array.from(setup.name)).toHaveLength(255);
+    expect(setup.name).toMatch(/ \(rematch\)$/);
+    expect(setup.readiness().canCreate).toBe(false);
+    const timeout = fixture.nativeElement.querySelector('input[min="10"]') as HTMLInputElement;
+    timeout.value = '120';
+    timeout.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(setup.readiness().canCreate).toBe(true);
+    const tokenLimit = fixture.nativeElement.querySelector('input[min="128"]') as HTMLInputElement;
+    tokenLimit.value = '';
+    tokenLimit.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.create-button').disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Enter a whole output-token limit');
+    setup.create();
+    expect(api.createTournamentPayload).toBeNull();
+  });
+
+  it('preserves maximum stored seeds and blocks appending beyond the integer range', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.participants[0].seed = 2147483647;
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    setup.newPlayerName = 'Extra';
+    setup.onModelChanged('a/one');
+    expect(setup.canAddParticipant()).toBe(false);
+    setup.addParticipant();
+    expect(setup.participants()).toHaveLength(2);
+    expect(setup.readiness().canCreate).toBe(true);
+  });
+
+  it('shows seed changes when an otherwise identical player is re-added', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.participants[0].seed = 30;
+    source.participants[1].seed = 10;
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    setup.removeParticipant(1);
+    setup.newControlType = 'HUMAN';
+    setup.newPlayerName = 'Human';
+    setup.addParticipant();
+    fixture.detectChanges();
+    const diff = fixture.nativeElement.querySelector('.rematch-diff').textContent;
+    expect(diff).toContain('Seed 30');
+    expect(diff).toContain('Seed 11');
+  });
+
+  it('refreshes model availability after a create rejection while keeping the edited draft', async () => {
+    const api = createApiService();
+    const getModels = vi
+      .fn()
+      .mockReturnValueOnce(of({ data: [catalogModel('a/one', 'One')] }))
+      .mockReturnValueOnce(of({ data: [catalogModel('b/two', 'Two')] }));
+    Object.assign(api, {
+      getTournament: () => of(rematchSource()),
+      getModels,
+      createTournament: () =>
+        throwError(() => ({
+          status: 400,
+          error: { error: 'Model is not allowed by backend policy: a/one' },
+        })),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    setup.name = 'Edited draft';
+    setup.create();
+    expect(getModels).toHaveBeenCalledTimes(2);
+    expect(setup.name).toBe('Edited draft');
+    expect(setup.unavailableModels()[0].modelId).toBe('a/one');
+  });
+
   it.each(['env', 'file', 'ui'] as const)(
     'shows no connection or invalid-key warning for an untested %s key',
     async (source) => {
@@ -2271,7 +2403,11 @@ function pricedParticipant(
   };
 }
 
-async function renderSetup(api = createApiService(), sourceId?: string) {
+async function renderSetup(
+  api = createApiService(),
+  sourceId?: string,
+  params?: Subject<ReturnType<typeof convertToParamMap>>,
+) {
   const paramMap = convertToParamMap(sourceId ? { sourceId } : {});
   TestBed.configureTestingModule({
     imports: [TournamentSetup],
@@ -2284,7 +2420,7 @@ async function renderSetup(api = createApiService(), sourceId?: string) {
       provideRouter([]),
       {
         provide: ActivatedRoute,
-        useValue: { ...createRoute(), snapshot: { paramMap }, paramMap: of(paramMap) },
+        useValue: { ...createRoute(), snapshot: { paramMap }, paramMap: params ?? of(paramMap) },
       },
     ],
   });

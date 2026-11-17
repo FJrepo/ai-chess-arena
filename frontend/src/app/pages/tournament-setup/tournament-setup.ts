@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { canonicalBudget } from '../../utils/tournament-budget';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -68,6 +69,9 @@ export const TYPICAL_MOVE_SECONDS = 30;
 export const SHORT_MOVE_TIMEOUT_SECONDS = 90;
 /** Moves (plies) per game assumed by the estimate. */
 const ESTIMATED_MOVES_PER_GAME = 70;
+const MAX_TOURNAMENT_NAME_LENGTH = 255;
+const REMATCH_SUFFIX = ' (rematch)';
+const MAX_PARTICIPANT_SEED = 2147483647;
 
 type SetupParticipant = Partial<Participant> & {
   promptPricePerMillion?: number | null;
@@ -139,10 +143,22 @@ Your opponent is %s (%s).`;
   private promptTemplates: PromptTemplateResponse | null = null;
   sharedCustomInstructions = '';
   /** Off: no time limit per move (sent as moveTimeoutSeconds 0). */
-  limitMoveTime = false;
+  private readonly limitMoveTimeValue = signal(false);
+  get limitMoveTime(): boolean {
+    return this.limitMoveTimeValue();
+  }
+  set limitMoveTime(value: boolean) {
+    this.limitMoveTimeValue.set(value);
+  }
   readonly typicalMoveSeconds = TYPICAL_MOVE_SECONDS;
   /** Seconds per move (10-3600) while limitMoveTime is on. */
-  moveTimeout = 120;
+  private readonly moveTimeoutValue = signal(120);
+  get moveTimeout(): number {
+    return this.moveTimeoutValue();
+  }
+  set moveTimeout(value: number) {
+    this.moveTimeoutValue.set(value);
+  }
   readonly maxRetries = signal<number | null>(3);
   private readonly validMaxRetries = computed(() => {
     const attempts = this.maxRetries();
@@ -151,7 +167,13 @@ Your opponent is %s (%s).`;
       : null;
   });
   /** Cap on generated tokens per answer (128-262144); includes reasoning tokens. */
-  maxOutputTokens = 16384;
+  private readonly maxOutputTokensValue = signal(16384);
+  get maxOutputTokens(): number {
+    return this.maxOutputTokensValue();
+  }
+  set maxOutputTokens(value: number) {
+    this.maxOutputTokensValue.set(value);
+  }
   /**
    * Reasoning effort for every model unless a participant overrides it; null is each model's default (the field
    * is then left out of the request, so nothing is sent to OpenRouter).
@@ -253,6 +275,26 @@ Your opponent is %s (%s).`;
   readonly concurrencyOptions = [1, 2, 3, 4, 5, 6, 7, 8];
   private readonly subscriptions = new Subscription();
   private sourceRequest?: Subscription;
+  private createRequest?: Subscription;
+  readonly rematchNameValid = computed(
+    () => Array.from(this.nameValue().trim()).length <= MAX_TOURNAMENT_NAME_LENGTH,
+  );
+  readonly rematchTimeoutValid = computed(
+    () =>
+      !this.limitMoveTime ||
+      (Number.isInteger(this.moveTimeout) && this.moveTimeout >= 10 && this.moveTimeout <= 3600),
+  );
+  readonly rematchOutputTokensValid = computed(
+    () =>
+      Number.isInteger(this.maxOutputTokens) &&
+      this.maxOutputTokens >= 128 &&
+      this.maxOutputTokens <= 262144,
+  );
+  readonly rematchSeedAvailable = computed(
+    () =>
+      this.editingParticipantIndex() !== null ||
+      !this.participants().some((p) => p.seed === MAX_PARTICIPANT_SEED),
+  );
 
   readonly validRunSettings = computed(() => {
     const concurrency = this.rematchConcurrency();
@@ -452,6 +494,8 @@ Your opponent is %s (%s).`;
     const id = this.sourceId();
     if (!id) return;
 
+    this.createRequest?.unsubscribe();
+    this.creating.set(false);
     this.rematchSource.set(null);
     this.rematchLoadError.set(null);
     this.rematchAcknowledged.set(false);
@@ -462,11 +506,15 @@ Your opponent is %s (%s).`;
     this.sourceRequest = this.api.getTournament(id).subscribe({
       next: (source) => {
         if (this.sourceId() !== id) return;
-        this.name = source.name + ' (rematch)';
+        this.name =
+          Array.from(source.name.trim())
+            .slice(0, MAX_TOURNAMENT_NAME_LENGTH - REMATCH_SUFFIX.length)
+            .join('')
+            .trimEnd() + REMATCH_SUFFIX;
         this.sharedCustomInstructions = source.sharedCustomInstructions ?? '';
         this.limitMoveTime = source.moveTimeoutSeconds != null;
         this.moveTimeout = source.moveTimeoutSeconds ?? 120;
-        this.maxRetries.set(source.maxRetries);
+        this.maxRetries.set(Math.min(20, Math.max(1, source.maxRetries)));
         this.maxOutputTokens = source.maxOutputTokens ?? 16384;
         this.reasoningEffort =
           source.reasoningEffort === 'default' ? null : (source.reasoningEffort ?? null);
@@ -615,6 +663,7 @@ Your opponent is %s (%s).`;
       p
         ? [
             p.playerName,
+            this.drawMode === 'ORDER' ? 'Seed ' + p.seed : null,
             p.controlType === 'HUMAN' ? 'Human' : p.modelId,
             p.reasoningEffort,
             p.customInstructions ? 'Custom instructions' : null,
@@ -651,6 +700,7 @@ Your opponent is %s (%s).`;
 
   ngOnDestroy(): void {
     this.sourceRequest?.unsubscribe();
+    this.createRequest?.unsubscribe();
     this.subscriptions.unsubscribe();
     this.asideObserver?.disconnect();
     if (typeof window !== 'undefined') {
@@ -795,7 +845,10 @@ Your opponent is %s (%s).`;
   }
 
   canAddParticipant(): boolean {
-    if (this.newPlayerName.trim().length === 0) {
+    if (
+      (this.sourceId() && !this.rematchSeedAvailable()) ||
+      this.newPlayerName.trim().length === 0
+    ) {
       return false;
     }
     if (this.newControlType === 'HUMAN') {
@@ -905,6 +958,9 @@ Your opponent is %s (%s).`;
     const hasModels = this.participants().some((p) => p.controlType === 'AI');
     return (
       this.rematchSource() !== null &&
+      this.rematchNameValid() &&
+      this.rematchTimeoutValid() &&
+      this.rematchOutputTokensValid() &&
       this.editingParticipantIndex() === null &&
       (!hasModels ||
         (!this.modelsLoading() && !this.modelsError() && !this.unavailableModels().length)) &&
@@ -984,30 +1040,35 @@ Your opponent is %s (%s).`;
       this.pendingSubmission = { key, requestId: newRequestId() };
     }
 
-    this.subscriptions.add(
-      this.api
-        .createTournament({ ...details, clientRequestId: this.pendingSubmission.requestId })
-        .subscribe({
-          next: (tournament) => {
-            this.pendingSubmission = null;
-            this.creating.set(false);
-            this.router.navigate(['/tournaments', tournament.id]);
-          },
-          error: (err) => {
-            const serverError = err?.error;
-            const status = typeof err?.status === 'number' ? err.status : 0;
-            const message =
-              typeof serverError === 'string' ? serverError : (serverError?.error ?? null);
-            this.createError.set(
-              status === 0 || status >= 500 || !message
-                ? 'The server did not confirm the tournament. Retry with the same details: if it was ' +
-                    'saved after all, you will get that tournament instead of a duplicate.'
-                : message,
-            );
-            this.creating.set(false);
-          },
-        }),
-    );
+    this.createRequest = this.api
+      .createTournament({ ...details, clientRequestId: this.pendingSubmission.requestId })
+      .subscribe({
+        next: (tournament) => {
+          this.pendingSubmission = null;
+          this.creating.set(false);
+          this.router.navigate(['/tournaments', tournament.id]);
+        },
+        error: (err) => {
+          const serverError = err?.error;
+          const status = typeof err?.status === 'number' ? err.status : 0;
+          const message =
+            typeof serverError === 'string' ? serverError : (serverError?.error ?? null);
+          this.createError.set(
+            status === 0 || status >= 500 || !message
+              ? 'The server did not confirm the tournament. Retry with the same details: if it was ' +
+                  'saved after all, you will get that tournament instead of a duplicate.'
+              : message,
+          );
+          this.creating.set(false);
+          if (
+            this.sourceId() &&
+            status === 400 &&
+            message?.startsWith('Model is not allowed by backend policy:')
+          ) {
+            this.loadModels();
+          }
+        },
+      });
   }
 
   hasSharedInstructions(): boolean {
@@ -1208,14 +1269,6 @@ Your opponent is %s (%s).`;
         participant.controlType === 'HUMAN' && index !== this.editingParticipantIndex(),
     );
   }
-}
-
-function canonicalBudget(value: string): string {
-  if (!value) return '';
-  const [integer, fraction] = value.split('.');
-  const whole = integer.replace(/^0+/, '') || '0';
-  const cents = fraction?.replace(/0+$/, '');
-  return cents ? whole + '.' + cents : whole;
 }
 
 function newRequestId(): string {

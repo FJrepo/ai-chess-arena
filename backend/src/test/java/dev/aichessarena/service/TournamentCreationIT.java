@@ -81,6 +81,19 @@ class TournamentCreationIT {
     }
 
     @Test
+    void validatesNumericBudgetLiteralsWithExactDecimalPrecision() {
+        String path = "/api/tournaments";
+        String body = """
+                {"name":"Exact numeric budget","runSettings":{"budgetUsd":%s}}
+                """;
+        given().contentType("application/json").body(body.formatted("9007199254740992.01"))
+                .post(path).then().statusCode(201)
+                .body("budgetUsdExact", org.hamcrest.Matchers.equalTo("9007199254740992.01"));
+        given().contentType("application/json").body(body.formatted("9007199254740992.001"))
+                .post(path).then().statusCode(400);
+    }
+
+    @Test
     void rejectsInvalidRunSettingsBeforeReservingTheCreationId() {
         var body = request(2);
         body.put("clientRequestId", UUID.randomUUID());

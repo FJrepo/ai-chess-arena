@@ -107,6 +107,21 @@ describe('TournamentBracket', () => {
     return { fixture, api, component: fixture.componentInstance, current };
   }
 
+  it('starts with an unchanged large cap and never rounds an edited amount into a patch', () => {
+    const { api, component, current } = runPage();
+    const exact = '99999999999999999.99';
+    api.getTournament.mockReturnValue(of({ ...current, budgetUsd: 1e17, budgetUsdExact: exact }));
+    component.loadTournament();
+    expect(component.runBudget).toBe(exact);
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledWith(current.id, { maxConcurrentGames: 2 });
+    api.getTournament.mockReturnValue(of({ ...current, budgetUsd: 1e17, budgetUsdExact: exact }));
+    component.loadTournament();
+    component.runBudget = '99999999999999999.98';
+    expect(component.runSettingsChanged).toBe(true);
+    expect(component.validRunBudget).toBe(false);
+  });
+
   function runBanner(fixture: ComponentFixture<TournamentBracket>): string {
     return fixture.nativeElement
       .querySelector('.run-status')

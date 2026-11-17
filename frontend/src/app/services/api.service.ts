@@ -107,11 +107,14 @@ export class ApiService {
     return this.http.post<Tournament>(`${this.baseUrl}/tournaments/${id}/cancel`, {});
   }
 
-  runTournament(id: string, settings: TournamentRunSettings): Observable<Tournament> {
+  runTournament(id: string, settings: Partial<TournamentRunSettings>): Observable<Tournament> {
     return this.http.post<Tournament>(`${this.baseUrl}/tournaments/${id}/run`, settings);
   }
 
-  updateTournamentRun(id: string, settings: TournamentRunSettings): Observable<Tournament> {
+  updateTournamentRun(
+    id: string,
+    settings: Partial<TournamentRunSettings>,
+  ): Observable<Tournament> {
     return this.http.put<Tournament>(`${this.baseUrl}/tournaments/${id}/run`, settings);
   }
 

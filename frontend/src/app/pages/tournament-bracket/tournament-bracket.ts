@@ -18,6 +18,7 @@ import { TournamentCostSummary } from '../../models/analytics.model';
 import { BracketDisplay } from '../../components/bracket-display/bracket-display';
 import { tournamentStatusLabel } from '../../utils/status-labels';
 import { downloadBlob } from '../../utils/download';
+import { canonicalBudget } from '../../utils/tournament-budget';
 
 @Component({
   selector: 'app-tournament-bracket',
@@ -73,10 +74,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
 
   get runSettingsChanged(): boolean {
     const t = this.tournament();
-    return (
-      this.runConcurrency !== (t?.maxConcurrentGames ?? 2) ||
-      this.runBudgetUsd !== (t?.budgetUsd ?? null)
-    );
+    return this.runConcurrency !== (t?.maxConcurrentGames ?? 2) || this.runBudgetChanged;
   }
 
   get validRunSettings(): boolean {
@@ -89,12 +87,24 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   get validRunBudget(): boolean {
+    const budget = this.runBudget;
+    if (budget === '') return true;
+    if (!/^(?:\d{1,17}(?:\.\d{0,2})?|\.\d{1,2})$/.test(budget)) return false;
+    const amount = Number(budget);
     return (
-      this.runBudget === '' ||
-      (/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(this.runBudget) &&
-        Number.isFinite(Number(this.runBudget)) &&
-        Number(this.runBudget) > 0)
+      amount > 0 &&
+      (!this.runBudgetChanged || canonicalBudget(String(amount)) === canonicalBudget(budget))
     );
+  }
+
+  get runBudgetChanged(): boolean {
+    return (
+      canonicalBudget(this.runBudget) !== canonicalBudget(this.savedRunBudget(this.tournament()))
+    );
+  }
+
+  private savedRunBudget(t: Tournament | null): string {
+    return t?.budgetUsdExact ?? (t?.budgetUsd == null ? '' : String(t.budgetUsd));
   }
 
   get runBudgetUsd(): number | null {
@@ -282,7 +292,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.changeRun(() =>
       this.api.runTournament(this.tournamentId, {
         maxConcurrentGames: this.runConcurrency,
-        budgetUsd: this.runBudgetUsd,
+        ...(this.runBudgetChanged ? { budgetUsd: this.runBudgetUsd } : {}),
       }),
     );
   }
@@ -298,7 +308,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.changeRun(() =>
       this.api.updateTournamentRun(this.tournamentId, {
         maxConcurrentGames: this.runConcurrency,
-        budgetUsd: this.runBudgetUsd,
+        ...(this.runBudgetChanged ? { budgetUsd: this.runBudgetUsd } : {}),
       }),
     );
   }
@@ -310,7 +320,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
 
   private syncRunSettings(t: Tournament): void {
     this.runConcurrency = t.maxConcurrentGames ?? 2;
-    this.runBudget = t.budgetUsd == null ? '' : String(t.budgetUsd);
+    this.runBudget = this.savedRunBudget(t);
   }
 
   private changeRun(request: () => Observable<Tournament>): void {

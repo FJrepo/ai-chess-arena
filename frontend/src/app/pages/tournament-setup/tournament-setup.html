@@ -228,7 +228,9 @@
               }
               @if (!canAddParticipant()) {
                 <span class="caption" id="add-participant-reason">
-                  @if (newPlayerName.trim().length === 0) {
+                  @if (sourceId() && !rematchSeedAvailable()) {
+                    Remove the participant with the highest seed before adding a new one.
+                  } @else if (newPlayerName.trim().length === 0) {
                     Enter a display name to add a participant.
                   } @else if (newControlType === 'HUMAN') {
                     Only one human player per tournament.
@@ -376,6 +378,17 @@
               </mat-form-field>
             </div>
           </section>
+
+          @if (sourceId() && !rematchTimeoutValid()) {
+            <p class="create-error" role="alert">
+              Turn off the move time limit or enter a whole number from 10 to 3600 seconds.
+            </p>
+          }
+          @if (sourceId() && !rematchOutputTokensValid()) {
+            <p class="create-error" role="alert">
+              Enter a whole output-token limit from 128 to 262144.
+            </p>
+          }
 
           <section class="field-group" aria-labelledby="setup-matches-heading">
             <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
@@ -707,6 +720,11 @@
             <mat-label>Tournament Name</mat-label>
             <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
           </mat-form-field>
+          @if (sourceId() && !rematchNameValid()) {
+            <p class="create-error" role="alert">
+              Use 255 characters or fewer for the tournament name.
+            </p>
+          }
           <ul class="participant-list">
             @for (p of participants(); track $index) {
               <li class="participant-row">
@@ -835,6 +853,11 @@
                 Model availability could not be checked.
                 <button mat-button type="button" (click)="loadModels()">Retry model catalog</button>
               </p>
+            }
+            @if (createError()?.startsWith('Model is not allowed by backend policy:')) {
+              <button mat-button type="button" (click)="loadModels()" [disabled]="modelsLoading()">
+                Refresh model catalog
+              </button>
             }
             @if (editingParticipantIndex() !== null) {
               <p class="caption" role="status">
