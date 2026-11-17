@@ -35,6 +35,37 @@ function render(moves: Move[]): HTMLElement {
   return fixture.nativeElement as HTMLElement;
 }
 
+describe('MoveListComponent selection', () => {
+  it('reveals only the selected ply and preserves manual scroll on move updates', () => {
+    const fixture = TestBed.createComponent(MoveListComponent);
+    const moves = [move(1, 'WHITE', 'e4'), move(1, 'BLACK', 'e5'), move(2, 'WHITE', 'Nf3')];
+    fixture.componentRef.setInput('moves', moves);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const list = element.querySelector<HTMLElement>('.move-list-scroll')!;
+    const [first, , last] = element.querySelectorAll<HTMLElement>('.move');
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 40));
+    vi.spyOn(last, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 60, 100, 20));
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, -40, 100, 20));
+
+    fixture.componentRef.setInput('currentIndex', 2);
+    fixture.detectChanges();
+    expect(element.querySelector('.move.active')).toBe(last);
+    expect(list.scrollTop).toBe(40);
+
+    fixture.componentRef.setInput('currentIndex', 0);
+    fixture.detectChanges();
+    expect(element.querySelector('.move.active')).toBe(first);
+    expect(list.scrollTop).toBe(0);
+
+    list.scrollTop = 12;
+    fixture.componentRef.setInput('moves', [...moves, move(2, 'BLACK', 'Nc6')]);
+    fixture.detectChanges();
+    expect(element.querySelector('.move.active')).toBe(first);
+    expect(list.scrollTop).toBe(12);
+  });
+});
+
 describe('MoveListComponent quality annotations', () => {
   it('marks book moves, suppresses quality markers and keeps them selectable for board replay', () => {
     const fixture = TestBed.createComponent(MoveListComponent);

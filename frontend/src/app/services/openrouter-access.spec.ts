@@ -170,6 +170,7 @@ describe('Connect dialog lifecycle', () => {
                   ...missing,
                   key: { ...missing.key, source, validation: source === 'ui' ? 'invalid' : 'none' },
                 }),
+              keyStatus: () => null,
               connectionSaved: saved.asObservable(),
             },
           },

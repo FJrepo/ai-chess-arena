@@ -51,6 +51,27 @@ describe('AdvantageBar', () => {
     expect(accessibleName(blackMated)).toBe('White wins by checkmate');
   });
 
+  it.each([
+    [{ cp: 12340 }, '+123.4', 'Evaluation: +123.4', null],
+    [{ cp: -12340 }, '-123.4', 'Evaluation: -123.4', null],
+    [{ cp: 100000 }, '+1.0e3', 'Evaluation: +1000.0', 'Evaluation: +1000.0'],
+    [{ cp: -2147483648 }, '-2.1e7', 'Evaluation: -21474836.5', 'Evaluation: -21474836.5'],
+    [
+      { mate: -12345 },
+      '-M1e4',
+      'Evaluation: Black mates in 12345',
+      'Evaluation: Black mates in 12345',
+    ],
+  ] as const)(
+    'fits the score for %j and keeps its full accessible value',
+    (inputs, visible, exact, title) => {
+      const { bar, text } = render(inputs);
+      expect(text).toBe(visible);
+      expect(accessibleName(bar)).toBe(exact);
+      expect(bar.getAttribute('title')).toBe(title);
+    },
+  );
+
   it('names a regular score for screen readers without adding a title', () => {
     const score = render({ cp: 42, mate: null }).bar;
     expect(score.getAttribute('role')).toBe('img');

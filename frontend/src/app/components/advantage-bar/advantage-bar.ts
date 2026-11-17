@@ -34,13 +34,29 @@ export class AdvantageBar {
   /** False when the position has no evaluation; the bar then shows a neutral, unknown state. */
   known = computed(() => hasEvaluation(this.evaluation()));
 
-  displayScore = computed(() => evaluationLabel(this.evaluation()));
+  private fullScore = computed(() => evaluationLabel(this.evaluation()));
 
-  /** Title for the unknown and checkmate states; null (no title) otherwise. */
-  description = computed(() => evaluationDescription(this.evaluation()));
+  displayScore = computed(() => {
+    const score = this.fullScore();
+    if (score.length <= 6) return score;
+
+    // Exceptional engine scores use scientific notation to keep the board width stable.
+    const { cp, mate } = this.evaluation();
+    if (mate != null) {
+      return `${mate < 0 ? '-' : ''}M${Math.abs(mate).toExponential(0).replace('e+', 'e')}`;
+    }
+    if (cp == null) return score;
+    return `${cp > 0 ? '+' : ''}${(cp / 100).toExponential(1).replace('e+', 'e')}`;
+  });
 
   /** Accessible name of the bar (role "img"), in every state. */
   accessibleLabel = computed(() => evaluationAccessibleLabel(this.evaluation()));
+
+  description = computed(() =>
+    this.displayScore() === this.fullScore()
+      ? evaluationDescription(this.evaluation())
+      : this.accessibleLabel(),
+  );
 
   barHeight = computed(() => whiteBarShare(this.evaluation()));
 }

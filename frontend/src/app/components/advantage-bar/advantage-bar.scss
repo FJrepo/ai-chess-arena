@@ -1,6 +1,8 @@
 .advantage-container {
   height: 100%;
-  width: 24px;
+  // Six monospace glyphs fit with room on both sides, independent of the current score.
+  font: 800 0.65rem var(--app-font-numeric);
+  inline-size: 7ch;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -45,9 +47,7 @@
   left: 0;
   right: 0;
   text-align: center;
-  font-size: 0.65rem;
-  font-weight: 800;
-  font-family: var(--app-font-numeric);
+  white-space: nowrap;
   z-index: 3;
   pointer-events: none;
   text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
@@ -55,12 +55,14 @@
   &.white-text {
     bottom: 8px;
     color: var(--app-piece-black);
+    background: var(--app-piece-white);
     text-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
   }
 
   &.black-text {
     top: 8px;
     color: var(--app-piece-white);
+    background: var(--app-piece-black);
   }
 }
 
@@ -80,6 +82,7 @@
     bottom: auto;
     transform: translateY(-50%);
     color: var(--mat-sys-on-surface-variant);
+    background: transparent;
     text-shadow: none;
   }
 }
