@@ -180,6 +180,7 @@ function isWsMessage(message: unknown): message is WsMessage {
     gameId?: unknown;
     revision?: unknown;
     changes?: unknown;
+    streamId?: unknown;
   };
   if (typeof candidate.type !== 'string' || typeof candidate.gameId !== 'string') {
     return false;
@@ -194,6 +195,7 @@ function isWsMessage(message: unknown): message is WsMessage {
       typeof candidate.revision === 'number' &&
       Number.isSafeInteger(candidate.revision) &&
       candidate.revision >= 0 &&
+      (candidate.streamId === undefined || typeof candidate.streamId === 'string') &&
       (candidate.type !== 'gameRevision' || isChangeList(candidate.changes, candidate.gameId))
     );
   }
@@ -222,6 +224,7 @@ function isChangeList(changes: unknown, gameId: string): boolean {
         return typeof value.attempt?.id === 'string';
       case 'gameState':
         return typeof value.totalCostUsd === 'number';
+      case 'gameDetailsChanged':
       case 'gameStatus':
       case 'evaluationUpdate':
       case 'turnSettings':

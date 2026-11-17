@@ -92,7 +92,10 @@ function liveMove(
   };
 }
 
-function revision(revision: number, ...changes: GameChange[]): WsMessage {
+function revision(
+  revision: number,
+  ...changes: GameChange[]
+): Extract<WsMessage, { type: 'gameRevision' }> {
   return { type: 'gameRevision', gameId: 'g-1', revision, changes };
 }
 
@@ -719,7 +722,16 @@ describe('GameView', () => {
     const { component } = createComponent({
       api: {
         getGame: () =>
-          of(gameFixture({ status: 'IN_PROGRESS', tournamentId: 't-1', currentFen: START_FEN })),
+          of(
+            gameFixture({
+              status: 'IN_PROGRESS',
+              tournamentId: 't-1',
+              currentFen: START_FEN,
+              liveRevision: 1,
+              activeColor: 'WHITE',
+              turnDeadlineAt: new Date(Date.now() + 45000).toISOString(),
+            }),
+          ),
         getTournament: () => of({ id: 't-1', moveTimeoutSeconds: 45, maxOutputTokens: 4096 }),
       },
     });
@@ -1149,6 +1161,32 @@ describe('GameView', () => {
     }
   });
 
+  it('keeps edited pause controls when a snapshot temporarily hides their settings', () => {
+    const bar = new GameInfoBar();
+    const paused = gameFixture({ status: 'PAUSED', statusDetail: 'Cut off' });
+    const effort = {
+      participantId: 'p-2',
+      playerName: 'Beta',
+      current: 'high' as const,
+      tournamentLevel: null,
+      options: [...REASONING_EFFORTS],
+      fromCatalog: true,
+    };
+    bar.game = paused;
+    bar.truncationLimit = 4096;
+    bar.truncationEffort = effort;
+    bar.editOutputLimit(9000);
+    bar.editReasoningEffort('medium');
+
+    bar.game = { ...paused, liveRevision: 4 };
+    bar.truncationLimit = null;
+    bar.truncationEffort = null;
+    bar.truncationLimit = 5000;
+    bar.truncationEffort = { ...effort, current: 'low' };
+    expect(bar.newMaxOutputTokens).toBe(9000);
+    expect(bar.newReasoningEffort).toBe('medium');
+  });
+
   it('keeps stale pause controls hidden if refreshing settings fails', () => {
     const { component, snackbar } = createComponent({
       api: {
@@ -1388,7 +1426,7 @@ describe('GameView', () => {
     expect(component.currentFen()).toBe(START_FEN);
   });
 
-  it('waits for the subscription and rejects a stale early snapshot after a terminal revision', () => {
+  it('waits for the subscription and reconciles a terminal update during startup', () => {
     vi.useFakeTimers();
     const { component, gameLoad, messages, getGame } = createSpectator(false);
     component.ngOnInit();
@@ -1398,8 +1436,7 @@ describe('GameView', () => {
       messages.next({ type: 'subscribed', gameId: 'g-1', revision: 2 });
       expect(getGame).toHaveBeenCalledTimes(1);
       gameLoad.next(gameWith({ liveRevision: 1 }));
-      expect(component.game()).toBeNull();
-      vi.advanceTimersByTime(500);
+      expect(component.game()?.liveRevision).toBe(1);
       expect(getGame).toHaveBeenCalledTimes(2);
       gameLoad.next(
         gameWith({
@@ -1464,8 +1501,7 @@ describe('GameView', () => {
       latest.next(
         gameWith({ liveRevision: 3, status: 'PAUSED', currentFen: AFTER_E5, moves: [e4, e5] }),
       );
-      expect(component.moves()).toEqual([e4]);
-      vi.advanceTimersByTime(500);
+      expect(component.moves()).toEqual([e4, e5]);
       expect(getGame).toHaveBeenCalledTimes(3);
       latest.next(
         gameWith({ liveRevision: 4, status: 'PAUSED', currentFen: AFTER_E5, moves: [e4, e5] }),
@@ -1477,6 +1513,163 @@ describe('GameView', () => {
       component.ngOnDestroy();
       vi.useRealTimers();
     }
+  });
+
+  it('keeps committed chat exactly once when the move revision overtakes a stale snapshot', () => {
+    vi.useFakeTimers();
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    const e4 = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+    const chat = {
+      id: 'committed-chat',
+      moveNumber: 1,
+      senderColor: 'WHITE' as const,
+      senderModel: 'model-a',
+      message: 'hello',
+      createdAt: '2026-01-01T00:00:00Z',
+    };
+    const before = gameWith({ liveRevision: 1 });
+    component.ngOnInit();
+    try {
+      gameLoad.next(before);
+      component.loadGame();
+      messages.next(
+        revision(
+          2,
+          { type: 'committedMove', gameId: 'g-1', move: e4, pgn: '1. e4' },
+          { type: 'committedChat', gameId: 'g-1', chat },
+          gameState({ activeColor: 'BLACK' }),
+        ),
+      );
+      gameLoad.next(before);
+      expect(component.game()?.liveRevision).toBe(1);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(500);
+      gameLoad.next(
+        gameWith({
+          liveRevision: 2,
+          currentFen: AFTER_E4,
+          activeColor: 'BLACK',
+          moves: [e4],
+          chatMessages: [chat],
+        }),
+      );
+      messages.next(revision(2, { type: 'committedChat', gameId: 'g-1', chat }, gameState()));
+      expect(component.chatMessages()).toEqual([chat]);
+      expect(component.moves()).toEqual([e4]);
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the originating model turn for retry banners even after same-ply resume and late attempts', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    const started = '2026-10-25T01:00:00Z';
+    const prior = attemptFixture({
+      turnStatusRevision: 4,
+      createdAt: '2026-10-25T02:00:00',
+      attemptNumber: 3,
+      errorMessage: 'Previous turn',
+      proposedMove: 'Qxh7',
+    });
+    const current = attemptFixture({
+      turnStatusRevision: 6,
+      createdAt: '2026-10-25T02:00:01',
+      errorMessage: 'Bad move',
+      proposedMove: 'Qxh8',
+    });
+    const state = gameState({ activeColor: 'WHITE', turnStartedAt: started });
+    component.ngOnInit();
+    gameLoad.next(
+      gameWith({
+        liveRevision: 10,
+        statusRevision: 6,
+        activeColor: 'WHITE',
+        turnStartedAt: started,
+        attempts: [prior],
+      }),
+    );
+    expect(component.retryInfo()).toBeNull();
+    messages.next(
+      revision(11, { type: 'committedAttempt', gameId: 'g-1', attempt: current }, state),
+    );
+    expect(component.retryInfo()).toBe('WHITE attempt 1: illegal move Qxh8');
+    messages.next(
+      revision(
+        12,
+        {
+          type: 'committedAttempt',
+          gameId: 'g-1',
+          attempt: { ...prior, id: 'late', createdAt: '2026-10-25T02:01:00' },
+        },
+        state,
+      ),
+    );
+    expect(component.retryInfo()).toBe('WHITE attempt 1: illegal move Qxh8');
+    messages.next(
+      revision(
+        13,
+        {
+          type: 'committedMove',
+          gameId: 'g-1',
+          move: storedMove(1, 'WHITE', 'e4', AFTER_E4),
+          pgn: '1. e4',
+        },
+        gameState({ activeColor: 'BLACK' }),
+      ),
+    );
+    expect(component.retryInfo()).toBeNull();
+    component.ngOnDestroy();
+  });
+
+  it('keeps advancing through consistent snapshots even when each read is overtaken', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith({ liveRevision: 10 }));
+    messages.next(revision(12, gameState()));
+    for (let revisionId = 12; revisionId < 18; revisionId++) {
+      messages.next(revision(revisionId + 1, gameState()));
+      expect(getGame).toHaveBeenCalledTimes(revisionId - 10);
+      gameLoad.next(gameWith({ liveRevision: revisionId }));
+      expect(component.game()?.liveRevision).toBe(revisionId);
+    }
+    gameLoad.next(gameWith({ liveRevision: 18 }));
+    expect(component.game()?.liveRevision).toBe(18);
+    expect(getGame).toHaveBeenCalledTimes(8);
+    component.ngOnDestroy();
+  });
+
+  it('installs a restored lower revision from the new backend and ignores the retired snapshot', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator(false);
+    const retired = new Subject<Game>();
+    const restored = new Subject<Game>();
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(gameWith({ liveRevision: 25, statusRevision: 9, streamId: 'first' }));
+    component.humanMove = 'e4';
+    getGame.mockReturnValueOnce(retired).mockReturnValueOnce(restored);
+    component.loadGame();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3, streamId: 'restored' });
+    restored.next(
+      gameWith({ liveRevision: 3, statusRevision: 2, streamId: 'restored', status: 'PAUSED' }),
+    );
+    retired.next(gameWith({ liveRevision: 26, statusRevision: 10, streamId: 'first' }));
+    messages.next({ ...revision(27, gameState()), streamId: 'first' });
+    expect(component.game()?.liveRevision).toBe(3);
+    expect(component.game()?.statusRevision).toBe(2);
+    expect(component.humanMove).toBe('e4');
+    component.ngOnDestroy();
+  });
+
+  it('does not infer an expired deadline from an older server after a fallback read', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    Object.assign(api, { getTournament: () => of({ moveTimeoutSeconds: 30 }) });
+    component.ngOnInit();
+    messages.next({ type: 'subscriptionUnavailable', gameId: 'g-1' });
+    gameLoad.next(gameWith({ tournamentId: 't-1', startedAt: '2026-01-01T00:00:00' }));
+    expect(component.activeColor()).toBe('WHITE');
+    expect(component.moveTimerSeconds()).toBeNull();
+    component.ngOnDestroy();
   });
 
   it('uses a reconnect watermark to recover the human turn without reusing the expired model timer', () => {
@@ -1539,6 +1732,74 @@ describe('GameView', () => {
       component.ngOnDestroy();
       vi.useRealTimers();
     }
+  });
+
+  it('refreshes a watched waiting game when bracket advancement assigns a player', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    const waiting = gameWith({
+      liveRevision: 0,
+      statusRevision: 0,
+      status: 'WAITING',
+      whitePlayerName: '',
+    });
+    component.ngOnInit();
+    gameLoad.next(waiting);
+    component.humanMove = 'e4';
+    messages.next(revision(1, { type: 'gameDetailsChanged', gameId: 'g-1' }, gameState()));
+    expect(getGame).toHaveBeenCalledTimes(2);
+    gameLoad.next({ ...waiting, liveRevision: 1, whitePlayerName: 'Winner' });
+    expect(component.game()?.whitePlayerName).toBe('Winner');
+    expect(component.game()?.statusRevision).toBe(0);
+    expect(component.humanMove).toBe('e4');
+    component.ngOnDestroy();
+  });
+
+  it('refreshes the configured chat settings after same-status recovery and skips unchanged heartbeats', () => {
+    const { component, gameLoad, messages, getGame, api } = createSpectator();
+    const getTournament = vi
+      .fn()
+      .mockReturnValueOnce(of({ chatMode: 'OPTIONAL', banterLevel: 'PLAYFUL' }))
+      .mockReturnValueOnce(of({ chatMode: 'OFF', banterLevel: null }));
+    Object.assign(api, { getTournament });
+    const initial = gameWith({ liveRevision: 1, tournamentId: 't-1' });
+    component.ngOnInit();
+    gameLoad.next(initial);
+    expect(component.tournamentBanterLevel()).toBe('PLAYFUL');
+
+    messages.next({ type: 'heartbeat', gameId: 'g-1', revision: 1 });
+    expect(getGame).toHaveBeenCalledTimes(1);
+    expect(getTournament).toHaveBeenCalledTimes(1);
+
+    messages.next({ type: 'heartbeat', gameId: 'g-1', revision: 2 });
+    gameLoad.next({ ...initial, liveRevision: 2 });
+    expect(getTournament).toHaveBeenCalledTimes(2);
+    expect(component.tournamentChatMode()).toBe('OFF');
+    expect(component.tournamentBanterLevel()).toBeNull();
+    component.ngOnDestroy();
+  });
+
+  it('keeps chat settings from the live turn when an older tournament request answers', () => {
+    const { component, gameLoad, messages, api } = createSpectator();
+    const tournament = new Subject<{ chatMode: string; banterLevel: string }>();
+    Object.assign(api, { getTournament: () => tournament });
+    component.ngOnInit();
+    gameLoad.next(gameWith({ liveRevision: 1, tournamentId: 't-1' }));
+    messages.next(
+      revision(
+        2,
+        {
+          type: 'turnSettings',
+          gameId: 'g-1',
+          tournamentChatMode: 'OFF',
+          tournamentBanterLevel: null,
+        },
+        gameState({ activeColor: 'WHITE' }),
+      ),
+    );
+    tournament.next({ chatMode: 'OPTIONAL', banterLevel: 'PLAYFUL' });
+    expect(component.tournamentChatMode()).toBe('OFF');
+    expect(component.tournamentBanterLevel()).toBeNull();
+    component.ngOnDestroy();
   });
 
   it('uses legacy snapshots without duplicating chat or reviving retry alerts', () => {
@@ -1740,6 +2001,40 @@ describe('GameView', () => {
     expect(feedMove?.quality?.tooltip).toBe('Blunder: winning chances 74% → 22% (−6.2)');
     const whiteMove = component.timelineEvents().find((event) => event.label === 'White played e4');
     expect(whiteMove?.quality).toBeNull();
+    component.ngOnDestroy();
+  });
+
+  it('applies an evaluation and quality patch to the exact canonical duplicate row', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    const canonical = { ...storedMove(1, 'WHITE', 'e4', AFTER_E4), id: 'canonical' };
+    const duplicate = { ...canonical, id: 'duplicate' };
+    const quality = {
+      judgement: null,
+      centipawnLoss: 0,
+      winChanceBefore: 0.5,
+      winChanceAfter: 0.5,
+      excluded: null,
+    };
+    component.ngOnInit();
+    gameLoad.next(gameWith({ liveRevision: 1, moves: [duplicate, canonical] }));
+    messages.next(
+      revision(
+        2,
+        {
+          type: 'evaluationUpdate',
+          gameId: 'g-1',
+          moveNumber: 1,
+          color: 'WHITE',
+          moveId: canonical.id,
+          evaluationCp: 15,
+          qualities: [{ moveNumber: 1, color: 'WHITE', moveId: canonical.id, quality }],
+        },
+        gameState(),
+      ),
+    );
+    expect(component.moves().find((move) => move.id === 'canonical')?.quality).toEqual(quality);
+    expect(component.moves().find((move) => move.id === 'canonical')?.evaluationCp).toBe(15);
+    expect(component.moves().find((move) => move.id === 'duplicate')?.quality).toBeUndefined();
     component.ngOnDestroy();
   });
 

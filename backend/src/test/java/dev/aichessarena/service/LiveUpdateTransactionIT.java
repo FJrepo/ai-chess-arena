@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.Tournament;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.MoveAttempt;
@@ -82,6 +84,9 @@ class LiveUpdateTransactionIT {
 
     @Inject
     GameTurnTiming timing;
+
+    @Inject
+    TournamentService tournaments;
 
     @Inject
     GameRepository gameRepository;
@@ -237,11 +242,14 @@ class LiveUpdateTransactionIT {
 
         attempts.record(new MoveAttemptService.AttemptRecord(id, 1, "BLACK", 1, "test/black",
                 Outcome.DISCARDED, "e5", "Position changed",
-                new LlmResponse("e5", 10, 5, 0.002, 1, "{}", false, null)));
+                new LlmResponse("e5", 10, 5, 0.002, 1, "{}", false, null), null, 7L));
         GameDto afterAttempt = gameSnapshot(id);
         assertEquals(2, afterAttempt.liveRevision());
         assertEquals(8, afterAttempt.statusRevision());
         assertEquals("DISCARDED", afterAttempt.attempts().getFirst().outcome());
+        assertEquals(7L, afterAttempt.attempts().getFirst().turnStatusRevision());
+        assertEquals(7L, revisionEvents.getLast().path("changes").get(0).path("attempt")
+                .path("turnStatusRevision").asLong());
         assertEquals(0, afterAttempt.totalCostUsd().compareTo(new BigDecimal("0.003")));
         assertEquals(2, revisionEvents.getLast().path("revision").asLong());
 
@@ -260,8 +268,12 @@ class LiveUpdateTransactionIT {
                 if (committed.compareAndSet(false, true)) {
                     // Commit after the game row was read but before the snapshot's lazy history queries.
                     gameMoveServiceInSeparateTransaction(id);
+                    attempts.record(new MoveAttemptService.AttemptRecord(id, 1, "BLACK", 1, "test/black",
+                            Outcome.ILLEGAL_MOVE, "Qa4", "Illegal move", null));
                 }
-                return List.of();
+                return moveRepository.getEntityManager()
+                        .createQuery("from MoveAttempt a where a.game.id = :id", MoveAttempt.class)
+                        .setParameter("id", gameId).getResultList();
             }
         }, MoveAttemptRepository.class);
 
@@ -271,12 +283,14 @@ class LiveUpdateTransactionIT {
         assertEquals(START, before.currentFen());
         assertTrue(before.moves().isEmpty());
         assertTrue(before.chatMessages().isEmpty());
+        assertTrue(before.attempts().isEmpty());
 
         GameDto after = gameSnapshot(id);
-        assertEquals(1, after.liveRevision());
+        assertEquals(2, after.liveRevision());
         assertEquals(AFTER_E4, after.currentFen());
         assertEquals("e4", after.moves().getFirst().san());
         assertEquals("Hello", after.chatMessages().getFirst().message());
+        assertEquals("Qa4", after.attempts().getFirst().proposedMove());
     }
 
     private void gameMoveServiceInSeparateTransaction(UUID id) {
@@ -292,7 +306,7 @@ class LiveUpdateTransactionIT {
         var turn = new GameTurnService.TurnRequest(id, null, START, null, "WHITE", 1, List.of(), "test/white",
                 "White", "Black", new ArrayList<>(), null, null, true, 1, 30, "v2", "hash",
                 BigDecimal.ZERO, () -> true, 1024, ChatMode.OPTIONAL, ChatMode.OPTIONAL, false, null, null, 7L);
-        timing.record(turn, System::nanoTime);
+        timing.record(turn);
         GameDto timed = gameSnapshot(id);
         assertEquals(1, timed.liveRevision());
         assertEquals("WHITE", timed.activeColor());
@@ -300,7 +314,7 @@ class LiveUpdateTransactionIT {
 
         lifecycle.markGamePaused(id);
         lifecycle.markGameStarted(id);
-        assertEquals(null, timing.record(turn, System::nanoTime));
+        assertEquals(null, timing.record(turn));
         GameDto resumed = gameSnapshot(id);
         assertEquals(3, resumed.liveRevision());
         assertEquals("WHITE", resumed.activeColor());
@@ -316,6 +330,53 @@ class LiveUpdateTransactionIT {
         assertEquals(5, evaluated.liveRevision());
         assertEquals(30, evaluated.moves().getFirst().evaluationCp());
         assertEquals(moveId.toString(), revisionEvents.getLast().path("changes").get(0).path("moveId").asText());
+    }
+
+    @Test
+    void seatingTheWinnerInAnExistingWaitingGameAdvancesOnlyItsLiveRevision() {
+        List<UUID> games = QuarkusTransaction.requiringNew().call(() -> {
+            Tournament tournament = new Tournament();
+            tournament.name = "Watched bracket";
+            tournament.persist();
+
+            TournamentParticipant winner = new TournamentParticipant();
+            winner.tournament = tournament;
+            winner.playerName = "White";
+            winner.modelId = "test/winner";
+            winner.persist();
+
+            Game semiFinal = new Game();
+            semiFinal.tournament = tournament;
+            semiFinal.whiteParticipant = winner;
+            semiFinal.bracketRound = "Semifinal";
+            semiFinal.bracketPosition = 0;
+            semiFinal.status = GameStatus.COMPLETED;
+            semiFinal.result = Game.GameResult.WHITE_WINS;
+            gameRepository.persist(semiFinal);
+
+            Game finalGame = new Game();
+            finalGame.tournament = tournament;
+            finalGame.bracketRound = "Final";
+            finalGame.bracketPosition = 0;
+            gameRepository.persist(finalGame);
+            return List.of(semiFinal.id, finalGame.id);
+        });
+
+        UUID waitingId = games.getLast();
+        gameWebSocket.onMessage(viewer,
+                "{\"type\":\"subscribe\",\"gameId\":\"%s\",\"protocol\":2}".formatted(waitingId));
+        assertEquals(0, gameSnapshot(waitingId).liveRevision());
+        tournaments.advanceWinner(games.getFirst());
+        tournaments.advanceWinner(games.getFirst());
+
+        GameDto waiting = gameSnapshot(waitingId);
+        assertEquals("WAITING", waiting.status());
+        assertEquals("White", waiting.whitePlayerName());
+        assertEquals(0, waiting.statusRevision());
+        assertEquals(1, waiting.liveRevision());
+        assertEquals(2, revisionEvents.size());
+        assertEquals("gameDetailsChanged",
+                revisionEvents.getLast().path("changes").get(0).path("type").asText());
     }
 
     private GameDto gameSnapshot(UUID id) {

@@ -184,7 +184,7 @@ public class GameMoveService {
         List<PlyQualityDto> changed = new ArrayList<>();
         for (int i = index; i <= Math.min(index + 1, moves.size() - 1); i++) {
             Move affected = moves.get(i);
-            changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i))));
+            changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i)), affected.id));
         }
         GameQualitySummaryDto summary = DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities));
         if (liveUpdates != null) announceEvaluation(move, game, changed, summary);

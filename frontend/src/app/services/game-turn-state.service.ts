@@ -8,6 +8,7 @@ export class GameTurnStateService {
   /** The tournament has no time limit per move: there is no countdown. */
   readonly noMoveTimeLimit = signal(false);
   readonly timerNowMs = signal(Date.now());
+  readonly snapshotOnly = signal(false);
   readonly serverActiveColor = signal<'WHITE' | 'BLACK' | null>(null);
   readonly serverTurnStartedAtMs = signal<number | null>(null);
   readonly serverTurnDeadlineAtMs = signal<number | null>(null);
@@ -50,7 +51,7 @@ export class GameTurnStateService {
     }
 
     // A revisioned game never estimates a deadline from history or a previous run.
-    if (this.game()?.liveRevision != null) return null;
+    if (this.game()?.liveRevision != null || this.snapshotOnly()) return null;
 
     // Without a (known) limit there is nothing to count down.
     const limit = this.moveTimeoutSeconds();

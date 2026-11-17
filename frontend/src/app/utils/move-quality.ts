@@ -71,13 +71,15 @@ export function applyPlyQualities(
   if (!qualities?.length) {
     return moves;
   }
-  const updated = new Set<string>();
+  const seenPlies = new Set<string>();
   return moves.map((move) => {
     const key = `${move.moveNumber}-${move.color}`;
-    if (updated.has(key)) return move;
-    updated.add(key);
-    const update = qualities.find(
-      (entry) => entry.moveNumber === move.moveNumber && entry.color === move.color,
+    const firstForPly = !seenPlies.has(key);
+    seenPlies.add(key);
+    const update = qualities.find((entry) =>
+      entry.moveId
+        ? entry.moveId === move.id
+        : firstForPly && entry.moveNumber === move.moveNumber && entry.color === move.color,
     );
     return update ? { ...move, quality: update.quality } : move;
   });

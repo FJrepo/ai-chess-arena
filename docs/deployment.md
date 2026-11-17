@@ -47,7 +47,7 @@ For native runs, export these variables in the backend process environment. For 
 
 ## Live game revisions migration (V24)
 
-Back up the database before upgrading. Rebuild or pull and recreate both application services. Flyway `V24__live_game_revision.sql` initializes existing games at revision zero and adds nullable turn timestamps. Stored moves, chat, attempts, results and spend are retained. The usual startup recovery pauses games interrupted by the restart. Resuming a game starts a new turn clock. Restore the pre-upgrade backup when rolling back.
+Back up the database before upgrading. Rebuild or pull and recreate both application services. Flyway `V24__live_game_revision.sql` initializes existing games at revision zero and adds nullable turn timestamps. Older attempts have no originating status revision. Stored moves, chat, attempts, results and spend are retained. The usual startup recovery pauses games interrupted by the restart. Resuming a game starts a new turn clock. Restore the pre-upgrade backup when rolling back.
 
 A frontend temporarily connected to an older backend falls back to periodic reads. Older clients can still subscribe for legacy WebSocket messages. Run one backend instance for this deployment. See [Live game synchronization](how-it-works.md#live-game-synchronization) for the protocol.
 

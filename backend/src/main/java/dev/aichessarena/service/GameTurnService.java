@@ -11,6 +11,7 @@ import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -117,14 +118,14 @@ public class GameTurnService {
         Integer moveTimeoutSeconds = request.moveTimeoutSeconds();
         GameTurnTiming.TurnTimes timing;
         if (turnTiming != null) {
-            timing = turnTiming.record(request, nanoClock);
+            timing = turnTiming.record(request);
             if (timing == null) return TurnResult.stopped();
         } else {
-            timing = GameTurnTiming.TurnTimes.start(moveTimeoutSeconds, nanoClock);
+            timing = GameTurnTiming.TurnTimes.start(moveTimeoutSeconds);
             broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), timing.startedAt(),
                     timing.deadlineAt(), request.tournamentChatMode(), request.tournamentBanterLevel());
         }
-        OpenRouterService.AnswerDeadline turnDeadline = timing.deadline();
+        OpenRouterService.AnswerDeadline turnDeadline = null;
 
         int maxAttempts = Math.clamp(request.maxRetries(), Tournament.MIN_MOVE_ATTEMPTS, Tournament.MAX_MOVE_ATTEMPTS);
         if (maxAttempts != request.maxRetries()) {
@@ -142,7 +143,11 @@ public class GameTurnService {
                 return TurnResult.paused();
             }
 
-            if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
+            if (turnDeadline == null && moveTimeoutSeconds != null) {
+                // Database timing and admission work must finish before the model's first answer budget starts.
+                turnDeadline = OpenRouterService.AnswerDeadline.after(
+                        Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
+            } else if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
                 if (lastProviderFailure != null) {
                     // No next request was sent. Attribute an unrecorded marker rejection to its actual attempt.
                     if (unrecordedCacheRejectionAttempt != 0) {
@@ -471,7 +476,7 @@ public class GameTurnService {
         try {
             moveAttemptService.record(new MoveAttemptService.AttemptRecord(
                     request.gameId(), request.moveNumber(), request.sideToMove(), attempt, request.modelId(),
-                    outcome, proposedMove, errorMessage, response, effort));
+                    outcome, proposedMove, errorMessage, response, effort, request.statusRevision()));
         } catch (RuntimeException e) {
             // The attempt is committed in its own transaction; a failed commit must not interrupt the game.
             LOG.warnf(e, "Game %s: could not record %s attempt", request.gameId(), outcome);

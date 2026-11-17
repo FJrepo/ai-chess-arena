@@ -12,7 +12,7 @@ export class GameRevision {
   }
 
   acceptSnapshot(revision: number): boolean {
-    if (revision < this.highest) return false;
+    if (revision < (this.applied ?? 0)) return false;
     this.applied = revision;
     this.observe(revision);
     return true;

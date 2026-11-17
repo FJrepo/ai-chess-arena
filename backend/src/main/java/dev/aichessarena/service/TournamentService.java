@@ -57,6 +57,9 @@ public class TournamentService {
     GameRepository gameRepository;
 
     @Inject
+    LiveGameUpdates liveUpdates;
+
+    @Inject
     OpeningBookService openingBook;
 
     @Inject
@@ -378,7 +381,11 @@ public class TournamentService {
             ensureNextSeriesGameExists(completedGame, seriesGames);
             return;
         }
-        completedGame.advancedParticipant = winner;
+        if (completedGame.advancedParticipant == null
+                || !Objects.equals(completedGame.advancedParticipant.id, winner.id)) {
+            completedGame.advancedParticipant = winner;
+            reviseGameDetails(completedGame);
+        }
 
         List<Game> tournamentGames = gameRepository.findByTournamentId(completedGame.tournament.id);
         int nextPosition = completedGame.bracketPosition / 2;
@@ -412,7 +419,15 @@ public class TournamentService {
                     }
                     break;
                 }
-                if (completedGame.bracketPosition % 2 == 0) {
+                boolean whiteSeat = completedGame.bracketPosition % 2 == 0;
+                TournamentParticipant seated = whiteSeat ? nextGame.whiteParticipant : nextGame.blackParticipant;
+                String seatedName = whiteSeat ? nextGame.whitePlayerName : nextGame.blackPlayerName;
+                String seatedModel = whiteSeat ? nextGame.whiteModelId : nextGame.blackModelId;
+                if (seated != null && Objects.equals(seated.id, winner.id) && Objects.equals(seatedName, winner.playerName)
+                        && Objects.equals(seatedModel, winner.modelId)) {
+                    break;
+                }
+                if (whiteSeat) {
                     nextGame.whiteParticipant = winner;
                     nextGame.whitePlayerName = winner.playerName;
                     nextGame.whiteModelId = winner.modelId;
@@ -422,8 +437,15 @@ public class TournamentService {
                     nextGame.blackModelId = winner.modelId;
                 }
                 gameRepository.persist(nextGame);
+                reviseGameDetails(nextGame);
                 break;
             }
+        }
+    }
+
+    private void reviseGameDetails(Game game) {
+        if (liveUpdates != null) {
+            liveUpdates.changed(game, liveUpdates.change("gameDetailsChanged", game.id));
         }
     }
 
@@ -464,6 +486,7 @@ public class TournamentService {
             // for this game and later lookups by series id find it.
             game.seriesId = game.id;
             gameRepository.persist(game);
+            reviseGameDetails(game);
         }
         List<Game> games = gameRepository.findBySeriesId(game.seriesId);
         return games.isEmpty() ? List.of(game) : games;

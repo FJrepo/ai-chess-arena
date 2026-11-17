@@ -154,6 +154,7 @@ export interface Game {
    */
   statusRevision?: number;
   liveRevision?: number;
+  streamId?: string | null;
   activeColor?: 'WHITE' | 'BLACK' | null;
   turnStartedAt?: string | null;
   turnDeadlineAt?: string | null;
@@ -218,6 +219,7 @@ export interface GameQualitySummary {
 /** The quality of the move with this move number and color; null when it is not judged. */
 export interface PlyQuality {
   moveNumber: number;
+  moveId?: string | null;
   color: 'WHITE' | 'BLACK';
   quality: MoveQuality | null;
 }
@@ -270,6 +272,8 @@ export interface MoveAttempt {
   color: 'WHITE' | 'BLACK';
   attemptNumber: number;
   modelId: string | null;
+  /** The status revision of the model turn that made this attempt. */
+  turnStatusRevision?: number | null;
   outcome: MoveAttemptOutcome;
   proposedMove: string | null;
   promptTokens: number | null;
@@ -414,14 +418,21 @@ export type GameChange =
       tournamentChatMode?: ChatMode;
       tournamentBanterLevel?: BanterLevel | null;
     }
+  | { type: 'gameDetailsChanged'; gameId: string }
   | { type: 'committedMove'; gameId: string; move: Move; pgn: string }
   | { type: 'committedChat'; gameId: string; chat: ChatMessage }
   | { type: 'committedAttempt'; gameId: string; attempt: MoveAttempt };
 
 export type WsMessage =
   | LegacyGameMessage
-  | { type: 'subscribed' | 'heartbeat'; gameId: string; revision: number }
-  | { type: 'gameRevision'; gameId: string; revision: number; changes: GameChange[] }
+  | { type: 'subscribed' | 'heartbeat'; gameId: string; revision: number; streamId?: string }
+  | {
+      type: 'gameRevision';
+      gameId: string;
+      revision: number;
+      streamId?: string;
+      changes: GameChange[];
+    }
   | { type: 'subscriptionUnavailable'; gameId: string };
 
 export interface WsOutgoingMessage {

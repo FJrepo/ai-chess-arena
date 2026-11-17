@@ -42,6 +42,9 @@ public class GameWebSocket {
     @Inject
     GameRepository gameRepository;
 
+    @Inject
+    GameStream gameStream;
+
     static final int TRY_AGAIN_LATER = 1013;
     static final long SUBSCRIBE_WINDOW_MS = 10_000L;
 
@@ -190,7 +193,7 @@ public class GameWebSocket {
         Long revision = gameRepository.liveRevision(gameId);
         if (revision == null) return;
         String message = objectMapper.createObjectNode().put("type", type)
-                .put("gameId", gameId.toString()).put("revision", revision).toString();
+                .put("gameId", gameId.toString()).put("revision", revision).put("streamId", gameStream.id()).toString();
         outsideTransaction(() -> send(connection, message));
     }
 
@@ -201,7 +204,8 @@ public class GameWebSocket {
     public void broadcastRevision(UUID gameId, long revision, List<ObjectNode> changes) {
         Set<WebSocketConnection> subscribers = gameSubscriptions.get(gameId);
         if (subscribers == null) return;
-        ObjectNode message = change("gameRevision").put("gameId", gameId.toString()).put("revision", revision);
+        ObjectNode message = change("gameRevision").put("gameId", gameId.toString())
+                .put("revision", revision).put("streamId", gameStream.id());
         message.set("changes", objectMapper.valueToTree(changes));
         String encoded = message.toString();
         outsideTransaction(() -> {

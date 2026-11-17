@@ -9,7 +9,9 @@ describe('GameRevision', () => {
     expect(revision.acceptEvent(6)).toBe(false);
     expect(revision.acceptEvent(4)).toBe(false);
     expect(revision.needsSnapshot).toBe(true);
-    expect(revision.acceptSnapshot(5)).toBe(false);
+    expect(revision.acceptSnapshot(5)).toBe(true);
+    expect(revision.needsSnapshot).toBe(true);
+    expect(revision.acceptSnapshot(4)).toBe(false);
     expect(revision.acceptSnapshot(6)).toBe(true);
     expect(revision.acceptEvent(7)).toBe(true);
     expect(revision.acceptEvent(7)).toBe(false);
@@ -21,7 +23,8 @@ describe('GameRevision', () => {
     expect(revision.acceptSnapshot(1)).toBe(true);
     revision.observe(2);
     expect(revision.needsSnapshot).toBe(true);
-    expect(revision.acceptSnapshot(1)).toBe(false);
+    expect(revision.acceptSnapshot(1)).toBe(true);
+    expect(revision.needsSnapshot).toBe(true);
     expect(revision.acceptSnapshot(3)).toBe(true);
     revision.observe(2);
     expect(revision.needsSnapshot).toBe(false);

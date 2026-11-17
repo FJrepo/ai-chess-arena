@@ -60,7 +60,8 @@ public record GameDto(
         String activeColor,
         Instant turnStartedAt,
         Instant turnDeadlineAt,
-        List<MoveAttemptDto> attempts
+        List<MoveAttemptDto> attempts,
+        String streamId
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

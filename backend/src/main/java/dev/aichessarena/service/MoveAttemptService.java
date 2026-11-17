@@ -58,8 +58,16 @@ public class MoveAttemptService {
             String errorMessage,
             OpenRouterService.LlmResponse response,
             // The reasoning effort sent with the request; null when none was sent.
-            ReasoningEffort reasoningEffort
+            ReasoningEffort reasoningEffort,
+            Long turnStatusRevision
     ) {
+        public AttemptRecord(UUID gameId, int moveNumber, String color, int attemptNumber, String modelId,
+                             Outcome outcome, String proposedMove, String errorMessage,
+                             OpenRouterService.LlmResponse response, ReasoningEffort reasoningEffort) {
+            this(gameId, moveNumber, color, attemptNumber, modelId, outcome, proposedMove, errorMessage, response,
+                    reasoningEffort, null);
+        }
+
         /** An attempt sent without a reasoning effort. */
         public AttemptRecord(UUID gameId, int moveNumber, String color, int attemptNumber, String modelId,
                              Outcome outcome, String proposedMove, String errorMessage,
@@ -87,6 +95,7 @@ public class MoveAttemptService {
             row.proposedMove = truncate(attempt.proposedMove(), MAX_PROPOSED_MOVE_CHARS);
             row.errorMessage = truncate(attempt.errorMessage(), MAX_ERROR_CHARS);
             row.reasoningEffort = attempt.reasoningEffort();
+            row.turnStatusRevision = attempt.turnStatusRevision();
             OpenRouterService.LlmResponse response = attempt.response();
             if (response != null) {
                 row.promptTokens = response.promptTokensReported() ? response.promptTokens() : null;

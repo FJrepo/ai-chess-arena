@@ -227,9 +227,11 @@ export class GameView implements OnInit, OnDestroy {
   private loadInFlight = false;
   private loadSub?: Subscription;
   private revision = new GameRevision();
+  private streamId: string | null = null;
   private snapshotFallback = false;
   private waitingForSubscription = false;
   private snapshotQueued = false;
+  private turnSettingsGeneration = 0;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private retryDelay = 500;
   private attemptsGeneration = 0;
@@ -516,6 +518,18 @@ export class GameView implements OnInit, OnDestroy {
         .subscribe({
           next: (game) => {
             this.loadInFlight = false;
+            const incomingStream = game.streamId ?? null;
+            const streamChanged =
+              incomingStream != null && this.streamId != null && incomingStream !== this.streamId;
+            const legacyDowngrade = game.liveRevision == null && this.game()?.liveRevision != null;
+            if (streamChanged || legacyDowngrade) {
+              if (!this.snapshotFallback) {
+                this.scheduleSnapshotRetry();
+                return;
+              }
+              this.resetStream(incomingStream);
+            }
+            if (incomingStream) this.streamId = incomingStream;
             const olderStatus =
               game.statusRevision != null && game.statusRevision < (this.knownStatusRevision ?? 0);
             if (
@@ -529,9 +543,15 @@ export class GameView implements OnInit, OnDestroy {
               this.snapshotFallback = true;
               this.revision = new GameRevision();
             }
+            const previousRevision = this.game()?.liveRevision;
             this.installSnapshot(game);
+            const behind = game.liveRevision != null && this.revision.needsSnapshot;
+            if (behind && game.liveRevision === previousRevision && !streamChanged) {
+              this.scheduleSnapshotRetry();
+              return;
+            }
             this.retryDelay = 500;
-            if (this.snapshotQueued) {
+            if (this.snapshotQueued || behind) {
               this.snapshotQueued = false;
               this.loadGame(true);
             }
@@ -547,6 +567,19 @@ export class GameView implements OnInit, OnDestroy {
           },
         }),
     );
+  }
+
+  private resetStream(streamId: string | null): void {
+    this.streamId = streamId;
+    this.revision = new GameRevision();
+    this.knownStatusRevision = null;
+    this.loadSub?.unsubscribe();
+    this.attemptsSub?.unsubscribe();
+    this.loadInFlight = false;
+    this.snapshotQueued = false;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    this.retryDelay = 500;
   }
 
   private scheduleSnapshotRetry(): void {
@@ -565,6 +598,7 @@ export class GameView implements OnInit, OnDestroy {
     const moves = sortMovesInPlayOrder(game.moves ?? []);
     this.game.set(game);
     this.knownStatusRevision = game.statusRevision ?? null;
+    this.turnState.snapshotOnly.set(game.liveRevision == null);
     this.turnState.applyStatusUpdate(
       game.status,
       game.activeColor,
@@ -593,18 +627,12 @@ export class GameView implements OnInit, OnDestroy {
       this.loadAttempts();
     }
     this.refreshRetryFromAttempts();
-    if (
-      !previous ||
-      !this.pauseSettingsSub ||
-      previous.status !== game.status ||
-      game.status === 'PAUSED'
-    ) {
-      this.refreshSnapshotSettings(game);
-    }
+    this.refreshSnapshotSettings(game);
   }
 
   private refreshSnapshotSettings(game: Game): void {
     const generation = ++this.settingsGeneration;
+    const turnSettingsGeneration = this.turnSettingsGeneration;
     this.pauseSettingsSub?.unsubscribe();
     this.refreshingPauseSettings.set(!!game.tournamentId);
     if (!game.tournamentId) {
@@ -616,10 +644,12 @@ export class GameView implements OnInit, OnDestroy {
         if (generation !== this.settingsGeneration) return;
         this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
         this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
-        this.tournamentChatMode.set(
-          tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
-        );
-        this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
+        if (turnSettingsGeneration === this.turnSettingsGeneration) {
+          this.tournamentChatMode.set(
+            tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
+          );
+          this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
+        }
         this.tournamentReasoningEffort.set(
           isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
         );
@@ -651,15 +681,27 @@ export class GameView implements OnInit, OnDestroy {
         return;
       case 'subscribed':
       case 'heartbeat':
+        if (
+          message.type === 'heartbeat' &&
+          message.streamId &&
+          this.streamId &&
+          message.streamId !== this.streamId
+        )
+          return;
         this.waitingForSubscription = false;
         this.snapshotFallback = false;
+        if (message.streamId && message.streamId !== this.streamId) {
+          this.resetStream(message.streamId);
+        }
         this.revision.observe(message.revision);
         if (!this.game() || this.revision.needsSnapshot) {
           if (!this.loadInFlight) this.loadGame();
         }
         return;
       case 'gameRevision':
-        // Do not apply deltas during a GET: the response must cover every revision observed during it.
+        if (message.streamId && this.streamId && message.streamId !== this.streamId) return;
+        if (message.streamId && !this.streamId && !this.game()) this.streamId = message.streamId;
+        // Keep the highest revision during a read. A coherent result can display while the next GET catches up.
         if (this.loadInFlight || this.waitingForSubscription) {
           this.revision.observe(message.revision);
         } else if (this.revision.acceptEvent(message.revision)) {
@@ -714,9 +756,13 @@ export class GameView implements OnInit, OnDestroy {
           this.lookUpTruncatedModelEfforts();
           break;
         case 'turnSettings':
+          ++this.turnSettingsGeneration;
           if (change.tournamentChatMode) this.tournamentChatMode.set(change.tournamentChatMode);
           if (change.tournamentBanterLevel !== undefined)
             this.tournamentBanterLevel.set(change.tournamentBanterLevel);
+          break;
+        case 'gameDetailsChanged':
+          needsDetails = true;
           break;
         case 'gameStatus':
           this.handleWsMessage(change, true);
@@ -742,19 +788,18 @@ export class GameView implements OnInit, OnDestroy {
 
   private refreshRetryFromAttempts(): void {
     const ply = nextPly(this.moves());
+    const game = this.game();
+    const currentAttempts =
+      game?.liveRevision == null
+        ? this.attempts()
+        : this.attempts().filter(
+            (attempt) => game.turnStartedAt && attempt.turnStatusRevision === game.statusRevision,
+          );
     const attempt = this.isLive()
-      ? latestAttemptFor(this.attempts(), ply.moveNumber, ply.color)
+      ? latestAttemptFor(currentAttempts, ply.moveNumber, ply.color)
       : null;
-    const turnStartedAt = this.game()?.turnStartedAt;
-    const inRevisionedTurn = this.game()?.liveRevision != null;
-    const fromCurrentTurn =
-      !inRevisionedTurn ||
-      (turnStartedAt &&
-        attempt &&
-        Date.parse(attempt.createdAt.endsWith('Z') ? attempt.createdAt : attempt.createdAt + 'Z') >=
-          Date.parse(turnStartedAt));
     this.retryInfo.set(
-      attempt?.errorMessage && fromCurrentTurn
+      attempt?.errorMessage && attempt.outcome !== 'DISCARDED'
         ? retryText({
             type: 'retry',
             gameId: this.gameId,
