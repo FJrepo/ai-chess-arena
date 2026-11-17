@@ -50,7 +50,11 @@ public class GameResource {
 
     @POST
     @Path("/{id}/start")
-    public Response startGame(@PathParam("id") UUID id) {
+    public Response startGame(@PathParam("id") UUID id,
+                              @QueryParam("queueIfFull") @DefaultValue("false") String queueIfFull) {
+        if (!"true".equals(queueIfFull) && !"false".equals(queueIfFull)) {
+            throw new IllegalArgumentException("queueIfFull must be true or false");
+        }
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         if (game.tournament != null
@@ -61,13 +65,21 @@ public class GameResource {
                 || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
             throw new IllegalArgumentException("Both players must be set");
         }
-        return Response.ok(gameEngineService.startGame(id)).build();
+        return Response.ok("true".equals(queueIfFull)
+                ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id)).build();
     }
 
     @DELETE
     @Path("/{id}/resume-request")
-    public GameDto cancelResumeRequest(@PathParam("id") UUID id) {
-        return lifecycle.cancelResumeRequest(id);
+    public GameDto cancelResumeRequest(@PathParam("id") UUID id, @QueryParam("statusRevision") String revision) {
+        long statusRevision;
+        try {
+            statusRevision = Long.parseLong(revision);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("statusRevision must be a non-negative integer");
+        }
+        if (statusRevision < 0) throw new IllegalArgumentException("statusRevision must be a non-negative integer");
+        return lifecycle.cancelResumeRequest(id, statusRevision);
     }
 
     @POST

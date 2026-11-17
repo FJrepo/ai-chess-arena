@@ -10,7 +10,7 @@
   />
 
   @if (g.status === 'PAUSED' && g.resumeRequestedAt) {
-    <app-queued-resume [capacity]="g.runCapacity" (cancelRequest)="cancelResumeRequest()" />
+    <app-queued-resume [capacity]="g.runCapacity" (cancelRequest)="cancelResumeRequest(g)" />
   }
 
   @if (g.openingName) {

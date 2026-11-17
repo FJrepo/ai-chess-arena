@@ -82,25 +82,30 @@ public class GameEngineService {
     }
 
     /**
-     * Starts a WAITING game or resumes a PAUSED game, queuing its resume if the run has no free slot.
+     * Starts a WAITING game or resumes a PAUSED game immediately.
      *
      * @throws WebApplicationException 409 if the game is running, in progress or finished; 404 if it does not exist
      */
     public GameDto startGame(UUID gameId) {
-        return startGame(gameId, false);
+        return startGame(gameId, false, false);
+    }
+
+    /** Allows a paused game to queue when all slots are occupied or reserved. */
+    public GameDto startGame(UUID gameId, boolean queueIfFull) {
+        return startGame(gameId, false, queueIfFull);
     }
 
     /** Returns null while an earlier loop still owns the game. */
     public GameDto startScheduledGame(UUID gameId) {
-        return startGame(gameId, true);
+        return startGame(gameId, true, false);
     }
 
-    private GameDto startGame(UUID gameId, boolean automatic) {
+    private GameDto startGame(UUID gameId, boolean automatic, boolean queueIfFull) {
         GameLoop loop = new GameLoop();
         GameDto started;
         try {
             started = gameLifecycleService.markGameStarted(
-                    gameId, automatic, () -> runningGames.putIfAbsent(gameId, loop) == null);
+                    gameId, automatic, queueIfFull, () -> runningGames.putIfAbsent(gameId, loop) == null);
         } catch (RuntimeException e) {
             runningGames.remove(gameId, loop);
             throw e;
@@ -224,6 +229,18 @@ public class GameEngineService {
             loop.requestStop();
         }
         humanConversations.remove(gameId);
+    }
+
+    /** Captures the loop and human wait that belong to the state being paused under the tournament lock. */
+    Runnable captureStop(UUID gameId) {
+        GameLoop loop = runningGames.get(gameId);
+        var conversation = humanConversations.get(gameId);
+        return () -> {
+            if (loop != null) loop.requestStop();
+            if (conversation != null) {
+                humanConversations.computeIfPresent(gameId, (id, current) -> current == conversation ? null : current);
+            }
+        };
     }
 
     /** A fresh scalar read avoids retaining a game deleted or finished since this turn began. */

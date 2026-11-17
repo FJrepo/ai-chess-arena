@@ -118,7 +118,7 @@ public class TournamentAutoRunService {
     }
 
     /** Validates a locked start and reports whether a manual resume should stay paused and queue. */
-    boolean shouldQueueResume(Game game, boolean automatic) {
+    boolean shouldQueueResume(Game game, boolean automatic, boolean queueIfFull) {
         Tournament t = game.tournament;
         if (automatic && (t == null || t.autoRunStatus != AutoRunStatus.RUNNING
                 || !(queuedResume(game) || eligible(game)))) {
@@ -127,7 +127,10 @@ public class TournamentAutoRunService {
         if (t == null || t.autoRunStatus == AutoRunStatus.OFF || t.autoRunStatus == AutoRunStatus.FINISHED) {
             return false;
         }
-        if (!automatic && queuedResume(game)) return true;
+        if (!automatic && queuedResume(game)) {
+            if (queueIfFull) return true;
+            throw new GameStateConflictException("A resume is already queued for this game");
+        }
         if (t.autoRunStatus != AutoRunStatus.RUNNING) {
             throw new GameStateConflictException("Resume the tournament run first");
         }
@@ -136,11 +139,12 @@ public class TournamentAutoRunService {
         }
         long freeSlots = t.maxConcurrentGames - games.countRunning(t.id);
         if (freeSlots <= 0) {
-            if (!automatic && game.status == GameStatus.PAUSED) return true;
+            if (queueIfFull && game.status == GameStatus.PAUSED) return true;
             throw new GameStateConflictException("Tournament concurrency limit reached");
         }
-        if (!automatic && game.status == GameStatus.WAITING
-                && games.count("tournament.id = ?1 and resumeRequestedAt is not null", t.id) >= freeSlots) {
+        if (!automatic && games.count("tournament.id = ?1 and status = ?2 and resumeRequestedAt is not null",
+                t.id, GameStatus.PAUSED) >= freeSlots) {
+            if (queueIfFull && game.status == GameStatus.PAUSED) return true;
             throw new GameStateConflictException("Available slots are reserved for queued resumes");
         }
         return false;
@@ -189,16 +193,16 @@ public class TournamentAutoRunService {
             return;
         }
         if (pauseIfBudgetReached(t)) return;
-        long running = games.countRunning(id);
+        long occupiedSlots = games.countRunning(id);
         for (Game game : bracket.stream().filter(TournamentAutoRunService::queuedResume).sorted(RESUME_ORDER).toList()) {
-            if (running >= t.maxConcurrentGames) return;
-            // Keep the slot available if the previous loop is still stopping. The safety tick retries.
-            if (engine.startScheduledGame(game.id) == null) return;
-            running++;
+            if (occupiedSlots >= t.maxConcurrentGames) return;
+            // Each request takes one slot, reserved for the next tick if its previous loop is still stopping.
+            engine.startScheduledGame(game.id);
+            occupiedSlots++;
         }
         for (Game game : bracket.stream().filter(TournamentAutoRunService::eligible).sorted(BRACKET_ORDER).toList()) {
-            if (running >= t.maxConcurrentGames) break;
-            if (engine.startScheduledGame(game.id) != null) running++;
+            if (occupiedSlots >= t.maxConcurrentGames) break;
+            if (engine.startScheduledGame(game.id) != null) occupiedSlots++;
         }
     }
 
@@ -242,8 +246,9 @@ public class TournamentAutoRunService {
     }
 
     private void pauseGame(UUID gameId, String reason) {
+        Runnable stop = engine.captureStop(gameId);
         lifecycle.pauseWithReason(gameId, reason);
-        AfterCommit.run(transactionRegistry, () -> engine.requestStop(gameId));
+        AfterCommit.run(transactionRegistry, stop);
     }
 
     private void changed(UUID id) {

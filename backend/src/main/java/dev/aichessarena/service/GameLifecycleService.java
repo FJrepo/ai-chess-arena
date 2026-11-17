@@ -73,18 +73,18 @@ public class GameLifecycleService {
      */
     @Transactional
     public GameDto markGameStarted(UUID gameId) {
-        return markGameStarted(gameId, false, () -> true);
+        return markGameStarted(gameId, false, false, () -> true);
     }
 
     @Transactional
-    GameDto markGameStarted(UUID gameId, boolean automatic, BooleanSupplier claimLoop) {
+    GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
         Game game = requireLockedGame(gameId);
         requireActiveTournament(game);
         if (keys != null) keys.requireKey();
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
-        if (autoRuns != null && autoRuns.shouldQueueResume(game, automatic)) {
+        if (autoRuns != null && autoRuns.shouldQueueResume(game, automatic, queueIfFull)) {
             RunCapacity capacity;
             if (game.resumeRequestedAt == null) {
                 game.resumeRequestedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -110,8 +110,11 @@ public class GameLifecycleService {
     }
 
     @Transactional
-    public GameDto cancelResumeRequest(UUID gameId) {
+    public GameDto cancelResumeRequest(UUID gameId, long statusRevision) {
         Game game = requireLockedGame(gameId);
+        if (game.resumeRequestedAt == null || game.statusRevision != statusRevision) {
+            throw new GameStateConflictException("The queued resume has changed; refresh and try again");
+        }
         clearResumeRequest(game);
         return DtoMapper.toDto(game, false);
     }

@@ -113,6 +113,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   readonly statusLabel = tournamentStatusLabel;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private loadGeneration = 0;
+  private refreshAfterRun = false;
 
   constructor(
     private route: ActivatedRoute,
@@ -160,7 +161,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.api.getTournament(this.tournamentId).subscribe({
       next: (t) => {
         if (generation === this.loadGeneration) {
-          this.tournament.set(t);
+          this.applyTournamentSnapshot(t);
           if (!this.runDraftDirty) this.syncRunSettings(t);
         }
       },
@@ -207,7 +208,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   private startGameWithKey(game: Game) {
-    this.api.startGame(game.id).subscribe({
+    this.api.startGame(game.id, game.status === 'PAUSED').subscribe({
       next: (updated) => {
         if (updated.resumeRequestedAt) {
           this.applyResumeResponse(updated);
@@ -223,11 +224,15 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   cancelResumeRequest(game: Game): void {
-    this.api.cancelResumeRequest(game.id).subscribe({
+    if (game.statusRevision == null) {
+      this.refreshAfterResumeChange();
+      return;
+    }
+    this.api.cancelResumeRequest(game.id, game.statusRevision).subscribe({
       next: (updated) => this.applyResumeResponse(updated),
       error: (err) => {
         this.showError(err, 'Failed to cancel the queued resume.');
-        this.loadTournament();
+        this.refreshAfterResumeChange();
       },
     });
   }
@@ -245,7 +250,25 @@ export class TournamentBracket implements OnInit, OnDestroy {
           }
         : t,
     );
-    this.loadTournament();
+    this.refreshAfterResumeChange();
+  }
+
+  private refreshAfterResumeChange(): void {
+    if (this.runBusy()) this.refreshAfterRun = true;
+    else this.loadTournament();
+  }
+
+  private applyTournamentSnapshot(t: Tournament): void {
+    const currentGames = new Map(this.tournament()?.games.map((game) => [game.id, game]));
+    this.tournament.set({
+      ...t,
+      games: t.games.map((game) => {
+        const current = currentGames.get(game.id);
+        return current && (current.statusRevision ?? 0) > (game.statusRevision ?? 0)
+          ? current
+          : game;
+      }),
+    });
   }
 
   runTournament(): void {
@@ -295,14 +318,19 @@ export class TournamentBracket implements OnInit, OnDestroy {
     request().subscribe({
       next: (t) => {
         ++this.loadGeneration;
-        this.tournament.set(t);
+        this.applyTournamentSnapshot(t);
         this.syncRunSettings(t);
         this.runDraftDirty = false;
         this.runBusy.set(false);
         this.loadCostSummary();
+        if (this.refreshAfterRun) {
+          this.refreshAfterRun = false;
+          this.loadTournament();
+        }
       },
       error: (err) => {
         this.runBusy.set(false);
+        this.refreshAfterRun = false;
         this.showError(err, 'Failed to update the tournament run.');
         this.loadTournament();
       },

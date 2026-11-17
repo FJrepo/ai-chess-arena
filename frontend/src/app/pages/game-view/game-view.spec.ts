@@ -858,7 +858,7 @@ describe('GameView', () => {
     component.saveLimitAndResume(8192);
 
     expect(updateTournament).toHaveBeenCalledWith('t-1', { maxOutputTokens: 8192 });
-    expect(startGame).toHaveBeenCalledWith('g-1');
+    expect(startGame).toHaveBeenCalledWith('g-1', true);
     expect(calls).toEqual(['update', 'start']);
     expect(component.tournamentMaxOutputTokens()).toBe(8192);
     expect(component.savingLimit()).toBe(false);
@@ -1195,7 +1195,7 @@ describe('GameView', () => {
 
     expect(updateTournament).toHaveBeenCalledWith('t-1', { maxOutputTokens: 32768 });
     expect(updateParticipant).toHaveBeenCalledWith('t-1', 'p-2', { reasoningEffort: 'low' });
-    expect(startGame).toHaveBeenCalledWith('g-1');
+    expect(startGame).toHaveBeenCalledWith('g-1', true);
     expect(calls).toEqual(['tournament', 'participant', 'start']);
     expect(component.game()?.blackReasoningEffort).toBe('low');
     expect(component.savingLimit()).toBe(false);
@@ -1275,7 +1275,7 @@ describe('GameView', () => {
       expect(component.savingLimit()).toBe(true);
       expect(startGame).not.toHaveBeenCalled();
       participantSaved.next({ reasoningEffort: 'low' });
-      expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
+      expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1', true);
       expect(calls).toEqual(
         changed ? ['tournament', 'participant', 'start'] : ['participant', 'start'],
       );
@@ -1319,7 +1319,7 @@ describe('GameView', () => {
     updateParticipant.mockClear();
     component.saveTruncationFixAndResume({ maxOutputTokens: 8192 });
     expect(updateParticipant).not.toHaveBeenCalled();
-    expect(startGame).toHaveBeenCalledWith('g-1');
+    expect(startGame).toHaveBeenCalledWith('g-1', true);
   });
 
   it('shows the start position when the history is rewound to before the first move', () => {
@@ -2186,6 +2186,88 @@ describe('GameView resignation', () => {
 });
 
 describe('GameView resume while saving', () => {
+  it.each([false, true])(
+    'loads the completed position and moves when a queue poll finds the result (history selected: %s)',
+    (reviewingHistory) => {
+      vi.useFakeTimers();
+      const { component, gameLoad, getGame } = createSpectator();
+      try {
+        const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+        const second = storedMove(1, 'BLACK', 'e5', AFTER_E5);
+        const queued = gameWith({
+          status: 'PAUSED',
+          statusRevision: 5,
+          resumeRequestedAt: '2026-11-17T20:00:00Z',
+          runCapacity: { runningGames: 2, maxConcurrentGames: 2 },
+          currentFen: AFTER_E4,
+          moves: [first],
+        });
+        component.ngOnInit();
+        gameLoad.next(queued);
+        if (reviewingHistory) component.currentMoveIndex.set(-1);
+
+        vi.advanceTimersByTime(15000);
+        gameLoad.next({ ...queued, runCapacity: { runningGames: 1, maxConcurrentGames: 2 } });
+        expect(component.game()?.runCapacity?.runningGames).toBe(1);
+        vi.advanceTimersByTime(15000);
+        gameLoad.next({
+          ...queued,
+          status: 'COMPLETED',
+          statusRevision: 7,
+          resumeRequestedAt: null,
+          runCapacity: null,
+          result: 'DRAW',
+          completedAt: '2026-11-17T20:00:05Z',
+          currentFen: AFTER_E5,
+          moves: [first, second],
+        });
+
+        expect(component.game()).toMatchObject({
+          status: 'COMPLETED',
+          result: 'DRAW',
+          resumeRequestedAt: null,
+          completedAt: '2026-11-17T20:00:05Z',
+          currentFen: AFTER_E5,
+        });
+        expect(component.moves()).toEqual([first, second]);
+        expect(component.currentFen()).toBe(reviewingHistory ? START_FEN : AFTER_E5);
+        vi.advanceTimersByTime(15000);
+        expect(getGame).toHaveBeenCalledTimes(3);
+      } finally {
+        component.ngOnDestroy();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('reloads the game and shows the replacement queue when Cancel conflicts', () => {
+    const message = 'The queued resume has changed; refresh and try again';
+    const displayed = gameWith({
+      status: 'PAUSED',
+      statusRevision: 5,
+      resumeRequestedAt: '2026-11-17T20:00:00Z',
+    });
+    const replacement = {
+      ...displayed,
+      statusRevision: 7,
+      resumeRequestedAt: '2026-11-17T20:01:00Z',
+    };
+    const cancelResumeRequest = vi.fn(() =>
+      throwError(() => ({ status: 409, error: { error: message } })),
+    );
+    const getGame = vi.fn(() => of(replacement));
+    const { component, snackbar } = createComponent({ api: { cancelResumeRequest, getGame } });
+    component['gameId'] = displayed.id;
+    component.game.set(displayed);
+
+    component.cancelResumeRequest(displayed);
+
+    expect(cancelResumeRequest).toHaveBeenCalledExactlyOnceWith(displayed.id, 5);
+    expect(snackbar.open).toHaveBeenCalledWith(message, 'Dismiss', expect.any(Object));
+    expect(getGame).toHaveBeenCalledExactlyOnceWith(displayed.id);
+    expect(component.game()).toEqual(replacement);
+  });
+
   it('shows the queue and its pause reason and lets the operator cancel it', () => {
     const paused = gameFixture({
       status: 'PAUSED',
@@ -2241,7 +2323,7 @@ describe('GameView resume while saving', () => {
     resume.click();
     fixture.detectChanges();
 
-    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
+    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1', true);
     expect(element.querySelector('app-queued-resume [role="status"]')?.textContent).toMatch(
       /Queued: resumes when a slot frees\s*\(3\/3 running\)/,
     );
@@ -2257,7 +2339,7 @@ describe('GameView resume while saving', () => {
       runCapacity: capacity,
     });
     fixture.detectChanges();
-    expect(cancelResumeRequest).toHaveBeenCalledExactlyOnceWith('g-1');
+    expect(cancelResumeRequest).toHaveBeenCalledExactlyOnceWith('g-1', 5);
     expect(element.querySelector('app-queued-resume')).toBeNull();
     expect(element.textContent).toContain('Answer cut off');
     fixture.destroy();
@@ -2328,7 +2410,7 @@ describe('GameView resume while saving', () => {
     participantSaved.next({ reasoningEffort: 'low' });
     participantSaved.complete();
     fixture.detectChanges();
-    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
+    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1', true);
     expect(component.game()?.blackReasoningEffort).toBe('low');
     expect(component.savingLimit()).toBe(false);
     expect(resume.disabled).toBe(false);

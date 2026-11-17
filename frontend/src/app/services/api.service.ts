@@ -160,12 +160,20 @@ export class ApiService {
     return this.http.get<Game>(`${this.baseUrl}/games/${id}`);
   }
 
-  startGame(id: string): Observable<Game> {
-    return this.http.post<Game>(`${this.baseUrl}/games/${id}/start`, {});
+  startGame(id: string, queueIfFull = false): Observable<Game> {
+    return this.http.post<Game>(
+      `${this.baseUrl}/games/${id}/start`,
+      {},
+      {
+        params: queueIfFull ? { queueIfFull: true } : {},
+      },
+    );
   }
 
-  cancelResumeRequest(id: string): Observable<Game> {
-    return this.http.delete<Game>(`${this.baseUrl}/games/${id}/resume-request`);
+  cancelResumeRequest(id: string, statusRevision: number): Observable<Game> {
+    return this.http.delete<Game>(`${this.baseUrl}/games/${id}/resume-request`, {
+      params: { statusRevision },
+    });
   }
 
   pauseGame(id: string): Observable<void> {

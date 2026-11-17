@@ -17,7 +17,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- Resume requests made while auto-run slots are full now queue oldest first and take priority over new games. Cancel a request from the bracket or game view.
+- Resume actions queue while auto-run slots are occupied or reserved. Older requests reserve slots first, and a stopping loop leaves surplus slots available. API clients can opt in with `queueIfFull=true` on `/start`.
+- Cancel queued resumes by revision from the bracket or game view. The bracket keeps newer queue updates when saving run limits, and game polling refreshes the board and move history when a queued game resumes or finishes.
 
 ## [1.7.0] - 2026-11-17
 
