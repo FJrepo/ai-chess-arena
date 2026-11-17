@@ -12,6 +12,13 @@ This project supports two Docker-based run paths:
 
 For normal releases, `docker-compose.prod.yml` is the supported deployment path.
 
+## Image Platforms
+Starting with the next release, both backend and frontend images are multi-arch OCI indexes for `linux/amd64` and `linux/arm64`, including Apple Silicon and ARM servers. Older release tags retain their original platforms. Docker selects the host's native platform automatically; Stockfish 19 uses the matching checksum-pinned universal binary.
+
+To force a platform for a pull, use `docker pull --platform linux/arm64 ghcr.io/<owner>/chess-backend:<tag>` (likewise for `chess-frontend`). To force the whole Compose stack, set `DOCKER_DEFAULT_PLATFORM=linux/arm64` for both the `docker compose -f docker-compose.prod.yml pull` and `up -d` commands. Use `linux/amd64` to force x86-64 instead. Running a foreign platform requires QEMU/binfmt support, which Docker Desktop includes; native deployment needs no emulation.
+
+The Maven and Node build stages run on the builder's native platform. Only runtime stages target each architecture. This distribution change requires pulling the new release and recreating containers; it adds no migration or backfill and leaves existing persisted data unchanged.
+
 ## Prerequisites
 - Docker Engine 28.0+ with Docker Compose support, or a Docker Desktop release that includes Engine 28.0+
 - Make for the `make setup` helper
@@ -22,7 +29,7 @@ Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 net
 
 ## Bundled Engine Note
 - The released backend image bundles Stockfish 19 for move evaluation.
-- Published images remain `amd64` only, using the upstream universal x86-64 binary. The backend Dockerfile also selects the official ARM64 universal asset for `TARGETARCH=arm64`; ARM64 publication and runtime validation remain future work.
+- The backend Dockerfile selects the official universal x86-64 or ARM64 asset using `TARGETARCH`. The release gate checks Stockfish license files and labels on both platforms and runs the ARM64 binary's UCI handshake under emulation; the full stack smoke test runs on amd64.
 - Stockfish source/license details are documented in `THIRD_PARTY_NOTICES.md`.
 - The backend image includes Stockfish notice/license files under `/usr/share/licenses/stockfish/`.
 - If Stockfish is unavailable, the backend stays up and the frontend disables the eval bar. After process exit or EOF, the failed evaluation has no score and the next queued evaluation gets one restart attempt. Requests arriving during the replacement handshake wait in the queue and run after recovery. A failed restart requires restarting the backend to restore evaluation. See [evaluation behavior](how-it-works.md#move-quality).
@@ -198,13 +205,13 @@ docker compose -f docker-compose.prod.yml exec backend wget -qO- http://localhos
 - The release workflow runs in this order, and any failure stops it before user-facing tags change:
   1. validates the tag (exact `vX.Y.Z`, commit reachable from `main`)
   2. runs the full CI suite on the tagged commit
-  3. builds both images and pushes them only as `sha-<commit>` candidates
-  4. starts `docker-compose.prod.yml` from both candidates and checks health, the frontend, and the proxied API
-  5. promotes both verified digests to `<tag>` and `latest`, then creates the GitHub Release
+  3. builds both images for `linux/amd64,linux/arm64` and pushes OCI indexes only as `sha-<12-character-commit>` candidates
+  4. verifies both platforms in both indexes, checks backend license files and labels per platform, runs the ARM64 Stockfish UCI handshake under QEMU, and starts the amd64 `docker-compose.prod.yml` stack to check health, the frontend, and the proxied API
+  5. copies both verified full indexes to `<tag>` and `latest`, then creates the GitHub Release with index digest lines
 - Published tags:
   - `ghcr.io/<owner>/chess-backend:<tag>` and `:latest`
   - `ghcr.io/<owner>/chess-frontend:<tag>` and `:latest`
-  - `sha-<commit>` candidate tags remain as build artifacts; do not deploy them directly
+  - `sha-<12-character-commit>` candidate tags remain as build artifacts; do not deploy them directly
 - Public package visibility is recommended for easy third-party pulls.
 - After first publish, confirm the package visibility in GitHub:
   - repository/package settings -> set packages to public if you want anonymous pulls
