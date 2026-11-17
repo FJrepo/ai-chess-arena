@@ -47,6 +47,8 @@ Legacy duplicate move rows count as one ply for adjudication, move quality (incl
 
 You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).
 
+Release images support amd64 and arm64, including Apple Silicon.
+
 ```bash
 git clone https://github.com/FJrepo/ai-chess-arena.git && cd ai-chess-arena
 make setup                     # creates .env (mode 0600) from .env.example
@@ -132,7 +134,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 | Frontend | Angular 21.2 with Angular Material, standalone components, CSS chessboard |
 | Database | PostgreSQL 17 |
 | Models | OpenRouter chat models (text output) |
-| Evaluation | Stockfish 19 (bundled in the backend image, `amd64` universal binary; the app runs without it) |
+| Evaluation | Stockfish 19 (bundled in the backend image, `amd64` or `arm64` universal binary; the app runs without it) |
 
 ## Repository layout
 
