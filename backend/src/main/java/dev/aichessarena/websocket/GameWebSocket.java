@@ -3,6 +3,7 @@ package dev.aichessarena.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.aichessarena.dto.ChatMessageDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
@@ -170,13 +171,13 @@ public class GameWebSocket {
         }
 
         if ("subscribe".equals(type)) {
-            subscribe(connection, gameId);
+            subscribe(connection, gameId, node.path("ack").asBoolean(false));
         } else {
             unsubscribe(connection, gameId);
         }
     }
 
-    private void subscribe(WebSocketConnection connection, UUID gameId) {
+    private void subscribe(WebSocketConnection connection, UUID gameId, boolean acknowledge) {
         if (gameRepository.findById(gameId) == null) {
             LOG.tracef("Ignoring subscription from %s for missing game %s", connection.id(), gameId);
             return;
@@ -200,6 +201,12 @@ public class GameWebSocket {
             connectionGameMap.remove(connection.id(), gameId);
             removeSubscription(gameId, connection);
             return;
+        }
+        if (acknowledge) {
+            String ack = objectMapper.createObjectNode().put("type", "subscribed").put("gameId", gameId.toString())
+                    .toString();
+            outsideTransaction(() -> connection.sendText(ack).subscribe().with(ignored -> { },
+                    err -> closeQuietly(connection, "Subscription acknowledgement failed")));
         }
         LOG.debugf("Connection %s subscribed to game %s", connection.id(), gameId);
     }
@@ -261,20 +268,17 @@ public class GameWebSocket {
         broadcast(gameId, msg.toString());
     }
 
-    public void broadcastChat(UUID gameId, int moveNumber, String senderColor,
-                               String senderModel, String senderName, String message) {
+    public void broadcastChat(UUID gameId, ChatMessageDto chat, String senderName) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "chat");
         msg.put("gameId", gameId.toString());
-        msg.put("moveNumber", moveNumber);
-        msg.put("senderColor", senderColor);
-        if (senderModel != null) {
-            msg.put("senderModel", senderModel);
-        } else {
-            msg.putNull("senderModel");
-        }
+        msg.put("id", chat.id().toString());
+        msg.put("createdAt", chat.createdAt().toString());
+        msg.put("moveNumber", chat.moveNumber());
+        msg.put("senderColor", chat.senderColor());
+        msg.put("senderModel", chat.senderModel());
         msg.put("senderName", senderName);
-        msg.put("message", message);
+        msg.put("message", chat.message());
         broadcast(gameId, msg.toString());
     }
 

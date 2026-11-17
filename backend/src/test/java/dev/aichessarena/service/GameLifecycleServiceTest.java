@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.aichessarena.dto.ChatMessageDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
@@ -558,9 +559,8 @@ class GameLifecycleServiceTest {
         }
 
         @Override
-        public void broadcastChat(UUID gameId, int moveNumber, String senderColor, String senderModel,
-                                  String senderName, String message) {
-            lastChat = message;
+        public void broadcastChat(UUID gameId, ChatMessageDto chat, String senderName) {
+            lastChat = chat.message();
         }
 
         @Override

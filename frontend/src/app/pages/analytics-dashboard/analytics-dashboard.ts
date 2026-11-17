@@ -17,7 +17,7 @@ import {
   NgTemplateOutlet,
 } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import {
@@ -266,6 +266,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return (this.reliability()?.models ?? []).filter((m) => m.insufficientData).length;
   });
 
+  private reports = new Subscription();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private tabSubscription: Subscription | null = null;
 
@@ -286,6 +287,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.reports.unsubscribe();
     this.tabSubscription?.unsubscribe();
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
@@ -304,11 +306,11 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   onCommonFiltersChanged(): void {
+    this.comparison.set(null);
+    this.health.set(null);
+    this.reliability.set(null);
+    this.lastUpdated.set(null);
     this.refreshAll();
-  }
-
-  onReliabilityFiltersChanged(): void {
-    this.loadReliability();
   }
 
   manualRefresh(): void {
@@ -383,13 +385,16 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   private refreshAll(): void {
-    this.loadComparison();
-    this.loadHealth();
-    this.loadReliability();
+    this.reports.unsubscribe();
+    this.reports = new Subscription();
+    this.reports.add(this.loadComparison());
+    this.reports.add(this.loadHealth());
+    this.reports.add(this.loadReliability());
   }
 
   private startAutoRefresh(): void {
     this.refreshTimer = setInterval(() => {
+      if (this.comparisonLoading() || this.healthLoading() || this.reliabilityLoading()) return;
       this.refreshAll();
     }, 15000);
   }
@@ -405,15 +410,16 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     });
   }
 
-  private loadHealth(): void {
+  private loadHealth(): Subscription {
     this.healthLoading.set(true);
     this.healthError.set(null);
 
-    this.api
+    return this.api
       .getAnalyticsHealth({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
       })
+      .pipe(finalize(() => this.healthLoading.set(false)))
       .subscribe({
         next: (response) => {
           this.health.set(response);
@@ -422,20 +428,20 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         error: () => {
           this.healthError.set('Failed to load engine health metrics.');
         },
-        complete: () => this.healthLoading.set(false),
       });
   }
 
-  private loadComparison(): void {
+  private loadComparison(): Subscription {
     this.comparisonLoading.set(true);
     this.comparisonError.set(null);
 
-    this.api
+    return this.api
       .getAnalyticsComparison({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
         minGames: Math.max(0, this.minGames),
       })
+      .pipe(finalize(() => this.comparisonLoading.set(false)))
       .subscribe({
         next: (response) => {
           this.comparison.set(response);
@@ -444,20 +450,20 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         error: () => {
           this.comparisonError.set('Failed to load model comparison metrics.');
         },
-        complete: () => this.comparisonLoading.set(false),
       });
   }
 
-  private loadReliability(): void {
+  private loadReliability(): Subscription {
     this.reliabilityLoading.set(true);
     this.reliabilityError.set(null);
 
-    this.api
+    return this.api
       .getAnalyticsReliability({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
         minGames: Math.max(0, this.minGames),
       })
+      .pipe(finalize(() => this.reliabilityLoading.set(false)))
       .subscribe({
         next: (response) => {
           this.reliability.set(response);
@@ -466,7 +472,6 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         error: () => {
           this.reliabilityError.set('Failed to load model reliability metrics.');
         },
-        complete: () => this.reliabilityLoading.set(false),
       });
   }
 

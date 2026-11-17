@@ -441,6 +441,8 @@ The analytics page shares its analysis window, tournament and minimum-games filt
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 
+Changing the filters clears the previous reports and cancels outstanding requests across all four tabs. Each report appears as its own response arrives.
+
 Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
 
 Every model answer is stored, including rejected ones: the game feed lists failed attempts per move (for example "2 failed attempts: illegal Qxh7, unparseable answer") and, separately, answers cut off at the token limit, which are not counted as the model's failures, and `GET /api/games/{id}/attempts` returns them with tokens, cost and finish reason.
@@ -565,6 +567,8 @@ API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true`
 ## Live settings
 
 Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
+
+The game view reads the game again once the server acknowledges its live subscription, including after a reconnect. During a refresh it keeps incoming updates, matches moves by move number and colour and chat by stored message ID, and restores the active side from the live position. A newer pause, queue change or result appears immediately. If it overtakes the snapshot, another read fills in the board and game details.
 
 Background refreshes preserve the historical position being reviewed; viewers at the latest move keep following new moves.
 

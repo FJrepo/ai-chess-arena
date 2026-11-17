@@ -117,6 +117,36 @@ describe('AnalyticsDashboard', () => {
     },
   );
 
+  it('ignores late all-tournament responses across all three filtered reports', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const health = new Subject<AnalyticsHealthResponse>();
+    const reliability = new Subject<ModelReliabilityResponse>();
+    const { component, api } = await renderDashboard();
+    const allComparison = component.comparison()!;
+    const allHealth = component.health()!;
+    const allReliability = component.reliability()!;
+    const tournamentId = 'tournament-b';
+    api.getAnalyticsComparison
+      .mockReturnValueOnce(comparison)
+      .mockReturnValueOnce(of({ ...allComparison, tournamentId }));
+    api.getAnalyticsHealth
+      .mockReturnValueOnce(health)
+      .mockReturnValueOnce(of({ ...allHealth, tournamentId }));
+    api.getAnalyticsReliability
+      .mockReturnValueOnce(reliability)
+      .mockReturnValueOnce(of({ ...allReliability, tournamentId }));
+    component.manualRefresh();
+    component.selectedTournamentId = tournamentId;
+    component.onCommonFiltersChanged();
+
+    comparison.next(allComparison);
+    health.next(allHealth);
+    reliability.next(allReliability);
+    expect(component.comparison()?.tournamentId).toBe(tournamentId);
+    expect(component.health()?.tournamentId).toBe(tournamentId);
+    expect(component.reliability()?.tournamentId).toBe(tournamentId);
+  });
+
   it('restores selection on query changes and keeps shared filters across tabs', async () => {
     const { harness, component, api } = await renderDashboard();
     component.selectedDays = 7;

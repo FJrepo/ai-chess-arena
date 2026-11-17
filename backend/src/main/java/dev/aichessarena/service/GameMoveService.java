@@ -1,6 +1,8 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.ChatMessageDto;
 import dev.aichessarena.dto.DtoMapper;
+import dev.aichessarena.dto.MoveDto;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
@@ -51,7 +53,7 @@ public class GameMoveService {
     @Inject
     Event<MoveEvaluationRequested> moveEvaluationEvents;
 
-    /** Null outside CDI (unit tests): then evaluation updates go out at once. */
+    /** Null outside CDI (unit tests): then live updates go out at once. */
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
@@ -106,23 +108,7 @@ public class GameMoveService {
         updateGameState(game, fen, san, moveNumber, color);
         moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
 
-        if (message != null && !message.isBlank()) {
-            persistChatMessage(game, moveNumber, modelId, color, message);
-            gameWebSocket.broadcastChat(gameId, moveNumber, color, modelId, playerName, message);
-        }
-
-        gameWebSocket.broadcastMove(
-                gameId,
-                moveNumber,
-                color,
-                san,
-                fen,
-                game.pgn,
-                modelId,
-                llmResponse.responseTimeMs(),
-                retryCount,
-                false
-        );
+        announceMove(game, move, playerName, message);
     }
 
     @Transactional
@@ -159,12 +145,7 @@ public class GameMoveService {
         updateGameState(game, fen, san, moveNumber, color);
         moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
 
-        if (message != null && !message.isBlank()) {
-            persistChatMessage(game, moveNumber, null, color, message);
-            gameWebSocket.broadcastChat(gameId, moveNumber, color, null, playerName, message);
-        }
-
-        gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, game.pgn, null, 0, 0, false);
+        announceMove(game, move, playerName, message);
     }
 
     @Transactional
@@ -256,8 +237,7 @@ public class GameMoveService {
 
         updateGameState(game, result.fen(), normalizedSan, moveNumber, sideToMove);
         moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, sideToMove, result.fen()));
-        gameWebSocket.broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), game.pgn,
-                "admin-override", 0, 0, true);
+        announceMove(game, move, null, null);
     }
 
     /** Compares piece placement, side to move and castling rights; ignores clocks and en-passant formatting. */
@@ -284,13 +264,30 @@ public class GameMoveService {
         gameRepository.persist(game);
     }
 
-    private void persistChatMessage(Game game, int moveNumber, String modelId, String color, String message) {
+    /** A GET started after a live frame must already be able to read its move and chat. */
+    private void announceMove(Game game, dev.aichessarena.entity.Move move, String playerName, String message) {
+        UUID gameId = game.id;
+        String pgn = game.pgn;
+        MoveDto played = DtoMapper.toDto(move);
+        ChatMessageDto chat = message == null || message.isBlank() ? null : persistChatMessage(game, move, message);
+        AfterCommit.run(transactionRegistry, () -> {
+            if (chat != null) {
+                gameWebSocket.broadcastChat(gameId, chat, playerName);
+            }
+            gameWebSocket.broadcastMove(gameId, played.moveNumber(), played.color(), played.san(), played.fen(), pgn,
+                    played.isOverride() ? "admin-override" : played.modelId(),
+                    played.responseTimeMs() == null ? 0 : played.responseTimeMs(), played.retryCount(), played.isOverride());
+        });
+    }
+
+    private ChatMessageDto persistChatMessage(Game game, dev.aichessarena.entity.Move move, String message) {
         ChatMessage chat = new ChatMessage();
         chat.game = game;
-        chat.moveNumber = moveNumber;
-        chat.senderModel = modelId;
-        chat.senderColor = color;
+        chat.moveNumber = move.moveNumber;
+        chat.senderModel = move.modelId;
+        chat.senderColor = move.color;
         chat.message = message;
         chatMessageRepository.persist(chat);
+        return DtoMapper.toDto(chat);
     }
 }

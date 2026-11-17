@@ -88,6 +88,25 @@ class GameWebSocketTest {
     }
 
     @Test
+    void onlyTheRegisteredSubscriberReceivesItsAcknowledgement() throws Exception {
+        UUID game = gameRepository.addGame();
+        List<String> first = new java.util.ArrayList<>();
+        List<String> second = new java.util.ArrayList<>();
+        String request = "{\"type\":\"subscribe\",\"ack\":true,\"gameId\":\"%s\"}";
+        endpoint.onMessage(recordingConnection("first", first), request.formatted(game));
+        WebSocketConnection joining = recordingConnection("second", second);
+        endpoint.onMessage(joining, request.formatted(UUID.randomUUID()));
+        assertTrue(second.isEmpty());
+        endpoint.onMessage(joining, request.formatted(game));
+
+        assertEquals(1, first.size());
+        assertEquals(first, second);
+        JsonNode ack = endpoint.objectMapper.readTree(second.getFirst());
+        assertEquals("subscribed", ack.path("type").asText());
+        assertEquals(game.toString(), ack.path("gameId").asText());
+    }
+
+    @Test
     void missingGamesDoNotCreateSubscriptionState() {
         WebSocketConnection connection = connection("connection-1");
 

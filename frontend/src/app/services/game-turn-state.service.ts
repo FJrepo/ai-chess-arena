@@ -117,6 +117,20 @@ export class GameTurnStateService {
     this.clearServerTurnState();
   }
 
+  /** The GET has no server deadline. Keep one only if it still describes exactly the same live turn. */
+  reconcileSnapshot(previous: Game | null, snapshot: Game): void {
+    const color = this.serverActiveColor();
+    const sameTurn =
+      previous?.status === 'IN_PROGRESS' &&
+      snapshot.status === 'IN_PROGRESS' &&
+      previous.statusRevision != null &&
+      previous.statusRevision === snapshot.statusRevision &&
+      previous.currentFen === snapshot.currentFen &&
+      color != null &&
+      snapshot.currentFen.split(' ')[1] === (color === 'WHITE' ? 'w' : 'b');
+    if (!sameTurn) this.clearServerTurnState();
+  }
+
   clearServerTurnState(): void {
     this.serverActiveColor.set(null);
     this.serverTurnStartedAtMs.set(null);

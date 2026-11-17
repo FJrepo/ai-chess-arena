@@ -39,7 +39,7 @@ import {
   RaiseLimitRequest,
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
-import { forkJoin, Observable, of, Subscription, switchMap, tap, timer } from 'rxjs';
+import { Observable, of, Subscription, switchMap, tap, timer } from 'rxjs';
 import { deriveCapturedMaterial } from '../../utils/captured-material';
 import { pieceImage, pieceName } from '../../utils/piece-assets';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
@@ -137,8 +137,7 @@ export class GameView implements OnInit, OnDestroy {
   savingLimit = signal(false);
   /** Keep the pause controls hidden until current participant and tournament settings arrive. */
   private refreshingPauseSettings = signal(false);
-  private pauseSettingsSub?: Subscription;
-  private settingsGeneration = 0;
+  private tournamentSub?: Subscription;
   /**
    * The side whose latest answer for the ply to be played was cut off at the output-token limit (outcome
    * TRUNCATED) while the game is paused; null otherwise.
@@ -222,19 +221,14 @@ export class GameView implements OnInit, OnDestroy {
 
   private reconnectSub?: Subscription;
   private queueRefreshSub?: Subscription;
-  /**
-   * Only the latest game load counts: a newer load cancels the older request, and a response from a
-   * superseded load is ignored. Live moves that arrive while it is in flight are buffered and merged afterwards.
-   */
   private loadGeneration = 0;
   private loadInFlight = false;
   private loadSub?: Subscription;
   private bufferedLiveMessages: WsMessage[] = [];
+  /** A live lifecycle update can advance the visible revision ahead of the last full read. */
+  private snapshotRevision: number | null = null;
   private attemptsGeneration = 0;
   private attemptsSub?: Subscription;
-  /** The highest status revision seen in a status update or a loaded game; null before any. */
-  private knownStatusRevision: number | null = null;
-  /** Reloads in a row that returned an outdated status (see keepAnnouncedResult). */
   private staleReloads = 0;
   private staleReloadTimer?: ReturnType<typeof setTimeout>;
   static readonly STALE_RELOAD_DELAY_MS = 1000;
@@ -481,15 +475,14 @@ export class GameView implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.gameId = this.route.snapshot.paramMap.get('id')!;
+    this.wsSub = this.ws.getMessages(this.gameId).subscribe((msg) => this.handleWsMessage(msg));
+    this.reconnectSub = this.ws.reconnected().subscribe(() => this.loadGame());
+    this.ws.connect();
+    this.ws.subscribeToGame(this.gameId);
     this.loadGame();
     this.loadSystemStatus();
     this.turnState.startTicker();
 
-    this.ws.connect();
-    this.ws.subscribeToGame(this.gameId);
-
-    this.wsSub = this.ws.getMessages(this.gameId).subscribe((msg) => this.handleWsMessage(msg));
-    this.reconnectSub = this.ws.reconnected().subscribe(() => this.loadGame());
     this.queueRefreshSub = timer(15000, 15000).subscribe(() => {
       if (this.game()?.resumeRequestedAt && !this.loadInFlight) this.loadGame(true);
     });
@@ -502,132 +495,123 @@ export class GameView implements OnInit, OnDestroy {
     this.queueRefreshSub?.unsubscribe();
     this.loadSub?.unsubscribe();
     this.attemptsSub?.unsubscribe();
-    this.pauseSettingsSub?.unsubscribe();
+    this.tournamentSub?.unsubscribe();
     clearTimeout(this.staleReloadTimer);
     this.turnState.stopTicker();
   }
 
   loadGame(queuePoll = false) {
     const generation = ++this.loadGeneration;
-    const polledRevision = this.knownStatusRevision;
-    if (!queuePoll) {
-      ++this.settingsGeneration;
-      this.pauseSettingsSub?.unsubscribe();
-      this.refreshingPauseSettings.set(true);
-    }
-    const settingsGeneration = this.settingsGeneration;
+    const atRequest = this.game();
+    clearTimeout(this.staleReloadTimer);
+    this.tournamentSub?.unsubscribe();
+    this.refreshingPauseSettings.set(true);
     this.loadInFlight = true;
     this.loadSub?.unsubscribe();
-    this.loadSub = this.api.getGame(this.gameId).subscribe({
-      next: (game) => {
-        if (generation !== this.loadGeneration) {
-          return;
-        }
-        this.loadInFlight = false;
-        if (
-          queuePoll &&
-          (game.statusRevision == null ||
-            game.statusRevision <= (polledRevision ?? -1) ||
-            game.statusRevision < (this.knownStatusRevision ?? -1))
-        ) {
-          if (game.statusRevision === this.knownStatusRevision) {
-            this.applyResumeSnapshot(game);
+    const request = new Subscription();
+    this.loadSub = request;
+    request.add(
+      this.api.getGame(this.gameId).subscribe({
+        next: (game) => {
+          if (generation !== this.loadGeneration) return;
+          this.loadInFlight = false;
+          this.snapshotRevision = game.statusRevision ?? null;
+          const visibleRevision = this.game()?.statusRevision ?? -1;
+          // A read spanning a transition can already contain its revision while missing unversioned
+          // details such as participant settings. Coalesce those events into one read after the transition.
+          const overtaken =
+            atRequest &&
+            visibleRevision > (atRequest.statusRevision ?? -1) &&
+            visibleRevision >= (game.statusRevision ?? -1);
+          const keptNewerStatus = this.applySnapshot(game, atRequest);
+          const invalidated = this.replayBufferedLiveMessages();
+          if (invalidated || overtaken) {
+            this.loadGame();
+          } else {
+            this.loadAttempts();
+            if (this.snapshotBehind() || keptNewerStatus) {
+              this.scheduleStaleReload();
+            } else {
+              this.staleReloads = 0;
+              this.loadTournamentSettings(game);
+            }
           }
-          this.replayBufferedLiveMessages();
-          return;
-        }
-        if (queuePoll && game.statusRevision !== this.knownStatusRevision) {
-          this.turnState.clearServerTurnState();
-        }
-        // Respect navigation while the request was in flight; only a live-following viewer advances.
-        const selectedMoveIndex = this.currentMoveIndex();
-        const wasAtLatest = this.game() === null || selectedMoveIndex === this.moves().length - 1;
-        const sorted = sortMovesInPlayOrder(game.moves || []);
-        const moves = keepLiveEvaluations(sorted, this.moves());
-        const keptLive = moves.some((move, index) => move !== sorted[index]);
-        const liveSummary = this.game()?.qualitySummary;
-        let reconciled = this.keepAnnouncedResult(game);
-        if (settingsGeneration !== this.settingsGeneration && this.game()) {
-          // A pause refresh started after this snapshot request: keep its newer effort settings.
-          reconciled = {
-            ...reconciled,
-            whiteReasoningEffort: this.game()?.whiteReasoningEffort,
-            blackReasoningEffort: this.game()?.blackReasoningEffort,
-          };
-        }
-        // The live summary belongs to the evaluations kept from live updates.
-        this.game.set(
-          keptLive && liveSummary ? { ...reconciled, qualitySummary: liveSummary } : reconciled,
-        );
-        if (isFinishedStatus(reconciled.status)) this.pendingPromotion.set(null);
-        this.moves.set(moves);
-        this.chatMessages.set(game.chatMessages || []);
-        this.currentMoveIndex.set(
-          wasAtLatest ? moves.length - 1 : Math.min(selectedMoveIndex, moves.length - 1),
-        );
-        // A status change announced before the first snapshot arrived is newer than the snapshot: the replay
-        // below applies it, and the stored game is read again for the details that only it carries.
-        const announced = highestStatusRevision(this.bufferedLiveMessages);
-        if (announced != null && (game.statusRevision == null || announced > game.statusRevision)) {
-          this.scheduleStaleReload();
-        }
-        this.replayBufferedLiveMessages();
-        this.loadAttempts();
-
-        if (queuePoll) {
-          if (this.game()?.status === 'PAUSED') this.refreshPauseSettings();
-          return;
-        }
-        if (game.tournamentId) {
-          this.api.getTournament(game.tournamentId).subscribe({
-            next: (tournament) => {
-              if (settingsGeneration !== this.settingsGeneration) {
-                return;
-              }
-              // null: the tournament has no time limit per move, so there is no countdown.
-              this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
-              this.tournamentMaxOutputTokens.set(
-                tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
-              );
-              this.tournamentChatMode.set(
-                tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
-              );
-              this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
-              this.tournamentReasoningEffort.set(
-                isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
-              );
-              this.refreshingPauseSettings.set(false);
-            },
-            // Limit unknown: only a deadline sent by the server shows a countdown.
-            error: () => {
-              if (settingsGeneration === this.settingsGeneration) {
-                this.turnState.moveTimeoutSeconds.set(null);
-              }
-            },
+        },
+        error: (err) => {
+          if (generation !== this.loadGeneration) return;
+          this.loadInFlight = false;
+          const invalidated = this.replayBufferedLiveMessages();
+          if (invalidated || this.snapshotBehind()) this.scheduleStaleReload();
+          if (queuePoll) return;
+          if (this.game()) {
+            this.showServerError(
+              err,
+              this.game()?.status === 'PAUSED'
+                ? 'Failed to refresh the paused game settings.'
+                : 'Failed to refresh the game.',
+            );
+            return;
+          }
+          this.snackbar.open('Failed to load the game.', 'Dismiss', {
+            duration: 4000,
+            horizontalPosition: 'right',
+            verticalPosition: 'top',
           });
-        } else {
-          if (settingsGeneration === this.settingsGeneration) {
-            this.refreshingPauseSettings.set(false);
-          }
-          // Games outside a tournament use the backend's default limit.
-          this.turnState.setMoveTimeoutSeconds(DEFAULT_MOVE_TIMEOUT_SECONDS);
-        }
+          void this.router.navigate(['/tournaments']);
+        },
+      }),
+    );
+  }
+
+  /** Replace the board, history and chat together before replaying events against their stored identities. */
+  private applySnapshot(game: Game, previous: Game | null): boolean {
+    // Respect navigation while the request was in flight; only a live-following viewer advances.
+    const selectedMoveIndex = this.currentMoveIndex();
+    const wasAtLatest = this.game() === null || selectedMoveIndex === this.moves().length - 1;
+    const sorted = sortMovesInPlayOrder(game.moves || []);
+    const moves = keepLiveEvaluations(sorted, this.moves());
+    const keptLive = moves.some((move, index) => move !== sorted[index]);
+    const liveSummary = this.game()?.qualitySummary;
+    const reconciled = this.keepAnnouncedResult(game, previous);
+    this.turnState.reconcileSnapshot(previous, reconciled);
+    // The live summary belongs to the evaluations kept from live updates.
+    this.game.set(
+      keptLive && liveSummary ? { ...reconciled, qualitySummary: liveSummary } : reconciled,
+    );
+    if (isFinishedStatus(reconciled.status)) this.pendingPromotion.set(null);
+    this.moves.set(moves);
+    this.chatMessages.set(game.chatMessages || []);
+    this.currentMoveIndex.set(
+      wasAtLatest ? moves.length - 1 : Math.min(selectedMoveIndex, moves.length - 1),
+    );
+    return reconciled !== game;
+  }
+
+  private loadTournamentSettings(game: Game): void {
+    if (!game.tournamentId) {
+      this.refreshingPauseSettings.set(false);
+      this.turnState.setMoveTimeoutSeconds(DEFAULT_MOVE_TIMEOUT_SECONDS);
+      return;
+    }
+    this.tournamentSub = this.api.getTournament(game.tournamentId).subscribe({
+      next: (tournament) => {
+        this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
+        this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
+        this.tournamentChatMode.set(
+          tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
+        );
+        this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
+        this.tournamentReasoningEffort.set(
+          isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
+        );
+        this.refreshingPauseSettings.set(false);
       },
-      error: () => {
-        if (generation !== this.loadGeneration) {
-          return;
-        }
-        this.loadInFlight = false;
-        this.replayBufferedLiveMessages();
-        if (queuePoll) return;
-        this.snackbar.open('Failed to load the game.', 'Dismiss', {
-          duration: 4000,
-          horizontalPosition: 'right',
-          verticalPosition: 'top',
-        });
-        void this.router.navigate(['/tournaments']);
-      },
+      error: () => this.turnState.moveTimeoutSeconds.set(null),
     });
+  }
+
+  private snapshotBehind(): boolean {
+    return (this.game()?.statusRevision ?? -1) > (this.snapshotRevision ?? -1);
   }
 
   /**
@@ -636,21 +620,13 @@ export class GameView implements OnInit, OnDestroy {
    * announced and ask again a little later (a few times at most), so the details only the stored game carries
    * (e.g. a resignation's) arrive too.
    */
-  private keepAnnouncedResult(loaded: Game): Game {
-    const previous = this.game();
-    const known = this.knownStatusRevision;
+  private keepAnnouncedResult(loaded: Game, previous: Game | null): Game {
+    const known = previous?.statusRevision;
     const olderRevision =
       loaded.statusRevision != null && known != null && loaded.statusRevision < known;
     const reopened =
       !!previous && isFinishedStatus(previous.status) && !isFinishedStatus(loaded.status);
-    if (!previous || previous.id !== loaded.id || !(olderRevision || reopened)) {
-      this.staleReloads = 0;
-      if (loaded.statusRevision != null) {
-        this.knownStatusRevision = Math.max(known ?? loaded.statusRevision, loaded.statusRevision);
-      }
-      return loaded;
-    }
-    this.scheduleStaleReload();
+    if (!previous || previous.id !== loaded.id || !(olderRevision || reopened)) return loaded;
     return {
       ...loaded,
       status: previous.status,
@@ -659,8 +635,9 @@ export class GameView implements OnInit, OnDestroy {
       statusDetail: previous.statusDetail ?? null,
       resumeRequestedAt: previous.resumeRequestedAt,
       runCapacity: previous.runCapacity,
+      totalCostUsd: previous.totalCostUsd,
       completedAt: previous.completedAt ?? loaded.completedAt,
-      statusRevision: previous.statusRevision ?? known ?? loaded.statusRevision,
+      statusRevision: known ?? loaded.statusRevision,
     };
   }
 
@@ -710,33 +687,33 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   handleWsMessage(msg: WsMessage) {
-    if (this.loadInFlight && (msg.type === 'move' || msg.type === 'evaluationUpdate')) {
-      // The loaded game replaces the move list; apply these on top of it once it arrives.
-      this.bufferedLiveMessages.push(msg);
+    if (msg.type === 'subscribed') {
+      // Only this GET is guaranteed to start after the server registered this viewer.
+      this.loadGame();
       return;
     }
-    if (
-      this.loadInFlight &&
-      this.game() === null &&
-      (msg.type === 'gameStatus' || msg.type === 'forfeit')
-    ) {
-      // Before the first snapshot there is no game to apply a status change to. Keep it (with its revision)
-      // and replay it on the snapshot; the revision check then keeps whichever is newer.
+    if (this.loadInFlight) {
       this.bufferedLiveMessages.push(msg);
+      // Show lifecycle and queue changes immediately, even on a slow GET. Replay uses the same revision guard.
+      if (msg.type === 'gameStatus' && msg.statusRevision != null) this.applyLifecycle(msg);
       return;
     }
+    if (this.applyLiveMessage(msg) || this.snapshotBehind()) this.loadGame();
+  }
+
+  /** Returns true when this event invalidates data only a full GET can supply. */
+  private applyLiveMessage(msg: WsMessage): boolean {
     switch (msg.type) {
       case 'attemptsUpdated':
-        // The attempt and any added cost are committed, including answers discarded after cancellation.
-        // loadGame also reloads attempts and supersedes any earlier snapshot still in flight.
-        this.loadGame();
-        break;
+        return true;
 
       case 'move':
-        this.applyLiveMove(msg);
-        break;
+        return this.applyLiveMove(msg);
 
       case 'evaluationUpdate': {
+        // Evaluation and move delivery can race. The committed GET includes both if this ply is missing.
+        if (!this.moves().some((m) => m.moveNumber === msg.moveNumber && m.color === msg.color))
+          return this.isLive();
         const evaluated = this.moves().map((m) =>
           m.moveNumber === msg.moveNumber && m.color === msg.color
             ? { ...m, evaluationCp: msg.evaluationCp, evaluationMate: msg.evaluationMate }
@@ -758,105 +735,78 @@ export class GameView implements OnInit, OnDestroy {
           last?.moveNumber === msg.moveNumber &&
           last.color === msg.color
         ) {
-          this.loadGame();
+          return true;
         }
         break;
       }
 
       case 'chat':
-        const newChat: ChatMessage = {
-          id: '',
-          moveNumber: msg.moveNumber,
-          senderModel: msg.senderModel,
-          senderColor: msg.senderColor,
-          message: msg.message || '',
-          createdAt: new Date().toISOString(),
-        };
-        this.chatMessages.update((list) => [...list, newChat]);
+        if (msg.id && this.chatMessages().some((chat) => chat.id === msg.id)) break;
+        this.chatMessages.update((list) => [
+          ...list,
+          {
+            id: msg.id ?? '',
+            moveNumber: msg.moveNumber,
+            senderModel: msg.senderModel,
+            senderColor: msg.senderColor,
+            message: msg.message ?? '',
+            createdAt: msg.createdAt ?? new Date().toISOString(),
+          },
+        ]);
         break;
 
       case 'gameStatus':
-        if (msg.statusRevision == null) {
-          // A per-turn update (whose turn it is, its deadline, the cost so far): never a status change.
-          this.applyTurnUpdate(msg);
-          break;
-        }
-        // Status changes are sent after their commit and can arrive out of order: ignore an older one.
-        if (this.knownStatusRevision != null && msg.statusRevision < this.knownStatusRevision) {
-          break;
-        }
-        this.knownStatusRevision = msg.statusRevision;
-        const status = msg.status;
-        const previous = this.game();
-        const queueChangedWhilePaused =
-          status === 'PAUSED' &&
-          previous?.status === 'PAUSED' &&
-          (previous.resumeRequestedAt || msg.resumeRequestedAt);
-        if (status && isFinishedStatus(status)) this.pendingPromotion.set(null);
-        this.game.update((g) =>
-          g
-            ? {
-                ...g,
-                status: status || g.status,
-                result: status === 'CANCELLED' ? null : msg.result || g.result,
-                resultReason: status === 'CANCELLED' ? null : msg.resultReason || g.resultReason,
-                statusDetail: status
-                  ? status === 'PAUSED'
-                    ? (msg.detail ?? null)
-                    : null
-                  : g.statusDetail,
-                totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
-                resumeRequestedAt: msg.resumeRequestedAt ?? null,
-                runCapacity: msg.runCapacity ?? null,
-                statusRevision: msg.statusRevision ?? g.statusRevision,
-                startedAt:
-                  status === 'IN_PROGRESS'
-                    ? (g.startedAt ?? new Date().toISOString())
-                    : g.startedAt,
-              }
-            : g,
-        );
-        this.turnState.applyStatusUpdate(
-          status,
-          msg.activeColor,
-          msg.turnStartedAt,
-          msg.turnDeadlineAt,
-        );
-        // A mode changed during play shows up with the next model turn.
-        if (msg.tournamentChatMode) {
-          this.tournamentChatMode.set(msg.tournamentChatMode);
-        }
-        if (msg.tournamentBanterLevel !== undefined) {
-          this.tournamentBanterLevel.set(msg.tournamentBanterLevel);
-        }
-        if (
-          status === 'COMPLETED' &&
-          (msg.resultReason === 'RESIGNATION' || msg.resultReason === 'ADJUDICATION')
-        ) {
-          // Result evidence is carried by the game details; reload it and the attempts.
-          this.loadGame();
-        } else if (
-          !queueChangedWhilePaused &&
-          (status === 'PAUSED' || (status && isFinishedStatus(status)))
-        ) {
-          if (status === 'PAUSED') {
-            this.refreshPauseSettings();
-          }
-          this.loadAttempts();
-        }
+        if (msg.statusRevision == null) this.applyTurnUpdate(msg);
+        else this.applyLifecycle(msg);
         break;
 
       case 'retry':
         this.retryInfo.set(retryText(msg));
         break;
 
-      case 'forfeit':
+      case 'forfeit': {
+        const game = this.game();
+        if (!game || isFinishedStatus(game.status)) break;
         this.pendingPromotion.set(null);
         this.turnState.clearServerTurnState();
-        this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
-        this.loadAttempts();
-        break;
+        this.game.set({ ...game, status: 'FORFEIT', resumeRequestedAt: null, runCapacity: null });
+        return true;
+      }
     }
+    return false;
+  }
+
+  private applyLifecycle(msg: GameStatusWsMessage): void {
+    const game = this.game();
+    const status = msg.status;
+    if (
+      !game ||
+      !status ||
+      msg.statusRevision == null ||
+      msg.statusRevision <= (game.statusRevision ?? -1)
+    )
+      return;
+    if (isFinishedStatus(status)) this.pendingPromotion.set(null);
+    this.game.set({
+      ...game,
+      status,
+      result: status === 'CANCELLED' ? null : (msg.result ?? game.result),
+      resultReason: status === 'CANCELLED' ? null : (msg.resultReason ?? game.resultReason),
+      statusDetail: status === 'PAUSED' ? (msg.detail ?? null) : null,
+      totalCostUsd: msg.totalCostUsd ?? game.totalCostUsd,
+      resumeRequestedAt: msg.resumeRequestedAt ?? null,
+      runCapacity: msg.runCapacity ?? null,
+      statusRevision: msg.statusRevision,
+      startedAt:
+        status === 'IN_PROGRESS' ? (game.startedAt ?? new Date().toISOString()) : game.startedAt,
+    });
+    this.turnState.applyStatusUpdate(
+      status,
+      msg.activeColor,
+      msg.turnStartedAt,
+      msg.turnDeadlineAt,
+    );
+    this.staleReloads = 0;
   }
 
   /**
@@ -867,6 +817,8 @@ export class GameView implements OnInit, OnDestroy {
    * replayed onto the snapshot.
    */
   private applyTurnUpdate(msg: GameStatusWsMessage) {
+    // A turn announced before a move already in the snapshot cannot own its clock or controls.
+    if (msg.totalMoves != null && msg.totalMoves < this.moves().length) return;
     // The tournament's chat mode is a setting, not part of the game's status: a mode changed during play shows
     // up with the next model turn.
     if (msg.tournamentChatMode) {
@@ -896,13 +848,11 @@ export class GameView implements OnInit, OnDestroy {
     );
   }
 
-  private applyLiveMove(msg: MoveWsMessage) {
-    const known = this.moves().some(
-      (move) => move.moveNumber === msg.moveNumber && move.color === msg.color,
-    );
-    if (known) {
-      return;
-    }
+  private applyLiveMove(msg: MoveWsMessage): boolean {
+    const expected = nextPly(this.moves());
+    if (msg.moveNumber !== expected.moveNumber) return msg.moveNumber > expected.moveNumber;
+    // A repeated ply is already in the snapshot. A gap needs the missing move from storage.
+    if (msg.color !== expected.color) return msg.color === 'BLACK';
     const newMove: Move = {
       id: '',
       moveNumber: msg.moveNumber,
@@ -928,6 +878,7 @@ export class GameView implements OnInit, OnDestroy {
       this.currentMoveIndex.set(this.moves().length - 1);
     }
     this.game.update((g) => (g ? { ...g, currentFen: msg.fen, pgn: msg.pgn ?? g.pgn } : g));
+    this.turnState.clearServerTurnState();
     this.retryInfo.set(null);
     const plyHadAttempts = this.attempts().some(
       (a) => a.moveNumber === msg.moveNumber && a.color === msg.color,
@@ -935,12 +886,17 @@ export class GameView implements OnInit, OnDestroy {
     if ((msg.retryCount ?? 0) > 0 || plyHadAttempts) {
       this.loadAttempts();
     }
+    return false;
   }
 
   private replayBufferedLiveMessages() {
     const buffered = this.bufferedLiveMessages;
     this.bufferedLiveMessages = [];
-    buffered.forEach((msg) => this.handleWsMessage(msg));
+    let invalidated = false;
+    for (const msg of buffered) {
+      if (this.applyLiveMessage(msg)) invalidated = true;
+    }
+    return invalidated;
   }
 
   flipBoard() {
@@ -979,48 +935,6 @@ export class GameView implements OnInit, OnDestroy {
           verticalPosition: 'top',
         });
       },
-    });
-  }
-
-  /** A pause may follow settings changed elsewhere while this view stayed open. */
-  private refreshPauseSettings(): void {
-    const tournamentId = this.game()?.tournamentId;
-    if (!tournamentId) {
-      return;
-    }
-    const revision = this.knownStatusRevision;
-    const settingsGeneration = ++this.settingsGeneration;
-    this.pauseSettingsSub?.unsubscribe();
-    this.refreshingPauseSettings.set(true);
-    this.pauseSettingsSub = forkJoin({
-      game: this.api.getGame(this.gameId),
-      tournament: this.api.getTournament(tournamentId),
-    }).subscribe({
-      next: ({ game, tournament }) => {
-        if (
-          settingsGeneration !== this.settingsGeneration ||
-          this.game()?.status !== 'PAUSED' ||
-          this.knownStatusRevision !== revision
-        ) {
-          return;
-        }
-        this.game.update((current) =>
-          current
-            ? {
-                ...current,
-                whiteReasoningEffort: game.whiteReasoningEffort,
-                blackReasoningEffort: game.blackReasoningEffort,
-              }
-            : current,
-        );
-        this.tournamentReasoningEffort.set(
-          isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
-        );
-        this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
-        this.refreshingPauseSettings.set(false);
-      },
-      // Keep the save controls hidden rather than offer to overwrite settings from a stale snapshot.
-      error: (err) => this.showServerError(err, 'Failed to refresh the paused game settings.'),
     });
   }
 
@@ -1154,7 +1068,7 @@ export class GameView implements OnInit, OnDestroy {
   private applyResumeSnapshot(game: Game): void {
     const current = this.game();
     if (!current || game?.statusRevision == null) return;
-    if (game.statusRevision === this.knownStatusRevision) {
+    if (game.statusRevision === current.statusRevision) {
       if (current.resumeRequestedAt) this.game.set({ ...current, runCapacity: game.runCapacity });
       return;
     }
@@ -1370,17 +1284,6 @@ function keepLiveEvaluations(loaded: Move[], live: Move[]): Move[] {
         }
       : move;
   });
-}
-
-/** The highest status revision among buffered status updates; null when none carries one. */
-function highestStatusRevision(messages: WsMessage[]): number | null {
-  let highest: number | null = null;
-  for (const msg of messages) {
-    if (msg.type === 'gameStatus' && msg.statusRevision != null) {
-      highest = Math.max(highest ?? msg.statusRevision, msg.statusRevision);
-    }
-  }
-  return highest;
 }
 
 function isFinishedStatus(status: Game['status']): boolean {

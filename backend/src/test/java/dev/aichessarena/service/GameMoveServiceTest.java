@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.dto.ChatMessageDto;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
@@ -74,6 +75,8 @@ class GameMoveServiceTest {
         assertEquals("WHITE", moveEvaluationEvents.lastRequest.color());
         assertEquals(1, chatRepository.persistedMessages.size());
         assertEquals("Good luck", chatRepository.persistedMessages.getFirst().message);
+        assertEquals(chatRepository.persistedMessages.getFirst().id, websocket.lastChat.id());
+        assertEquals(chatRepository.persistedMessages.getFirst().createdAt, websocket.lastChat.createdAt());
         assertEquals("Model A", websocket.lastChatSenderName);
         assertEquals("e4", websocket.lastMoveSan);
         assertFalse(websocket.lastMoveOverride);
@@ -367,6 +370,7 @@ class GameMoveServiceTest {
 
         @Override
         public void persist(ChatMessage entity) {
+            entity.id = UUID.randomUUID();
             persistedMessages.add(entity);
         }
     }
@@ -412,19 +416,14 @@ class GameMoveServiceTest {
         private int lastEvaluationMoveNumber;
         private List<PlyQualityDto> lastQualities;
         private GameQualitySummaryDto lastSummary;
+        private ChatMessageDto lastChat;
         private String lastChatSenderName;
         private String lastMoveSan;
         private boolean lastMoveOverride;
 
         @Override
-        public void broadcastChat(
-                UUID gameId,
-                int moveNumber,
-                String senderColor,
-                String senderModel,
-                String senderName,
-                String message
-        ) {
+        public void broadcastChat(UUID gameId, ChatMessageDto chat, String senderName) {
+            lastChat = chat;
             lastChatSenderName = senderName;
         }
 

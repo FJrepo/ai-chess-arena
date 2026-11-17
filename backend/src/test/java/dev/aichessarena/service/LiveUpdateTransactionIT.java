@@ -4,9 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
@@ -63,12 +66,19 @@ class LiveUpdateTransactionIT {
     MoveRepository moveRepository;
 
     @Inject
+    ChatMessageRepository chatRepository;
+
+    @Inject
+    ObjectMapper mapper;
+
+    @Inject
     TransactionManager transactionManager;
 
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
     private final ExecutorService eventLoop = Executors.newSingleThreadExecutor();
+    private final List<JsonNode> frames = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final List<String> callbackTransactions = Collections.synchronizedList(new ArrayList<>());
     private final CountDownLatch callbackStarted = new CountDownLatch(1);
     private final CountDownLatch releaseCallback = new CountDownLatch(1);
@@ -87,25 +97,28 @@ class LiveUpdateTransactionIT {
         eventLoop.shutdownNow();
     }
 
-    /**
-     * Regression: the send of the move update finishes while the move's transaction commits. Its callback must not
-     * run inside that transaction, and the move must commit.
-     */
     @Test
-    void aMoveCommitsWhileItsUpdateIsStillBeingSent() {
+    void broadcastsCommittedMovesAndStoredChatIdsOutsideTheTransaction() throws Exception {
         UUID gameId = runningGame();
         gameWebSocket.onMessage(viewer, "{\"type\":\"subscribe\",\"gameId\":\"%s\"}".formatted(gameId));
 
         try {
-            gameMoveService.recordModelMove(gameId, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", null,
-                    new LlmResponse("{\"move\":\"e4\"}", 10, 5, 0.001, 1, "{}", false, null), 0, "v2", "hash",
-                    START, ChatMode.OFF);
+            QuarkusTransaction.requiringNew().run(() -> {
+                gameMoveService.recordModelMove(gameId, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", "Hello",
+                        new LlmResponse("{\"move\":\"e4\"}", 10, 5, 0.001, 1, "{}", false, null), 0, "v2", "hash",
+                        START, ChatMode.OPTIONAL);
+                assertTrue(frames.isEmpty(), "a GET cannot see the move or chat until this transaction commits");
+            });
         } finally {
             releaseCallback.countDown();
         }
 
-        // The move update, and (with Stockfish unavailable in tests) the evaluation update sent after the commit.
-        assertFalse(callbackTransactions.isEmpty(), "the move update was not sent");
+        UUID storedId = QuarkusTransaction.requiringNew().call(() -> chatRepository.findByGameId(gameId).getFirst().id);
+        JsonNode chat = frames.stream().filter(f -> "chat".equals(f.path("type").asText())).findFirst().orElseThrow();
+        assertEquals(storedId.toString(), chat.path("id").asText());
+        assertEquals("Hello", chat.path("message").asText());
+        assertTrue(frames.stream().anyMatch(f -> "move".equals(f.path("type").asText())));
+        assertTrue(callbackStarted.await(10, TimeUnit.SECONDS));
         assertFalse(callbackTransactions.contains(INSIDE), "a send callback ran inside a transaction");
         assertEquals(1L, QuarkusTransaction.requiringNew().call(() -> moveRepository.count("game.id", gameId)));
         assertEquals(AFTER_E4, QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(gameId).currentFen));
@@ -126,7 +139,10 @@ class LiveUpdateTransactionIT {
                     case "equals" -> proxy == args[0];
                     case "toString" -> "WebSocketConnection[" + id + "]";
                     case "isOpen" -> true;
-                    case "sendText" -> slowSend();
+                    case "sendText" -> {
+                        frames.add(mapper.readTree(args[0].toString()));
+                        yield slowSend();
+                    }
                     default -> throw new UnsupportedOperationException(method.getName());
                 }
         );

@@ -324,6 +324,9 @@ export interface EvaluationUpdateWsMessage {
 }
 
 export interface ChatWsMessage {
+  /** Persisted identity and timestamp, absent on older servers. */
+  id?: string;
+  createdAt?: string;
   type: 'chat';
   gameId: string;
   moveNumber: number;
@@ -339,6 +342,7 @@ export interface RunCapacity {
 }
 
 export interface GameStatusWsMessage {
+  totalMoves?: number;
   type: 'gameStatus';
   gameId: string;
   status?: Game['status'];
@@ -382,6 +386,7 @@ export interface AttemptsUpdatedWsMessage {
 }
 
 export type WsMessage =
+  | { type: 'subscribed'; gameId: string }
   | MoveWsMessage
   | EvaluationUpdateWsMessage
   | ChatWsMessage
@@ -392,6 +397,7 @@ export type WsMessage =
 
 export interface WsOutgoingMessage {
   type: 'subscribe' | 'unsubscribe';
+  ack?: boolean;
   gameId: string;
 }
 

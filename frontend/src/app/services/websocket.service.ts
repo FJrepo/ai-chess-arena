@@ -9,6 +9,7 @@ export class WebSocketService {
   private messages$ = new Subject<WsMessage>();
   private reconnected$ = new Subject<void>();
   private hasConnectedBefore = false;
+  private supportsSubscriptionAck = false;
   private currentGameId: string | null = null;
   private shouldReconnect = true;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -34,7 +35,7 @@ export class WebSocketService {
         this.subscribeToGame(this.currentGameId);
       }
       // Updates sent while disconnected (e.g. a backend restart pausing games) were missed.
-      if (this.hasConnectedBefore) {
+      if (this.hasConnectedBefore && !this.supportsSubscriptionAck) {
         this.reconnected$.next();
       }
       this.hasConnectedBefore = true;
@@ -44,6 +45,7 @@ export class WebSocketService {
       try {
         const raw: unknown = JSON.parse(event.data);
         if (isWsMessage(raw)) {
+          if (raw.type === 'subscribed') this.supportsSubscriptionAck = true;
           this.messages$.next(raw);
         } else {
           this.snackBar.open('Ignored an invalid live update payload.', 'Dismiss', {
@@ -78,7 +80,7 @@ export class WebSocketService {
 
   subscribeToGame(gameId: string): void {
     this.currentGameId = gameId;
-    this.send({ type: 'subscribe', gameId });
+    this.send({ type: 'subscribe', gameId, ack: true });
   }
 
   unsubscribeFromGame(gameId: string): void {
@@ -86,7 +88,7 @@ export class WebSocketService {
     this.currentGameId = null;
   }
 
-  /** Emits after the live connection was re-established; views should reload their state. */
+  /** Fallback for older servers that do not acknowledge subscriptions. */
   reconnected(): Observable<void> {
     return this.reconnected$.asObservable();
   }
@@ -126,6 +128,7 @@ function isWsMessage(message: unknown): message is WsMessage {
   }
 
   return (
+    candidate.type === 'subscribed' ||
     candidate.type === 'move' ||
     candidate.type === 'chat' ||
     candidate.type === 'gameStatus' ||

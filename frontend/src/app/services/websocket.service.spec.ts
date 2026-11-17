@@ -55,8 +55,31 @@ describe('WebSocketService', () => {
 
     expect(reconnects).toHaveBeenCalledTimes(1);
     expect(FakeSocket.instances[1].sent).toContain(
-      JSON.stringify({ type: 'subscribe', gameId: 'g-1' }),
+      JSON.stringify({ type: 'subscribe', gameId: 'g-1', ack: true }),
     );
+  });
+
+  it('delivers the server acknowledgement for the viewed game on first subscribe and reconnect', () => {
+    const service = new WebSocketService({ open: vi.fn() } as any);
+    const ready = vi.fn();
+    service.getMessages('g-1').subscribe(ready);
+    service.subscribeToGame('g-1');
+    service.connect();
+    const ack = { type: 'subscribed', gameId: 'g-1' };
+    for (const index of [0, 1]) {
+      const socket = FakeSocket.instances[index];
+      socket.open();
+      expect(socket.sent).toEqual([
+        JSON.stringify({ type: 'subscribe', gameId: 'g-1', ack: true }),
+      ]);
+      socket.onmessage?.({ data: JSON.stringify({ ...ack, gameId: 'g-2' }) });
+      expect(ready).toHaveBeenCalledTimes(index);
+      socket.onmessage?.({ data: JSON.stringify(ack) });
+      expect(ready).toHaveBeenLastCalledWith(ack);
+      socket.onclose?.();
+      vi.advanceTimersByTime(3000);
+    }
+    service.disconnect();
   });
 
   it('delivers attempt/cost invalidations only to viewers of that game', () => {

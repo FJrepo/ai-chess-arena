@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.dto.ChatMessageDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.ReasoningEffort;
@@ -312,8 +313,7 @@ class ResignationIT {
             }
 
             @Override
-            public void broadcastChat(UUID id, int moveNumber, String senderColor, String senderModel,
-                                      String senderName, String message) {
+            public void broadcastChat(UUID id, ChatMessageDto chat, String senderName) {
                 seenAtBroadcast.add("chat announced, stored "
                         + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));
             }
