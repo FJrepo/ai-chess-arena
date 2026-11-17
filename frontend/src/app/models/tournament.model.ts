@@ -113,6 +113,8 @@ export interface Game {
   resultReason: string | null;
   /** Why the game is paused when the pause was caused by an operational problem (e.g. OpenRouter). */
   statusDetail?: string | null;
+  resumeRequestedAt?: string | null;
+  runCapacity?: RunCapacity | null;
   /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
   advancedPlayerName?: string | null;
   /**
@@ -331,6 +333,11 @@ export interface ChatWsMessage {
   message?: string;
 }
 
+export interface RunCapacity {
+  runningGames: number;
+  maxConcurrentGames: number;
+}
+
 export interface GameStatusWsMessage {
   type: 'gameStatus';
   gameId: string;
@@ -342,6 +349,8 @@ export interface GameStatusWsMessage {
   turnStartedAt?: string;
   turnDeadlineAt?: string;
   detail?: string | null;
+  resumeRequestedAt?: string | null;
+  runCapacity?: RunCapacity | null;
   /** The tournament's configured chat mode; sent with turn updates of model turns only. */
   tournamentChatMode?: ChatMode;
   tournamentBanterLevel?: BanterLevel | null;

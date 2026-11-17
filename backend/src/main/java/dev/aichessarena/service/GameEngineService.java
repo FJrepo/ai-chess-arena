@@ -82,7 +82,7 @@ public class GameEngineService {
     }
 
     /**
-     * Starts or resumes a WAITING or PAUSED game.
+     * Starts a WAITING game or resumes a PAUSED game, queuing its resume if the run has no free slot.
      *
      * @throws WebApplicationException 409 if the game is running, in progress or finished; 404 if it does not exist
      */
@@ -90,23 +90,22 @@ public class GameEngineService {
         return startGame(gameId, false);
     }
 
-    public GameDto startWaitingGame(UUID gameId) {
+    /** Returns null while an earlier loop still owns the game. */
+    public GameDto startScheduledGame(UUID gameId) {
         return startGame(gameId, true);
     }
 
     private GameDto startGame(UUID gameId, boolean automatic) {
-        GameLoop loop = tryClaimLoop(gameId);
-        if (loop == null) {
-            throw new GameStateConflictException("Game is already running");
-        }
+        GameLoop loop = new GameLoop();
         GameDto started;
         try {
-            started = automatic ? gameLifecycleService.markGameStarted(gameId, true)
-                    : gameLifecycleService.markGameStarted(gameId);
+            started = gameLifecycleService.markGameStarted(
+                    gameId, automatic, () -> runningGames.putIfAbsent(gameId, loop) == null);
         } catch (RuntimeException e) {
             runningGames.remove(gameId, loop);
             throw e;
         }
+        if (started == null || started.resumeRequestedAt() != null) return started;
         humanConversations.remove(gameId);
         if (transactionRegistry != null && transactionRegistry.getTransactionStatus() == Status.STATUS_ACTIVE) {
             transactionRegistry.registerInterposedSynchronization(new Synchronization() {
@@ -148,20 +147,25 @@ public class GameEngineService {
                 LOG.errorf(e, "Game loop failed for game %s", gameId);
                 pauseAfterLoopFailure(gameId, e);
             } finally {
-                if (!loop.shouldContinue()) {
-                    humanConversations.remove(gameId);
-                }
-                runningGames.remove(gameId, loop);
-                // A pause may have flagged this loop just as it was finishing (e.g. returning for a human turn).
-                // Paired with the re-check in pauseGame, at least one side persists the pause.
-                if (!loop.shouldContinue()) {
-                    pauseQuietly(gameId);
-                }
+                finishLoop(gameId, loop);
                 if (requestContext.isActive()) {
                     requestContext.terminate();
                 }
             }
         });
+    }
+
+    private void finishLoop(UUID gameId, GameLoop loop) {
+        synchronized (loop) {
+            if (loop.shouldContinue()) {
+                runningGames.remove(gameId, loop);
+                return;
+            }
+        }
+        humanConversations.remove(gameId);
+        // Keep ownership until this loop's final pause check, so it cannot pause a newly resumed loop.
+        pauseQuietly(gameId);
+        runningGames.remove(gameId, loop);
     }
 
     private void pauseQuietly(UUID gameId) {

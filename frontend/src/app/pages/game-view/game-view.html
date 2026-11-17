@@ -9,6 +9,10 @@
     (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
   />
 
+  @if (g.status === 'PAUSED' && g.resumeRequestedAt) {
+    <app-queued-resume [capacity]="g.runCapacity" (cancelRequest)="cancelResumeRequest()" />
+  }
+
   @if (g.openingName) {
     <p class="opening-label">{{ g.openingEco }} · {{ g.openingName }}</p>
   }
@@ -380,7 +384,7 @@
     <div class="admin-controls">
       @if (g.status === 'IN_PROGRESS') {
         <button mat-raised-button (click)="pauseGame()"><mat-icon>pause</mat-icon> Pause</button>
-      } @else if (g.status === 'PAUSED') {
+      } @else if (g.status === 'PAUSED' && !g.resumeRequestedAt) {
         <button mat-raised-button color="primary" [disabled]="savingLimit()" (click)="resumeGame()">
           <mat-icon>play_arrow</mat-icon> Resume
         </button>

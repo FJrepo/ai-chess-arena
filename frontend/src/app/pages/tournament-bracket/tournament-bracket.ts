@@ -55,7 +55,9 @@ export class TournamentBracket implements OnInit, OnDestroy {
     () => this.tournament()?.games.filter((g) => g.status === 'IN_PROGRESS').length ?? 0,
   );
   readonly attentionGames = computed(
-    () => this.tournament()?.games.filter((g) => g.status === 'PAUSED').length ?? 0,
+    () =>
+      this.tournament()?.games.filter((g) => g.status === 'PAUSED' && !g.resumeRequestedAt)
+        .length ?? 0,
   );
   readonly runSpend = computed(
     () => this.tournament()?.games.reduce((sum, g) => sum + (g.totalCostUsd ?? 0), 0) ?? 0,
@@ -206,12 +208,44 @@ export class TournamentBracket implements OnInit, OnDestroy {
 
   private startGameWithKey(game: Game) {
     this.api.startGame(game.id).subscribe({
-      next: () => this.router.navigate(['/games', game.id]),
+      next: (updated) => {
+        if (updated.resumeRequestedAt) {
+          this.applyResumeResponse(updated);
+        } else {
+          void this.router.navigate(['/games', game.id]);
+        }
+      },
       error: (err) => {
         this.showError(err, 'Failed to start the game.');
         this.loadTournament();
       },
     });
+  }
+
+  cancelResumeRequest(game: Game): void {
+    this.api.cancelResumeRequest(game.id).subscribe({
+      next: (updated) => this.applyResumeResponse(updated),
+      error: (err) => {
+        this.showError(err, 'Failed to cancel the queued resume.');
+        this.loadTournament();
+      },
+    });
+  }
+
+  private applyResumeResponse(updated: Game): void {
+    this.tournament.update((t) =>
+      t
+        ? {
+            ...t,
+            games: t.games.map((g) =>
+              g.id === updated.id && (updated.statusRevision ?? 0) >= (g.statusRevision ?? 0)
+                ? updated
+                : g,
+            ),
+          }
+        : t,
+    );
+    this.loadTournament();
   }
 
   runTournament(): void {

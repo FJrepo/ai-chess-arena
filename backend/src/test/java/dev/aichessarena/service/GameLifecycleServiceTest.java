@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
@@ -17,6 +18,7 @@ import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -356,7 +358,8 @@ class GameLifecycleServiceTest {
             @Override
             public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                               int totalMoves, BigDecimal totalCostUsd, String detail,
-                                              long statusRevision) {
+                                              long statusRevision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 throw new IllegalStateException("connection closed");
             }
         };
@@ -543,7 +546,8 @@ class GameLifecycleServiceTest {
         @Override
         public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                           int totalMoves, BigDecimal totalCostUsd, String detail,
-                                          long statusRevision) {
+                                          long statusRevision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
             lastStatus = status;
             lastResult = result;
             lastResultReason = resultReason;

@@ -47,6 +47,10 @@ public class TournamentAutoRunService {
             .thenComparingInt(g -> g.seriesGameNumber)
             .thenComparing(g -> g.id);
 
+    private static final Comparator<Game> RESUME_ORDER = Comparator
+            .comparing((Game g) -> g.resumeRequestedAt)
+            .thenComparing(g -> g.id);
+
     @Transactional
     public Tournament configure(UUID id, JsonNode body, boolean resume) {
         Tournament t = editable(id);
@@ -113,22 +117,33 @@ public class TournamentAutoRunService {
         return t;
     }
 
-    /** Called by the atomic lifecycle start with the tournament already locked. */
-    void requireStartAllowed(Game game, boolean automatic) {
+    /** Validates a locked start and reports whether a manual resume should stay paused and queue. */
+    boolean shouldQueueResume(Game game, boolean automatic) {
         Tournament t = game.tournament;
-        if (automatic && (t == null || t.autoRunStatus != AutoRunStatus.RUNNING || !eligible(game))) {
+        if (automatic && (t == null || t.autoRunStatus != AutoRunStatus.RUNNING
+                || !(queuedResume(game) || eligible(game)))) {
             throw new GameStateConflictException("Game is not eligible for auto-run");
         }
-        if (t == null || t.autoRunStatus == AutoRunStatus.OFF || t.autoRunStatus == AutoRunStatus.FINISHED) return;
+        if (t == null || t.autoRunStatus == AutoRunStatus.OFF || t.autoRunStatus == AutoRunStatus.FINISHED) {
+            return false;
+        }
+        if (!automatic && queuedResume(game)) return true;
         if (t.autoRunStatus != AutoRunStatus.RUNNING) {
             throw new GameStateConflictException("Resume the tournament run first");
         }
         if (budgetReached(t, spend(t.id))) {
             throw new GameStateConflictException("Tournament budget reached; raise the budget and resume the run");
         }
-        if (games.count("tournament.id = ?1 and status = ?2", t.id, GameStatus.IN_PROGRESS) >= t.maxConcurrentGames) {
+        long freeSlots = t.maxConcurrentGames - games.countRunning(t.id);
+        if (freeSlots <= 0) {
+            if (!automatic && game.status == GameStatus.PAUSED) return true;
             throw new GameStateConflictException("Tournament concurrency limit reached");
         }
+        if (!automatic && game.status == GameStatus.WAITING
+                && games.count("tournament.id = ?1 and resumeRequestedAt is not null", t.id) >= freeSlots) {
+            throw new GameStateConflictException("Available slots are reserved for queued resumes");
+        }
+        return false;
     }
 
     /** Checks every request, including provider/invalid-answer retries, using fresh locked state. */
@@ -156,12 +171,15 @@ public class TournamentAutoRunService {
         Tournament t = tournaments.findByIdForUpdate(id);
         if (t == null || t.autoRunStatus != AutoRunStatus.RUNNING) return;
         if (t.status == TournamentStatus.CANCELLED) {
+            lifecycle.clearResumeRequests(id);
             t.autoRunStatus = AutoRunStatus.OFF;
+            t.autoRunPauseReason = null;
             return;
         }
         List<Game> bracket = games.findByTournamentId(id);
         if (t.status == TournamentStatus.COMPLETED
                 || (!bracket.isEmpty() && bracket.stream().allMatch(GameLifecycleService::isTerminal))) {
+            lifecycle.clearResumeRequests(id);
             t.autoRunStatus = AutoRunStatus.FINISHED;
             t.autoRunPauseReason = null;
             return;
@@ -171,16 +189,21 @@ public class TournamentAutoRunService {
             return;
         }
         if (pauseIfBudgetReached(t)) return;
-        long running = games.count("tournament.id = ?1 and status = ?2", id, GameStatus.IN_PROGRESS);
+        long running = games.countRunning(id);
+        for (Game game : bracket.stream().filter(TournamentAutoRunService::queuedResume).sorted(RESUME_ORDER).toList()) {
+            if (running >= t.maxConcurrentGames) return;
+            // Keep the slot available if the previous loop is still stopping. The safety tick retries.
+            if (engine.startScheduledGame(game.id) == null) return;
+            running++;
+        }
         for (Game game : bracket.stream().filter(TournamentAutoRunService::eligible).sorted(BRACKET_ORDER).toList()) {
             if (running >= t.maxConcurrentGames) break;
-            try {
-                engine.startWaitingGame(game.id);
-                running++;
-            } catch (GameStateConflictException e) {
-                // A stopping loop may still own the game. The next event/tick retries without stealing its claim.
-            }
+            if (engine.startScheduledGame(game.id) != null) running++;
         }
+    }
+
+    private static boolean queuedResume(Game game) {
+        return game.status == GameStatus.PAUSED && game.resumeRequestedAt != null;
     }
 
     static boolean eligible(Game game) {

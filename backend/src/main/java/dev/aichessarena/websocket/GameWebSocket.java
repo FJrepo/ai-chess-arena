@@ -3,6 +3,7 @@ package dev.aichessarena.websocket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.repository.GameRepository;
@@ -328,9 +329,16 @@ public class GameWebSocket {
      */
     public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                       int totalMoves, BigDecimal totalCostUsd, String detail,
-                                      long statusRevision) {
-        broadcast(gameId, statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, null, null,
-                null, detail, null, statusRevision).toString());
+                                      long statusRevision, Instant resumeRequestedAt, RunCapacity capacity) {
+        ObjectNode message = statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, null, null,
+                null, detail, null, statusRevision);
+        message.put("resumeRequestedAt", resumeRequestedAt == null ? null : resumeRequestedAt.toString());
+        if (capacity != null) {
+            message.putObject("runCapacity")
+                    .put("runningGames", capacity.runningGames())
+                    .put("maxConcurrentGames", capacity.maxConcurrentGames());
+        }
+        broadcast(gameId, message.toString());
     }
 
     ObjectNode statusMessage(UUID gameId, String status, String result, String resultReason, int totalMoves,

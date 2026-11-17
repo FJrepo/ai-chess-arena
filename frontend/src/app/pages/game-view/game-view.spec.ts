@@ -1,4 +1,5 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { BoardThemeService } from '../../services/board-theme.service';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -2185,6 +2186,83 @@ describe('GameView resignation', () => {
 });
 
 describe('GameView resume while saving', () => {
+  it('shows the queue and its pause reason and lets the operator cancel it', () => {
+    const paused = gameFixture({
+      status: 'PAUSED',
+      statusDetail: 'Answer cut off',
+      statusRevision: 4,
+      currentFen: START_FEN,
+    });
+    const requested = '2026-11-17T20:00:00Z';
+    const capacity = { runningGames: 3, maxConcurrentGames: 3 };
+    const startGame = vi.fn(() =>
+      of({ ...paused, statusRevision: 5, resumeRequestedAt: requested, runCapacity: capacity }),
+    );
+    const cancelResumeRequest = vi.fn(() => of({ ...paused, statusRevision: 6 }));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () => of(paused),
+            getTournament: () => of({ maxOutputTokens: 4096 }),
+            getGameAttempts: () => of([]),
+            getSystemStatus: () => EMPTY,
+            startGame,
+            cancelResumeRequest,
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => EMPTY,
+            reconnected: () => EMPTY,
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const snack = vi.spyOn(TestBed.inject(MatSnackBar), 'open');
+    const resume = [...element.querySelectorAll<HTMLButtonElement>('.admin-controls button')].find(
+      (button) => button.textContent?.includes('Resume'),
+    )!;
+    expect(resume.disabled).toBe(false);
+    resume.click();
+    fixture.detectChanges();
+
+    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
+    expect(element.querySelector('app-queued-resume [role="status"]')?.textContent).toMatch(
+      /Queued: resumes when a slot frees\s*\(3\/3 running\)/,
+    );
+    expect(element.textContent).toContain('Answer cut off');
+    expect(snack).not.toHaveBeenCalled();
+    element.querySelector<HTMLButtonElement>('[aria-label="Cancel queued resume"]')!.click();
+    fixture.componentInstance.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      statusRevision: 5,
+      resumeRequestedAt: requested,
+      runCapacity: capacity,
+    });
+    fixture.detectChanges();
+    expect(cancelResumeRequest).toHaveBeenCalledExactlyOnceWith('g-1');
+    expect(element.querySelector('app-queued-resume')).toBeNull();
+    expect(element.textContent).toContain('Answer cut off');
+    fixture.destroy();
+  });
+
   it('blocks Admin Controls Resume until a delayed participant PUT finishes', () => {
     const participantSaved = new Subject<any>();
     const startGame = vi.fn(() => of(void 0));

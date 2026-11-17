@@ -164,6 +164,10 @@ export class ApiService {
     return this.http.post<Game>(`${this.baseUrl}/games/${id}/start`, {});
   }
 
+  cancelResumeRequest(id: string): Observable<Game> {
+    return this.http.delete<Game>(`${this.baseUrl}/games/${id}/resume-request`);
+  }
+
   pauseGame(id: string): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/games/${id}/pause`, {});
   }

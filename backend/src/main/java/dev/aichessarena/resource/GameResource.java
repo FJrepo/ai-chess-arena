@@ -7,6 +7,7 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameEngineService;
+import dev.aichessarena.service.GameLifecycleService;
 import dev.aichessarena.service.ExportService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -34,6 +35,9 @@ public class GameResource {
     GameEngineService gameEngineService;
 
     @Inject
+    GameLifecycleService lifecycle;
+
+    @Inject
     ExportService exports;
 
     @GET
@@ -41,7 +45,7 @@ public class GameResource {
     public Response getGame(@PathParam("id") UUID id) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
-        return Response.ok(DtoMapper.toDto(game, true)).build();
+        return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game))).build();
     }
 
     @POST
@@ -58,6 +62,12 @@ public class GameResource {
             throw new IllegalArgumentException("Both players must be set");
         }
         return Response.ok(gameEngineService.startGame(id)).build();
+    }
+
+    @DELETE
+    @Path("/{id}/resume-request")
+    public GameDto cancelResumeRequest(@PathParam("id") UUID id) {
+        return lifecycle.cancelResumeRequest(id);
     }
 
     @POST

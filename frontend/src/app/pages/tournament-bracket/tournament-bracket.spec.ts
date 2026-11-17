@@ -68,6 +68,8 @@ describe('TournamentBracket', () => {
     const api = {
       getTournament: vi.fn().mockReturnValue(of(current)),
       getTournamentCostSummary: () => EMPTY,
+      startGame: vi.fn(),
+      cancelResumeRequest: vi.fn(),
       getTournamentExport: vi.fn().mockReturnValue(of(new Blob(['export']))),
       runTournament: vi.fn().mockReturnValue(of({ ...current, autoRunStatus: 'RUNNING' })),
       updateTournamentRun: vi.fn().mockReturnValue(of(current)),
@@ -99,6 +101,68 @@ describe('TournamentBracket', () => {
       .textContent.replace(/\s+/g, ' ')
       .trim();
   }
+
+  it('queues Resume with a full run, keeps the pause reason, and cancels from the card', () => {
+    const { fixture, component, current, api } = runPage('IN_PROGRESS', 'RUNNING');
+    const paused = finalGame({
+      status: 'PAUSED',
+      statusDetail: 'Answer cut off',
+      statusRevision: 4,
+    });
+    const queued = {
+      ...paused,
+      statusRevision: 5,
+      resumeRequestedAt: '2026-11-17T20:00:00Z',
+    };
+    component.tournament.set({
+      ...current,
+      maxConcurrentGames: 3,
+      games: [
+        paused,
+        ...[0, 1, 2].map((bracketPosition) =>
+          finalGame({
+            id: `live-${bracketPosition}`,
+            seriesId: `live-${bracketPosition}`,
+            bracketRound: 'Semifinal',
+            bracketPosition,
+            status: 'IN_PROGRESS',
+          }),
+        ),
+      ],
+    });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    const snack = vi.spyOn(TestBed.inject(MatSnackBar), 'open');
+    api.getTournament.mockReturnValue(EMPTY);
+    api.startGame.mockReturnValue(of(queued));
+    api.cancelResumeRequest.mockReturnValue(of({ ...paused, statusRevision: 6 }));
+    fixture.detectChanges();
+    const card = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+      '[data-game-id="final-1"]',
+    )!;
+    const resume = () =>
+      [...card.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+        button.textContent?.includes('Resume'),
+      );
+    expect(resume()?.disabled).toBe(false);
+    resume()!.click();
+    fixture.detectChanges();
+
+    expect(api.startGame).toHaveBeenCalledExactlyOnceWith(paused.id);
+    expect(card.querySelector('[role="status"]')?.textContent).toMatch(
+      /Queued: resumes when a slot frees\s*\(3\/3 running\)/,
+    );
+    expect(card.querySelector('.pause-reason')?.textContent).toContain('Answer cut off');
+    expect(runBanner(fixture)).toContain('0 need attention');
+    expect(navigate).not.toHaveBeenCalled();
+    expect(snack).not.toHaveBeenCalled();
+
+    card.querySelector<HTMLButtonElement>('[aria-label="Cancel queued resume"]')!.click();
+    fixture.detectChanges();
+    expect(api.cancelResumeRequest).toHaveBeenCalledExactlyOnceWith(paused.id);
+    expect(card.querySelector('app-queued-resume')).toBeNull();
+    expect(runBanner(fixture)).toContain('1 need attention');
+    expect(resume()?.disabled).toBe(false);
+  });
 
   it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the tournament page', (format) => {
     const { fixture, component, api } = runPage();
