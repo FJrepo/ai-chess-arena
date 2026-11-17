@@ -195,6 +195,22 @@ class TournamentAutoRunIT {
     }
 
     @Test
+    void losingTheKeyPausesTheRunAndRunningGamesWithoutStartingOrForfeiting() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.WAITING);
+        configure(id, "{}", true);
+        QuarkusMock.installMockForType(dev.aichessarena.config.OpenRouterKeyStoreFixture.keys(
+                "", java.nio.file.Path.of("target/unused-no-key")), OpenRouterKeyStore.class);
+        runs.schedule(id);
+        assertEquals(AutoRunStatus.PAUSED, runStatus(id));
+        assertEquals(GameStatus.PAUSED, status(gameIds(id).getFirst()));
+        assertEquals(GameStatus.WAITING, status(gameIds(id).get(1)));
+        assertTrue(starts.isEmpty());
+        var error = assertThrows(WebApplicationException.class, () -> lifecycle.markGameStarted(gameIds(id).get(1)));
+        assertEquals(409, error.getResponse().getStatus());
+        assertTrue(error.getMessage().contains("Connect OpenRouter"));
+    }
+
+    @Test
     void schedulerStartsInBracketOrderAndFillsFreedSlotsWithoutStartingPausedUnknownOrHumanGames() {
         UUID id = seed(GameStatus.WAITING, GameStatus.WAITING, GameStatus.WAITING, GameStatus.PAUSED,
                 GameStatus.WAITING, GameStatus.WAITING);

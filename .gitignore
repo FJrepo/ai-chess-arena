@@ -47,3 +47,7 @@ task-packages/
 # === Misc ===
 *.tmp
 *.bak
+
+# Local file-backed instance credentials (source development)
+.local/
+backend/.local/

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.config.OpenRouterKeyStoreFixture;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
 import dev.aichessarena.service.OpenRouterService.ProviderOutcome;
 import java.io.IOException;
@@ -447,7 +448,7 @@ class OpenRouterServiceChatTest {
     private static OpenRouterService service(String baseUrl) {
         OpenRouterService service = new OpenRouterService();
         service.baseUrl = baseUrl;
-        service.apiKey = "test-key";
+        service.keyStore = OpenRouterKeyStoreFixture.keys("test-key", java.nio.file.Path.of("target/test-keys"));
         service.objectMapper = new ObjectMapper();
         service.defaultTemperature = 0.7;
         service.defaultMaxTokens = 100;

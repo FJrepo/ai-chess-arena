@@ -31,6 +31,9 @@ public class GameLifecycleService {
     static final String RESTART_DETAIL = "Paused because the server restarted; resume to continue";
 
     @Inject
+    OpenRouterKeyStore keys;
+
+    @Inject
     GameRepository gameRepository;
 
     @Inject
@@ -76,6 +79,7 @@ public class GameLifecycleService {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
         requireActiveTournament(game);
+        if (keys != null) keys.requireKey();
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }

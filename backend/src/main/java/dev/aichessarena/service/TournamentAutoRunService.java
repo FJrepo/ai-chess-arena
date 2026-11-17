@@ -26,6 +26,9 @@ import java.util.UUID;
 @ApplicationScoped
 public class TournamentAutoRunService {
     @Inject
+    OpenRouterKeyStore keys;
+
+    @Inject
     TournamentRepository tournaments;
     @Inject
     GameRepository games;
@@ -47,6 +50,7 @@ public class TournamentAutoRunService {
     @Transactional
     public Tournament configure(UUID id, JsonNode body, boolean resume) {
         Tournament t = editable(id);
+        if (resume && keys != null) keys.requireKey();
         if (body == null || !body.isObject()) {
             throw new IllegalArgumentException("Request body must be a JSON object");
         }
@@ -160,6 +164,10 @@ public class TournamentAutoRunService {
                 || (!bracket.isEmpty() && bracket.stream().allMatch(GameLifecycleService::isTerminal))) {
             t.autoRunStatus = AutoRunStatus.FINISHED;
             t.autoRunPauseReason = null;
+            return;
+        }
+        if (keys != null && keys.key().isBlank()) {
+            pauseRun(t, "Connect OpenRouter to continue this tournament");
             return;
         }
         if (pauseIfBudgetReached(t)) return;

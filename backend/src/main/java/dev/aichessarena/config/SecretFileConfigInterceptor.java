@@ -16,6 +16,7 @@ import java.util.function.Function;
 @Priority(Priorities.LIBRARY + 350)
 public final class SecretFileConfigInterceptor implements ConfigSourceInterceptor {
     private static final long serialVersionUID = 1L;
+    public static final String FILE_SOURCE = "Secret files";
     private final Function<String, String> environment;
 
     public SecretFileConfigInterceptor() {
@@ -54,8 +55,10 @@ public final class SecretFileConfigInterceptor implements ConfigSourceIntercepto
             return context.proceed(name);
         }
         // Resolve after expression expansion, so '$', '${...}' and backslashes stay literal.
+        String explicit = environment.apply(environmentName);
         return ConfigValue.builder().withName(name).withValue(secret)
-                .withConfigSourceName("Secret files").withConfigSourceOrdinal(310).build();
+                .withConfigSourceName(explicit != null && !explicit.isEmpty() ? "Environment" : FILE_SOURCE)
+                .withConfigSourceOrdinal(310).build();
     }
 
     private static boolean isApplicationPlaceholder(String environmentName, String value) {

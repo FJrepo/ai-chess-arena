@@ -25,6 +25,9 @@ public class TournamentCreationService {
     private static final Logger LOG = Logger.getLogger(TournamentCreationService.class);
 
     @Inject
+    OpenRouterKeyStore keys;
+
+    @Inject
     TournamentService tournamentService;
 
     @Inject
@@ -35,6 +38,7 @@ public class TournamentCreationService {
     @ActivateRequestContext
     @Transactional(Transactional.TxType.NOT_SUPPORTED)
     public Result create(Tournament tournament, List<TournamentParticipant> participants, UUID clientRequestId) {
+        if (keys != null) keys.requireKey();
         if (clientRequestId != null) {
             Tournament existing = tournamentRepository.findByClientRequestId(clientRequestId);
             if (existing != null) {

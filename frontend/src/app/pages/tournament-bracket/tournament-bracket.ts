@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -116,6 +117,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     private router: Router,
     private api: ApiService,
     private snackBar: MatSnackBar,
+    private connection: OpenRouterAccess = null!,
   ) {}
 
   ngOnInit() {
@@ -198,6 +200,11 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   startGame(game: Game) {
+    if (this.connection) this.connection.withKey(() => this.startGameWithKey(game));
+    else this.startGameWithKey(game);
+  }
+
+  private startGameWithKey(game: Game) {
     this.api.startGame(game.id).subscribe({
       next: () => this.router.navigate(['/games', game.id]),
       error: (err) => {
@@ -208,6 +215,11 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   runTournament(): void {
+    if (this.connection) this.connection.withKey(() => this.runTournamentWithKey());
+    else this.runTournamentWithKey();
+  }
+
+  private runTournamentWithKey(): void {
     if (!this.canRun() || !this.validRunSettings) return;
     this.changeRun(() =>
       this.api.runTournament(this.tournamentId, {

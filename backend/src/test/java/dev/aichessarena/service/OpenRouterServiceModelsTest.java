@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.config.OpenRouterKeyStoreFixture;
 import dev.aichessarena.dto.OpenRouterModelOptionDto;
 import dev.aichessarena.dto.OpenRouterModelsResponseDto;
 import java.io.IOException;
@@ -66,7 +67,7 @@ class OpenRouterServiceModelsTest {
 
         service = new OpenRouterService();
         service.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        service.apiKey = "test-key";
+        service.keyStore = OpenRouterKeyStoreFixture.keys("test-key", java.nio.file.Path.of("target/test-keys"));
         service.objectMapper = new ObjectMapper();
         service.featuredProvidersConfig = "openai,anthropic,google,x-ai";
         service.providerOrderConfig = "openai,anthropic,google,x-ai";

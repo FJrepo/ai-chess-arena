@@ -1,3 +1,6 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
+import { OpenRouterKeyStatus } from '../../services/openrouter-client';
+import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 import { CurrencyPipe } from '@angular/common';
 import {
   AfterViewInit,
@@ -284,7 +287,12 @@ Your opponent is %s (%s).`;
   featuredProviders = signal<string[]>([]);
   modelsLoading = signal(false);
   modelsError = signal<string | null>(null);
-  openRouterReady = signal<boolean | null>(null);
+  openRouterKey = signal<OpenRouterKeyStatus | null>(null);
+  currentOpenRouterKey = computed(() => this.connection?.keyStatus() ?? this.openRouterKey());
+  openRouterReady = computed(() =>
+    this.currentOpenRouterKey() === null ? null : openRouterConnected(this.currentOpenRouterKey()),
+  );
+  openRouterValidation = computed(() => openRouterValidation(this.currentOpenRouterKey()));
   promptTemplateVersion = signal<string | null>(null);
   promptTemplateLoadError = signal<string | null>(null);
   drawPolicyOptions: Array<{ value: Tournament['drawPolicy']; label: string }> = [
@@ -349,6 +357,7 @@ Your opponent is %s (%s).`;
     private api: ApiService,
     private router: Router,
     private route: ActivatedRoute,
+    protected connection: OpenRouterAccess = null!,
   ) {}
 
   ngOnInit(): void {
@@ -380,8 +389,8 @@ Your opponent is %s (%s).`;
 
   private loadOpenRouterStatus(): void {
     this.api.checkOpenRouterStatus().subscribe({
-      next: (status) => this.openRouterReady.set(status.valid),
-      error: () => this.openRouterReady.set(false),
+      next: (status) => this.openRouterKey.set(status.key),
+      error: () => this.openRouterKey.set(null),
     });
   }
 
@@ -593,6 +602,11 @@ Your opponent is %s (%s).`;
   private pendingSubmission: { key: string; requestId: string } | null = null;
 
   create() {
+    if (this.connection) this.connection.withKey(() => this.createWithKey());
+    else this.createWithKey();
+  }
+
+  private createWithKey() {
     if (this.creating() || !this.openingValid()) {
       return;
     }

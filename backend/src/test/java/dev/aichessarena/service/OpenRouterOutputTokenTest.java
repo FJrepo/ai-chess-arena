@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.config.OpenRouterKeyStoreFixture;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -188,7 +189,7 @@ class OpenRouterOutputTokenTest {
         server.start();
         OpenRouterService service = new OpenRouterService();
         service.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        service.apiKey = "test-key";
+        service.keyStore = OpenRouterKeyStoreFixture.keys("test-key", java.nio.file.Path.of("target/test-keys"));
         service.objectMapper = JSON;
         service.featuredProvidersConfig = "example";
         service.providerOrderConfig = "example";

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, defer, tap } from 'rxjs';
 import {
   TournamentRunSettings,
   BracketDrawMode,
@@ -16,6 +16,7 @@ import {
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import { LeaderboardResponse } from '../models/leaderboard.model';
 import { ReasoningEffort } from '../utils/reasoning-effort';
+import { OpenRouterClient, OpenRouterKeyStatus } from './openrouter-client';
 import {
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
@@ -42,9 +43,17 @@ export interface PromptTemplateResponse {
   >;
 }
 
+export interface OpenRouterStatusResponse {
+  /** Legacy validation-only flag. False also includes untested/unavailable; use key.source for connection. */
+  valid: boolean;
+  key: OpenRouterKeyStatus;
+}
+
 export interface SystemStatusResponse {
   backendVersion: string;
+  /** Legacy validation-only flag; use key.source for connection and key.validation for the last check. */
   openRouterValid: boolean;
+  key: OpenRouterKeyStatus;
   stockfishAvailable: boolean;
   stockfishReason: string | null;
   checkedAt: string;
@@ -54,7 +63,10 @@ export interface SystemStatusResponse {
 export class ApiService {
   private baseUrl = '/api';
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private connection: OpenRouterClient,
+  ) {}
 
   getOpenings(): Observable<Opening[]> {
     return this.http.get<Opening[]>(`${this.baseUrl}/openings`);
@@ -215,8 +227,13 @@ export class ApiService {
     });
   }
 
-  checkOpenRouterStatus(): Observable<{ valid: boolean }> {
-    return this.http.get<{ valid: boolean }>(`${this.baseUrl}/config/openrouter-status`);
+  checkOpenRouterStatus(): Observable<OpenRouterStatusResponse> {
+    return defer(() => {
+      const generation = this.connection.mutationGeneration;
+      return this.http
+        .get<OpenRouterStatusResponse>(`${this.baseUrl}/config/openrouter-status`)
+        .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key, generation)));
+    });
   }
 
   getPromptTemplate(): Observable<PromptTemplateResponse> {
@@ -224,7 +241,12 @@ export class ApiService {
   }
 
   getSystemStatus(): Observable<SystemStatusResponse> {
-    return this.http.get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`);
+    return defer(() => {
+      const generation = this.connection.mutationGeneration;
+      return this.http
+        .get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`)
+        .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key, generation)));
+    });
   }
 
   getTournamentCostSummary(tournamentId: string): Observable<TournamentCostSummary> {

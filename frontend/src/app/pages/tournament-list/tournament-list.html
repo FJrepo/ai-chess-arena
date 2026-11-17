@@ -93,15 +93,35 @@
         <mat-card-content>
           <span class="onboarding-kicker">First Run</span>
           <h3>Launch your first tournament without guessing the setup order</h3>
-          <p>{{ onboardingSummary() }}</p>
+          @if (openRouterKey()?.source === 'none') {
+            <div class="openrouter-status info" role="status">
+              <mat-icon>info</mat-icon>
+              <span>{{ onboardingSummary() }}</span>
+              <button mat-button type="button" (click)="connection.openConnectDialog()">
+                Connect OpenRouter
+              </button>
+            </div>
+          } @else if (openRouterValidation() === 'invalid') {
+            <div class="openrouter-status warn" role="alert">
+              <mat-icon>warning</mat-icon>
+              <span>{{ onboardingSummary() }}</span>
+              <button mat-button type="button" (click)="connection.openConnectDialog()">
+                Fix connection
+              </button>
+            </div>
+          } @else {
+            <p>{{ onboardingSummary() }}</p>
+          }
 
           <div class="onboarding-chip-row">
-            <mat-chip [highlighted]="systemStatus()?.openRouterValid === true">
+            <mat-chip [highlighted]="openRouterConnected()">
               OpenRouter
-              @if (systemStatus()?.openRouterValid === true) {
-                ready
+              @if (openRouterConnected()) {
+                connected
+              } @else if (openRouterKey()) {
+                not connected
               } @else {
-                check required
+                status unknown
               }
             </mat-chip>
             <mat-chip [highlighted]="systemStatus()?.stockfishAvailable === true">

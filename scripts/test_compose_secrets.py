@@ -18,7 +18,7 @@ SERVICES = yaml.safe_load(COMPOSE)['services']
 
 
 class ComposeSecretsTest(unittest.TestCase):
-    def test_initializer_is_pinned_and_consumers_wait_and_mount_read_only(self):
+    def test_initializer_is_pinned_consumers_wait_and_only_backend_can_write(self):
         for compose in [COMPOSE, release_compose(COMPOSE, 'v1.7.0')]:
             with self.subTest(asset=compose is not COMPOSE):
                 config = yaml.safe_load(compose)
@@ -32,7 +32,7 @@ class ComposeSecretsTest(unittest.TestCase):
                     consumer = config['services'][name]
                     self.assertEqual('service_completed_successfully',
                                      consumer['depends_on']['secrets-init']['condition'])
-                    self.assertIn('secrets_prod:/run/secrets:ro', consumer['volumes'])
+                    self.assertIn('secrets_prod:/run/secrets' + (':ro' if name == 'db' else ''), consumer['volumes'])
 
     def test_database_and_backend_share_defaults_and_explicit_env(self):
         db = SERVICES['db']['environment']
@@ -42,6 +42,8 @@ class ComposeSecretsTest(unittest.TestCase):
         self.assertEqual('${DB_PASSWORD_FILE:-/run/secrets/db_password}', db['POSTGRES_PASSWORD_FILE'])
         self.assertEqual(db['POSTGRES_PASSWORD_FILE'], backend['DB_PASSWORD_FILE'])
         self.assertEqual('/run/secrets/instance_key', backend['INSTANCE_KEY_FILE'])
+        self.assertEqual('/run/secrets', backend['SECRETS_DIR'])
+        self.assertEqual('${ALLOWED_HOSTS:-}', backend['ALLOWED_HOSTS'])
         self.assertEqual('${OPENROUTER_API_KEY_FILE:-}', backend['OPENROUTER_API_KEY_FILE'])
         self.assertEqual('${OPENROUTER_API_KEY:-}', backend['OPENROUTER_API_KEY'])
         dockerfile = (ROOT / 'backend/Dockerfile').read_text()
@@ -138,7 +140,8 @@ class ComposeSecretsTest(unittest.TestCase):
         guide = (ROOT / 'docs/deployment.md').read_text()
         self.assertIn('explicit env value > `*_FILE` > generated default', guide)
         self.assertIn('Do not remove `DB_PASSWORD` from an existing `.env`', guide)
-        self.assertIn('before backend startup', guide)
+        self.assertIn('backend start with no key', guide)
+        self.assertIn('UI-managed `openrouter_key` > none', guide)
         self.assertIn('secrets_prod', guide)
         env = (ROOT / '.env.example').read_text()
         self.assertIn('keep DB_PASSWORD in an existing .env', env)

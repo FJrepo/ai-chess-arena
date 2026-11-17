@@ -1,3 +1,4 @@
+import { OpenRouterSettings } from '../../components/openrouter-settings/openrouter-settings';
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -7,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { finalize } from 'rxjs';
 import { ApiService, SystemStatusResponse } from '../../services/api.service';
+import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 
 /** Health of a dependency; `unknown` when the backend could not be asked. */
 export type StatusTone = 'healthy' | 'degraded' | 'unknown';
@@ -15,6 +17,7 @@ export type StatusTone = 'healthy' | 'degraded' | 'unknown';
   selector: 'app-system-status',
   standalone: true,
   imports: [
+    OpenRouterSettings,
     MatButtonModule,
     MatCardModule,
     MatChipsModule,
@@ -33,8 +36,14 @@ export class SystemStatus implements OnInit {
   backendReachable = computed(() => this.status() !== null && !this.error());
   backendVersion = computed(() => this.status()?.backendVersion ?? 'unknown');
 
-  /** OpenRouter and Stockfish are checked by the backend, so without it their state is unknown. */
-  openRouterTone = computed(() => this.dependencyTone(this.status()?.openRouterValid));
+  /** Connection is independent of validation; only a known-invalid key needs attention. */
+  openRouterTone = computed(() => {
+    const status = this.status();
+    if (!status) return 'unknown';
+    return openRouterConnected(status.key) && openRouterValidation(status.key) !== 'invalid'
+      ? 'healthy'
+      : 'degraded';
+  });
   stockfishTone = computed(() => this.dependencyTone(this.status()?.stockfishAvailable));
 
   constructor(private api: ApiService) {}
@@ -83,9 +92,17 @@ export class SystemStatus implements OnInit {
   openRouterSummary(): string {
     const status = this.status();
     if (!status) return 'Provider status unknown: the backend is unreachable.';
-    return status.openRouterValid
-      ? 'OpenRouter API key validated successfully.'
-      : 'OpenRouter API key is invalid or unavailable.';
+    if (!openRouterConnected(status.key)) return 'Connect OpenRouter to use a provider key.';
+    switch (status.key.validation) {
+      case 'valid':
+        return 'OpenRouter API key validated successfully at the last check.';
+      case 'invalid':
+        return 'OpenRouter key failed its last validation. Test or replace it in settings.';
+      case 'unavailable':
+        return 'OpenRouter is connected. The last key check was unavailable; validation is unknown.';
+      default:
+        return 'OpenRouter is connected. This key has not been tested yet.';
+    }
   }
 
   private dependencyTone(ok: boolean | undefined): StatusTone {

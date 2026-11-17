@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -455,6 +456,7 @@ export class GameView implements OnInit, OnDestroy {
     private router: Router,
     private snackbar: MatSnackBar,
     private turnState: GameTurnStateService,
+    private connection: OpenRouterAccess = null!,
   ) {
     this.isLive = this.turnState.isLive;
     this.activeColor = this.turnState.activeColor;
@@ -1002,6 +1004,12 @@ export class GameView implements OnInit, OnDestroy {
 
   /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */
   saveTruncationFixAndResume(request: RaiseLimitRequest) {
+    if (this.connection)
+      this.connection.withKey(() => this.saveTruncationFixAndResumeWithKey(request));
+    else this.saveTruncationFixAndResumeWithKey(request);
+  }
+
+  private saveTruncationFixAndResumeWithKey(request: RaiseLimitRequest) {
     this.saveLimitAndResume(request.maxOutputTokens, request.reasoningEffort);
   }
 
@@ -1063,6 +1071,11 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   resumeGame() {
+    if (this.connection) this.connection.withKey(() => this.resumeGameWithKey());
+    else this.resumeGameWithKey();
+  }
+
+  private resumeGameWithKey() {
     if (this.savingLimit()) {
       return;
     }

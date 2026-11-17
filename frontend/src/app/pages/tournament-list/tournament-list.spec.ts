@@ -1,7 +1,7 @@
 import { of } from 'rxjs';
 import { TournamentList } from './tournament-list';
 import { Tournament } from '../../models/tournament.model';
-import { ApiService } from '../../services/api.service';
+import { ApiService, SystemStatusResponse } from '../../services/api.service';
 
 describe('TournamentList', () => {
   it('filters tournaments by search, status, and best-of', () => {
@@ -109,6 +109,12 @@ describe('TournamentList', () => {
     component.systemStatus.set({
       backendVersion: '0.4.0',
       openRouterValid: true,
+      key: {
+        source: 'ui',
+        maskedSuffix: '••••-key',
+        validation: 'valid',
+        lastValidatedAt: '2026-03-06T18:00:00Z',
+      },
       stockfishAvailable: true,
       stockfishReason: null,
       checkedAt: '2026-03-06T21:30:00Z',
@@ -118,7 +124,65 @@ describe('TournamentList', () => {
     expect(component.onboardingSummary()).toContain('ready for a first tournament');
     expect(component.onboardingCards()).toHaveLength(3);
   });
+
+  it.each(['env', 'file', 'ui'] as const)(
+    'recognizes an untested %s key as connected for onboarding',
+    (source) => {
+      const component = new TournamentList({} as ApiService);
+      component.systemStatus.set(
+        statusWithKey({ source, maskedSuffix: null, lastValidatedAt: null, validation: 'unknown' }),
+      );
+      expect(component.openRouterConnected()).toBe(true);
+      expect(component.onboardingReady()).toBe(true);
+      expect(component.onboardingSummary()).toContain('ready for a first tournament');
+      expect(component.onboardingSummary()).not.toContain('Connect OpenRouter');
+    },
+  );
+
+  it('prompts only for a missing key and distinguishes an invalid key from an unavailable check', () => {
+    const component = new TournamentList({} as ApiService);
+    component.systemStatus.set(
+      statusWithKey({
+        source: 'none',
+        maskedSuffix: null,
+        lastValidatedAt: null,
+        validation: 'none',
+      }),
+    );
+    expect(component.openRouterConnected()).toBe(false);
+    expect(component.onboardingReady()).toBe(false);
+    expect(component.onboardingSummary()).toBe(
+      'Connect your OpenRouter account to create and run tournaments.',
+    );
+
+    const status = statusWithKey({
+      source: 'env',
+      maskedSuffix: null,
+      lastValidatedAt: '2026-03-06T18:00:00Z',
+      validation: 'invalid',
+    });
+    component.systemStatus.set(status);
+    expect(component.openRouterConnected()).toBe(true);
+    expect(component.onboardingReady()).toBe(false);
+    expect(component.onboardingSummary()).toContain('failed its last validation');
+    expect(component.onboardingSummary()).not.toContain('Connect OpenRouter');
+
+    component.systemStatus.set({ ...status, key: { ...status.key, validation: 'unavailable' } });
+    expect(component.onboardingReady()).toBe(true);
+    expect(component.onboardingSummary()).not.toContain('failed');
+  });
 });
+
+function statusWithKey(key: SystemStatusResponse['key']): SystemStatusResponse {
+  return {
+    backendVersion: '0.4.0',
+    openRouterValid: false,
+    key,
+    stockfishAvailable: true,
+    stockfishReason: null,
+    checkedAt: '2026-03-06T21:30:00Z',
+  };
+}
 
 function tournament(
   name: string,

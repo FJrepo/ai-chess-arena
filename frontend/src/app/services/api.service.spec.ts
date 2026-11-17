@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { ApiService } from './api.service';
+import { Observable } from 'rxjs';
+import { ApiService, OpenRouterStatusResponse, SystemStatusResponse } from './api.service';
 import { BracketDrawMode } from '../models/tournament.model';
+import { OpenRouterClient, OpenRouterKeyStatus } from './openrouter-client';
 
 describe('ApiService bracket draw', () => {
   let api: ApiService;
@@ -107,3 +109,112 @@ describe('ApiService bracket draw', () => {
     },
   );
 });
+
+describe.each(['openrouter-status', 'system-status'] as const)(
+  'ApiService %s connection reconciliation',
+  (endpoint) => {
+    let api: ApiService;
+    let connection: OpenRouterClient;
+    let http: HttpTestingController;
+    const missingKey: OpenRouterKeyStatus = {
+      source: 'none',
+      maskedSuffix: null,
+      lastValidatedAt: null,
+      validation: 'none',
+    };
+    const connectedKey: OpenRouterKeyStatus = {
+      source: 'ui',
+      maskedSuffix: 'test',
+      lastValidatedAt: '2026-11-17T12:00:00Z',
+      validation: 'valid',
+    };
+    const url = `/api/config/${endpoint}`;
+    const readStatus = (): Observable<OpenRouterStatusResponse | SystemStatusResponse> =>
+      endpoint === 'openrouter-status' ? api.checkOpenRouterStatus() : api.getSystemStatus();
+    const response = (key: OpenRouterKeyStatus) =>
+      endpoint === 'openrouter-status'
+        ? { valid: key.validation === 'valid', key }
+        : {
+            backendVersion: 'fixture-version',
+            openRouterValid: key.validation === 'valid',
+            key,
+            stockfishAvailable: true,
+            stockfishReason: null,
+            checkedAt: '2026-11-17T12:00:00Z',
+          };
+
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting()],
+      });
+      api = TestBed.inject(ApiService);
+      connection = TestBed.inject(OpenRouterClient);
+      http = TestBed.inject(HttpTestingController);
+    });
+
+    afterEach(() => http.verify());
+
+    it.each([
+      ['callback', 'complete', (client: OpenRouterClient) => client.complete('code', 'state')],
+      ['manual save', 'key', (client: OpenRouterClient) => client.manual('fixture-private-key')],
+      ['delete', 'key', (client: OpenRouterClient) => client.delete()],
+      ['test', 'test', (client: OpenRouterClient) => client.test()],
+      ['claim', 'claim', (client: OpenRouterClient) => client.claim('fixture-token')],
+    ] as const)(
+      'preserves a successful %s when an older status GET resolves afterwards',
+      (operation, path, mutate) => {
+        const initialKey =
+          operation === 'delete' || operation === 'test' ? connectedKey : missingKey;
+        const nextKey =
+          operation === 'delete'
+            ? missingKey
+            : operation === 'test'
+              ? { ...connectedKey, validation: 'invalid' as const }
+              : connectedKey;
+        connection.reconcileKeyStatus(initialKey);
+        const received = vi.fn();
+        readStatus().subscribe(received);
+        const staleRequest = http.expectOne(url);
+
+        mutate(connection).subscribe();
+        http.expectOne(`/api/config/openrouter/${path}`).flush({ key: nextKey, canManage: true });
+        expect(connection.keyStatus()).toEqual(nextKey);
+
+        const staleResponse = response(initialKey);
+        staleRequest.flush(staleResponse);
+        expect(received).toHaveBeenCalledExactlyOnceWith(staleResponse);
+        expect(connection.keyStatus()).toEqual(nextKey);
+      },
+    );
+
+    it('captures the generation at each subscription, including reuse of the same observable', () => {
+      const status = readStatus();
+      status.subscribe();
+      const staleRequest = http.expectOne(url);
+      connection.manual('fixture-private-key').subscribe();
+      http.expectOne('/api/config/openrouter/key').flush({ key: connectedKey, canManage: true });
+      staleRequest.flush(response(missingKey));
+      expect(connection.keyStatus()).toEqual(connectedKey);
+
+      // The observable was created before the mutation; this request starts afterwards.
+      status.subscribe();
+      http.expectOne(url).flush(response(missingKey));
+      expect(connection.keyStatus()).toEqual(missingKey);
+    });
+
+    it('still reconciles pending status reads after a failed mutation or another status response', () => {
+      connection.reconcileKeyStatus(connectedKey);
+      readStatus().subscribe();
+      const pendingRequest = http.expectOne(url);
+      connection.manual('fixture-private-key').subscribe({ error: () => {} });
+      http
+        .expectOne('/api/config/openrouter/key')
+        .flush({ error: 'Rejected fixture' }, { status: 400, statusText: 'Bad Request' });
+      readStatus().subscribe();
+      http.expectOne(url).flush(response(connectedKey));
+
+      pendingRequest.flush(response(missingKey));
+      expect(connection.keyStatus()).toEqual(missingKey);
+    });
+  },
+);

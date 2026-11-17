@@ -31,6 +31,8 @@
     </div>
   }
 
+  <app-openrouter-settings />
+
   <section class="status-grid">
     <mat-card appearance="outlined" class="status-card">
       <mat-card-content>
@@ -65,7 +67,7 @@
           <div>
             <span class="card-kicker">OpenRouter</span>
             <h2>
-              {{ dependencyLabel(openRouterTone(), 'Configured', 'Needs attention') }}
+              {{ dependencyLabel(openRouterTone(), 'Connected', 'Needs attention') }}
             </h2>
           </div>
           <mat-chip
@@ -114,8 +116,8 @@
           <div class="troubleshooting-item">
             <h3>When OpenRouter is degraded</h3>
             <p>
-              Check <code>OPENROUTER_API_KEY</code>, then confirm the backend was restarted with the
-              expected environment file.
+              Test or replace the key in OpenRouter settings above. Operator-managed keys must be
+              changed in their environment or secret file.
             </p>
           </div>
 

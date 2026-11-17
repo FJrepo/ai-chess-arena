@@ -385,15 +385,16 @@ mat-hint,
 // ----- Participants -----
 
 .openrouter-status {
+  flex-wrap: wrap;
   gap: 10px;
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 16px;
   background: var(--setup-inset-bg);
 
-  &.fail {
-    background: var(--mat-sys-error-container);
-    color: var(--mat-sys-on-error-container);
+  &.info {
+    background: var(--mat-sys-primary-container);
+    color: var(--mat-sys-on-primary-container);
   }
 
   &.warn {

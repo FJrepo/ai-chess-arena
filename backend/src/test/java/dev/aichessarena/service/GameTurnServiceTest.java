@@ -60,6 +60,18 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void missingKeyPausesWithoutForfeitOrNetworkCall() {
+        OpenRouterService router = new OpenRouterService();
+        LlmResponse missingKey = router.chat("fixture/model", List.of());
+        Fixture fixture = new Fixture(missingKey);
+        GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
+        assertTrue(result.pausedGame());
+        assertTrue(fixture.lifecycle.pauseDetail.contains("Connect OpenRouter"));
+        assertNull(fixture.lifecycle.lastForfeitColor);
+        assertFalse(fixture.lifecycle.invalidMovesForfeited);
+    }
+
+    @Test
     void fatalProviderFailurePausesWithoutForfeitingOrRetrying() {
         Fixture fixture = new Fixture(failure(ProviderOutcome.FATAL, 401, "OpenRouter rejected the API key (HTTP 401)"));
 

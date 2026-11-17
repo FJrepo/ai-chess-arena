@@ -1,0 +1,97 @@
+<section aria-labelledby="openrouter-settings-title">
+  <h2 id="openrouter-settings-title">OpenRouter</h2>
+  @if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+  }
+  @if (status(); as current) {
+    @if (connected()) {
+      <div class="connection-status">
+        <p>
+          Connected · Source: {{ current.key.source }} · Key:
+          {{ current.key.maskedSuffix ?? 'Hidden' }} · Validation: {{ validation() }}
+        </p>
+        <p class="hint">
+          Last checked: {{ (current.key.lastValidatedAt | date: 'medium') ?? 'Not yet checked' }}
+        </p>
+      </div>
+    }
+    @if (validation() === 'invalid') {
+      <p class="error" role="alert">
+        OpenRouter key failed its last validation.
+        {{ managed() ? 'Test it or ask the operator to replace it.' : 'Test or replace it.' }}
+      </p>
+    }
+    @if (managed()) {
+      <p class="hint">Operator-managed key. Change the environment or secret file to replace it.</p>
+    }
+    @if (!current.canManage) {
+      <p class="hint">
+        Open the one-time setup link printed in the backend log to claim this browser.
+      </p>
+    }
+    @if (connected()) {
+      <div>
+        <div class="connection-actions">
+          <button mat-button (click)="test()" [disabled]="busy() || !current.canManage">
+            Test key
+          </button>
+          @if (!managed() && current.canManage) {
+            <button mat-button (click)="connect()" [disabled]="busy()">Replace connection</button>
+            <button
+              mat-button
+              (click)="delete()"
+              [disabled]="busy()"
+              aria-describedby="openrouter-delete-hint"
+            >
+              Delete local key
+            </button>
+          }
+        </div>
+        @if (!managed() && current.canManage) {
+          <p class="hint" id="openrouter-delete-hint">
+            Deleting removes this instance's copy. Revoke the key on OpenRouter to disable it there.
+          </p>
+        }
+      </div>
+    } @else if (current.canManage) {
+      <div class="connect-primary">
+        <button mat-flat-button (click)="connect()" [disabled]="busy()">Connect OpenRouter</button>
+        <p class="hint">
+          You approve on OpenRouter and can set a credit limit and expiration there.
+        </p>
+      </div>
+    }
+    @if (!managed() && current.canManage) {
+      <div class="manual-connection">
+        <button
+          mat-button
+          class="manual-toggle"
+          (click)="toggleManualEntry()"
+          [attr.aria-expanded]="manualExpanded()"
+          aria-controls="openrouter-manual-form"
+        >
+          {{ connected() ? 'Use a different API key' : 'Use an existing API key instead' }}
+        </button>
+        @if (manualExpanded()) {
+          <form id="openrouter-manual-form" (ngSubmit)="save()" autocomplete="off">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-label>OpenRouter API key</mat-label>
+              <input
+                matInput
+                type="password"
+                name="openrouterKey"
+                [(ngModel)]="manualKey"
+                autocomplete="new-password"
+                spellcheck="false"
+              />
+              <mat-hint>Stored only on this instance; never shown again</mat-hint>
+            </mat-form-field>
+            <button mat-stroked-button type="submit" [disabled]="busy() || !manualKey.trim()">
+              Validate and save
+            </button>
+          </form>
+        }
+      </div>
+    }
+  }
+</section>
