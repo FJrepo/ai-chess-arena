@@ -153,6 +153,11 @@ export interface Game {
    * update that arrives late can be ignored. Absent from older backends.
    */
   statusRevision?: number;
+  liveRevision?: number;
+  activeColor?: 'WHITE' | 'BLACK' | null;
+  turnStartedAt?: string | null;
+  turnDeadlineAt?: string | null;
+  attempts?: MoveAttempt[] | null;
   /**
    * The reasoning effort each side asks for (participant override, else the tournament's); null or absent for
    * the model default and human sides. The backend sends the nearest level the model supports.
@@ -313,6 +318,8 @@ export interface MoveWsMessage {
 export interface EvaluationUpdateWsMessage {
   type: 'evaluationUpdate';
   gameId: string;
+  /** Identifies the exact stored row for games with historical duplicate plies. */
+  moveId?: string;
   moveNumber: number;
   color: 'WHITE' | 'BLACK';
   evaluationCp?: number | null;
@@ -381,7 +388,7 @@ export interface AttemptsUpdatedWsMessage {
   gameId: string;
 }
 
-export type WsMessage =
+export type LegacyGameMessage =
   | MoveWsMessage
   | EvaluationUpdateWsMessage
   | ChatWsMessage
@@ -390,9 +397,37 @@ export type WsMessage =
   | ForfeitWsMessage
   | AttemptsUpdatedWsMessage;
 
+export type GameChange =
+  | GameStatusWsMessage
+  | EvaluationUpdateWsMessage
+  | {
+      type: 'gameState';
+      gameId: string;
+      totalCostUsd: number;
+      activeColor: 'WHITE' | 'BLACK' | null;
+      turnStartedAt: string | null;
+      turnDeadlineAt: string | null;
+    }
+  | {
+      type: 'turnSettings';
+      gameId: string;
+      tournamentChatMode?: ChatMode;
+      tournamentBanterLevel?: BanterLevel | null;
+    }
+  | { type: 'committedMove'; gameId: string; move: Move; pgn: string }
+  | { type: 'committedChat'; gameId: string; chat: ChatMessage }
+  | { type: 'committedAttempt'; gameId: string; attempt: MoveAttempt };
+
+export type WsMessage =
+  | LegacyGameMessage
+  | { type: 'subscribed' | 'heartbeat'; gameId: string; revision: number }
+  | { type: 'gameRevision'; gameId: string; revision: number; changes: GameChange[] }
+  | { type: 'subscriptionUnavailable'; gameId: string };
+
 export interface WsOutgoingMessage {
-  type: 'subscribe' | 'unsubscribe';
+  type: 'subscribe' | 'unsubscribe' | 'heartbeat';
   gameId: string;
+  protocol?: 2;
 }
 
 export interface CreateTournamentRequest extends Partial<

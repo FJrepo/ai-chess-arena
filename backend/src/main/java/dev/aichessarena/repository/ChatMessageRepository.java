@@ -14,8 +14,8 @@ import java.util.UUID;
 @ApplicationScoped
 public class ChatMessageRepository implements PanacheRepositoryBase<ChatMessage, UUID> {
 
-    /** Returns the persisted ID used in snapshots and live events, or null for a silent move or resignation. */
-    public UUID persistMessage(Game game, int moveNumber, String color, String modelId, String message) {
+    /** Returns the persisted message, or null for a silent move or resignation. */
+    public ChatMessage persistMessage(Game game, int moveNumber, String color, String modelId, String message) {
         if (message == null || message.isBlank()) return null;
         ChatMessage chat = new ChatMessage();
         chat.game = game;
@@ -24,7 +24,7 @@ public class ChatMessageRepository implements PanacheRepositoryBase<ChatMessage,
         chat.senderModel = modelId;
         chat.message = message;
         persist(chat);
-        return chat.id;
+        return chat;
     }
 
     public List<ChatMessage> findByGameId(UUID gameId) {

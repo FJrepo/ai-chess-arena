@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
@@ -36,6 +37,9 @@ public class MoveAttemptService {
 
     @Inject
     GameWebSocket gameWebSocket;
+
+    @Inject
+    LiveGameUpdates liveUpdates;
 
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
@@ -107,6 +111,10 @@ public class MoveAttemptService {
             if (autoRuns != null) autoRuns.afterAttempt(game);
             // A paid answer can arrive after cancellation's status update. Invalidate only after the
             // attempt and its cost are visible, without inventing another status change/revision.
+            if (liveUpdates != null) {
+                liveUpdates.changed(game, liveUpdates.entityChange("committedAttempt", game.id, "attempt",
+                        DtoMapper.toDto(row)));
+            }
             AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));
         } catch (RuntimeException e) {
             LOG.warnf(e, "Could not record %s attempt for game %s", attempt.outcome(), attempt.gameId());

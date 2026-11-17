@@ -4,6 +4,7 @@ import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.repository.ChatMessageRepository;
@@ -47,6 +48,9 @@ public class GameMoveService {
 
     @Inject
     GameWebSocket gameWebSocket;
+
+    @Inject
+    LiveGameUpdates liveUpdates;
 
     @Inject
     Event<MoveEvaluationRequested> moveEvaluationEvents;
@@ -136,15 +140,22 @@ public class GameMoveService {
         persistMove(move, playerName, message);
     }
 
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void updateMoveEvaluation(UUID moveId, StockfishService.EvalResult result) {
         LOG.debugf("Updating move %s with evaluation: cp=%d, mate=%d", moveId, result.cp(), result.mate());
         Move move = moveRepository.findById(moveId);
         if (move != null) {
+            Game game = liveUpdates == null ? move.game : gameRepository.findByIdForUpdate(move.game.id);
+            if (game == null) return;
+            if (liveUpdates != null) {
+                moveRepository.getEntityManager().refresh(move);
+                if (java.util.Objects.equals(move.evaluationCp, result.cp())
+                        && java.util.Objects.equals(move.evaluationMate, result.mate())) return;
+            }
             move.evaluationCp = result.cp();
             move.evaluationMate = result.mate();
             moveRepository.persist(move);
-            broadcastEvaluation(move);
+            broadcastEvaluation(move, game);
         } else {
             LOG.warnf("Could not find move %s to update evaluation", moveId);
         }
@@ -155,7 +166,7 @@ public class GameMoveService {
      * and the next move's (this evaluation is its "before"; evaluations may finish out of order), plus the game's
      * updated summary. Quality is derived from the stored evaluations, so a reload shows the same.
      */
-    private void broadcastEvaluation(Move move) {
+    private void broadcastEvaluation(Move move, Game game) {
         List<Move> moves = CanonicalPlies.of(moveRepository.findByGameId(move.game.id));
         int index = -1;
         for (int i = 0; i < moves.size(); i++) {
@@ -165,7 +176,8 @@ public class GameMoveService {
             }
         }
         if (index < 0) {
-            // A later duplicate's score must not replace the canonical ply's evaluation or quality in clients.
+            // A legacy duplicate remains visible in history but never changes the canonical ply or quality.
+            if (liveUpdates != null) announceEvaluation(move, game, List.of(), null);
             return;
         }
         List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
@@ -175,6 +187,7 @@ public class GameMoveService {
             changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i))));
         }
         GameQualitySummaryDto summary = DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities));
+        if (liveUpdates != null) announceEvaluation(move, game, changed, summary);
         UUID gameId = move.game.id;
         int moveNumber = move.moveNumber;
         String color = move.color;
@@ -183,6 +196,12 @@ public class GameMoveService {
         // After the commit: a viewer that reloads the game on this update must already read the evaluation.
         AfterCommit.run(transactionRegistry,
                 () -> gameWebSocket.broadcastEvaluation(gameId, moveNumber, color, cp, mate, changed, summary));
+    }
+
+    private void announceEvaluation(Move move, Game game, List<PlyQualityDto> changed,
+                                    GameQualitySummaryDto summary) {
+        liveUpdates.changed(game, liveUpdates.evaluationChange(game.id, move.id, move.moveNumber, move.color, move.evaluationCp,
+                move.evaluationMate, changed, summary));
     }
 
     @Transactional
@@ -232,7 +251,10 @@ public class GameMoveService {
         String san = move.san;
         String fen = move.fen;
         updateGameState(game, fen, san, moveNumber, color);
-        UUID chatId = chatMessageRepository.persistMessage(game, moveNumber, color, move.modelId, message);
+        game.turnStartedAt = null;
+        game.turnDeadlineAt = null;
+        ChatMessage storedChat = chatMessageRepository.persistMessage(game, moveNumber, color, move.modelId, message);
+        UUID chatId = storedChat == null ? null : storedChat.id;
 
         // Capture this ply's scoresheet while attached. Chat and move share one ordered callback.
         String pgn = game.pgn;
@@ -241,6 +263,14 @@ public class GameMoveService {
         String modelId = isOverride ? "admin-override" : move.modelId;
         long responseTimeMs = move.responseTimeMs == null ? 0 : move.responseTimeMs;
         int retryCount = move.retryCount;
+        if (liveUpdates != null) {
+            liveUpdates.changed(game, liveUpdates.entityChange("committedMove", gameId, "move",
+                    DtoMapper.toDto(move)).put("pgn", pgn));
+            if (chatId != null) {
+                liveUpdates.changed(game, liveUpdates.entityChange("committedChat", gameId, "chat",
+                        DtoMapper.toDto(storedChat)));
+            }
+        }
         AfterCommit.run(transactionRegistry, () -> {
             if (chatId != null) {
                 gameWebSocket.broadcastChat(gameId, chatId, moveNumber, color, modelId, playerName, message);

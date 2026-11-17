@@ -59,6 +59,7 @@ public class GameWebSocket {
     private final AtomicInteger admittedConnections = new AtomicInteger();
 
     private final Map<UUID, Set<WebSocketConnection>> gameSubscriptions = new ConcurrentHashMap<>();
+    private final Set<String> revisionConnections = ConcurrentHashMap.newKeySet();
     private final Map<String, UUID> connectionGameMap = new ConcurrentHashMap<>();
     private final Map<String, SubscriptionWindow> subscriptionWindows = new ConcurrentHashMap<>();
 
@@ -126,6 +127,7 @@ public class GameWebSocket {
         if (subscriptionWindows.remove(connection.id()) != null) {
             admittedConnections.decrementAndGet();
         }
+        revisionConnections.remove(connection.id());
         UUID gameId = connectionGameMap.remove(connection.id());
         if (gameId != null) {
             removeSubscription(gameId, connection);
@@ -144,7 +146,7 @@ public class GameWebSocket {
         }
 
         String type = node.path("type").asText("");
-        if (!"subscribe".equals(type) && !"unsubscribe".equals(type)) {
+        if (!"subscribe".equals(type) && !"unsubscribe".equals(type) && !"heartbeat".equals(type)) {
             LOG.debugf("Ignoring unsupported WebSocket message type from %s", connection.id());
             return;
         }
@@ -154,7 +156,7 @@ public class GameWebSocket {
             LOG.debugf("Ignoring WebSocket message from connection %s that was not admitted", connection.id());
             return;
         }
-        if ("subscribe".equals(type) && !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
+        if (!"unsubscribe".equals(type) && !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
             // Close instead of silently dropping: the client reconnects and resubscribes to its current game.
             LOG.debugf("Closing WebSocket %s: too many subscriptions", connection.id());
             closeQuietly(connection, "Too many subscriptions; reconnect later");
@@ -170,10 +172,43 @@ public class GameWebSocket {
         }
 
         if ("subscribe".equals(type)) {
+            boolean revisioned = node.path("protocol").asInt() == 2;
+            if (revisioned) revisionConnections.add(connection.id());
+            else revisionConnections.remove(connection.id());
             subscribe(connection, gameId);
+            if (revisioned) sendRevisionWatermark(connection, gameId, "subscribed");
+            if (!connection.isOpen()) revisionConnections.remove(connection.id());
+        } else if ("heartbeat".equals(type)) {
+            if (revisionConnections.contains(connection.id())) sendRevisionWatermark(connection, gameId, "heartbeat");
         } else {
             unsubscribe(connection, gameId);
         }
+    }
+
+    private void sendRevisionWatermark(WebSocketConnection connection, UUID gameId, String type) {
+        if (!gameId.equals(connectionGameMap.get(connection.id()))) return;
+        Long revision = gameRepository.liveRevision(gameId);
+        if (revision == null) return;
+        String message = objectMapper.createObjectNode().put("type", type)
+                .put("gameId", gameId.toString()).put("revision", revision).toString();
+        outsideTransaction(() -> send(connection, message));
+    }
+
+    public ObjectNode change(String type) {
+        return objectMapper.createObjectNode().put("type", type);
+    }
+
+    public void broadcastRevision(UUID gameId, long revision, List<ObjectNode> changes) {
+        Set<WebSocketConnection> subscribers = gameSubscriptions.get(gameId);
+        if (subscribers == null) return;
+        ObjectNode message = change("gameRevision").put("gameId", gameId.toString()).put("revision", revision);
+        message.set("changes", objectMapper.valueToTree(changes));
+        String encoded = message.toString();
+        outsideTransaction(() -> {
+            for (WebSocketConnection connection : subscribers) {
+                if (revisionConnections.contains(connection.id())) send(connection, encoded);
+            }
+        });
     }
 
     private void subscribe(WebSocketConnection connection, UUID gameId) {
@@ -207,6 +242,7 @@ public class GameWebSocket {
     private void unsubscribe(WebSocketConnection connection, UUID gameId) {
         if (connectionGameMap.remove(connection.id(), gameId)) {
             removeSubscription(gameId, connection);
+            revisionConnections.remove(connection.id());
             LOG.debugf("Connection %s unsubscribed from game %s", connection.id(), gameId);
         }
     }
@@ -242,6 +278,13 @@ public class GameWebSocket {
     public void broadcastMove(UUID gameId, int moveNumber, String color, String san,
                                String fen, String pgn, String modelId,
                                long responseTimeMs, int retryCount, boolean isOverride, long statusRevision) {
+        broadcast(gameId, moveMessage(gameId, moveNumber, color, san, fen, pgn, modelId, responseTimeMs, retryCount,
+                isOverride, statusRevision).toString());
+    }
+
+    public ObjectNode moveMessage(UUID gameId, int moveNumber, String color, String san,
+                                  String fen, String pgn, String modelId, long responseTimeMs,
+                                  int retryCount, boolean isOverride, long statusRevision) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "move");
         msg.put("statusRevision", statusRevision);
@@ -259,11 +302,17 @@ public class GameWebSocket {
         msg.put("responseTimeMs", responseTimeMs);
         msg.put("retryCount", retryCount);
         msg.put("isOverride", isOverride);
-        broadcast(gameId, msg.toString());
+        return msg;
     }
 
     public void broadcastChat(UUID gameId, UUID chatId, int moveNumber, String senderColor,
                                String senderModel, String senderName, String message) {
+        broadcast(gameId, chatMessage(gameId, chatId, moveNumber, senderColor, senderModel, senderName,
+                message).toString());
+    }
+
+    public ObjectNode chatMessage(UUID gameId, UUID chatId, int moveNumber, String senderColor,
+                                  String senderModel, String senderName, String message) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "chat");
         msg.put("id", chatId.toString());
@@ -277,7 +326,7 @@ public class GameWebSocket {
         }
         msg.put("senderName", senderName);
         msg.put("message", message);
-        broadcast(gameId, msg.toString());
+        return msg;
     }
 
     public void broadcastGameStatus(UUID gameId, String status, String result,
@@ -332,22 +381,45 @@ public class GameWebSocket {
     public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                       int totalMoves, BigDecimal totalCostUsd, String detail,
                                       long statusRevision, Instant resumeRequestedAt, RunCapacity capacity) {
-        ObjectNode message = statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, null, null,
-                null, detail, null, statusRevision);
+        broadcast(gameId, statusChangeMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                detail, statusRevision, resumeRequestedAt, capacity).toString());
+    }
+
+    public ObjectNode statusChangeMessage(UUID gameId, String status, String result, String resultReason,
+                                          int totalMoves, BigDecimal totalCostUsd, String detail, long statusRevision,
+                                          Instant resumeRequestedAt, RunCapacity capacity) {
+        return statusChangeMessage(objectMapper, gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                detail, statusRevision, resumeRequestedAt, capacity);
+    }
+
+    public static ObjectNode statusChangeMessage(ObjectMapper mapper, UUID gameId, String status, String result,
+                                                 String resultReason, int totalMoves, BigDecimal totalCostUsd,
+                                                 String detail, long statusRevision, Instant resumeRequestedAt,
+                                                 RunCapacity capacity) {
+        ObjectNode message = statusMessage(mapper, gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                null, null, null, detail, null, statusRevision);
         message.put("resumeRequestedAt", resumeRequestedAt == null ? null : resumeRequestedAt.toString());
         if (capacity != null) {
             message.putObject("runCapacity")
                     .put("runningGames", capacity.runningGames())
                     .put("maxConcurrentGames", capacity.maxConcurrentGames());
         }
-        broadcast(gameId, message.toString());
+        return message;
     }
 
-    ObjectNode statusMessage(UUID gameId, String status, String result, String resultReason, int totalMoves,
+    public ObjectNode statusMessage(UUID gameId, String status, String result, String resultReason, int totalMoves,
                              BigDecimal totalCostUsd, String activeColor, Instant turnStartedAt,
                              Instant turnDeadlineAt, String detail, String tournamentChatMode,
                              Long statusRevision) {
-        ObjectNode msg = objectMapper.createObjectNode();
+        return statusMessage(objectMapper, gameId, status, result, resultReason, totalMoves, totalCostUsd,
+                activeColor, turnStartedAt, turnDeadlineAt, detail, tournamentChatMode, statusRevision);
+    }
+
+    private static ObjectNode statusMessage(ObjectMapper mapper, UUID gameId, String status, String result,
+                                            String resultReason, int totalMoves, BigDecimal totalCostUsd,
+                                            String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
+                                            String detail, String tournamentChatMode, Long statusRevision) {
+        ObjectNode msg = mapper.createObjectNode();
         msg.put("type", "gameStatus");
         msg.put("gameId", gameId.toString());
         msg.put("status", status);
@@ -410,18 +482,25 @@ public class GameWebSocket {
                 qualitySummary).toString());
     }
 
-    ObjectNode evaluationMessage(UUID gameId, int moveNumber, String color, Integer evaluationCp,
+    public ObjectNode evaluationMessage(UUID gameId, int moveNumber, String color, Integer evaluationCp,
                                  Integer evaluationMate, List<PlyQualityDto> qualities,
                                  GameQualitySummaryDto qualitySummary) {
-        ObjectNode msg = objectMapper.createObjectNode();
+        return evaluationMessage(objectMapper, gameId, moveNumber, color, evaluationCp, evaluationMate, qualities,
+                qualitySummary);
+    }
+
+    public static ObjectNode evaluationMessage(ObjectMapper mapper, UUID gameId, int moveNumber, String color,
+                                               Integer evaluationCp, Integer evaluationMate,
+                                               List<PlyQualityDto> qualities, GameQualitySummaryDto qualitySummary) {
+        ObjectNode msg = mapper.createObjectNode();
         msg.put("type", "evaluationUpdate");
         msg.put("gameId", gameId.toString());
         msg.put("moveNumber", moveNumber);
         msg.put("color", color);
         if (evaluationCp != null) msg.put("evaluationCp", evaluationCp);
         if (evaluationMate != null) msg.put("evaluationMate", evaluationMate);
-        msg.set("qualities", objectMapper.valueToTree(qualities != null ? qualities : List.of()));
-        if (qualitySummary != null) msg.set("qualitySummary", objectMapper.valueToTree(qualitySummary));
+        msg.set("qualities", mapper.valueToTree(qualities != null ? qualities : List.of()));
+        if (qualitySummary != null) msg.set("qualitySummary", mapper.valueToTree(qualitySummary));
         return msg;
     }
 
@@ -430,11 +509,14 @@ public class GameWebSocket {
         if (subs == null) return;
         outsideTransaction(() -> {
             for (WebSocketConnection conn : subs) {
-                conn.sendText(message).subscribe().with(
-                        ignored -> {},
-                        err -> LOG.warnf("Failed to send WebSocket message: %s", err.getMessage())
-                );
+                if (!revisionConnections.contains(conn.id())) send(conn, message);
             }
         });
+    }
+
+    private void send(WebSocketConnection connection, String message) {
+        connection.sendText(message).subscribe().with(
+                ignored -> {},
+                err -> LOG.warnf("Failed to send WebSocket message: %s", err.getMessage()));
     }
 }

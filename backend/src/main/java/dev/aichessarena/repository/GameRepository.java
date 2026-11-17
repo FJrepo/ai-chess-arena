@@ -25,6 +25,15 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
 
     private static final List<GameStatus> TERMINAL_STATUSES = List.of(GameStatus.COMPLETED, GameStatus.FORFEIT);
 
+    public void beginSnapshotRead() {
+        getEntityManager().createNativeQuery("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY").executeUpdate();
+    }
+
+    public Long liveRevision(UUID id) {
+        return getEntityManager().createQuery("select g.liveRevision from Game g where g.id = :id", Long.class)
+                .setParameter("id", id).getResultStream().findFirst().orElse(null);
+    }
+
     public List<Game> findByTournamentId(UUID tournamentId) {
         return list("tournament.id = ?1", tournamentId);
     }

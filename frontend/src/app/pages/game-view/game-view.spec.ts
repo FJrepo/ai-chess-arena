@@ -3,14 +3,21 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { BoardThemeService } from '../../services/board-theme.service';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { EMPTY, Subject, of, throwError } from 'rxjs';
+import { EMPTY, Observable, Subject, of, throwError } from 'rxjs';
 import { GameView } from './game-view';
 import { GameInfoBar } from '../../components/game-info-bar/game-info-bar';
 import { REASONING_EFFORTS } from '../../utils/reasoning-effort';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
-import { Game, Move, MoveAttempt, MoveWsMessage, WsMessage } from '../../models/tournament.model';
+import {
+  Game,
+  GameChange,
+  Move,
+  MoveAttempt,
+  MoveWsMessage,
+  WsMessage,
+} from '../../models/tournament.model';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const AFTER_E4 = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
@@ -85,12 +92,28 @@ function liveMove(
   };
 }
 
+function revision(revision: number, ...changes: GameChange[]): WsMessage {
+  return { type: 'gameRevision', gameId: 'g-1', revision, changes };
+}
+
+function gameState(fields: Partial<Extract<GameChange, { type: 'gameState' }>> = {}): GameChange {
+  return {
+    type: 'gameState',
+    gameId: 'g-1',
+    activeColor: null,
+    turnStartedAt: null,
+    turnDeadlineAt: null,
+    totalCostUsd: 0,
+    ...fields,
+  };
+}
+
 /** A component wired for ngOnInit, whose game load stays in flight until `gameLoad` emits. */
-function createSpectator() {
+function createSpectator(acknowledgeImmediately = true) {
   const gameLoad = new Subject<Game>();
   const messages = new Subject<WsMessage>();
   const reconnected = new Subject<void>();
-  const getGame = vi.fn(() => gameLoad);
+  const getGame = vi.fn<() => Observable<Game>>(() => gameLoad);
   const api = {
     getGame,
     getSystemStatus: () => EMPTY,
@@ -99,7 +122,9 @@ function createSpectator() {
   };
   const ws = {
     connect: vi.fn(),
-    subscribeToGame: vi.fn(),
+    subscribeToGame: vi.fn(() => {
+      if (acknowledgeImmediately) messages.next({ type: 'subscribed', gameId: 'g-1', revision: 0 });
+    }),
     unsubscribeFromGame: vi.fn(),
     getMessages: () => messages,
     reconnected: () => reconnected,
@@ -224,7 +249,7 @@ describe('GameView', () => {
             connect: vi.fn(),
             subscribeToGame: vi.fn(),
             unsubscribeFromGame: vi.fn(),
-            getMessages: () => EMPTY,
+            getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
             reconnected: () => EMPTY,
           },
         },
@@ -710,7 +735,15 @@ describe('GameView', () => {
     const responses: Array<Subject<MoveAttempt[]>> = [];
     const { component } = createComponent({
       api: {
-        getGame: () => of(gameFixture({ tournamentId: 't-1', status: 'PAUSED' })),
+        getGame: () =>
+          of(
+            gameFixture({
+              tournamentId: 't-1',
+              status: 'PAUSED',
+              statusDetail: 'Answer cut off',
+              statusRevision: 1,
+            }),
+          ),
         getTournament: () => of({ maxOutputTokens: 4096 }),
         getGameAttempts: () => {
           const response = new Subject<MoveAttempt[]>();
@@ -1021,6 +1054,7 @@ describe('GameView', () => {
       blackParticipantId: 'p-2',
       blackModelId: 'model-b',
       blackReasoningEffort: 'high',
+      moves: [moveFixture()],
     });
     component.game.set(original);
     component.moves.set([moveFixture()]);
@@ -1033,15 +1067,22 @@ describe('GameView', () => {
       statusRevision: 1,
     });
     expect(getGame).toHaveBeenCalledWith('g-1');
-    expect(getTournament).toHaveBeenCalledWith('t-1');
+    expect(getTournament).not.toHaveBeenCalled();
     expect(component.truncationEffort()).toBeNull();
     expect(component.truncationPauseLimit()).toBeNull();
     component.saveLimitAndResume(8192, 'low');
     expect(updateTournament).not.toHaveBeenCalled();
 
     // The participant changed elsewhere while the game view stayed open.
-    refreshedGame.next({ ...original, status: 'PAUSED', blackReasoningEffort: 'minimal' });
+    refreshedGame.next({
+      ...original,
+      status: 'PAUSED',
+      statusRevision: 1,
+      statusDetail: 'Cut off',
+      blackReasoningEffort: 'minimal',
+    });
     refreshedGame.complete();
+    expect(getTournament).toHaveBeenCalledWith('t-1');
     expect(component.truncationEffort()).toBeNull();
     refreshedTournament.next({ reasoningEffort: 'minimal', maxOutputTokens: 12000 });
     refreshedTournament.complete();
@@ -1053,70 +1094,67 @@ describe('GameView', () => {
     expect(bar.newReasoningEffort).toBe('minimal');
   });
 
-  it.each(['game', 'tournament'])(
-    'ignores an older %s reload response after refreshing pause settings',
-    (delayed) => {
-      const oldGame = new Subject<Game>();
-      const oldTournament = new Subject<any>();
-      const original = gameFixture({
-        tournamentId: 't-1',
-        status: 'IN_PROGRESS',
-        statusRevision: 0,
-        blackParticipantId: 'p-2',
-        blackReasoningEffort: 'high',
-        moves: [moveFixture()],
-      });
-      const refreshed = {
-        ...original,
-        status: 'PAUSED',
-        statusRevision: 1,
-        blackReasoningEffort: 'minimal',
-      } as Game;
-      const getGame = vi
+  it('keeps paused settings hidden while a stale snapshot is rejected and a new read starts', () => {
+    vi.useFakeTimers();
+    const { component, gameLoad, messages, getGame, api } = createSpectator();
+    const oldTournament = new Subject<{ reasoningEffort: string; maxOutputTokens: number }>();
+    const currentTournament = { reasoningEffort: 'minimal', maxOutputTokens: 12000 };
+    Object.assign(api, {
+      getTournament: vi
         .fn()
-        .mockReturnValueOnce(delayed === 'game' ? oldGame : of(original))
-        .mockReturnValueOnce(of(refreshed));
-      const getTournament = vi.fn();
-      const currentTournament = { reasoningEffort: 'minimal', maxOutputTokens: 12000 };
-      if (delayed === 'game') {
-        getTournament.mockReturnValueOnce(of(currentTournament)).mockReturnValueOnce(oldTournament);
-      } else {
-        getTournament.mockReturnValueOnce(oldTournament).mockReturnValueOnce(of(currentTournament));
-      }
-      const { component } = createComponent({
-        api: {
-          getGame,
-          getTournament,
-          getGameAttempts: () => of([attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })]),
-        },
-      });
-      component.game.set(original);
-      component.moves.set(original.moves!);
+        .mockReturnValueOnce(oldTournament)
+        .mockReturnValue(of(currentTournament)),
+    });
+    const original = gameFixture({
+      liveRevision: 1,
+      statusRevision: 0,
+      status: 'IN_PROGRESS',
+      tournamentId: 't-1',
+      blackParticipantId: 'p-2',
+      blackReasoningEffort: 'high',
+      moves: [moveFixture()],
+    });
+    const paused = {
+      ...original,
+      liveRevision: 2,
+      status: 'PAUSED' as const,
+      statusRevision: 1,
+      statusDetail: 'Cut off',
+      blackReasoningEffort: 'minimal' as const,
+      attempts: [attemptFixture({ color: 'BLACK', outcome: 'TRUNCATED' })],
+    };
+    try {
+      component.ngOnInit();
+      gameLoad.next(original);
       component.loadGame();
-      component.handleWsMessage({
-        type: 'gameStatus',
-        gameId: 'g-1',
-        status: 'PAUSED',
-        detail: 'Cut off',
-        statusRevision: 1,
-      });
-      // Both the old game snapshot and its tournament response carry the previous effort.
-      oldGame.next({ ...original, status: 'PAUSED', statusDetail: 'Cut off', statusRevision: 1 });
-      oldGame.complete();
+      messages.next(
+        revision(
+          2,
+          { type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 1 },
+          gameState(),
+        ),
+      );
+      gameLoad.next(original);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(500);
+      gameLoad.next(paused);
       oldTournament.next({ reasoningEffort: 'high', maxOutputTokens: 4096 });
-      oldTournament.complete();
       expect(component.game()?.blackReasoningEffort).toBe('minimal');
       expect(component.tournamentReasoningEffort()).toBe('minimal');
       expect(component.truncationEffort()?.current).toBe('minimal');
       expect(component.truncationPauseLimit()).toBe(12000);
-    },
-  );
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
 
   it('keeps stale pause controls hidden if refreshing settings fails', () => {
     const { component, snackbar } = createComponent({
       api: {
-        getGame: () => throwError(() => new Error('unavailable')),
-        getTournament: () => of({ reasoningEffort: 'minimal' }),
+        getGame: () =>
+          of(gameFixture({ tournamentId: 't-1', status: 'PAUSED', statusRevision: 1 })),
+        getTournament: () => throwError(() => new Error('unavailable')),
       },
     });
     component.game.set(gameFixture({ tournamentId: 't-1', status: 'IN_PROGRESS' }));
@@ -1350,39 +1388,197 @@ describe('GameView', () => {
     expect(component.currentFen()).toBe(START_FEN);
   });
 
-  it('merges live moves that arrive while the game is still loading', () => {
-    const { component, gameLoad, messages } = createSpectator();
+  it('waits for the subscription and rejects a stale early snapshot after a terminal revision', () => {
+    vi.useFakeTimers();
+    const { component, gameLoad, messages, getGame } = createSpectator(false);
     component.ngOnInit();
+    try {
+      messages.next({ type: 'gameRevision', gameId: 'g-1', revision: 2, changes: [] });
+      expect(getGame).not.toHaveBeenCalled();
+      messages.next({ type: 'subscribed', gameId: 'g-1', revision: 2 });
+      expect(getGame).toHaveBeenCalledTimes(1);
+      gameLoad.next(gameWith({ liveRevision: 1 }));
+      expect(component.game()).toBeNull();
+      vi.advanceTimersByTime(500);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      gameLoad.next(
+        gameWith({
+          liveRevision: 2,
+          status: 'FORFEIT',
+          currentFen: AFTER_E4,
+          moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
+        }),
+      );
+      expect(component.game()?.status).toBe('FORFEIT');
+      expect(component.currentFen()).toBe(AFTER_E4);
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
 
-    messages.next(liveMove(1, 'WHITE', 'e4', AFTER_E4));
-    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5, { pgn: '1. e4 e5' }));
-    messages.next({
-      type: 'evaluationUpdate',
-      gameId: 'g-1',
+  it('drops an evaluation gap while paused, uses one GET, and preserves the draft and reviewed ply', () => {
+    vi.useFakeTimers();
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    const e4 = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+    const e5 = { ...storedMove(1, 'BLACK', 'e5', AFTER_E5), evaluationCp: 20 };
+    const latest = new Subject<Game>();
+    component.ngOnInit();
+    try {
+      gameLoad.next(
+        gameWith({ liveRevision: 1, status: 'PAUSED', currentFen: AFTER_E4, moves: [e4] }),
+      );
+      component.goToMove(-1);
+      component.humanMove = 'Nf3';
+      getGame.mockReturnValue(latest);
+      messages.next({
+        type: 'gameRevision',
+        gameId: 'g-1',
+        revision: 3,
+        changes: [
+          {
+            type: 'evaluationUpdate',
+            gameId: 'g-1',
+            moveNumber: 1,
+            color: 'BLACK',
+            evaluationCp: 20,
+          },
+        ],
+      });
+      messages.next({
+        type: 'gameRevision',
+        gameId: 'g-1',
+        revision: 2,
+        changes: [
+          {
+            type: 'committedMove',
+            gameId: 'g-1',
+            move: e5,
+            pgn: '1. e4 e5',
+          },
+        ],
+      });
+      messages.next({ type: 'heartbeat', gameId: 'g-1', revision: 4 });
+      expect(getGame).toHaveBeenCalledTimes(2);
+      expect(component.moves()).toEqual([e4]);
+      latest.next(
+        gameWith({ liveRevision: 3, status: 'PAUSED', currentFen: AFTER_E5, moves: [e4, e5] }),
+      );
+      expect(component.moves()).toEqual([e4]);
+      vi.advanceTimersByTime(500);
+      expect(getGame).toHaveBeenCalledTimes(3);
+      latest.next(
+        gameWith({ liveRevision: 4, status: 'PAUSED', currentFen: AFTER_E5, moves: [e4, e5] }),
+      );
+      expect(component.moves()[1].evaluationCp).toBe(20);
+      expect(component.currentMoveIndex()).toBe(-1);
+      expect(component.humanMove).toBe('Nf3');
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses a reconnect watermark to recover the human turn without reusing the expired model timer', () => {
+    const { component, gameLoad, messages, reconnected, getGame } = createSpectator();
+    component.ngOnInit();
+    try {
+      gameLoad.next(
+        gameWith({
+          liveRevision: 1,
+          activeColor: 'WHITE',
+          turnDeadlineAt: '2026-01-01T00:00:00Z',
+          blackControlType: 'HUMAN',
+          blackModelId: null,
+        }),
+      );
+      expect(component.moveTimerSeconds()).toBe(0);
+      reconnected.next();
+      expect(getGame).toHaveBeenCalledTimes(1);
+      messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3 });
+      expect(getGame).toHaveBeenCalledTimes(2);
+      gameLoad.next(
+        gameWith({
+          liveRevision: 3,
+          activeColor: 'BLACK',
+          currentFen: AFTER_E4,
+          moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
+          blackControlType: 'HUMAN',
+          blackModelId: null,
+        }),
+      );
+      expect(component.isAwaitingHumanMove()).toBe(true);
+      expect(component.moveTimerSeconds()).toBeNull();
+    } finally {
+      component.ngOnDestroy();
+    }
+  });
+
+  it('retries a failed revision snapshot with capped backoff while watching for the newest revision', () => {
+    vi.useFakeTimers();
+    const { component, messages, getGame } = createSpectator(false);
+    getGame.mockImplementation(() => throwError(() => ({ status: 503 })));
+    component.ngOnInit();
+    try {
+      // A revisioned event may reach the live stream before the subscribe ack.
+      messages.next({ type: 'gameRevision', gameId: 'g-1', revision: 1, changes: [] });
+      messages.next({ type: 'subscribed', gameId: 'g-1', revision: 1 });
+      expect(getGame).toHaveBeenCalledTimes(1);
+      messages.next({ type: 'heartbeat', gameId: 'g-1', revision: 3 });
+      vi.advanceTimersByTime(499);
+      expect(getGame).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(999);
+      expect(getGame).toHaveBeenCalledTimes(2);
+      getGame.mockImplementation(() => of(gameWith({ liveRevision: 3 })));
+      vi.advanceTimersByTime(1);
+      expect(getGame).toHaveBeenCalledTimes(3);
+      expect(component.game()?.liveRevision).toBe(3);
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses legacy snapshots without duplicating chat or reviving retry alerts', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator(false);
+    const saved = {
+      id: 'saved-chat',
       moveNumber: 1,
-      color: 'BLACK',
-      evaluationCp: 25,
-    });
-    expect(component.moves()).toEqual([]);
-
-    // The load was answered after e4 was stored but before e5.
-    gameLoad.next(
-      gameWith({
-        currentFen: AFTER_E4,
-        pgn: '1. e4',
-        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
-      }),
-    );
-
-    expect(component.moves().map((move) => `${move.moveNumber}${move.color}:${move.san}`)).toEqual([
-      '1WHITE:e4',
-      '1BLACK:e5',
-    ]);
-    expect(component.moves()[0].id).toBe('m-1-WHITE');
-    expect(component.moves()[1].evaluationCp).toBe(25);
-    expect(component.currentMoveIndex()).toBe(1);
-    expect(component.game()?.currentFen).toBe(AFTER_E5);
-    expect(component.game()?.pgn).toBe('1. e4 e5');
+      senderColor: 'WHITE' as const,
+      senderModel: 'model-a',
+      message: 'hello',
+      createdAt: '2026-01-01T00:00:00Z',
+    };
+    component.ngOnInit();
+    try {
+      messages.next({ type: 'subscriptionUnavailable', gameId: 'g-1' });
+      messages.next({
+        type: 'retry',
+        gameId: 'g-1',
+        color: 'WHITE',
+        reason: 'try again',
+        attemptNumber: 1,
+      });
+      messages.next({
+        type: 'chat',
+        gameId: 'g-1',
+        moveNumber: 1,
+        senderColor: 'WHITE',
+        senderModel: 'model-a',
+        message: 'hello',
+      });
+      messages.next(liveMove(1, 'WHITE', 'e4', AFTER_E4));
+      expect(getGame).toHaveBeenCalledTimes(1);
+      gameLoad.next(
+        gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)], chatMessages: [saved] }),
+      );
+      expect(component.chatMessages()).toEqual([saved]);
+      expect(component.retryInfo()).toBeNull();
+    } finally {
+      component.ngOnDestroy();
+    }
   });
 
   it('orders loaded moves White first within a move number', () => {
@@ -1400,179 +1596,72 @@ describe('GameView', () => {
     expect(component.currentMoveIndex()).toBe(1);
   });
 
-  it('ignores a live move that is already in the move list', () => {
-    const { component, gameLoad, messages } = createSpectator();
+  it('applies a consecutive move, chat and spend once and continues following live moves', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    const e4 = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+    const e5 = storedMove(1, 'BLACK', 'e5', AFTER_E5);
+    const chat = {
+      id: 'saved-chat',
+      moveNumber: 1,
+      senderColor: 'BLACK' as const,
+      senderModel: 'model-b',
+      message: 'hello',
+      createdAt: '2026-01-01T00:00:00Z',
+    };
     component.ngOnInit();
     gameLoad.next(
-      gameWith({ currentFen: AFTER_E4, moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }),
+      gameWith({ liveRevision: 1, currentFen: AFTER_E4, activeColor: 'BLACK', moves: [e4] }),
     );
-
-    messages.next(liveMove(1, 'WHITE', 'e4', AFTER_E4));
-    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
-    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
-
-    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
-    expect(component.currentMoveIndex()).toBe(1);
-  });
-
-  it('reloads the game after the live connection reconnects', () => {
-    const { component, gameLoad, reconnected, getGame } = createSpectator();
-    component.ngOnInit();
-    gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
-
-    reconnected.next();
-    gameLoad.next(
-      gameWith({
-        currentFen: AFTER_E5,
-        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
-      }),
+    const saved = revision(
+      2,
+      { type: 'committedMove', gameId: 'g-1', move: e5, pgn: '1. e4 e5' },
+      { type: 'committedChat', gameId: 'g-1', chat },
+      gameState({ totalCostUsd: 0.02, activeColor: 'WHITE' }),
     );
-
-    expect(getGame).toHaveBeenCalledTimes(2);
-    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+    messages.next(saved);
+    messages.next(saved);
+    expect(component.moves()).toEqual([e4, e5]);
+    expect(component.chatMessages()).toEqual([chat]);
     expect(component.currentMoveIndex()).toBe(1);
     expect(component.currentFen()).toBe(AFTER_E5);
+    expect(component.game()?.totalCostUsd).toBe(0.02);
+    expect(getGame).toHaveBeenCalledTimes(1);
     component.ngOnDestroy();
   });
 
-  it.each([-1, 0])(
-    'keeps reviewed position %s on attemptsUpdated with an unchanged snapshot',
-    (index) => {
-      const { component, gameLoad, messages, api } = createSpectator();
-      const snapshot = gameWith({
-        currentFen: AFTER_E5,
-        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
-      });
-      component.ngOnInit();
-      gameLoad.next(snapshot);
-      component.goToMove(index);
-      const accepted = attemptFixture({ color: 'BLACK', outcome: 'ACCEPTED', proposedMove: 'e5' });
-      api.getGameAttempts.mockReturnValue(of([accepted]));
-
-      messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
-      gameLoad.next(snapshot);
-
-      expect(component.currentMoveIndex()).toBe(index);
-      expect(component.currentFen()).toBe(index === -1 ? START_FEN : AFTER_E4);
-      expect(component.attempts()).toEqual([accepted]);
-      component.ngOnDestroy();
-    },
-  );
-
-  it.each(['snapshot', 'buffered move'])(
-    'advances a live-following viewer on attemptsUpdated with a new %s',
-    (source) => {
-      const { component, gameLoad, messages } = createSpectator();
-      const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
-      const second = storedMove(1, 'BLACK', 'e5', AFTER_E5);
-      component.ngOnInit();
-      gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
-      expect(component.currentMoveIndex()).toBe(0);
-
-      messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
-      if (source === 'buffered move') {
-        messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
-      }
-      gameLoad.next(
-        gameWith({
-          currentFen: source === 'snapshot' ? AFTER_E5 : AFTER_E4,
-          moves: source === 'snapshot' ? [first, second] : [first],
-        }),
-      );
-
-      expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
-      expect(component.currentMoveIndex()).toBe(1);
-      expect(component.currentFen()).toBe(AFTER_E5);
-      component.ngOnDestroy();
-    },
-  );
-
-  it('keeps a position selected while an attemptsUpdated reload is in flight, including buffered moves', () => {
+  it('keeps the position selected while a snapshot is in flight and resumes following when at latest', () => {
     const { component, gameLoad, messages } = createSpectator();
-    const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
-    component.ngOnInit();
-    gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
-
-    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
-    component.goFirst();
-    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
-    gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
-
-    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
-    expect(component.currentMoveIndex()).toBe(-1);
-    expect(component.currentFen()).toBe(START_FEN);
-    component.ngOnDestroy();
-  });
-
-  it('resumes live-following when the viewer selects the latest move during a reload', () => {
-    const { component, gameLoad, messages } = createSpectator();
-    const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
-    component.ngOnInit();
-    gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
-    component.goFirst();
-
-    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
-    component.goLast();
-    gameLoad.next(
-      gameWith({
-        currentFen: AFTER_E5,
-        moves: [first, storedMove(1, 'BLACK', 'e5', AFTER_E5)],
-      }),
-    );
-
-    expect(component.currentMoveIndex()).toBe(1);
-    expect(component.currentFen()).toBe(AFTER_E5);
-    component.ngOnDestroy();
-  });
-
-  it('keeps a reviewed move when a reconnect reload discovers more moves', () => {
-    const { component, gameLoad, reconnected } = createSpectator();
     const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
     const second = storedMove(1, 'BLACK', 'e5', AFTER_E5);
-    component.ngOnInit();
-    gameLoad.next(gameWith({ currentFen: AFTER_E5, moves: [first, second] }));
-    component.goToMove(0);
-
-    reconnected.next();
-    const afterNf3 = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2';
-    gameLoad.next(
-      gameWith({
-        currentFen: afterNf3,
-        moves: [first, second, storedMove(2, 'WHITE', 'Nf3', afterNf3)],
-      }),
+    const third = storedMove(
+      2,
+      'WHITE',
+      'Nf3',
+      'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2',
     );
-
-    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5', 'Nf3']);
+    component.ngOnInit();
+    const history = [first, second];
+    gameLoad.next(gameWith({ liveRevision: 1, currentFen: AFTER_E5, moves: history }));
+    messages.next({ type: 'heartbeat', gameId: 'g-1', revision: 2 });
+    component.goToMove(0);
+    gameLoad.next(gameWith({ liveRevision: 2, currentFen: third.fen, moves: [...history, third] }));
     expect(component.currentMoveIndex()).toBe(0);
     expect(component.currentFen()).toBe(AFTER_E4);
-    component.ngOnDestroy();
-  });
 
-  it('applies live moves directly once the latest load succeeded, even if an older load never answers', () => {
-    const { component, getGame, messages, reconnected } = createSpectator();
-    const initialLoad = new Subject<Game>();
-    const reconnectLoad = new Subject<Game>();
-    getGame.mockReturnValueOnce(initialLoad).mockReturnValueOnce(reconnectLoad);
-    component.ngOnInit();
-
-    reconnected.next();
-    reconnectLoad.next(
-      gameWith({ currentFen: AFTER_E4, moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }),
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3 });
+    component.goToMove(2);
+    const fourth = storedMove(
+      2,
+      'BLACK',
+      'Nc6',
+      'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
     );
-    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
-    messages.next({
-      type: 'evaluationUpdate',
-      gameId: 'g-1',
-      moveNumber: 1,
-      color: 'BLACK',
-      evaluationCp: -10,
-    });
-
-    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
-    expect(component.moves()[1].evaluationCp).toBe(-10);
-    expect(component.game()?.currentFen).toBe(AFTER_E5);
-    expect(component.currentMoveIndex()).toBe(1);
-    expect(initialLoad.observed).toBe(false);
+    gameLoad.next(
+      gameWith({ liveRevision: 3, currentFen: fourth.fen, moves: [...history, third, fourth] }),
+    );
+    expect(component.currentMoveIndex()).toBe(3);
+    expect(component.currentFen()).toBe(fourth.fen);
+    component.ngOnDestroy();
   });
 
   it('shows the quality an evaluation update decides, for a live move and the summary', () => {
@@ -1580,50 +1669,68 @@ describe('GameView', () => {
     component.ngOnInit();
     gameLoad.next(
       gameWith({
+        liveRevision: 1,
         currentFen: AFTER_E5,
         moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
         qualitySummary: null,
       }),
     );
-    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
+    messages.next(
+      revision(
+        2,
+        {
+          type: 'committedMove',
+          gameId: 'g-1',
+          move: storedMove(1, 'BLACK', 'e5', AFTER_E5),
+          pgn: '1. e4 e5',
+        },
+        gameState({ activeColor: 'WHITE' }),
+      ),
+    );
     expect(component.moves()[1].quality).toBeUndefined();
 
-    messages.next({
-      type: 'evaluationUpdate',
-      gameId: 'g-1',
-      moveNumber: 1,
-      color: 'BLACK',
-      evaluationCp: 338,
-      qualities: [
+    messages.next(
+      revision(
+        3,
         {
+          type: 'evaluationUpdate',
+          gameId: 'g-1',
           moveNumber: 1,
           color: 'BLACK',
-          quality: {
-            judgement: 'BLUNDER',
-            centipawnLoss: 618,
-            winChanceBefore: 0.7372,
-            winChanceAfter: 0.2236,
-            excluded: null,
+          evaluationCp: 338,
+          qualities: [
+            {
+              moveNumber: 1,
+              color: 'BLACK',
+              quality: {
+                judgement: 'BLUNDER',
+                centipawnLoss: 618,
+                winChanceBefore: 0.7372,
+                winChanceAfter: 0.2236,
+                excluded: null,
+              },
+            },
+          ],
+          qualitySummary: {
+            white: {
+              analyzedMoves: 1,
+              averageCentipawnLoss: 0,
+              inaccuracies: 0,
+              mistakes: 0,
+              blunders: 0,
+            },
+            black: {
+              analyzedMoves: 1,
+              averageCentipawnLoss: 618,
+              inaccuracies: 0,
+              mistakes: 0,
+              blunders: 1,
+            },
           },
         },
-      ],
-      qualitySummary: {
-        white: {
-          analyzedMoves: 1,
-          averageCentipawnLoss: 0,
-          inaccuracies: 0,
-          mistakes: 0,
-          blunders: 0,
-        },
-        black: {
-          analyzedMoves: 1,
-          averageCentipawnLoss: 618,
-          inaccuracies: 0,
-          mistakes: 0,
-          blunders: 1,
-        },
-      },
-    });
+        gameState(),
+      ),
+    );
 
     expect(component.moves()[1].evaluationCp).toBe(338);
     expect(component.moves()[1].quality?.judgement).toBe('BLUNDER');
@@ -1659,31 +1766,16 @@ describe('GameView', () => {
       gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)], qualitySummary: summary }),
     );
 
-    messages.next({ type: 'evaluationUpdate', gameId: 'g-1', moveNumber: 1, color: 'WHITE' });
+    messages.next(
+      revision(
+        2,
+        { type: 'evaluationUpdate', gameId: 'g-1', moveNumber: 1, color: 'WHITE' },
+        gameState(),
+      ),
+    );
 
     expect(component.game()?.qualitySummary).toEqual(summary);
     component.ngOnDestroy();
-  });
-
-  it('ignores an older load that answers after a newer one', () => {
-    const { component, getGame, reconnected } = createSpectator();
-    const olderLoad = new Subject<Game>();
-    const newerLoad = new Subject<Game>();
-    getGame.mockReturnValueOnce(olderLoad).mockReturnValueOnce(newerLoad);
-    component.ngOnInit();
-    reconnected.next();
-
-    newerLoad.next(
-      gameWith({
-        currentFen: AFTER_E5,
-        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
-      }),
-    );
-    olderLoad.next(gameWith({ currentFen: START_FEN, moves: [] }));
-    olderLoad.error(new Error('late failure'));
-
-    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
-    expect(component.game()?.currentFen).toBe(AFTER_E5);
   });
 
   it('marks live override moves from the flag, falling back to the override model id', () => {
@@ -1816,371 +1908,133 @@ describe('GameView resignation', () => {
     expect(move?.attemptSummary).toBe('1 failed attempt: resignation not allowed');
   });
 
-  it('reloads the game when it ends by resignation, to show its details', () => {
+  it('reconciles terminal details and ignores an older running revision', () => {
     const { component, gameLoad, messages, getGame } = createSpectator();
     component.ngOnInit();
-    gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
-
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'COMPLETED',
-      result: 'WHITE_WINS',
-      resultReason: 'RESIGNATION',
-      statusRevision: 3,
-    });
-    gameLoad.next(resigned({ chatMessages: [] }));
-
+    gameLoad.next(gameWith({ liveRevision: 3, statusRevision: 2 }));
+    messages.next(
+      revision(
+        4,
+        {
+          type: 'gameStatus',
+          gameId: 'g-1',
+          status: 'COMPLETED',
+          result: 'BLACK_WINS',
+          resultReason: 'RESIGNATION',
+          statusRevision: 3,
+        },
+        gameState(),
+      ),
+    );
+    messages.next(
+      revision(
+        3,
+        {
+          type: 'gameStatus',
+          gameId: 'g-1',
+          status: 'IN_PROGRESS',
+          statusRevision: 2,
+        },
+        gameState({ activeColor: 'WHITE' }),
+      ),
+    );
+    expect(component.game()?.status).toBe('COMPLETED');
     expect(getGame).toHaveBeenCalledTimes(2);
-    expect(component.game()?.resignation?.color).toBe('BLACK');
+    gameLoad.next(resigned({ liveRevision: 4, statusRevision: 3 }));
+    expect(component.game()?.resignation).toEqual(resigned().resignation);
     component.ngOnDestroy();
   });
 
-  it('keeps the announced result when the reload still reads the game as running, and asks again', () => {
+  it('loads the terminal board when a forfeit overtakes a queued capacity read', () => {
     vi.useFakeTimers();
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    const queued = gameWith({
+      liveRevision: 5,
+      status: 'PAUSED',
+      statusRevision: 3,
+      resumeRequestedAt: '2026-01-01T00:00:00Z',
+    });
     try {
-      const { component, gameLoad, messages, getGame } = createSpectator();
       component.ngOnInit();
-      gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
-
-      messages.next({
-        type: 'gameStatus',
-        gameId: 'g-1',
-        status: 'COMPLETED',
-        result: 'WHITE_WINS',
-        resultReason: 'RESIGNATION',
-        statusRevision: 3,
-      });
-      // The reload was read before the result was committed.
-      gameLoad.next(gameWith({ moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)] }));
-
-      expect(component.game()?.status).toBe('COMPLETED');
-      expect(component.game()?.result).toBe('WHITE_WINS');
-      expect(component.game()?.resultReason).toBe('RESIGNATION');
+      gameLoad.next(queued);
+      vi.advanceTimersByTime(15000);
       expect(getGame).toHaveBeenCalledTimes(2);
-
-      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
-      expect(getGame).toHaveBeenCalledTimes(3);
-      gameLoad.next(resigned());
-      expect(component.game()?.resignation?.color).toBe('BLACK');
-
-      // Once the stored game agrees, nothing is reloaded any more.
-      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS * 3);
-      expect(getGame).toHaveBeenCalledTimes(3);
-      component.ngOnDestroy();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('gives up asking again after a few stale reloads but keeps the result', () => {
-    vi.useFakeTimers();
-    try {
-      const { component, gameLoad, messages, getGame } = createSpectator();
-      component.ngOnInit();
-      gameLoad.next(gameWith());
-      messages.next({
-        type: 'gameStatus',
-        gameId: 'g-1',
-        status: 'FORFEIT',
-        result: 'BLACK_FORFEIT',
-        statusRevision: 3,
-      });
-      component.loadGame();
-      for (let i = 0; i < GameView.MAX_STALE_RELOADS + 2; i++) {
-        gameLoad.next(gameWith());
-        vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
-      }
-
-      expect(getGame).toHaveBeenCalledTimes(2 + GameView.MAX_STALE_RELOADS);
-      expect(component.game()?.status).toBe('FORFEIT');
-      expect(component.game()?.result).toBe('BLACK_FORFEIT');
-      component.ngOnDestroy();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('ignores a pause update that arrives after the resume that overtook it', () => {
-    vi.useFakeTimers();
-    try {
-      const { component, gameLoad, messages, getGame } = createSpectator();
-      component.ngOnInit();
-      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
-
-      // The pause (revision 5) committed first, but its update is delivered after the resume (revision 6).
-      messages.next({
-        type: 'gameStatus',
-        gameId: 'g-1',
-        status: 'IN_PROGRESS',
-        statusRevision: 6,
-      });
-      messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 5 });
-
-      expect(component.game()?.status).toBe('IN_PROGRESS');
-      expect(component.game()?.statusRevision).toBe(6);
-
-      // A reload read between the two commits is older too: keep the status and ask again.
-      component.loadGame();
-      gameLoad.next(gameWith({ status: 'PAUSED', statusRevision: 5 }));
-      expect(component.game()?.status).toBe('IN_PROGRESS');
-      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
-      expect(getGame).toHaveBeenCalledTimes(3);
-      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 6 }));
-      expect(component.game()?.status).toBe('IN_PROGRESS');
-
-      // A newer change is applied again.
-      messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 7 });
-      expect(component.game()?.status).toBe('PAUSED');
-      component.ngOnDestroy();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('applies a pause announced before the first snapshot when the snapshot is older', () => {
-    vi.useFakeTimers();
-    try {
-      const { component, gameLoad, messages, getGame } = createSpectator();
-      component.ngOnInit();
-
-      // The GET read revision 4; the pause (revision 5) is announced before its response arrives.
-      messages.next({
-        type: 'gameStatus',
-        gameId: 'g-1',
-        status: 'PAUSED',
-        detail: 'Rate limited',
-        statusRevision: 5,
-      });
-      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
-
-      expect(component.game()?.status).toBe('PAUSED');
-      expect(component.game()?.statusDetail).toBe('Rate limited');
-      expect(component.game()?.statusRevision).toBe(5);
-
-      // The stored game is read again; a newer snapshot is accepted, an older one would not be.
-      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
-      expect(getGame).toHaveBeenCalledTimes(2);
-      gameLoad.next(
-        gameWith({ status: 'PAUSED', statusDetail: 'Rate limited', statusRevision: 5 }),
+      messages.next(
+        revision(
+          7,
+          { type: 'gameStatus', gameId: 'g-1', status: 'FORFEIT', statusRevision: 5 },
+          gameState(),
+        ),
       );
+      gameLoad.next(queued);
       expect(component.game()?.status).toBe('PAUSED');
-      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS * 3);
-      expect(getGame).toHaveBeenCalledTimes(2);
-      component.ngOnDestroy();
+      vi.advanceTimersByTime(500);
+      gameLoad.next(
+        gameWith({
+          liveRevision: 7,
+          statusRevision: 5,
+          status: 'FORFEIT',
+          currentFen: AFTER_E4,
+          moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4)],
+        }),
+      );
+      expect(component.currentFen()).toBe(AFTER_E4);
+      expect(component.game()?.status).toBe('FORFEIT');
+      vi.advanceTimersByTime(15000);
+      expect(getGame).toHaveBeenCalledTimes(3);
     } finally {
+      component.ngOnDestroy();
       vi.useRealTimers();
     }
   });
 
-  it('applies a forfeit announced before the first snapshot when the snapshot is older', () => {
-    vi.useFakeTimers();
-    try {
-      const { component, gameLoad, messages, getGame } = createSpectator();
-      component.ngOnInit();
-
-      messages.next({
-        type: 'gameStatus',
-        gameId: 'g-1',
-        status: 'FORFEIT',
-        result: 'BLACK_FORFEIT',
-        resultReason: 'TIMEOUT',
-        statusRevision: 5,
-      });
-      messages.next({ type: 'forfeit', gameId: 'g-1' });
-      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
-
-      expect(component.game()?.status).toBe('FORFEIT');
-      expect(component.game()?.result).toBe('BLACK_FORFEIT');
-      expect(component.game()?.resultReason).toBe('TIMEOUT');
-
-      // A retry that still reads the old snapshot keeps the forfeit.
-      vi.advanceTimersByTime(GameView.STALE_RELOAD_DELAY_MS);
-      expect(getGame).toHaveBeenCalledTimes(2);
-      gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4 }));
-      expect(component.game()?.status).toBe('FORFEIT');
-      component.ngOnDestroy();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('never lets a delayed turn update reopen a paused game, during the first load or live', () => {
-    const { component, gameLoad, messages, getGame } = createSpectator();
-    component.ngOnInit();
-
-    // Before the first response: the pause, then a delayed per-turn update (no revision).
-    messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 5 });
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'IN_PROGRESS',
-      activeColor: 'WHITE',
-      totalCostUsd: 0.5,
-    });
-    gameLoad.next(gameWith({ status: 'PAUSED', statusRevision: 5 }));
-
-    expect(component.game()?.status).toBe('PAUSED');
-    expect(component.game()?.statusRevision).toBe(5);
-    expect(getGame).toHaveBeenCalledTimes(1);
-
-    // Live, the same: a turn update never changes a paused game's status.
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'IN_PROGRESS',
-      activeColor: 'BLACK',
-    });
-    expect(component.game()?.status).toBe('PAUSED');
-
-    // Nor a finished one.
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'FORFEIT',
-      result: 'WHITE_FORFEIT',
-      statusRevision: 6,
-    });
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'IN_PROGRESS',
-      activeColor: 'WHITE',
-    });
-    expect(component.game()?.status).toBe('FORFEIT');
-    component.ngOnDestroy();
-  });
-
-  it('applies a turn update buffered during the first load to a running game', () => {
+  it('keeps the snapshot deadline across a same-turn refresh and rejects a delayed prior turn on the same side', () => {
     const { component, gameLoad, messages } = createSpectator();
-    component.ngOnInit();
-
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'IN_PROGRESS',
-      activeColor: 'BLACK',
-      totalCostUsd: 0.25,
-      tournamentChatMode: 'MANDATORY',
-    });
-    gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 4, totalCostUsd: 0.1 }));
-
-    expect(component.game()?.status).toBe('IN_PROGRESS');
-    expect(component.game()?.totalCostUsd).toBe(0.25);
-    expect(component.activeColor()).toBe('BLACK');
-    expect(component.tournamentChatMode()).toBe('MANDATORY');
-
-    // Live as well.
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'IN_PROGRESS',
+    const deadline = new Date(Date.now() + 100_000).toISOString();
+    const current = gameWith({
+      liveRevision: 6,
       activeColor: 'WHITE',
+      currentFen: AFTER_E5,
+      moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
+      turnDeadlineAt: deadline,
     });
-    expect(component.activeColor()).toBe('WHITE');
+    component.ngOnInit();
+    gameLoad.next(current);
+    component.loadGame();
+    messages.next(
+      revision(4, gameState({ activeColor: 'WHITE', turnDeadlineAt: '2026-01-01T00:00:00Z' })),
+    );
+    gameLoad.next(current);
+    expect(component.moveTimerSeconds()).toBeGreaterThan(0);
+    expect(component.game()?.turnDeadlineAt).toBe(deadline);
     component.ngOnDestroy();
   });
 
-  it('keeps a newer first snapshot over an older status announced before it', () => {
+  it('reloads when the position a side resigned in is evaluated', () => {
     const { component, gameLoad, messages, getGame } = createSpectator();
     component.ngOnInit();
-
-    messages.next({ type: 'gameStatus', gameId: 'g-1', status: 'PAUSED', statusRevision: 5 });
-    gameLoad.next(gameWith({ status: 'IN_PROGRESS', statusRevision: 6 }));
-
-    expect(component.game()?.status).toBe('IN_PROGRESS');
-    expect(getGame).toHaveBeenCalledTimes(1);
-    component.ngOnDestroy();
-  });
-
-  it('keeps a live evaluation that a reload does not have yet', () => {
-    const { component, gameLoad, messages, getGame } = createSpectator();
-    component.ngOnInit();
-    gameLoad.next(resigned());
-
-    messages.next({
-      type: 'evaluationUpdate',
-      gameId: 'g-1',
-      moveNumber: 1,
-      color: 'WHITE',
-      evaluationCp: 30,
-      qualities: [],
-      qualitySummary: {
-        white: {
-          analyzedMoves: 1,
-          averageCentipawnLoss: 0,
-          inaccuracies: 0,
-          mistakes: 0,
-          blunders: 0,
+    gameLoad.next(resigned({ liveRevision: 1 }));
+    messages.next(
+      revision(
+        2,
+        {
+          type: 'evaluationUpdate',
+          gameId: 'g-1',
+          moveNumber: 1,
+          color: 'WHITE',
+          evaluationCp: 30,
         },
-        black: {
-          analyzedMoves: 0,
-          averageCentipawnLoss: null,
-          inaccuracies: 0,
-          mistakes: 0,
-          blunders: 0,
-        },
-      },
-    });
-    expect(getGame).toHaveBeenCalledTimes(2);
-    // The reload was read before the evaluation was stored.
-    gameLoad.next(resigned());
-
-    expect(component.moves()[0].evaluationCp).toBe(30);
-    expect(component.game()?.qualitySummary?.white.analyzedMoves).toBe(1);
-    component.ngOnDestroy();
-  });
-
-  it('does not reload for other results', () => {
-    const { component, gameLoad, messages, getGame } = createSpectator();
-    component.ngOnInit();
-    gameLoad.next(gameWith());
-
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'COMPLETED',
-      result: 'WHITE_WINS',
-      resultReason: 'CHECKMATE',
-      statusRevision: 3,
-    });
-
-    expect(getGame).toHaveBeenCalledTimes(1);
-    component.ngOnDestroy();
-  });
-
-  it('reloads once the position a side resigned in is evaluated', () => {
-    const { component, gameLoad, messages, getGame } = createSpectator();
-    component.ngOnInit();
-    gameLoad.next(resigned());
-
-    // An evaluation of another move does not decide the resignation.
-    messages.next({ type: 'evaluationUpdate', gameId: 'g-1', moveNumber: 5, color: 'WHITE' });
-    expect(getGame).toHaveBeenCalledTimes(1);
-
-    messages.next({
-      type: 'evaluationUpdate',
-      gameId: 'g-1',
-      moveNumber: 1,
-      color: 'WHITE',
-      evaluationCp: 30,
-    });
+        gameState(),
+      ),
+    );
     expect(getGame).toHaveBeenCalledTimes(2);
     gameLoad.next(
       resigned({
+        liveRevision: 2,
         resignation: { ...resigned().resignation!, winChance: 0.46, notLosing: true },
       }),
     );
-
-    // Known now: further evaluations do not reload again.
-    messages.next({
-      type: 'evaluationUpdate',
-      gameId: 'g-1',
-      moveNumber: 1,
-      color: 'WHITE',
-      evaluationCp: 31,
-    });
-    expect(getGame).toHaveBeenCalledTimes(2);
+    expect(component.game()?.resignation?.winChance).toBe(0.46);
     component.ngOnDestroy();
   });
 });
@@ -2197,6 +2051,7 @@ describe('GameView resume while saving', () => {
         const queued = gameWith({
           status: 'PAUSED',
           statusRevision: 5,
+          liveRevision: 3,
           resumeRequestedAt: '2026-11-17T20:00:00Z',
           runCapacity: { runningGames: 2, maxConcurrentGames: 2 },
           currentFen: AFTER_E4,
@@ -2214,6 +2069,7 @@ describe('GameView resume while saving', () => {
           ...queued,
           status: 'COMPLETED',
           statusRevision: 7,
+          liveRevision: 5,
           resumeRequestedAt: null,
           runCapacity: null,
           result: 'DRAW',
@@ -2306,7 +2162,7 @@ describe('GameView resume while saving', () => {
             connect: vi.fn(),
             subscribeToGame: vi.fn(),
             unsubscribeFromGame: vi.fn(),
-            getMessages: () => EMPTY,
+            getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
             reconnected: () => EMPTY,
           },
         },
@@ -2385,7 +2241,7 @@ describe('GameView resume while saving', () => {
             connect: vi.fn(),
             subscribeToGame: vi.fn(),
             unsubscribeFromGame: vi.fn(),
-            getMessages: () => EMPTY,
+            getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
             reconnected: () => EMPTY,
           },
         },
@@ -2439,7 +2295,7 @@ describe('GameView piece images', () => {
             connect: vi.fn(),
             subscribeToGame: vi.fn(),
             unsubscribeFromGame: vi.fn(),
-            getMessages: () => EMPTY,
+            getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
             reconnected: () => EMPTY,
           },
         },
@@ -2645,21 +2501,28 @@ describe('GameView adjudication and missed mate updates', () => {
   it('reloads adjudication evidence when the game completes live', () => {
     const { component, gameLoad, messages, getGame } = createSpectator();
     component.ngOnInit();
-    gameLoad.next(gameWith());
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'COMPLETED',
-      result: 'WHITE_WINS',
-      resultReason: 'ADJUDICATION',
-      statusRevision: 3,
-    });
+    gameLoad.next(gameWith({ liveRevision: 1 }));
+    messages.next(
+      revision(
+        2,
+        {
+          type: 'gameStatus',
+          gameId: 'g-1',
+          status: 'COMPLETED',
+          result: 'WHITE_WINS',
+          resultReason: 'ADJUDICATION',
+          statusRevision: 3,
+        },
+        gameState(),
+      ),
+    );
     gameLoad.next(
       gameWith({
         status: 'COMPLETED',
         result: 'WHITE_WINS',
         resultReason: 'ADJUDICATION',
         statusRevision: 3,
+        liveRevision: 2,
         adjudication: { color: 'WHITE', plies: 10, evaluationMate: 4 },
       }),
     );
@@ -2700,38 +2563,32 @@ describe('GameView adjudication and missed mate updates', () => {
 });
 
 describe('GameView cancellation', () => {
-  it('reloads late discarded attempts and spend on invalidation without changing the cancelled revision', () => {
-    const { component, gameLoad, messages, getGame, api } = createSpectator();
+  it('applies a late discarded attempt and spend without changing the cancelled status revision', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
     const history = {
       currentFen: AFTER_E5,
       moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
     };
     component.ngOnInit();
-    gameLoad.next(gameWith({ ...history, statusRevision: 3, totalCostUsd: 1.25 }));
+    gameLoad.next(
+      gameWith({
+        ...history,
+        liveRevision: 3,
+        statusRevision: 4,
+        status: 'CANCELLED',
+        totalCostUsd: 1.25,
+      }),
+    );
     component.goToMove(0);
-    messages.next({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'CANCELLED',
-      statusRevision: 4,
-      totalCostUsd: 1.25,
-    });
-    expect(component.attempts()).toEqual([]);
-    const stale = new Subject<Game>();
-    getGame.mockReturnValueOnce(stale);
-    component.loadGame();
-    const refreshed = new Subject<Game>();
-    getGame.mockReturnValueOnce(refreshed);
     const discarded = attemptFixture({ outcome: 'DISCARDED', costUsd: 0.25 });
-    api.getGameAttempts.mockReturnValue(of([discarded]));
-    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
-    refreshed.next(
-      gameWith({ ...history, status: 'CANCELLED', statusRevision: 4, totalCostUsd: 1.5 }),
+    messages.next(
+      revision(
+        4,
+        { type: 'committedAttempt', gameId: 'g-1', attempt: discarded },
+        gameState({ totalCostUsd: 1.5 }),
+      ),
     );
-    stale.next(
-      gameWith({ ...history, status: 'CANCELLED', statusRevision: 4, totalCostUsd: 1.25 }),
-    );
-    expect(getGame).toHaveBeenCalledTimes(3);
+    expect(getGame).toHaveBeenCalledTimes(1);
     expect(component.game()?.status).toBe('CANCELLED');
     expect(component.game()?.statusRevision).toBe(4);
     expect(component.game()?.totalCostUsd).toBe(1.5);

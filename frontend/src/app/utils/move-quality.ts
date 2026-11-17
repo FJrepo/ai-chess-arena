@@ -71,7 +71,11 @@ export function applyPlyQualities(
   if (!qualities?.length) {
     return moves;
   }
+  const updated = new Set<string>();
   return moves.map((move) => {
+    const key = `${move.moveNumber}-${move.color}`;
+    if (updated.has(key)) return move;
+    updated.add(key);
     const update = qualities.find(
       (entry) => entry.moveNumber === move.moveNumber && entry.color === move.color,
     );

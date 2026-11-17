@@ -63,6 +63,11 @@ public final class DtoMapper {
     }
 
     public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity) {
+        return toDto(g, includeMoves, runCapacity, null);
+    }
+
+    public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity,
+                                List<MoveAttemptDto> attempts) {
         List<MoveDto> moves = List.of();
         GameQualitySummaryDto qualitySummary = null;
         ResignationDto resignation = null;
@@ -107,7 +112,8 @@ public final class DtoMapper {
                 g.statusRevision,
                 apiValue(g.requestedReasoningEffort("WHITE")),
                 apiValue(g.requestedReasoningEffort("BLACK")),
-                g.openingId, g.openingName, g.openingEco
+                g.openingId, g.openingName, g.openingEco, g.liveRevision, g.activeColor(),
+                g.turnStartedAt, g.turnDeadlineAt, attempts
         );
     }
 

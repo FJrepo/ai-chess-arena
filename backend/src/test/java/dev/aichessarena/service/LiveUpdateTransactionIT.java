@@ -7,16 +7,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
+import dev.aichessarena.resource.GameResource;
 import dev.aichessarena.websocket.GameWebSocket;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.websockets.next.WebSocketConnection;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
@@ -27,6 +33,8 @@ import jakarta.transaction.Transaction;
 import jakarta.transaction.TransactionManager;
 import jakarta.transaction.TransactionSynchronizationRegistry;
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -36,6 +44,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,6 +72,18 @@ class LiveUpdateTransactionIT {
     GameWebSocket gameWebSocket;
 
     @Inject
+    GameResource resource;
+
+    @Inject
+    MoveAttemptService attempts;
+
+    @Inject
+    GameLifecycleService lifecycle;
+
+    @Inject
+    GameTurnTiming timing;
+
+    @Inject
     GameRepository gameRepository;
 
     @Inject
@@ -83,6 +104,7 @@ class LiveUpdateTransactionIT {
     private final ExecutorService eventLoop = Executors.newSingleThreadExecutor();
     private final List<String> callbackTransactions = Collections.synchronizedList(new ArrayList<>());
     private final List<JsonNode> moveAndChat = Collections.synchronizedList(new ArrayList<>());
+    private final List<JsonNode> revisionEvents = Collections.synchronizedList(new ArrayList<>());
     private final CountDownLatch callbackStarted = new CountDownLatch(1);
     private final CountDownLatch releaseCallback = new CountDownLatch(1);
     private WebSocketConnection viewer;
@@ -175,6 +197,131 @@ class LiveUpdateTransactionIT {
         assertFalse(callbackTransactions.contains(INSIDE), "a committed send carried the transaction");
     }
 
+    @Test
+    void committedMovesChatSpendAndStatusShareOneGaplessRevision() {
+        UUID id = game(GameStatus.IN_PROGRESS);
+        gameWebSocket.onMessage(viewer,
+                "{\"type\":\"subscribe\",\"gameId\":\"%s\",\"protocol\":2}".formatted(id));
+        assertEquals(List.of("subscribed"), revisionEvents.stream().map(e -> e.path("type").asText()).toList());
+
+        Runnable playAndPause = () -> {
+            gameMoveService.recordModelMove(id, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", "Hello",
+                    new LlmResponse("e4", 10, 5, 0.001, 1, "{}", false, null), 0, "v2", "hash", START,
+                    ChatMode.OPTIONAL);
+            lifecycle.markGamePaused(id);
+            assertEquals(1, revisionEvents.size());
+        };
+
+        assertThrows(IllegalArgumentException.class, () -> QuarkusTransaction.requiringNew().run(() -> {
+            playAndPause.run();
+            throw new IllegalArgumentException("rollback");
+        }));
+        assertEquals(0, gameSnapshot(id).liveRevision());
+        assertEquals(1, revisionEvents.size());
+
+        QuarkusTransaction.requiringNew().run(playAndPause);
+        GameDto committed = gameSnapshot(id);
+        assertEquals(1, committed.liveRevision());
+        assertEquals(8, committed.statusRevision());
+        assertEquals("PAUSED", committed.status());
+        assertEquals(AFTER_E4, committed.currentFen());
+        assertEquals("Hello", committed.chatMessages().getFirst().message());
+        assertEquals(0, committed.totalCostUsd().compareTo(new BigDecimal("0.001")));
+        assertTrue(moveAndChat.isEmpty(), "revision viewers should receive one envelope");
+        JsonNode update = revisionEvents.getLast();
+        assertEquals(1, update.path("revision").asLong());
+        assertEquals(List.of("committedMove", "committedChat", "gameStatus", "gameState"),
+                java.util.stream.StreamSupport.stream(update.path("changes").spliterator(), false).map(e -> e.path("type").asText()).toList());
+        assertEquals(committed.chatMessages().getFirst().id().toString(),
+                update.path("changes").get(1).path("chat").path("id").asText());
+
+        attempts.record(new MoveAttemptService.AttemptRecord(id, 1, "BLACK", 1, "test/black",
+                Outcome.DISCARDED, "e5", "Position changed",
+                new LlmResponse("e5", 10, 5, 0.002, 1, "{}", false, null)));
+        GameDto afterAttempt = gameSnapshot(id);
+        assertEquals(2, afterAttempt.liveRevision());
+        assertEquals(8, afterAttempt.statusRevision());
+        assertEquals("DISCARDED", afterAttempt.attempts().getFirst().outcome());
+        assertEquals(0, afterAttempt.totalCostUsd().compareTo(new BigDecimal("0.003")));
+        assertEquals(2, revisionEvents.getLast().path("revision").asLong());
+
+        gameWebSocket.onMessage(viewer, "{\"type\":\"heartbeat\",\"gameId\":\"%s\"}".formatted(id));
+        assertEquals("heartbeat", revisionEvents.getLast().path("type").asText());
+        assertEquals(2, revisionEvents.getLast().path("revision").asLong());
+    }
+
+    @Test
+    void aSnapshotReadsBoardMovesChatAndAttemptsFromTheSameCommittedRevision() {
+        UUID id = game(GameStatus.IN_PROGRESS);
+        AtomicBoolean committed = new AtomicBoolean();
+        QuarkusMock.installMockForType(new MoveAttemptRepository() {
+            @Override
+            public List<MoveAttempt> findByGameId(UUID gameId) {
+                if (committed.compareAndSet(false, true)) {
+                    // Commit after the game row was read but before the snapshot's lazy history queries.
+                    gameMoveServiceInSeparateTransaction(id);
+                }
+                return List.of();
+            }
+        }, MoveAttemptRepository.class);
+
+        GameDto before = gameSnapshot(id);
+        assertTrue(committed.get());
+        assertEquals(0, before.liveRevision());
+        assertEquals(START, before.currentFen());
+        assertTrue(before.moves().isEmpty());
+        assertTrue(before.chatMessages().isEmpty());
+
+        GameDto after = gameSnapshot(id);
+        assertEquals(1, after.liveRevision());
+        assertEquals(AFTER_E4, after.currentFen());
+        assertEquals("e4", after.moves().getFirst().san());
+        assertEquals("Hello", after.chatMessages().getFirst().message());
+    }
+
+    private void gameMoveServiceInSeparateTransaction(UUID id) {
+        QuarkusTransaction.requiringNew().run(() ->
+                gameMoveService.recordHumanMove(id, 1, "WHITE", "e4", AFTER_E4, "White", "Hello", START));
+    }
+
+    @Test
+    void modelTimingAndEvaluationUseTheSameSequenceAndStaleTurnCannotRestoreAnExpiredDeadline() {
+        UUID id = game(GameStatus.IN_PROGRESS);
+        gameWebSocket.onMessage(viewer,
+                "{\"type\":\"subscribe\",\"gameId\":\"%s\",\"protocol\":2}".formatted(id));
+        var turn = new GameTurnService.TurnRequest(id, null, START, null, "WHITE", 1, List.of(), "test/white",
+                "White", "Black", new ArrayList<>(), null, null, true, 1, 30, "v2", "hash",
+                BigDecimal.ZERO, () -> true, 1024, ChatMode.OPTIONAL, ChatMode.OPTIONAL, false, null, null, 7L);
+        timing.record(turn, System::nanoTime);
+        GameDto timed = gameSnapshot(id);
+        assertEquals(1, timed.liveRevision());
+        assertEquals("WHITE", timed.activeColor());
+        assertEquals(Duration.ofSeconds(30), Duration.between(timed.turnStartedAt(), timed.turnDeadlineAt()));
+
+        lifecycle.markGamePaused(id);
+        lifecycle.markGameStarted(id);
+        assertEquals(null, timing.record(turn, System::nanoTime));
+        GameDto resumed = gameSnapshot(id);
+        assertEquals(3, resumed.liveRevision());
+        assertEquals("WHITE", resumed.activeColor());
+        assertEquals(null, resumed.turnDeadlineAt());
+
+        gameMoveService.recordHumanMove(id, 1, "WHITE", "e4", AFTER_E4, "White", null, START);
+        GameDto moved = gameSnapshot(id);
+        assertEquals("BLACK", moved.activeColor());
+        assertEquals(null, moved.turnDeadlineAt());
+        UUID moveId = moved.moves().getFirst().id();
+        gameMoveService.updateMoveEvaluation(moveId, new StockfishService.EvalResult(30, null));
+        GameDto evaluated = gameSnapshot(id);
+        assertEquals(5, evaluated.liveRevision());
+        assertEquals(30, evaluated.moves().getFirst().evaluationCp());
+        assertEquals(moveId.toString(), revisionEvents.getLast().path("changes").get(0).path("moveId").asText());
+    }
+
+    private GameDto gameSnapshot(UUID id) {
+        return (GameDto) resource.getGame(id).getEntity();
+    }
+
     /**
      * A viewer whose sends finish on another thread. A send made in a transaction finishes while that transaction
      * commits: right before the commit, and the commit waits until the callback runs. A callback inside a transaction
@@ -194,6 +341,7 @@ class LiveUpdateTransactionIT {
                         var message = json.readTree(args[0].toString());
                         switch (message.path("type").asText()) {
                             case "chat", "move" -> moveAndChat.add(message);
+                            case "subscribed", "heartbeat", "gameRevision" -> revisionEvents.add(message);
                         }
                         yield slowSend();
                     }

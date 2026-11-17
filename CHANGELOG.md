@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Flyway `V24__live_game_revision.sql` adds a revision counter and nullable turn timestamps. Back up before upgrading and recreate backend and frontend together. Existing moves, attempts, chat, results and spend are retained.
+
+### Fixed
+
+- Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
+
 ## [1.7.1] - 2026-11-17
 
 Patch release: fairness and correctness fixes. A tournament can no longer forfeit a game without asking the model (zero attempts, or a cache-marker rejection followed by a timeout), viewers only see moves that were actually saved, and the scoresheet records the move the board played. In auto-run, Resume now queues while all slots are busy instead of failing. Back up the database before upgrading.

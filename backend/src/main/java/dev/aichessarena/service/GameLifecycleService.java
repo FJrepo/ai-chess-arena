@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
+import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -53,6 +54,9 @@ public class GameLifecycleService {
 
     @Inject
     GameWebSocket gameWebSocket;
+
+    @Inject
+    LiveGameUpdates liveUpdates;
 
     /** Null outside CDI (unit tests): then broadcasts go out at once. */
     @Inject
@@ -179,7 +183,8 @@ public class GameLifecycleService {
     @Transactional
     public void pauseGamesOrphanedByRestart() {
         int paused = gameRepository.update(
-                "status = ?1, statusDetail = ?2, statusRevision = statusRevision + 1 where status = ?3",
+                "status = ?1, statusDetail = ?2, statusRevision = statusRevision + 1, " +
+                        "liveRevision = liveRevision + 1, turnStartedAt = null, turnDeadlineAt = null where status = ?3",
                 GameStatus.PAUSED, RESTART_DETAIL, GameStatus.IN_PROGRESS
         );
         if (paused > 0) {
@@ -293,7 +298,8 @@ public class GameLifecycleService {
         }
         String color = resignation.color();
         String message = resignation.message();
-        UUID chatId = chatMessageRepository.persistMessage(game, resignation.moveNumber(), color, resignation.modelId(), message);
+        ChatMessage storedChat = chatMessageRepository.persistMessage(game, resignation.moveNumber(), color, resignation.modelId(), message);
+        UUID chatId = storedChat == null ? null : storedChat.id;
         game.status = GameStatus.COMPLETED;
         game.resumeRequestedAt = null;
         game.result = "WHITE".equals(color) ? GameResult.BLACK_WINS : GameResult.WHITE_WINS;
@@ -308,6 +314,10 @@ public class GameLifecycleService {
         Runnable lastWords = chatId == null ? null
                 : () -> gameWebSocket.broadcastChat(gameId, chatId, resignation.moveNumber(), color,
                         resignation.modelId(), resignation.playerName(), message);
+        if (liveUpdates != null && chatId != null) {
+            liveUpdates.changed(game, liveUpdates.entityChange("committedChat", gameId, "chat",
+                    DtoMapper.toDto(storedChat)));
+        }
         announceStatus(game, lastWords, null);
         advanceTournamentWinnerIfNeeded(game);
     }
@@ -377,6 +387,12 @@ public class GameLifecycleService {
         int moves = totalMoves(gameId);
         BigDecimal cost = game.totalCostUsd;
         boolean terminal = isTerminal(game);
+        game.turnStartedAt = null;
+        game.turnDeadlineAt = null;
+        if (liveUpdates != null) {
+            liveUpdates.changed(game, liveUpdates.statusChange(gameId, status, result, resultReason, moves,
+                    cost, detail, revision, resumeRequestedAt, capacity));
+        }
         afterCommit(() -> {
             if (terminal && gameEngineService != null) {
                 gameEngineService.requestStop(gameId);

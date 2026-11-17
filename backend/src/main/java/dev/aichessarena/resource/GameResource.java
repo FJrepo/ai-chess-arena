@@ -42,10 +42,15 @@ public class GameResource {
 
     @GET
     @Path("/{id}")
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public Response getGame(@PathParam("id") UUID id) {
+        // Match the game revision, board, history and costs at one PostgreSQL MVCC snapshot.
+        // This is the first statement of this read transaction.
+        gameRepository.beginSnapshotRead();
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
-        return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game))).build();
+        return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game),
+                moveAttemptRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList())).build();
     }
 
     @POST

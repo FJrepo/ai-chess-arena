@@ -9,6 +9,10 @@ export class WebSocketService {
   private messages$ = new Subject<WsMessage>();
   private reconnected$ = new Subject<void>();
   private hasConnectedBefore = false;
+  private revisionProtocol = false;
+  private awaitingWatermark = false;
+  private negotiationTimeout?: ReturnType<typeof setTimeout>;
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
   private currentGameId: string | null = null;
   private shouldReconnect = true;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -26,12 +30,14 @@ export class WebSocketService {
     this.shouldReconnect = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     // Use same-origin websocket endpoint and let dev/prod proxies handle backend routing.
-    this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/games`);
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/games`);
+    this.ws = socket;
 
-    this.ws.onopen = () => {
+    socket.onopen = () => {
+      if (this.ws !== socket) return;
       this.connectionWarningVisible = false;
       if (this.currentGameId) {
-        this.subscribeToGame(this.currentGameId);
+        this.sendSubscription(this.currentGameId);
       }
       // Updates sent while disconnected (e.g. a backend restart pausing games) were missed.
       if (this.hasConnectedBefore) {
@@ -40,10 +46,18 @@ export class WebSocketService {
       this.hasConnectedBefore = true;
     };
 
-    this.ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (this.ws !== socket) return;
       try {
         const raw: unknown = JSON.parse(event.data);
         if (isWsMessage(raw)) {
+          if (
+            raw.gameId === this.currentGameId &&
+            (raw.type === 'subscribed' || raw.type === 'heartbeat')
+          ) {
+            clearTimeout(this.negotiationTimeout);
+            this.awaitingWatermark = false;
+          }
           this.messages$.next(raw);
         } else {
           this.snackBar.open('Ignored an invalid live update payload.', 'Dismiss', {
@@ -57,16 +71,21 @@ export class WebSocketService {
       }
     };
 
-    this.ws.onclose = () => {
+    socket.onclose = () => {
+      if (this.ws !== socket) return;
+      this.clearSubscriptionTimers();
       this.ws = null;
+      if (this.revisionProtocol && this.currentGameId) {
+        this.messages$.next({ type: 'subscriptionUnavailable', gameId: this.currentGameId });
+      }
       if (this.shouldReconnect) {
         if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = setTimeout(() => this.connect(), 3000);
       }
     };
 
-    this.ws.onerror = (err) => {
-      void err;
+    socket.onerror = () => {
+      if (this.ws !== socket) return;
       if (!this.connectionWarningVisible) {
         this.connectionWarningVisible = true;
         this.snackBar.open('Live updates were interrupted. Reconnecting...', 'Dismiss', {
@@ -76,13 +95,48 @@ export class WebSocketService {
     };
   }
 
-  subscribeToGame(gameId: string): void {
+  subscribeToGame(gameId: string, revisionProtocol = false): void {
     this.currentGameId = gameId;
-    this.send({ type: 'subscribe', gameId });
+    this.revisionProtocol = revisionProtocol;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendSubscription(gameId);
+    } else if (revisionProtocol) {
+      this.awaitWatermark(gameId);
+    }
+  }
+
+  private sendSubscription(gameId: string): void {
+    this.clearSubscriptionTimers();
+    this.send({ type: 'subscribe', gameId, ...(this.revisionProtocol ? { protocol: 2 } : {}) });
+    if (!this.revisionProtocol) return;
+    this.awaitWatermark(gameId);
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.awaitingWatermark) {
+        this.awaitWatermark(gameId);
+        this.send({ type: 'heartbeat', gameId });
+      }
+    }, 15000);
+  }
+
+  private awaitWatermark(gameId: string): void {
+    clearTimeout(this.negotiationTimeout);
+    this.awaitingWatermark = true;
+    this.negotiationTimeout = setTimeout(() => {
+      this.awaitingWatermark = false;
+      this.messages$.next({ type: 'subscriptionUnavailable', gameId });
+    }, 2500);
+  }
+
+  private clearSubscriptionTimers(): void {
+    clearTimeout(this.negotiationTimeout);
+    clearInterval(this.heartbeatTimer);
+    this.awaitingWatermark = false;
   }
 
   unsubscribeFromGame(gameId: string): void {
     this.send({ type: 'unsubscribe', gameId });
+    if (this.currentGameId !== gameId) return;
+    this.clearSubscriptionTimers();
     this.currentGameId = null;
   }
 
@@ -110,8 +164,9 @@ export class WebSocketService {
     if (this.currentGameId) {
       this.unsubscribeFromGame(this.currentGameId);
     }
-    this.ws?.close();
+    const socket = this.ws;
     this.ws = null;
+    socket?.close();
   }
 }
 
@@ -120,9 +175,27 @@ function isWsMessage(message: unknown): message is WsMessage {
     return false;
   }
 
-  const candidate = message as { type?: unknown; gameId?: unknown };
+  const candidate = message as {
+    type?: unknown;
+    gameId?: unknown;
+    revision?: unknown;
+    changes?: unknown;
+  };
   if (typeof candidate.type !== 'string' || typeof candidate.gameId !== 'string') {
     return false;
+  }
+
+  if (
+    candidate.type === 'subscribed' ||
+    candidate.type === 'heartbeat' ||
+    candidate.type === 'gameRevision'
+  ) {
+    return (
+      typeof candidate.revision === 'number' &&
+      Number.isSafeInteger(candidate.revision) &&
+      candidate.revision >= 0 &&
+      (candidate.type !== 'gameRevision' || isChangeList(candidate.changes, candidate.gameId))
+    );
   }
 
   return (
@@ -134,4 +207,27 @@ function isWsMessage(message: unknown): message is WsMessage {
     candidate.type === 'attemptsUpdated' ||
     candidate.type === 'evaluationUpdate'
   );
+}
+
+function isChangeList(changes: unknown, gameId: string): boolean {
+  if (!Array.isArray(changes) || changes.at(-1)?.type !== 'gameState') return false;
+  return changes.every((value) => {
+    if (!value || typeof value !== 'object' || value.gameId !== gameId) return false;
+    switch (value.type) {
+      case 'committedMove':
+        return typeof value.move?.fen === 'string' && typeof value.move?.id === 'string';
+      case 'committedChat':
+        return typeof value.chat?.id === 'string';
+      case 'committedAttempt':
+        return typeof value.attempt?.id === 'string';
+      case 'gameState':
+        return typeof value.totalCostUsd === 'number';
+      case 'gameStatus':
+      case 'evaluationUpdate':
+      case 'turnSettings':
+        return true;
+      default:
+        return false;
+    }
+  });
 }

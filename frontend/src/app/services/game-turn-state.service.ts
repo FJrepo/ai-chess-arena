@@ -16,6 +16,7 @@ export class GameTurnStateService {
   readonly activeColor = computed<'WHITE' | 'BLACK' | null>(() => {
     if (!this.isLive()) return null;
     const serverColor = this.serverActiveColor();
+    if (this.game()?.liveRevision != null) return serverColor;
     if (serverColor) return serverColor;
     const sideToken = this.currentFen().split(' ')[1];
     if (sideToken === 'w') return 'WHITE';
@@ -26,7 +27,7 @@ export class GameTurnStateService {
   readonly turnStartedAtMs = computed<number | null>(() => {
     if (!this.isLive()) return null;
     const serverStartedAt = this.serverTurnStartedAtMs();
-    if (serverStartedAt != null) return serverStartedAt;
+    if (this.game()?.liveRevision != null || serverStartedAt != null) return serverStartedAt;
 
     const moveList = this.moves();
     if (moveList.length > 0) {
@@ -47,6 +48,9 @@ export class GameTurnStateService {
       const remaining = Math.ceil((serverDeadline - this.timerNowMs()) / 1000);
       return Math.max(0, remaining);
     }
+
+    // A revisioned game never estimates a deadline from history or a previous run.
+    if (this.game()?.liveRevision != null) return null;
 
     // Without a (known) limit there is nothing to count down.
     const limit = this.moveTimeoutSeconds();
