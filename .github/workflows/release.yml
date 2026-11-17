@@ -3,9 +3,9 @@ name: Release
 # Release flow:
 #   1. validate the tag (exact vX.Y.Z, commit reachable from main)
 #   2. run the full CI suite on the tagged commit
-#   3. build both images and push them only under an immutable candidate tag
-#   4. smoke-test the candidates together via docker-compose.prod.yml
-#   5. promote both candidate digests to vX.Y.Z and latest, then publish the GitHub Release
+#   3. build amd64 + arm64 indexes and push them only under a sha-<12> candidate tag
+#   4. check both platforms, smoke-test the amd64 stack and run arm64 Stockfish under QEMU
+#   5. promote both full candidate indexes to vX.Y.Z and latest, then publish the GitHub Release
 # A failure before step 5 leaves every user-facing tag (vX.Y.Z, latest) untouched.
 
 on:
@@ -91,6 +91,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -114,6 +119,8 @@ jobs:
         with:
           context: ./${{ matrix.component }}
           file: ./${{ matrix.component }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,oci-mediatypes=true
           cache-from: type=gha,scope=release-${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}
           push: true
@@ -133,6 +140,7 @@ jobs:
       backend_digest: ${{ steps.digests.outputs.backend_digest }}
       frontend_digest: ${{ steps.digests.outputs.frontend_digest }}
     env:
+      DOCKER_DEFAULT_PLATFORM: linux/amd64
       # Not the default 4200: changing FRONTEND_PORT is the documented fix for a port conflict, and the
       # same-origin check below must hold on any published port, not only on an allow-listed one.
       FRONTEND_PORT: '4317'
@@ -141,6 +149,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -163,19 +176,50 @@ jobs:
           echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
           echo "frontend_digest=$frontend_digest" >> "$GITHUB_OUTPUT"
 
+      - name: Verify candidate platforms
+        env:
+          BACKEND_PINNED: ${{ needs.validate-tag.outputs.backend_image }}@${{ steps.digests.outputs.backend_digest }}
+          FRONTEND_PINNED: ${{ needs.validate-tag.outputs.frontend_image }}@${{ steps.digests.outputs.frontend_digest }}
+        run: |
+          for image in "$BACKEND_PINNED" "$FRONTEND_PINNED"; do
+            docker buildx imagetools inspect "$image"
+            # Ignore provenance attestations (unknown/unknown), but require both runnable platforms.
+            docker buildx imagetools inspect "$image" --raw | jq -e '
+              .mediaType == "application/vnd.oci.image.index.v1+json" and
+              ([.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"])
+            '
+          done
+
       - name: Verify Stockfish license files and labels
         env:
           BACKEND_PINNED: ${{ needs.validate-tag.outputs.backend_image }}@${{ steps.digests.outputs.backend_digest }}
         run: |
-          docker pull "$BACKEND_PINNED"
-          docker run --rm --entrypoint sh "$BACKEND_PINNED" -c \
-            'test -f /usr/share/licenses/stockfish/COPYING.txt && test -f /usr/share/licenses/stockfish/NOTICE.txt'
-          stockfish_version="$(docker inspect "$BACKEND_PINNED" --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }}')"
-          stockfish_source="$(docker inspect "$BACKEND_PINNED" --format '{{ index .Config.Labels "dev.aichessarena.stockfish.source" }}')"
-          image_licenses="$(docker inspect "$BACKEND_PINNED" --format '{{ index .Config.Labels "org.opencontainers.image.licenses" }}')"
-          test "$stockfish_version" = 'sf_19'
-          test "$stockfish_source" = 'https://github.com/official-stockfish/Stockfish/tree/sf_19'
-          test "$image_licenses" = 'MIT, GPL-3.0-or-later'
+          for arch in amd64 arm64; do
+            # Inspect each child by digest so the daemon cannot return the other platform's labels.
+            manifest_digest="$(docker buildx imagetools inspect "$BACKEND_PINNED" --raw | jq -er --arg arch "$arch" '
+              .manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest
+            ')"
+            platform_ref="${BACKEND_PINNED%@*}@$manifest_digest"
+            docker pull --platform "linux/$arch" "$platform_ref"
+            docker run --rm --platform "linux/$arch" --entrypoint sh "$platform_ref" -c \
+              'test -f /usr/share/licenses/stockfish/COPYING.txt && test -f /usr/share/licenses/stockfish/NOTICE.txt'
+            stockfish_version="$(docker inspect "$platform_ref" --format '{{ index .Config.Labels "dev.aichessarena.stockfish.version" }}')"
+            stockfish_source="$(docker inspect "$platform_ref" --format '{{ index .Config.Labels "dev.aichessarena.stockfish.source" }}')"
+            image_licenses="$(docker inspect "$platform_ref" --format '{{ index .Config.Labels "org.opencontainers.image.licenses" }}')"
+            test "$stockfish_version" = 'sf_19'
+            test "$stockfish_source" = 'https://github.com/official-stockfish/Stockfish/tree/sf_19'
+            test "$image_licenses" = 'MIT, GPL-3.0-or-later'
+          done
+
+      - name: Check arm64 Stockfish UCI under emulation
+        env:
+          BACKEND_PINNED: ${{ needs.validate-tag.outputs.backend_image }}@${{ steps.digests.outputs.backend_digest }}
+        run: |
+          stockfish_output="$(printf 'uci\nquit\n' | timeout 60s docker run --rm -i --platform linux/arm64 \
+            --network none --entrypoint /usr/local/bin/stockfish "$BACKEND_PINNED")"
+          printf '%s\n' "$stockfish_output"
+          grep -Eq '^id name Stockfish 19([[:space:]]|$)' <<< "$stockfish_output"
+          grep -qx 'uciok' <<< "$stockfish_output"
 
       - name: Start released-image stack from candidates
         env:
@@ -294,6 +338,7 @@ jobs:
 
       - name: Tag verified digests with the release version
         run: |
+          # One index source makes imagetools create copy the full index, including both platforms.
           docker buildx imagetools create -t "$BACKEND_IMAGE:$VERSION" "$BACKEND_IMAGE@$BACKEND_DIGEST"
           docker buildx imagetools create -t "$FRONTEND_IMAGE:$VERSION" "$FRONTEND_IMAGE@$FRONTEND_DIGEST"
 
@@ -317,6 +362,6 @@ jobs:
         with:
           generate_release_notes: true
           body: |
-            Images (verified together before promotion):
+            Multi-arch images (linux/amd64 + linux/arm64; index digests verified before promotion):
             - `${{ needs.validate-tag.outputs.backend_image }}:${{ needs.validate-tag.outputs.version }}` (`${{ needs.smoke-test.outputs.backend_digest }}`)
             - `${{ needs.validate-tag.outputs.frontend_image }}:${{ needs.validate-tag.outputs.version }}` (`${{ needs.smoke-test.outputs.frontend_digest }}`)
