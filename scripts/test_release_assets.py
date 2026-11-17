@@ -81,17 +81,22 @@ class ReleaseAssetsTest(unittest.TestCase):
 
 class SetupCredentialsTest(unittest.TestCase):
     def test_documented_install_creates_private_credentials_under_common_umask(self):
-        guide = (ROOT / 'docs/deployment.md').read_text(encoding='utf-8')
-        setup = guide.split('### 5-minute start (from v1.6.0)\n', 1)[1].split('\n### ', 1)[0]
-        command = next(line for line in setup.splitlines() if line.startswith('install '))
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / 'env.example').write_bytes(ENV_EXAMPLE)
-            result = subprocess.run(['sh', '-eu', '-c', command], cwd=root, umask=0o022,
-                                    capture_output=True, text=True, check=False)
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual(ENV_EXAMPLE, (root / '.env').read_bytes())
-            self.assertEqual(0o600, (root / '.env').stat().st_mode & 0o777)
+        for document in ['README.md', 'docs/deployment.md']:
+            with self.subTest(document=document):
+                guide = (ROOT / document).read_text(encoding='utf-8')
+                # Anchor to the install command, independent of headings and download URLs.
+                commands = re.findall(r'^install\b[^\n]*[ \t]env\.example[ \t]+\.env[ \t]*$',
+                                      guide, re.MULTILINE)
+                self.assertEqual(1, len(commands),
+                                 f'Expected one env.example to .env install command in {document}')
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / 'env.example').write_bytes(ENV_EXAMPLE)
+                    result = subprocess.run(['sh', '-eu', '-c', commands[0]], cwd=root, umask=0o022,
+                                            capture_output=True, text=True, check=False)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(ENV_EXAMPLE, (root / '.env').read_bytes())
+                    self.assertEqual(0o600, (root / '.env').stat().st_mode & 0o777)
 
     def run_make_setup(self, root):
         (root / 'Makefile').write_bytes((ROOT / 'Makefile').read_bytes())
