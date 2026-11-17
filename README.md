@@ -51,7 +51,7 @@ Edit `.env`:
 
 ```bash
 IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
-IMAGE_TAG=v1.5.0               # a release from https://github.com/FJrepo/ai-chess-arena/releases
+IMAGE_TAG=v1.6.0               # a release from https://github.com/FJrepo/ai-chess-arena/releases
 OPENROUTER_API_KEY=sk-or-...
 DB_PASSWORD='choose-a-strong-password'
 ```
