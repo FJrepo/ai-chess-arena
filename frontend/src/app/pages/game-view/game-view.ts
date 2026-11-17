@@ -412,7 +412,7 @@ export class GameView implements OnInit, OnDestroy {
       });
     });
 
-    if (game && (game.status === 'COMPLETED' || game.status === 'FORFEIT')) {
+    if (game && isFinishedStatus(game.status)) {
       const resignedColor = resigningColor(game);
       const resultLabel = resignedColor
         ? `${this.timelinePlayerName(resignedColor, null)} resigned`
@@ -423,11 +423,26 @@ export class GameView implements OnInit, OnDestroy {
         id: `result-${game.id}`,
         type: 'result',
         quality: null,
-        label: game.status === 'FORFEIT' ? 'Game Forfeit' : 'Game Complete',
+        label:
+          game.status === 'CANCELLED'
+            ? 'Cancelled'
+            : game.status === 'FORFEIT'
+              ? 'Game Forfeit'
+              : 'Game Complete',
         detail: resultLabel.charAt(0).toUpperCase() + resultLabel.slice(1),
-        tone: game.status === 'FORFEIT' ? 'warning' : 'success',
+        tone:
+          game.status === 'CANCELLED'
+            ? 'neutral'
+            : game.status === 'FORFEIT'
+              ? 'warning'
+              : 'success',
         attemptSummary: null,
-        icon: game.status === 'FORFEIT' ? 'gpp_bad' : 'emoji_events',
+        icon:
+          game.status === 'CANCELLED'
+            ? 'cancel'
+            : game.status === 'FORFEIT'
+              ? 'gpp_bad'
+              : 'emoji_events',
         createdAtMs: game.completedAt ? Date.parse(game.completedAt) : Date.now(),
         createdAtLabel: game.completedAt || new Date().toISOString(),
         moveIndex: moves.length > 0 ? moves.length - 1 : null,
@@ -736,8 +751,8 @@ export class GameView implements OnInit, OnDestroy {
             ? {
                 ...g,
                 status: status || g.status,
-                result: msg.result || g.result,
-                resultReason: msg.resultReason || g.resultReason,
+                result: status === 'CANCELLED' ? null : msg.result || g.result,
+                resultReason: status === 'CANCELLED' ? null : msg.resultReason || g.resultReason,
                 statusDetail: status
                   ? status === 'PAUSED'
                     ? (msg.detail ?? null)
@@ -768,7 +783,7 @@ export class GameView implements OnInit, OnDestroy {
         ) {
           // Result evidence is carried by the game details; reload it and the attempts.
           this.loadGame();
-        } else if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
+        } else if (status === 'PAUSED' || (status && isFinishedStatus(status))) {
           if (status === 'PAUSED') {
             this.refreshPauseSettings();
           }
@@ -1257,7 +1272,7 @@ function highestStatusRevision(messages: WsMessage[]): number | null {
 }
 
 function isFinishedStatus(status: Game['status']): boolean {
-  return status === 'COMPLETED' || status === 'FORFEIT';
+  return status === 'COMPLETED' || status === 'FORFEIT' || status === 'CANCELLED';
 }
 
 /** The colour that resigned, from the result; null when the game did not end by resignation. */

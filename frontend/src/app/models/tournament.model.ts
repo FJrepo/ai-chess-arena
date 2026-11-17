@@ -80,7 +80,7 @@ export interface Game {
   blackPlayerName: string | null;
   blackControlType: 'AI' | 'HUMAN';
   blackModelId: string | null;
-  status: 'WAITING' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'FORFEIT';
+  status: 'WAITING' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'FORFEIT' | 'CANCELLED';
   result: string | null;
   resultReason: string | null;
   /** Why the game is paused when the pause was caused by an operational problem (e.g. OpenRouter). */

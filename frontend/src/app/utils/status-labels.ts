@@ -13,6 +13,7 @@ const GAME_STATUS_LABELS: Record<Game['status'], string> = {
   PAUSED: 'Paused',
   COMPLETED: 'Completed',
   FORFEIT: 'Forfeit',
+  CANCELLED: 'Cancelled',
 };
 
 const RESULT_REASON_LABELS: Record<string, string> = {

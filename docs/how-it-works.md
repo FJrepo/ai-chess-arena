@@ -5,6 +5,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 ## Contents
 
 - [Tournament formats and draw policies](#tournament-formats-and-draw-policies)
+- [Cancelling a tournament](#cancelling-a-tournament)
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
 - [Model turns and prompts](#model-turns-and-prompts)
 - [Time limit per move](#time-limit-per-move)
@@ -49,6 +50,18 @@ When level after N games (or a drawn single game), the tournament's draw policy 
 ### Cost estimate
 
 The **cost estimate** before you start shows expected games, runtime and spend for the chosen models and format.
+
+## Cancelling a tournament
+
+Choose **Cancel tournament** on the tournament page and confirm to end a tournament that is not finished yet, including one without a generated bracket. This cannot be undone. The action is disabled for completed and cancelled tournaments.
+
+Cancellation ends every waiting, paused or running game as **Cancelled**, without a winner, draw or forfeit. Finished games keep their results, moves, chat and costs; unfinished games keep their recorded moves, chat and spend too. The bracket stops advancing and no more series or tiebreak games can be created. Cancelled games cannot start, resume, accept a human move or receive an override.
+
+Running loops are asked to stop. An already pending provider request may still finish; its answer cannot write a move, chat message or result, or reopen a game. Paid discarded answers remain recorded in attempts and reported spend. Open game views receive the cancelled status after the transaction commits, with an incremented status revision so delayed updates cannot reopen them.
+
+API: `POST /api/tournaments/{id}/cancel` takes no body (an empty JSON object also works) and returns the updated tournament with status `CANCELLED` (200). Tournament and unfinished-game changes commit together. Unknown ids return 404. Completed or already cancelled tournaments consistently return 409, including repeated cancellation requests. Cancelled games use `GameDto.status = CANCELLED` with no result or result reason. Play endpoints return 409 for every game belonging to a cancelled tournament, including previously finished games; bracket generation also returns 409.
+
+Cancelled games are excluded from analytics, including their moves and attempts. Finished games of a cancelled tournament keep counting under the usual completion-time window. Tournament cost summaries continue to include all recorded spend. No database migration or backfill is needed; existing data changes only when cancellation is requested.
 
 ## Choosing participants and model picker
 
@@ -286,7 +299,7 @@ Game, tournament and per-model costs include rejected answers. Costs are as repo
 
 ### Finished games and reliability score
 
-Only finished games count as games played; byes and games that are waiting, running or paused do not.
+Only finished games count as games played; byes and games that are waiting, running, paused or cancelled do not.
 
 A time window selects finished games by when they finished and unfinished ones by when they were created; moves and attempts follow their games.
 

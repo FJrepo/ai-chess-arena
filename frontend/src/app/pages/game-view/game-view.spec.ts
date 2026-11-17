@@ -2138,3 +2138,33 @@ describe('GameView adjudication and missed mate updates', () => {
     expect(component.moves()[0].quality?.missedMateIn).toBe(2);
   });
 });
+
+describe('GameView cancellation', () => {
+  it('applies the cancelled revision, clears turn controls and ignores a delayed running status or reload', () => {
+    const { component, gameLoad } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith({ statusRevision: 3 }));
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'CANCELLED',
+      statusRevision: 4,
+    });
+    expect(component.game()?.status).toBe('CANCELLED');
+    expect(component.activeColor()).toBeNull();
+    expect(component.feedEvents().find((event) => event.type === 'result')?.label).toBe(
+      'Cancelled',
+    );
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      statusRevision: 3,
+    });
+    component.loadGame();
+    gameLoad.next(gameWith({ statusRevision: 3 }));
+    expect(component.game()?.status).toBe('CANCELLED');
+    expect(component.game()?.result).toBeNull();
+    component.ngOnDestroy();
+  });
+});

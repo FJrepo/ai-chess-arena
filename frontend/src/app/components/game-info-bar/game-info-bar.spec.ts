@@ -487,3 +487,19 @@ describe('GameInfoBar adjudication', () => {
     expect(bar.adjudicationText()).toBeNull();
   });
 });
+
+describe('GameInfoBar cancellation', () => {
+  it('renders Cancelled without a result or play controls', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentRef.setInput('game', {
+      ...pausedGame(),
+      status: 'CANCELLED',
+      statusDetail: null,
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Cancelled');
+    expect(fixture.nativeElement.querySelector('.result')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Resume');
+    expect(fixture.nativeElement.textContent).not.toContain('Pause');
+  });
+});

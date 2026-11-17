@@ -143,6 +143,14 @@ public class TournamentResource {
     }
 
     @POST
+    @Path("/{id}/cancel")
+    @Consumes(MediaType.WILDCARD)
+    @Transactional
+    public Response cancel(@PathParam("id") UUID id) {
+        return Response.ok(DtoMapper.toDto(tournamentService.cancelTournament(id))).build();
+    }
+
+    @POST
     @Path("/{id}/participants")
     public Response addParticipant(@PathParam("id") UUID id, AddParticipantRequest req) {
         TournamentParticipant saved = tournamentService.addParticipant(id, toParticipant(req));

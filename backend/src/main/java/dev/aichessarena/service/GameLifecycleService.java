@@ -7,6 +7,7 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Game.ResultReason;
+import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
@@ -49,24 +50,58 @@ public class GameLifecycleService {
     TransactionSynchronizationRegistry transactionRegistry;
 
     /**
-     * Moves a WAITING or PAUSED game to IN_PROGRESS in one conditional update.
+     * Moves a WAITING or PAUSED game to IN_PROGRESS under the tournament and game row locks.
      *
      * @return the game as it is after the transition
      * @throws WebApplicationException 404 if the game does not exist, 409 if it is in any other state
      */
     @Transactional
     public GameDto markGameStarted(UUID gameId) {
-        if (!gameRepository.markStartedIfStartable(gameId, LocalDateTime.now())) {
-            Game game = gameRepository.findById(gameId);
-            if (game == null) {
-                throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
-            }
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null) {
+            throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
+        }
+        requireActiveTournament(game);
+        if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
-        // The conditional update raised the status revision.
-        Game game = gameRepository.findByIdForUpdate(gameId);
+        game.status = GameStatus.IN_PROGRESS;
+        game.startedAt = game.startedAt != null ? game.startedAt : LocalDateTime.now();
+        game.statusDetail = null;
+        game.statusRevision++;
+        gameRepository.persist(game);
         announceStatus(game, null, null);
         return DtoMapper.toDto(game, false);
+    }
+
+    /** Called in the tournament cancellation transaction, under the tournament then game locks. */
+    @Transactional
+    public void cancelGame(UUID gameId, Runnable stopLoop) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || isTerminal(game)) {
+            return;
+        }
+        game.status = GameStatus.CANCELLED;
+        game.result = null;
+        game.resultReason = null;
+        game.advancedParticipant = null;
+        game.statusDetail = null;
+        game.completedAt = LocalDateTime.now();
+        game.statusRevision++;
+        gameRepository.persist(game);
+        announceStatus(game, stopLoop, null);
+    }
+
+    /** Must be checked under the tournament/game locks by mutation paths, also for legacy inconsistent rows. */
+    static void requireActiveTournament(Game game) {
+        if (isTournamentCancelled(game)) {
+            throw new GameStateConflictException("Tournament has been cancelled");
+        }
+    }
+
+    static boolean isTournamentCancelled(Game game) {
+        return game.tournament != null
+                && game.tournament.status == TournamentStatus.CANCELLED;
     }
 
     /**
@@ -125,8 +160,7 @@ public class GameLifecycleService {
     @Transactional
     public void completeGame(UUID gameId, ChessService.GameEndInfo endInfo) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (isTerminal(game)) {
-            LOG.warnf("Ignoring completion of game %s: already %s", gameId, game.status);
+        if (game == null || isTerminal(game) || isTournamentCancelled(game)) {
             return;
         }
         game.status = GameStatus.COMPLETED;
@@ -153,7 +187,8 @@ public class GameLifecycleService {
             return false;
         }
         gameRepository.refreshForUpdate(game);
-        if (game.status != GameStatus.IN_PROGRESS || !GameMoveService.samePosition(game.currentFen, expectedFen)
+        if (game.status != GameStatus.IN_PROGRESS || isTournamentCancelled(game)
+                || !GameMoveService.samePosition(game.currentFen, expectedFen)
                 || !WinAdjudication.enabledFor(game)) {
             return false;
         }
@@ -180,6 +215,7 @@ public class GameLifecycleService {
         if (game == null || game.status != GameStatus.IN_PROGRESS) {
             throw new GameStateConflictException("Game is no longer in progress");
         }
+        requireActiveTournament(game);
         if (!GameMoveService.samePosition(game.currentFen, resignation.expectedFen())) {
             throw new GameStateConflictException("Position changed while the model was thinking");
         }
@@ -289,9 +325,8 @@ public class GameLifecycleService {
 
     private Game markForfeit(UUID gameId, String forfeitColor, ResultReason reason) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (game.status != GameStatus.IN_PROGRESS) {
+        if (game == null || game.status != GameStatus.IN_PROGRESS || isTournamentCancelled(game)) {
             // Only a game that is actually being played can be forfeited (never a paused or finished one).
-            LOG.warnf("Ignoring forfeit of game %s: it is %s", gameId, game.status);
             return null;
         }
         game.status = GameStatus.FORFEIT;
@@ -305,7 +340,8 @@ public class GameLifecycleService {
     }
 
     private static boolean isTerminal(Game game) {
-        return game.status == GameStatus.COMPLETED || game.status == GameStatus.FORFEIT;
+        return game.status == GameStatus.COMPLETED || game.status == GameStatus.FORFEIT
+                || game.status == GameStatus.CANCELLED;
     }
 
     static String startConflictMessage(GameStatus status) {

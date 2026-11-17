@@ -54,8 +54,34 @@ public class TournamentService {
     @Inject
     OpenRouterService openRouterService;
 
+    @Inject
+    GameLifecycleService gameLifecycleService;
+
+    @Inject
+    GameEngineService gameEngineService;
+
     @ConfigProperty(name = "openrouter.validate-participant-models", defaultValue = "true")
     boolean validateParticipantModels;
+
+    /** Cancels once; terminal tournaments (including repeated cancellation) consistently return 409. */
+    @Transactional
+    public Tournament cancelTournament(UUID tournamentId) {
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament == null) {
+            throw new WebApplicationException("Tournament not found", Response.Status.NOT_FOUND);
+        }
+        if (tournament.status == Tournament.TournamentStatus.COMPLETED
+                || tournament.status == Tournament.TournamentStatus.CANCELLED) {
+            throw new WebApplicationException("Tournament has already finished", Response.Status.CONFLICT);
+        }
+        tournament.status = Tournament.TournamentStatus.CANCELLED;
+        tournament.updatedAt = LocalDateTime.now();
+        for (Game game : gameRepository.findByTournamentId(tournamentId)) {
+            UUID gameId = game.id;
+            gameLifecycleService.cancelGame(gameId, () -> gameEngineService.requestStop(gameId));
+        }
+        return tournament;
+    }
 
     @Transactional
     public Tournament create(Tournament tournament) {
@@ -287,8 +313,11 @@ public class TournamentService {
 
     @Transactional
     public void advanceWinner(UUID gameId) {
-        Game completedGame = gameRepository.findById(gameId);
+        Game completedGame = gameRepository.findByIdForUpdate(gameId);
         if (completedGame == null || completedGame.tournament == null) return;
+        if (completedGame.tournament.status == Tournament.TournamentStatus.CANCELLED
+                || (completedGame.status != Game.GameStatus.COMPLETED
+                && completedGame.status != Game.GameStatus.FORFEIT)) return;
 
         List<Game> seriesGames = seriesGamesFor(completedGame);
         TournamentParticipant winner = resolveSeriesWinner(completedGame, seriesGames);
@@ -604,7 +633,7 @@ public class TournamentService {
 
     @Transactional
     public boolean deleteTournament(UUID tournamentId) {
-        Tournament tournament = tournamentRepository.findById(tournamentId);
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
         if (tournament == null) {
             return false;
         }

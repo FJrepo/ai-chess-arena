@@ -17,7 +17,6 @@ import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -79,7 +78,7 @@ class GameLifecycleServiceTest {
 
     @Test
     void markGameStartedRejectsFinishedAndRunningGamesWithConflict() {
-        for (GameStatus status : new GameStatus[] {GameStatus.IN_PROGRESS, GameStatus.COMPLETED, GameStatus.FORFEIT}) {
+        for (GameStatus status : new GameStatus[] {GameStatus.IN_PROGRESS, GameStatus.COMPLETED, GameStatus.FORFEIT, GameStatus.CANCELLED}) {
             Game game = new Game();
             game.id = UUID.randomUUID();
             game.status = status;
@@ -468,20 +467,6 @@ class GameLifecycleServiceTest {
             return games.get(id);
         }
 
-        @Override
-        public boolean markStartedIfStartable(UUID id, LocalDateTime now) {
-            Game game = games.get(id);
-            if (game == null || (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED)) {
-                return false;
-            }
-            game.status = GameStatus.IN_PROGRESS;
-            game.statusRevision++;
-            if (game.startedAt == null) {
-                game.startedAt = now;
-            }
-            game.statusDetail = null;
-            return true;
-        }
     }
 
     private static final class CountingMoveRepository extends MoveRepository {

@@ -33,6 +33,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Turn controls](docs/how-it-works.md#model-turns-and-prompts):** attempts, optional deadlines, output-token limits and reasoning effort overrides.
 - **[Chat](docs/how-it-works.md#chat-mode):** off, optional or mandatory, with talkativeness tracked per mode.
 - **[Resignation](docs/how-it-works.md#resignation):** optional from each model's tenth move, with last words and resignation analytics.
+- **[Cancellation](docs/how-it-works.md#cancelling-a-tournament):** end unfinished games without a result and keep finished games and spend.
 - **[Resumable games](docs/how-it-works.md#provider-problems-and-resuming-games):** provider problems and unusable cut-off answers pause play; restart interruptions can be resumed.
 - **[Analysis](docs/how-it-works.md#analytics-and-reliability):** series scores, PGN export, reliability, stored attempts, prompt caching metrics and reported costs.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimated games, runtime and spend before starting.

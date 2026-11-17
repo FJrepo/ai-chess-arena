@@ -38,6 +38,11 @@ export class TournamentBracket implements OnInit, OnDestroy {
   costSummaryError = signal<string | null>(null);
   tournamentId = '';
   generating = signal(false);
+  cancelling = signal(false);
+  readonly canCancel = computed(() => {
+    const status = this.tournament()?.status;
+    return (status === 'CREATED' || status === 'IN_PROGRESS') && !this.cancelling();
+  });
   drawMode: BracketDrawMode = 'RANDOM';
   readonly drawnParticipants = computed(() =>
     [...(this.tournament()?.participants ?? [])].sort((a, b) => a.seed - b.seed),
@@ -110,6 +115,29 @@ export class TournamentBracket implements OnInit, OnDestroy {
       next: () => this.router.navigate(['/games', game.id]),
       error: (err) => {
         this.showError(err, 'Failed to start the game.');
+        this.loadTournament();
+      },
+    });
+  }
+
+  cancelTournament(): void {
+    if (!this.canCancel()) return;
+    if (
+      !window.confirm(
+        'Cancel this tournament? Unfinished games end without a result. Finished games, moves, chat and costs stay. This cannot be undone.',
+      )
+    )
+      return;
+    this.cancelling.set(true);
+    this.api.cancelTournament(this.tournamentId).subscribe({
+      next: (tournament) => {
+        this.tournament.set(tournament);
+        this.cancelling.set(false);
+        this.loadCostSummary();
+      },
+      error: (err) => {
+        this.cancelling.set(false);
+        this.showError(err, 'Failed to cancel the tournament.');
         this.loadTournament();
       },
     });
