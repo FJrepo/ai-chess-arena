@@ -16,7 +16,7 @@ public record TournamentExportDto(
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Settings(
             String format, String drawPolicy, Integer moveTimeoutSeconds, int maxRetries,
-            int matchupBestOf, Integer finalsBestOf, String chatMode, boolean resignationAllowed,
+            int matchupBestOf, Integer finalsBestOf, String chatMode, String banterLevel, boolean resignationAllowed,
             boolean adjudicationEnabled, int maxOutputTokens, String reasoningEffort,
             String openingMode, String openingId, String autoRunStatus, int maxConcurrentGames,
             BigDecimal budgetUsd

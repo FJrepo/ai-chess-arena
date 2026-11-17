@@ -306,8 +306,19 @@ public class GameWebSocket {
                                      String resultReason, int totalMoves, BigDecimal totalCostUsd,
                                      String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
                                      String detail, String tournamentChatMode) {
-        broadcast(gameId, statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, activeColor,
-                turnStartedAt, turnDeadlineAt, detail, tournamentChatMode, null).toString());
+        broadcastGameStatus(gameId, status, result, resultReason, totalMoves, totalCostUsd, activeColor,
+                turnStartedAt, turnDeadlineAt, detail, tournamentChatMode, null);
+    }
+
+    /** Turn metadata includes an explicit null tone so clients can clear a previous selection. */
+    public void broadcastGameStatus(UUID gameId, String status, String result,
+                                     String resultReason, int totalMoves, BigDecimal totalCostUsd,
+                                     String activeColor, Instant turnStartedAt, Instant turnDeadlineAt,
+                                     String detail, String tournamentChatMode, String tournamentBanterLevel) {
+        ObjectNode msg = statusMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd, activeColor,
+                turnStartedAt, turnDeadlineAt, detail, tournamentChatMode, null);
+        if (tournamentChatMode != null) msg.put("tournamentBanterLevel", tournamentBanterLevel);
+        broadcast(gameId, msg.toString());
     }
 
     /**

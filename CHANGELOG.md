@@ -9,12 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 - Keep `DB_PASSWORD` unchanged in an existing `.env`: an initialized PostgreSQL volume retains its password, and an explicit value wins for both database and backend. New installs generate secrets in `secrets_prod`; retain/back up this volume with `pgdata_prod`. Recreate services with the updated Compose file and images; no schema migration or backfill, and existing database contents remain unchanged.
+- Back up before upgrading. Flyway `V21__banter_level.sql` adds nullable, checked `tournaments.banter_level`; existing tournaments keep Original (`null`) and all existing prompt texts, versions and hashes. Existing games, moves, results and spend remain unchanged; no backfill. Rebuild/recreate backend and frontend; restore the pre-upgrade backup to roll back.
 
 ### Added
 - First-start production secret generation: persistent 0600 database password and instance key files, shared read-only with database/backend after successful initialization. The instance key is reserved for future encryption/signing.
 - Backend `DB_PASSWORD_FILE` and `OPENROUTER_API_KEY_FILE` support with trimmed file contents, explicit environment precedence and sanitized failures. OpenRouter still requires an operator-provided key.
+- Per-tournament Banter tone: Original, Polite, Playful or Spicy for Optional/Mandatory chat, with setup rule previews and a live game label. Changes apply next turn; Off ignores the retained tone and legacy full prompt overrides remain unchanged. Tone guidance combines with resignation and custom instructions; invalid API values return 400.
 
 ### Changed
+- Analytics page in four tabs, Overview, Play quality, Behaviour and Cost & reliability, instead of one long comparison tab; all tables and explanations stay, and `?tab=` links open a tab directly ([how it works](docs/how-it-works.md)).
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 - New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; configure its env value or file before starting the backend.
 

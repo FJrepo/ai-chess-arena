@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -119,6 +120,18 @@ class GameLoopFreshStateIT {
                     "chat mode" + label));
             checks.add(() -> assertEquals(changed ? ChatMode.MANDATORY : ChatMode.OPTIONAL,
                     request.tournamentChatMode(), "tournament chat mode" + label));
+            String system = model.systemPrompts.get(turn);
+            boolean toneChanged = turn > 3;
+            checks.add(() -> assertEquals(toneChanged ? BanterLevel.SPICY : null, request.tournamentBanterLevel(),
+                    "live tone" + label));
+            checks.add(() -> assertEquals(toneChanged, system.contains(PromptService.toneSentence(BanterLevel.SPICY)),
+                    "system tone" + label));
+            String expectedVersion = changed ? "v2-chat-required" : "v2";
+            if (toneChanged) expectedVersion += "-banter-spicy";
+            String version = expectedVersion;
+            checks.add(() -> assertEquals(version, request.promptVersion(), "prompt version" + label));
+            checks.add(() -> assertEquals(new PromptService().computePromptHash(system), request.promptHash(),
+                    "prompt hash" + label));
             // White follows the tournament's new level, Black's override wins over it.
             boolean white = turn % 2 == 0;
             ReasoningEffort expectedEffort = !changed ? null : white ? ReasoningEffort.LOW : ReasoningEffort.HIGH;
@@ -205,6 +218,7 @@ class GameLoopFreshStateIT {
     private static final class ScriptedModel extends OpenRouterService {
         private final UUID tournamentId;
         private final UUID blackParticipantId;
+        final List<String> systemPrompts = Collections.synchronizedList(new ArrayList<>());
         final List<String> prompts = Collections.synchronizedList(new ArrayList<>());
         final List<Integer> maxOutputTokens = Collections.synchronizedList(new ArrayList<>());
         final List<ReasoningEffort> efforts = Collections.synchronizedList(new ArrayList<>());
@@ -219,6 +233,7 @@ class GameLoopFreshStateIT {
                                 int maxOutputTokens, ReasoningEffort reasoningEffort) {
             int turn = prompts.size();
             prompts.add(messages.getLast().content());
+            systemPrompts.add(messages.getFirst().content());
             this.maxOutputTokens.add(maxOutputTokens);
             efforts.add(reasoningEffort);
             if (turn == SETTINGS_CHANGED_DURING_TURN) {
@@ -233,6 +248,11 @@ class GameLoopFreshStateIT {
                         .when().put("/api/tournaments/{id}/participants/{pid}", tournamentId.toString(),
                                 blackParticipantId.toString())
                         .then().statusCode(200);
+            }
+            if (turn == 3) {
+                // Change tone alone while a request is in flight: this request retains its original prompt.
+                given().contentType("application/json").body("{\"banterLevel\":\"SPICY\"}")
+                        .put("/api/tournaments/{id}", tournamentId.toString()).then().statusCode(200);
             }
             if (turn >= SCRIPT.size()) {
                 return LlmResponse.providerFailure(ProviderOutcome.FATAL, 402, "Script finished", 1, null);

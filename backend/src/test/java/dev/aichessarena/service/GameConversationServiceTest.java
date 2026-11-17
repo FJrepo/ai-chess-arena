@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
@@ -226,5 +227,46 @@ class GameConversationServiceTest {
         public List<Move> findByGameId(UUID gameId) {
             return moves;
         }
+    }
+
+    @Test
+    void toneChangesResetPrefixesOnceAndClearingRestoresOriginalPrompt() {
+        Game game = tournamentGame(ChatMode.OPTIONAL);
+        GameConversationService service = baseService(Map.of(game.id, game), List.of());
+        var state = service.initializeConversation(game.id);
+        var original = state.whitePrompt();
+        for (BanterLevel level : BanterLevel.values()) {
+            state.whiteHistory().add(new OpenRouterService.ChatMsg("assistant", "old answer"));
+            state.blackHistory().add(new OpenRouterService.ChatMsg("assistant", "old answer"));
+            game.tournament.banterLevel = level;
+            state = service.refreshSystemPrompts(game, state);
+            assertEquals(1, state.whiteHistory().size());
+            assertEquals(1, state.blackHistory().size());
+            assertTrue(state.whiteHistory().getFirst().content().contains(PromptService.toneSentence(level)));
+            state.whiteHistory().add(new OpenRouterService.ChatMsg("assistant", "new answer"));
+            var prefix = List.copyOf(state.whiteHistory());
+            state = service.refreshSystemPrompts(game, state);
+            assertEquals(prefix, state.whiteHistory(), "unchanged tone preserves the cached prefix");
+        }
+        game.tournament.banterLevel = null;
+        state = service.refreshSystemPrompts(game, state);
+        assertEquals(original, state.whitePrompt());
+        assertEquals(1, state.whiteHistory().size());
+    }
+
+    @Test
+    void changingToneWhileOffDoesNotResetHistoryButEnablingChatAppliesIt() {
+        Game game = tournamentGame(ChatMode.OFF);
+        GameConversationService service = baseService(Map.of(game.id, game), List.of());
+        var state = service.initializeConversation(game.id);
+        state.whiteHistory().add(new OpenRouterService.ChatMsg("assistant", "old answer"));
+        var prefix = List.copyOf(state.whiteHistory());
+        game.tournament.banterLevel = BanterLevel.SPICY;
+        state = service.refreshSystemPrompts(game, state);
+        assertEquals(prefix, state.whiteHistory());
+        game.tournament.chatMode = ChatMode.MANDATORY;
+        state = service.refreshSystemPrompts(game, state);
+        assertEquals(1, state.whiteHistory().size());
+        assertEquals("v2-chat-required-banter-spicy", state.whitePrompt().version());
     }
 }

@@ -293,7 +293,7 @@ class HumanConversationLifecycleTest {
                 @Override
                 public void broadcastGameStatus(UUID id, String status, String result, String reason, int count,
                                                 BigDecimal cost, String color, Instant start, Instant deadline,
-                                                String detail, String mode) { }
+                                                String detail, String mode, String banterLevel) { }
             };
             service.gameTurnService = turn;
             return service;

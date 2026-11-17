@@ -156,7 +156,7 @@ Models are asked to answer in JSON, but the parser also extracts a move from oth
 
 Each model gets its system prompt, an append-only chunk of its own prior exchanges and the current turn. Every new turn prompt contains the moves so far (PGN, including book moves) and the full position (FEN, board, legal moves), plus the opponent's latest move/message when present. New position and opponent data go only in that newest user message; earlier messages are replayed verbatim.
 
-Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override.
+Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, banter level, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override.
 
 ### Prompt caching
 
@@ -192,7 +192,7 @@ Human turns retain each side's model conversation in memory across waits. After 
 
 Cleanup flags the owning loop before eviction, so a concurrent human-turn handoff cannot restore deleted history. Retention checks committed game and tournament status and refuses missing games, games outside active play and completed/cancelled tournaments. The existing ten-second scheduler tick also sweeps retained history for these cases, preserving active human waits even when no tournament is on auto-run.
 
-Each model turn resolves both system prompts and compares their hashes and metadata with the active prompts. Changes to rendered templates/version, participant or shared instructions, opponent details, chat mode or resignation apply from that turn. Only affected sides **reset the cached prefix** and discard exchanges made under the old prompt; the next request starts with the new system instructions and complete current PGN/position. Unchanged prompts keep their prefix. Reasoning-effort changes can also invalidate provider caching. Persisted moves, PGN, attempts and spend remain unchanged; there is no migration or backfill.
+Each model turn resolves both system prompts and compares their hashes and metadata with the active prompts. Changes to rendered templates/version, participant or shared instructions, opponent details, chat mode, banter level or resignation apply from that turn. Only affected sides **reset the cached prefix** and discard exchanges made under the old prompt; the next request starts with the new system instructions and complete current PGN/position. Unchanged prompts keep their prefix. Reasoning-effort changes can also invalidate provider caching. Prompt refresh leaves persisted moves, PGN, attempts and spend unchanged.
 
 ## Time limit per move
 
@@ -296,7 +296,15 @@ The older `trashTalkEnabled` is still accepted: on its own, `false` means `OFF` 
 
 Responses carry both `chatMode` and `trashTalkEnabled` (true unless the mode is `OFF`), and moves in `GET /api/games/{id}` carry the `chatMode` that applied to them (omitted for human moves and overrides).
 
-A legacy custom system prompt stored with a tournament or participant is used as is and cannot ask for a message, so for such a model *Mandatory* counts as *Optional*.
+The adjacent **Banter** select chooses the tone: *Original* (default, no extra guidance), *Polite* (friendly, respectful and sporting), *Playful* (light, good-natured teasing about the game) or *Spicy* (bold chess trash talk, staying civil: no slurs, harassment or real-world insults). The select is hidden while chat is *Off*; the selection is retained and applies again when chat is enabled. Presets reset it to Original. Tone is prompt guidance, not a moderation or message-validation guarantee; Optional still lets models stay silent and Mandatory still never penalizes a missing message.
+
+API: `banterLevel` on tournament create/update accepts `POLITE`, `PLAYFUL` or `SPICY` (case-insensitive, surrounding whitespace trimmed), or JSON `null` for Original. Omitted on create means Original; omitted on update retains the current tone, while explicit `null` clears it. Blank, unknown and non-string values return 400 even with chat Off. Tournament responses and JSON export settings include nullable `banterLevel` (the current configuration, not historical per-move attribution).
+
+For Optional and Mandatory, one tone sentence is appended to the chat rule and the version ends in `-banter-polite`, `-banter-playful` or `-banter-spicy`, after any `-resign` suffix (for example `v2+custom-instructions-chat-required-resign-banter-spicy`). Custom instructions remain additional guidance under the rules. With Original or chat Off, existing prompt texts, versions and hashes are unchanged. `GET /api/config/prompt-template` exposes these rules under `banterChatModes` and `resignationBanterChatModes`, keyed by level then chat mode; setup previews the selected combination.
+
+Live changes apply from the next model turn; an already pending request keeps its prompt. The existing hash comparison resets each affected side's conversation prefix once, then preserves it across unchanged turns. The game chat label shows the configured tone beside the chat mode and follows live turn updates, including clearing it to Original. With chat Off it shows only the chat mode. Earlier moves, prompt metadata, messages and spend are unchanged.
+
+A legacy full custom system prompt stored with a tournament or participant is used as is: banter guidance is not offered, and *Mandatory* counts as *Optional* for that model. The game label shows the tournament configuration even when one side uses such a legacy template.
 
 ## Resignation
 
@@ -394,6 +402,15 @@ Both surrounding evaluations must be available. Operator overrides and forced mo
 
 Analysis includes a bracket overview with series scores and the champion, PGN export, and analytics on results, move quality (ACPL, blunders per game), talkativeness (how often each model talks, per chat mode), resignations (including resignations while not losing), reliability (first-try legal moves, retries, timeouts, forfeits) and reported cost.
 
+The analytics page shares its analysis window, tournament and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
+
+- **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
+- **Play quality:** Move Quality and Conversion.
+- **Behaviour:** Talkativeness and Resignations.
+- **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
+
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
+
 Every model answer is stored, including rejected ones: the game feed lists failed attempts per move (for example "2 failed attempts: illegal Qxh7, unparseable answer") and, separately, answers cut off at the token limit, which are not counted as the model's failures, and `GET /api/games/{id}/attempts` returns them with tokens, cost and finish reason.
 
 Game, tournament and per-model costs include rejected answers. Costs are as reported by OpenRouter.
@@ -427,6 +444,8 @@ The table shows evaluated-game coverage per model. Games with no evaluations can
 Comparison API rows carry `conversion` with `evaluatedGames`, `winningPositionsReached`, `converted`, `adjudicatedWins`, `thrownAway` and `missedMates`; unknown counts may be omitted. All metrics derive from stored evaluations, including historical games; there is no backfill or engine re-analysis.
 
 ### Talkativeness
+
+Tone grouping/filtering is deferred to the banter bench. The current tournament setting cannot accurately label historical moves after live changes; this feature adds no per-move tone backfill.
 
 The analytics page's *Talkativeness* table shows, per model and for chat *Optional* and *Mandatory* separately, the share of its moves that came with a non-empty message (*Talk rate*; with *Mandatory* this is a compliance rate, with *Optional* the model's own choice) and the average message length in characters.
 
@@ -513,7 +532,7 @@ Live games over WebSocket show the board, move list, model chat, retries, and an
 
 Background refreshes preserve the historical position being reviewed; viewers at the latest move keep following new moves.
 
-Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode and resignation changes rebuild both system prompts.
+Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, banter level, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode, active banter and resignation changes rebuild affected system prompts; unchanged prompts retain their prefix.
 
 ## Scope and interpretation
 

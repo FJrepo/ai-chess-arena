@@ -318,7 +318,7 @@ class OpenRouterPromptCachingTest {
             @Override
             public void broadcastGameStatus(UUID id, String status, String result, String reason, int count,
                                             BigDecimal cost, String color, java.time.Instant start,
-                                            java.time.Instant deadline, String detail, String mode) { }
+                                            java.time.Instant deadline, String detail, String mode, String banterLevel) { }
         };
         Board board = new Board();
         var request = new GameTurnService.TurnRequest(UUID.randomUUID(), "", board.getFen(), board, "WHITE", 1,

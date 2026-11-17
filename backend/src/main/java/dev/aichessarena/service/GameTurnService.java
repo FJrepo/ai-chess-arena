@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.ReasoningEffort;
@@ -122,7 +123,7 @@ public class GameTurnService {
         }
 
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
-                request.tournamentChatMode());
+                request.tournamentChatMode(), request.tournamentBanterLevel());
 
         int providerFailures = 0;
         String lastProviderFailure = null;
@@ -518,7 +519,8 @@ public class GameTurnService {
      * for one side only, and the label must not flip from turn to turn.
      */
     private void broadcastTurnTiming(UUID gameId, BigDecimal totalCostUsd, String activeColor,
-                                     Instant turnStartedAt, Instant turnDeadlineAt, ChatMode tournamentChatMode) {
+                                     Instant turnStartedAt, Instant turnDeadlineAt, ChatMode tournamentChatMode,
+                                     BanterLevel tournamentBanterLevel) {
         int totalMoves = Math.toIntExact(moveRepository.count("game.id", gameId));
         gameWebSocket.broadcastGameStatus(
                 gameId,
@@ -531,7 +533,8 @@ public class GameTurnService {
                 turnStartedAt,
                 turnDeadlineAt,
                 null,
-                tournamentChatMode != null ? tournamentChatMode.name() : null
+                tournamentChatMode != null ? tournamentChatMode.name() : null,
+                tournamentBanterLevel != null ? tournamentBanterLevel.name() : null
         );
     }
 
@@ -568,8 +571,23 @@ public class GameTurnService {
             boolean resignationAllowed,
             // The reasoning effort this side asks for (participant override, else the tournament's); null for the
             // model default. playTurn maps it to a level the model supports before sending it.
-            ReasoningEffort reasoningEffort
+            ReasoningEffort reasoningEffort,
+            BanterLevel tournamentBanterLevel
     ) {
+        /** Compatibility for callers without banter metadata. */
+        public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
+                           List<String> legalMoves, String modelId, String playerName, String opponentName,
+                           List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
+                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
+                           int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode,
+                           boolean resignationAllowed, ReasoningEffort reasoningEffort) {
+            this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
+                    resignationAllowed, reasoningEffort, null);
+        }
+
         /** A request without a reasoning effort (the model's default). */
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
