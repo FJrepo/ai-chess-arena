@@ -1201,7 +1201,8 @@ class GameTurnServiceTest {
                 java.time.Instant turnStartedAt,
                 java.time.Instant turnDeadlineAt,
                 String detail,
-                String chatMode
+                String chatMode,
+                String banterLevel
         ) {
             if (turnStartedAt != null) {
                 turnTimingBroadcast = true;

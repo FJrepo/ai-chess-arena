@@ -24,6 +24,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
 import {
   ChatMode,
+  BanterLevel,
   Opening,
   OpeningMode,
   Participant,
@@ -163,6 +164,24 @@ Your opponent is %s (%s).`;
   readonly reasoningEffortLabel = reasoningEffortLabel;
   /** Whether models talk; sent as chatMode. */
   chatMode: ChatMode = 'OPTIONAL';
+  banterLevel: BanterLevel | null = null;
+  readonly banterOptions: ReadonlyArray<{ value: BanterLevel; label: string }> = [
+    { value: 'POLITE', label: 'Polite' },
+    { value: 'PLAYFUL', label: 'Playful' },
+    { value: 'SPICY', label: 'Spicy' },
+  ];
+  readonly banterHints: Record<BanterLevel, string> = {
+    POLITE: 'Friendly, respectful and sporting.',
+    PLAYFUL: 'Light, good-natured teasing about the game.',
+    SPICY: 'Bold chess trash talk; no slurs, harassment or real-world insults.',
+  };
+
+  banterHint(): string {
+    return this.banterLevel
+      ? this.banterHints[this.banterLevel]
+      : 'Original tone; no extra guidance.';
+  }
+
   readonly chatModeOptions: ReadonlyArray<{ value: ChatMode; label: string; hint: string }> = [
     {
       value: 'OFF',
@@ -387,6 +406,13 @@ Your opponent is %s (%s).`;
    */
   private selectedRules(): { template: string; version: string } | undefined {
     const templates = this.promptTemplates;
+    if (this.chatMode !== 'OFF' && this.banterLevel) {
+      const variants = this.resignationAllowed
+        ? templates?.resignationBanterChatModes
+        : templates?.banterChatModes;
+      const variant = variants?.[this.banterLevel]?.[this.chatMode];
+      if (variant) return variant;
+    }
     if (this.resignationAllowed && templates?.resignationChatModes?.[this.chatMode]) {
       return templates.resignationChatModes[this.chatMode];
     }
@@ -581,6 +607,7 @@ Your opponent is %s (%s).`;
       matchupBestOf: this.matchupBestOf,
       finalsBestOf: this.finalsBestOf,
       chatMode: this.chatMode,
+      banterLevel: this.banterLevel,
       resignationAllowed: this.resignationAllowed,
       adjudicationEnabled: this.adjudicationEnabled,
       openingMode: this.openingMode(),
@@ -796,6 +823,7 @@ Your opponent is %s (%s).`;
     this.matchupBestOf = preset.matchupBestOf;
     this.finalsBestOf = preset.finalsBestOf;
     this.chatMode = preset.chatMode;
+    this.banterLevel = null;
     // Presets play every game to the end, with each model's default reasoning effort.
     this.resignationAllowed = false;
     this.adjudicationEnabled = false;

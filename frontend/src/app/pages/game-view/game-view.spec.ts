@@ -479,6 +479,27 @@ describe('GameView', () => {
     expect(component.tournamentChatMode()).toBe('MANDATORY');
   });
 
+  it('updates and clears the tone from live turn metadata while preserving it when absent', () => {
+    const { component } = createComponent();
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      tournamentChatMode: 'OPTIONAL',
+      tournamentBanterLevel: 'SPICY',
+    });
+    expect(component.tournamentBanterLevel()).toBe('SPICY');
+    component.handleWsMessage({ type: 'gameStatus', gameId: 'g-1', status: 'IN_PROGRESS' });
+    expect(component.tournamentBanterLevel()).toBe('SPICY');
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      tournamentBanterLevel: null,
+    });
+    expect(component.tournamentBanterLevel()).toBeNull();
+  });
+
   it('keeps the configured chat mode over successive turns of a mixed-template game', () => {
     // MANDATORY tournament, White with a legacy template (effectively OPTIONAL): every turn update carries the
     // configured mode, so the label does not flip between the sides' turns.

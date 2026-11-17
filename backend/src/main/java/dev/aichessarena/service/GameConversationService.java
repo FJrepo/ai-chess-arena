@@ -157,7 +157,8 @@ public class GameConversationService {
                 opponentName,
                 opponentModel,
                 chatMode,
-                resignationAllowed
+                resignationAllowed,
+                game.tournament.banterLevel
         );
     }
 

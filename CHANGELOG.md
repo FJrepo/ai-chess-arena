@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- Back up before upgrading. Flyway `V21__banter_level.sql` adds nullable, checked `tournaments.banter_level`; existing tournaments keep Original (`null`) and all existing prompt texts, versions and hashes. Existing games, moves, results and spend remain unchanged; no backfill. Rebuild/recreate backend and frontend; restore the pre-upgrade backup to roll back.
+
+### Added
+- Per-tournament Banter tone: Original, Polite, Playful or Spicy for Optional/Mandatory chat, with setup rule previews and a live game label. Changes apply next turn; Off ignores the retained tone and legacy full prompt overrides remain unchanged. Tone guidance combines with resignation and custom instructions; invalid API values return 400.
+
 ### Changed
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 

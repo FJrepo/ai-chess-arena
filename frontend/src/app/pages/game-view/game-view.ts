@@ -19,6 +19,7 @@ import {
   Move,
   ChatMessage,
   ChatMode,
+  BanterLevel,
   DEFAULT_MOVE_TIMEOUT_SECONDS,
   MoveAttempt,
   MoveWsMessage,
@@ -119,6 +120,7 @@ export class GameView implements OnInit, OnDestroy {
   tournamentMaxOutputTokens = signal<number | null>(null);
   /** The tournament's chat mode, once loaded (shown in the chat panel). */
   tournamentChatMode = signal<ChatMode | null>(null);
+  tournamentBanterLevel = signal<BanterLevel | null>(null);
   /** The tournament's reasoning effort, once loaded; null for each model's default. */
   tournamentReasoningEffort = signal<ReasoningEffort | null>(null);
   /**
@@ -554,6 +556,7 @@ export class GameView implements OnInit, OnDestroy {
               this.tournamentChatMode.set(
                 tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
               );
+              this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
               this.tournamentReasoningEffort.set(
                 isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
               );
@@ -777,6 +780,9 @@ export class GameView implements OnInit, OnDestroy {
         if (msg.tournamentChatMode) {
           this.tournamentChatMode.set(msg.tournamentChatMode);
         }
+        if (msg.tournamentBanterLevel !== undefined) {
+          this.tournamentBanterLevel.set(msg.tournamentBanterLevel);
+        }
         if (
           status === 'COMPLETED' &&
           (msg.resultReason === 'RESIGNATION' || msg.resultReason === 'ADJUDICATION')
@@ -816,6 +822,9 @@ export class GameView implements OnInit, OnDestroy {
     // up with the next model turn.
     if (msg.tournamentChatMode) {
       this.tournamentChatMode.set(msg.tournamentChatMode);
+    }
+    if (msg.tournamentBanterLevel !== undefined) {
+      this.tournamentBanterLevel.set(msg.tournamentBanterLevel);
     }
     const game = this.game();
     if (!game || game.status !== 'IN_PROGRESS') {

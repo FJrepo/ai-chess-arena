@@ -8,6 +8,7 @@ export const DEFAULT_MOVE_TIMEOUT_SECONDS: number | null = null;
 
 /** OFF: models stay silent. OPTIONAL: models may send a message. MANDATORY: models are asked for one every move. */
 export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
+export type BanterLevel = 'POLITE' | 'PLAYFUL' | 'SPICY';
 
 export type BracketDrawMode = 'ORDER' | 'RANDOM';
 export type OpeningMode = 'STANDARD' | 'RANDOM_BOOK' | 'FIXED';
@@ -54,6 +55,8 @@ export interface Tournament {
   trashTalkEnabled: boolean;
   /** Whether models talk: OFF, OPTIONAL (default) or MANDATORY. Absent from backends before 1.4. */
   chatMode?: ChatMode;
+  /** Null retains the original tone; ignored while chat is Off. */
+  banterLevel?: BanterLevel | null;
   /**
    * Whether models may resign instead of moving, from their 10th move on (default false). Absent from
    * backends before 1.4.
@@ -341,6 +344,7 @@ export interface GameStatusWsMessage {
   detail?: string | null;
   /** The tournament's configured chat mode; sent with turn updates of model turns only. */
   tournamentChatMode?: ChatMode;
+  tournamentBanterLevel?: BanterLevel | null;
   /** The game's status revision after a status change (start, pause, game over); absent on turn updates. */
   statusRevision?: number;
 }

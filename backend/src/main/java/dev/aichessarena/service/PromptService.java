@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Tournament;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -119,7 +120,11 @@ public class PromptService {
 
   /** The default rules for a chat mode, with rule 9 when resignation is offered; unformatted. */
   public String getSystemPromptTemplate(ChatMode chatMode, boolean resignationOffered) {
-    return applyRules(DEFAULT_SYSTEM_PROMPT, chatMode, resignationOffered);
+    return getSystemPromptTemplate(chatMode, resignationOffered, null);
+  }
+
+  public String getSystemPromptTemplate(ChatMode chatMode, boolean resignationOffered, BanterLevel banterLevel) {
+    return applyRules(DEFAULT_SYSTEM_PROMPT, chatMode, resignationOffered, banterLevel);
   }
 
   /** The version of the default rules for a chat mode without custom instructions: v2, v2-silent, v2-chat-required. */
@@ -129,7 +134,11 @@ public class PromptService {
 
   /** As {@link #getSystemPromptVersion(ChatMode)}, with the suffix {@value #RESIGN_VERSION_SUFFIX} when offered. */
   public String getSystemPromptVersion(ChatMode chatMode, boolean resignationOffered) {
-    return DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix(chatMode, resignationOffered);
+    return getSystemPromptVersion(chatMode, resignationOffered, null);
+  }
+
+  public String getSystemPromptVersion(ChatMode chatMode, boolean resignationOffered, BanterLevel banterLevel) {
+    return DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix(chatMode, resignationOffered, banterLevel);
   }
 
   /**
@@ -199,6 +208,14 @@ public class PromptService {
    */
   public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
       String color, String opponentName, String opponentModel, ChatMode chatMode, boolean resignationAllowed) {
+    return buildSystemPrompt(legacyPromptTemplate, customInstructions, color, opponentName, opponentModel, chatMode,
+        resignationAllowed, null);
+  }
+
+  /** Appends tone guidance to the chat rule; null, OFF and legacy overrides preserve all existing prompt bytes. */
+  public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
+      String color, String opponentName, String opponentModel, ChatMode chatMode, boolean resignationAllowed,
+      BanterLevel banterLevel) {
     ChatMode mode = chatMode != null ? chatMode : ChatMode.OPTIONAL;
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
@@ -208,8 +225,8 @@ public class PromptService {
           false);
     }
 
-    String versionSuffix = versionSuffix(mode, resignationAllowed);
-    String basePrompt = applyRules(DEFAULT_SYSTEM_PROMPT, mode, resignationAllowed)
+    String versionSuffix = versionSuffix(mode, resignationAllowed, banterLevel);
+    String basePrompt = applyRules(DEFAULT_SYSTEM_PROMPT, mode, resignationAllowed, banterLevel)
         .formatted(color, opponentName, opponentModel);
     if (!hasCustomInstructions(customInstructions)) {
       return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix, mode, resignationAllowed);
@@ -229,11 +246,16 @@ public class PromptService {
   }
 
   /**
-   * All rule changes in one place: the chat mode's swaps, then rule 9 when resignation is offered. Without
+   * Chat-mode swaps, optional tone guidance, then rule 9 when resignation is offered. Without a tone or
    * resignation the result is the chat mode's text alone, byte for byte.
    */
-  private static String applyRules(String template, ChatMode chatMode, boolean resignationOffered) {
+  private static String applyRules(String template, ChatMode chatMode, boolean resignationOffered,
+      BanterLevel banterLevel) {
     String rules = applyChatMode(template, chatMode);
+    if (banterLevel != null && chatMode != ChatMode.OFF) {
+      String chatRule = chatMode == ChatMode.MANDATORY ? REQUIRED_MESSAGE_RULE : TRASH_TALK_RULE;
+      rules = rules.replace(chatRule, chatRule + " " + toneSentence(banterLevel));
+    }
     if (!resignationOffered) {
       return rules;
     }
@@ -258,13 +280,23 @@ public class PromptService {
     };
   }
 
-  private static String versionSuffix(ChatMode chatMode, boolean resignationOffered) {
+  static String toneSentence(BanterLevel level) {
+    return switch (level) {
+      case POLITE -> "Keep your messages friendly, respectful and sporting.";
+      case PLAYFUL -> "Use light, good-natured teasing about the chess game while staying friendly and civil.";
+      case SPICY -> "Use bold trash talk about the chess game while staying civil: no slurs, harassment or real-world insults.";
+    };
+  }
+
+  private static String versionSuffix(ChatMode chatMode, boolean resignationOffered, BanterLevel banterLevel) {
     String chatSuffix = switch (chatMode) {
       case OPTIONAL -> "";
       case OFF -> SILENT_VERSION_SUFFIX;
       case MANDATORY -> CHAT_REQUIRED_VERSION_SUFFIX;
     };
-    return resignationOffered ? chatSuffix + RESIGN_VERSION_SUFFIX : chatSuffix;
+    String suffix = resignationOffered ? chatSuffix + RESIGN_VERSION_SUFFIX : chatSuffix;
+    return banterLevel != null && chatMode != ChatMode.OFF
+        ? suffix + "-banter-" + banterLevel.name().toLowerCase(java.util.Locale.ROOT) : suffix;
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,

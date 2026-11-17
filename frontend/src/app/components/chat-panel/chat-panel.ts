@@ -1,6 +1,6 @@
 import { Component, Input, computed, signal } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
-import { ChatMessage, ChatMode } from '../../models/tournament.model';
+import { BanterLevel, ChatMessage, ChatMode } from '../../models/tournament.model';
 
 const CHAT_MODE_LABELS: Record<ChatMode, string> = {
   OFF: 'Chat off',
@@ -25,12 +25,20 @@ export class ChatPanel {
     this._chatMode.set(value ?? null);
   }
 
+  @Input() set banterLevel(value: BanterLevel | null | undefined) {
+    this._banterLevel.set(value ?? null);
+  }
+
+  readonly _banterLevel = signal<BanterLevel | null>(null);
   readonly _messages = signal<ChatMessage[]>([]);
   readonly _chatMode = signal<ChatMode | null>(null);
   readonly displayedMessages = computed(() => [...this._messages()].reverse());
   readonly chatModeLabel = computed(() => {
     const mode = this._chatMode();
-    return mode ? CHAT_MODE_LABELS[mode] : null;
+    if (!mode) return null;
+    const level = this._banterLevel();
+    const tone = level ? level[0] + level.slice(1).toLowerCase() : null;
+    return tone && mode !== 'OFF' ? `${CHAT_MODE_LABELS[mode]} · ${tone}` : CHAT_MODE_LABELS[mode];
   });
   readonly emptyText = computed(() => {
     switch (this._chatMode()) {
