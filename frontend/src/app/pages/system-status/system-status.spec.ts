@@ -53,9 +53,7 @@ describe('SystemStatus', () => {
     expect(component.openRouterTone()).toBe('unknown');
     expect(component.openRouterLabel()).toBe('Key configured');
     expect(component.openRouterBadge()).toBe('validation unknown');
-    expect(component.openRouterSummary()).toContain('has not been tested yet');
-    expect(component.openRouterSummary()).not.toContain('Connect OpenRouter');
-    expect(component.openRouterSummary()).not.toContain('failed');
+    expect(component.openRouterSummary()).toBe('This key has not been tested yet.');
   });
 
   it('keeps an unavailable check separate from an invalid key', () => {

@@ -120,7 +120,7 @@ export class SystemStatus implements OnInit {
       case 'unavailable':
         return 'OpenRouter is connected. The last key check was unavailable; validation is unknown.';
       default:
-        return 'This key has not been tested yet. Select Test key in settings.';
+        return 'This key has not been tested yet.';
     }
   }
 
