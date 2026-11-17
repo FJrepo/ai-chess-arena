@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 import {
   TournamentRunSettings,
   BracketDrawMode,
@@ -16,7 +16,7 @@ import {
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import { LeaderboardResponse } from '../models/leaderboard.model';
 import { ReasoningEffort } from '../utils/reasoning-effort';
-import { OpenRouterKeyStatus } from './openrouter-client';
+import { OpenRouterClient, OpenRouterKeyStatus } from './openrouter-client';
 import {
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
@@ -63,7 +63,10 @@ export interface SystemStatusResponse {
 export class ApiService {
   private baseUrl = '/api';
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private connection: OpenRouterClient,
+  ) {}
 
   getOpenings(): Observable<Opening[]> {
     return this.http.get<Opening[]>(`${this.baseUrl}/openings`);
@@ -225,7 +228,9 @@ export class ApiService {
   }
 
   checkOpenRouterStatus(): Observable<OpenRouterStatusResponse> {
-    return this.http.get<OpenRouterStatusResponse>(`${this.baseUrl}/config/openrouter-status`);
+    return this.http
+      .get<OpenRouterStatusResponse>(`${this.baseUrl}/config/openrouter-status`)
+      .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key)));
   }
 
   getPromptTemplate(): Observable<PromptTemplateResponse> {
@@ -233,7 +238,9 @@ export class ApiService {
   }
 
   getSystemStatus(): Observable<SystemStatusResponse> {
-    return this.http.get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`);
+    return this.http
+      .get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`)
+      .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key)));
   }
 
   getTournamentCostSummary(tournamentId: string): Observable<TournamentCostSummary> {

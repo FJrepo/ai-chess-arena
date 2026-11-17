@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { convertToParamMap, ActivatedRoute, Router, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { OpenRouterClient } from '../../services/openrouter-client';
 import { ConnectCallback } from './connect-callback';
 
@@ -60,6 +60,33 @@ describe('OpenRouter callback and claim', () => {
       expect(router.navigateByUrl).toHaveBeenCalledWith('/', { replaceUrl: true });
     },
   );
+
+  it('does not redirect or consume the return route when completion arrives after destruction', () => {
+    const { client, route, router, snackbar } = harness({ code: 'fake-code', state: 'fake-state' });
+    const completion = new Subject<object>();
+    client.complete.mockReturnValue(completion);
+    sessionStorage.setItem('openrouter-return-url', '/analytics');
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ActivatedRoute, useValue: route },
+        { provide: OpenRouterClient, useValue: client },
+        { provide: Router, useValue: router },
+        { provide: MatSnackBar, useValue: snackbar },
+      ],
+    });
+    const fixture = TestBed.createComponent(ConnectCallback);
+    fixture.detectChanges();
+    expect(client.complete).toHaveBeenCalledOnce();
+    fixture.destroy();
+
+    completion.next({});
+    completion.complete();
+
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+    expect(snackbar.open).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('openrouter-return-url')).toBe('/analytics');
+    expect(fixture.componentInstance.message()).toBe('Finishing connection…');
+  });
 
   it('keeps the return route on error and shows a styled fallback with retry and tournaments actions', () => {
     const { client, route, snackbar } = harness({ code: 'fake-code', state: 'fake-state' });

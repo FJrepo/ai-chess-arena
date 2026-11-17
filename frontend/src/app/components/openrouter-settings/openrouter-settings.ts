@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -16,7 +16,7 @@ import { rememberOpenRouterReturnUrl } from '../../utils/openrouter-return-url';
   templateUrl: './openrouter-settings.html',
   styleUrl: './openrouter-settings.scss',
 })
-export class OpenRouterSettings implements OnInit {
+export class OpenRouterSettings implements OnInit, OnDestroy {
   status = signal<OpenRouterStatus | null>(null);
   connected = computed(() => openRouterConnected(this.status()?.key));
   validation = computed(() => openRouterValidation(this.status()?.key));
@@ -32,6 +32,17 @@ export class OpenRouterSettings implements OnInit {
   ngOnInit() {
     this.update(this.client.status());
   }
+  ngOnDestroy() {
+    this.clearManualEntry();
+  }
+  toggleManualEntry() {
+    if (this.manualExpanded()) this.clearManualEntry();
+    else this.manualExpanded.set(true);
+  }
+  private clearManualEntry() {
+    this.manualKey = '';
+    this.manualExpanded.set(false);
+  }
   managed() {
     return ['env', 'file'].includes(this.status()?.key.source ?? '');
   }
@@ -44,6 +55,7 @@ export class OpenRouterSettings implements OnInit {
     });
   }
   connect() {
+    this.clearManualEntry();
     this.busy.set(true);
     this.error.set(null);
     this.client

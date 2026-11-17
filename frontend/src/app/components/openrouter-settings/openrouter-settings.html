@@ -66,7 +66,7 @@
         <button
           mat-button
           class="manual-toggle"
-          (click)="manualExpanded.set(!manualExpanded())"
+          (click)="toggleManualEntry()"
           [attr.aria-expanded]="manualExpanded()"
           aria-controls="openrouter-manual-form"
         >

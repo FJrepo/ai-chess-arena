@@ -1,9 +1,9 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { switchMap } from 'rxjs';
+import { Subject, switchMap, takeUntil } from 'rxjs';
 import { OpenRouterClient } from '../../services/openrouter-client';
 import { takeOpenRouterReturnUrl } from '../../utils/openrouter-return-url';
 
@@ -32,7 +32,8 @@ import { takeOpenRouterReturnUrl } from '../../utils/openrouter-return-url';
   `,
   styleUrl: './connect-callback.scss',
 })
-export class ConnectCallback implements OnInit {
+export class ConnectCallback implements OnInit, OnDestroy {
+  private readonly destroyed = new Subject<void>();
   message = signal('Finishing connection…');
   failed = signal(false);
   claimed = signal(false);
@@ -57,7 +58,10 @@ export class ConnectCallback implements OnInit {
       }
       this.client
         .status()
-        .pipe(switchMap(() => this.client.claim(token)))
+        .pipe(
+          switchMap(() => this.client.claim(token)),
+          takeUntil(this.destroyed),
+        )
         .subscribe({
           next: () => {
             this.claimed.set(true);
@@ -66,26 +70,37 @@ export class ConnectCallback implements OnInit {
           error: (err) => this.fail(err?.error?.error ?? 'Could not claim this instance.'),
         });
     } else if (code && state) {
-      this.client.complete(code, state).subscribe({
-        next: () => {
-          this.message.set('OpenRouter connected');
-          void this.router.navigateByUrl(takeOpenRouterReturnUrl(), { replaceUrl: true });
-          this.snackbar.open('OpenRouter connected', 'Dismiss', { duration: 5000 });
-        },
-        error: (err) => this.fail(err?.error?.error ?? 'Connection failed. Please try again.'),
-      });
+      this.client
+        .complete(code, state)
+        .pipe(takeUntil(this.destroyed))
+        .subscribe({
+          next: () => {
+            this.message.set('OpenRouter connected');
+            void this.router.navigateByUrl(takeOpenRouterReturnUrl(), { replaceUrl: true });
+            this.snackbar.open('OpenRouter connected', 'Dismiss', { duration: 5000 });
+          },
+          error: (err) => this.fail(err?.error?.error ?? 'Connection failed. Please try again.'),
+        });
     } else {
       this.fail('Connection cancelled or callback is incomplete. Please try again.');
     }
   }
 
+  ngOnDestroy() {
+    this.destroyed.next();
+    this.destroyed.complete();
+  }
+
   retry() {
     this.failed.set(false);
     this.message.set('Opening OpenRouter…');
-    this.client.start().subscribe({
-      next: ({ authUrl }) => window.location.assign(authUrl),
-      error: (err) => this.fail(err?.error?.error ?? 'Could not start OpenRouter connection.'),
-    });
+    this.client
+      .start()
+      .pipe(takeUntil(this.destroyed))
+      .subscribe({
+        next: ({ authUrl }) => window.location.assign(authUrl),
+        error: (err) => this.fail(err?.error?.error ?? 'Could not start OpenRouter connection.'),
+      });
   }
 
   private fail(message: string) {

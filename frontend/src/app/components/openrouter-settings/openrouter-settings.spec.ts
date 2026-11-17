@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { OpenRouterSettings } from './openrouter-settings';
 import { OpenRouterClient, OpenRouterStatus } from '../../services/openrouter-client';
 
@@ -104,6 +104,57 @@ describe('OpenRouter settings', () => {
       'Use a different API key',
     );
     expect(element.querySelector('input')).toBeNull();
+  });
+
+  it.each([missing, status])(
+    'clears a pasted manual key on collapse and reopens an empty field (source $key.source)',
+    async (current) => {
+      const { fixture, element, api } = render(current);
+      const toggle = element.querySelector<HTMLButtonElement>('.manual-toggle')!;
+      toggle.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const input = element.querySelector('input')!;
+      input.value = 'fixture-private-key';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      expect(fixture.componentInstance.manualKey).toBe('fixture-private-key');
+
+      toggle.click();
+      fixture.detectChanges();
+      expect(element.querySelector('input')).toBeNull();
+      expect(fixture.componentInstance.manualKey).toBe('');
+      toggle.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(element.querySelector('input')!.value).toBe('');
+      expect(element.querySelector<HTMLButtonElement>('form > button')!.disabled).toBe(true);
+      expect(api.manual).not.toHaveBeenCalled();
+    },
+  );
+
+  it('clears abandoned manual input when settings are destroyed', () => {
+    const { fixture } = render(missing);
+    fixture.componentInstance.manualExpanded.set(true);
+    fixture.componentInstance.manualKey = 'fixture-private-key';
+    fixture.destroy();
+    expect(fixture.componentInstance.manualKey).toBe('');
+  });
+
+  it('clears and collapses manual entry when switching to OAuth, even if starting fails', () => {
+    const { fixture, api, element } = render(missing);
+    const start = new Subject<{ authUrl: string }>();
+    api.start.mockReturnValue(start);
+    fixture.componentInstance.manualExpanded.set(true);
+    fixture.componentInstance.manualKey = 'fixture-private-key';
+    fixture.componentInstance.connect();
+    expect(fixture.componentInstance.manualKey).toBe('');
+    expect(fixture.componentInstance.manualExpanded()).toBe(false);
+    start.error({ error: { error: 'Connection unavailable' } });
+    fixture.detectChanges();
+    expect(element.querySelector('input')).toBeNull();
+    expect(fixture.componentInstance.error()).toBe('Connection unavailable');
   });
 
   it.each(['env', 'file'] as const)(

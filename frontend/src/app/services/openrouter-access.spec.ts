@@ -17,6 +17,14 @@ const missing: OpenRouterStatus = {
   key: { source: 'none', maskedSuffix: null, lastValidatedAt: null, validation: 'none' },
   canManage: true,
 };
+const connected: OpenRouterStatus = {
+  ...missing,
+  key: { ...missing.key, source: 'ui', validation: 'unknown' },
+};
+const invalid: OpenRouterStatus = {
+  ...connected,
+  key: { ...connected.key, validation: 'invalid' },
+};
 
 function harness(status = missing) {
   const client = { status: vi.fn(() => of(status)) };
@@ -189,7 +197,7 @@ describe.each([
     vi.unstubAllGlobals();
   });
 
-  async function render(status: OpenRouterStatus | null) {
+  async function render(status: OpenRouterStatus | null, cachedStatus?: OpenRouterStatus) {
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -200,33 +208,87 @@ describe.each([
     );
     TestBed.configureTestingModule({
       imports: [page],
-      providers: [
-        provideRouter([]),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        {
-          provide: ApiService,
-          useValue: {
-            getTournaments: () => of([]),
-            getSystemStatus: () =>
-              status
-                ? of({ key: status.key, stockfishAvailable: true })
-                : throwError(() => new Error('offline')),
-            checkOpenRouterStatus: () =>
-              status ? of({ key: status.key }) : throwError(() => new Error('offline')),
-            getPromptTemplate: () => of({ template: 'Rules', version: 'v2', hash: 'hash' }),
-            getOpenings: () => of([]),
-            getModels: () =>
-              of({ data: [{ id: 'acme/model', name: 'Fixture', provider: 'acme' }] }),
-          },
-        },
-      ],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getTournaments').mockReturnValue(of([]));
+    vi.spyOn(api, 'getPromptTemplate').mockReturnValue(
+      of({ template: 'Rules', version: 'v2', hash: 'hash' }),
+    );
+    vi.spyOn(api, 'getOpenings').mockReturnValue(of([]));
+    vi.spyOn(api, 'getModels').mockReturnValue(
+      of({
+        data: [
+          {
+            id: 'acme/model',
+            name: 'Fixture',
+            provider: 'acme',
+            contextLength: null,
+            promptPricePerMillion: null,
+            completionPricePerMillion: null,
+            featured: false,
+          },
+        ],
+        totalMatched: 1,
+        featuredCount: 0,
+        error: null,
+      }),
+    );
+    const http = TestBed.inject(HttpTestingController);
+    if (cachedStatus) {
+      TestBed.inject(OpenRouterClient).status().subscribe();
+      http.expectOne('/api/config/openrouter').flush(cachedStatus);
+    }
     const fixture = TestBed.createComponent<TournamentSetup | TournamentList>(page);
+    fixture.detectChanges();
+    const request = http.expectOne(
+      page === TournamentSetup ? '/api/config/openrouter-status' : '/api/config/system-status',
+    );
+    if (status) {
+      request.flush({ key: status.key, stockfishAvailable: true });
+    } else {
+      request.flush({ error: 'offline' }, { status: 503, statusText: 'Service unavailable' });
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     return fixture;
   }
+
+  it.each([
+    ['missing key', missing, connected],
+    ['failed validation', invalid, connected],
+    ['connected key', connected, missing],
+    ['unknown validation', connected, invalid],
+  ] as const)(
+    'replaces cached %s metadata with fresh page status',
+    async (_state, cached, fresh) => {
+      const fixture = await render(fresh, cached);
+      const client = TestBed.inject(OpenRouterClient);
+      expect(client.keyStatus()).toEqual(fresh.key);
+      const banner = fixture.nativeElement.querySelector('.openrouter-status');
+      if (fresh.key.source === 'none') {
+        expect(banner?.textContent).toContain('Connect your OpenRouter account');
+      } else if (fresh.key.validation === 'invalid') {
+        expect(banner?.textContent).toContain('failed its last validation');
+      } else {
+        expect(banner).toBeNull();
+      }
+
+      client.manual('fixture-private-key').subscribe();
+      TestBed.inject(HttpTestingController)
+        .expectOne('/api/config/openrouter/key')
+        .flush(connected);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
+    },
+  );
+
+  it('preserves known connection metadata when the fresh page status request fails', async () => {
+    const fixture = await render(null, connected);
+    expect(TestBed.inject(OpenRouterClient).keyStatus()).toEqual(connected.key);
+    expect(fixture.nativeElement.querySelector('.openrouter-status')).toBeNull();
+  });
 
   it.each(['missing', 'invalid'] as const)(
     'opens the shared dialog from the %s-key banner and clears it immediately after saving',

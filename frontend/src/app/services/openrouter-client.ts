@@ -26,9 +26,14 @@ export class OpenRouterClient {
   readonly connectionSaved = this.savedConnection.asObservable();
   private readonly notifyConnectionSaved = tap<OpenRouterStatus>(() => this.savedConnection.next());
   private readonly updateKeyStatus = tap<OpenRouterStatus>((status) =>
-    this.currentKey.set(status.key),
+    this.reconcileKeyStatus(status.key),
   );
   constructor(private http: HttpClient) {}
+
+  /** Publish fresh masked metadata from any status endpoint before its consumers run. */
+  reconcileKeyStatus(key: OpenRouterKeyStatus) {
+    this.currentKey.set(key);
+  }
 
   status() {
     // Initial app and route loads must establish one browser cookie, even when concurrent.
