@@ -62,6 +62,19 @@ export class TournamentBracket implements OnInit, OnDestroy {
   readonly canRun = computed(
     () => this.tournament()?.status === 'IN_PROGRESS' && !this.cancelling() && !this.runBusy(),
   );
+  readonly hasActiveRun = computed(() => {
+    const status = this.tournament()?.autoRunStatus;
+    return status === 'RUNNING' || status === 'PAUSED';
+  });
+
+  get runSettingsChanged(): boolean {
+    const t = this.tournament();
+    return (
+      this.runConcurrency !== (t?.maxConcurrentGames ?? 2) ||
+      this.runBudgetUsd !== (t?.budgetUsd ?? null)
+    );
+  }
+
   get validRunSettings(): boolean {
     return (
       Number.isInteger(this.runConcurrency) &&
@@ -80,7 +93,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     );
   }
 
-  private get runBudgetUsd(): number | null {
+  get runBudgetUsd(): number | null {
     return this.runBudget === '' ? null : Number(this.runBudget);
   }
 
@@ -205,7 +218,13 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   saveRunSettings(): void {
-    if (!this.canRun() || !this.validRunSettings) return;
+    if (
+      !this.canRun() ||
+      !this.hasActiveRun() ||
+      !this.validRunSettings ||
+      !this.runSettingsChanged
+    )
+      return;
     this.changeRun(() =>
       this.api.updateTournamentRun(this.tournamentId, {
         maxConcurrentGames: this.runConcurrency,

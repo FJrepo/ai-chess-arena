@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -82,6 +82,13 @@ describe('TournamentBracket', () => {
     return { fixture, api, component: fixture.componentInstance, current };
   }
 
+  function runBanner(fixture: ComponentFixture<TournamentBracket>): string {
+    return fixture.nativeElement
+      .querySelector('.run-status')
+      .textContent.replace(/\s+/g, ' ')
+      .trim();
+  }
+
   it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the tournament page', (format) => {
     const { fixture, component, api } = runPage();
     vi.useFakeTimers();
@@ -126,30 +133,181 @@ describe('TournamentBracket', () => {
     );
   });
 
-  it('runs with selected concurrency and nullable budget and renders spend and attention', () => {
+  it('previews unsaved selections while off and applies them when starting without Save', async () => {
     const { fixture, component, api, current } = runPage();
-    component.runConcurrency = 3;
-    component.runBudget = '';
-    component.runTournament();
-    expect(api.runTournament).toHaveBeenCalledWith('t-1', {
-      maxConcurrentGames: 3,
+    const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(MatSelectHarness);
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    expect(runBanner(fixture)).toBe('Auto-run off · limit 2 · $5.00 budget');
+
+    await select.open();
+    await select.clickOptions({ text: '4' });
+    input.value = '2';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    component.loadTournament();
+    expect(await select.getValueText()).toBe('4');
+    expect(runBanner(fixture)).toBe('Auto-run off · limit 4 · $2.00 budget');
+    expect(component.tournament()?.maxConcurrentGames).toBe(2);
+    expect(component.tournament()?.budgetUsd).toBe(5);
+    expect(fixture.nativeElement.querySelector('.save-run')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    expect(runBanner(fixture)).toBe('Auto-run off · limit 4 · no budget cap');
+    api.runTournament.mockReturnValueOnce(
+      of({ ...current, autoRunStatus: 'RUNNING', maxConcurrentGames: 4, budgetUsd: null }),
+    );
+    (fixture.nativeElement.querySelector('.start-run') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(api.runTournament).toHaveBeenCalledExactlyOnceWith('t-1', {
+      maxConcurrentGames: 4,
       budgetUsd: null,
     });
-    component.tournament.set({
-      ...current,
-      autoRunStatus: 'RUNNING',
-      games: [
-        finalGame({ status: 'IN_PROGRESS', totalCostUsd: 1.23 }),
-        finalGame({ id: 'paused', status: 'PAUSED', totalCostUsd: 0.5 }),
-      ],
-    });
+    expect(api.updateTournamentRun).not.toHaveBeenCalled();
+    expect(runBanner(fixture)).toBe(
+      'Running · 0 games running (limit 4) · $0.00 spent · no budget cap · 0 need attention',
+    );
+    expect(fixture.nativeElement.querySelector('.save-run').disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+  });
+
+  it.each(['RUNNING', 'PAUSED'] as const)(
+    'keeps the %s banner on applied limits until changed limits are saved',
+    async (status) => {
+      const { fixture, component, api, current } = runPage('IN_PROGRESS', status);
+      const applied: Tournament = {
+        ...current,
+        maxConcurrentGames: 4,
+        budgetUsd: 2,
+        games: [
+          finalGame({ status: 'IN_PROGRESS', totalCostUsd: 0.01 }),
+          finalGame({ id: 'running-2', status: 'IN_PROGRESS', totalCostUsd: 0.01 }),
+          finalGame({ id: 'paused', status: 'PAUSED' }),
+        ],
+      };
+      api.getTournament.mockReturnValue(of(applied));
+      component.loadTournament();
+      const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(MatSelectHarness);
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      const save = fixture.nativeElement.querySelector('.save-run') as HTMLButtonElement;
+      const label = status === 'RUNNING' ? 'Running' : 'Paused';
+      const banner = `${label} · 2 games running (limit 4) · $0.02 of $2.00 spent · 1 need attention`;
+      expect(runBanner(fixture)).toBe(banner);
+      expect(save.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+
+      await select.open();
+      await select.clickOptions({ text: '3' });
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      component.loadTournament();
+      expect(await select.getValueText()).toBe('3');
+      expect(input.value).toBe('');
+      expect(runBanner(fixture)).toBe(banner);
+      expect(save.disabled).toBe(false);
+      expect(fixture.nativeElement.querySelector('.run-save-controls').textContent).toContain(
+        'Unsaved changes',
+      );
+
+      api.updateTournamentRun.mockReturnValueOnce(
+        of({ ...applied, maxConcurrentGames: 3, budgetUsd: null }),
+      );
+      save.click();
+      fixture.detectChanges();
+      expect(api.updateTournamentRun).toHaveBeenCalledExactlyOnceWith('t-1', {
+        maxConcurrentGames: 3,
+        budgetUsd: null,
+      });
+      expect(api.runTournament).not.toHaveBeenCalled();
+      expect(component.tournament()?.autoRunStatus).toBe(status);
+      expect(runBanner(fixture)).toBe(
+        `${label} · 2 games running (limit 3) · $0.02 spent · no budget cap · 1 need attention`,
+      );
+      expect(save.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+    },
+  );
+
+  it.each(['RUNNING', 'PAUSED'] as const)(
+    'disables Save for equivalent budgets and reverted edits while %s',
+    async (status) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(MatSelectHarness);
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      const save = fixture.nativeElement.querySelector('.save-run') as HTMLButtonElement;
+      input.value = '5.00';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      expect(component.runDraftDirty).toBe(true);
+      expect(save.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+
+      await select.open();
+      await select.clickOptions({ text: '4' });
+      expect(save.disabled).toBe(false);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).not.toBeNull();
+      await select.open();
+      await select.clickOptions({ text: '2' });
+      expect(save.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+
+      input.value = '10';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      expect(save.disabled).toBe(false);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).not.toBeNull();
+      input.value = '5';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      expect(save.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+      component.saveRunSettings();
+      expect(api.updateTournamentRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['OFF', 'FINISHED', undefined] as const)(
+    'hides Save and ignores save requests when run status is %s',
+    (status) => {
+      const { fixture, component, api, current } = runPage();
+      component.tournament.set({ ...current, autoRunStatus: status });
+      component.runConcurrency = 4;
+      component.runDraftDirty = true;
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.save-run')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
+      component.saveRunSettings();
+      expect(api.updateTournamentRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it('disables Save and prevents duplicate saves while applying limits', async () => {
+    const { fixture, component, api, current } = runPage('IN_PROGRESS', 'RUNNING');
+    const pending = new Subject<Tournament>();
+    api.updateTournamentRun.mockReturnValue(pending);
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    input.value = '10';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     fixture.detectChanges();
-    const banner = fixture.nativeElement.querySelector('.run-status').textContent;
-    expect(banner).toContain('Running');
-    expect(banner).toContain('1 of 2 games');
-    expect(banner).toContain('$1.73');
-    expect(banner).toContain('$5.00');
-    expect(banner).toContain('1 games need attention');
+    const save = fixture.nativeElement.querySelector('.save-run') as HTMLButtonElement;
+    save.click();
+    component.saveRunSettings();
+    fixture.detectChanges();
+    expect(save.disabled).toBe(true);
+    expect(api.updateTournamentRun).toHaveBeenCalledExactlyOnceWith('t-1', {
+      maxConcurrentGames: 2,
+      budgetUsd: 10,
+    });
+    pending.next({ ...current, budgetUsd: 10 });
+    pending.complete();
+    fixture.detectChanges();
+    expect(save.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
   });
 
   it('pauses, resumes and edits limits without implicitly resuming', () => {
@@ -213,7 +371,15 @@ describe('TournamentBracket', () => {
       );
       const run = fixture.nativeElement.querySelector('.start-run') as HTMLButtonElement | null;
       if (run) expect(run.disabled).toBe(true);
-      expect(fixture.nativeElement.querySelector('.save-run').disabled).toBe(true);
+      const save = fixture.nativeElement.querySelector('.save-run') as HTMLButtonElement | null;
+      if (status === 'OFF') {
+        expect(save).toBeNull();
+        expect(runBanner(fixture)).toBe('Auto-run off · limit 2 · budget needs correction');
+      } else {
+        expect(save?.disabled).toBe(true);
+        expect(runBanner(fixture)).toContain('of $5.00 spent');
+        expect(fixture.nativeElement.querySelector('.run-unsaved')).not.toBeNull();
+      }
       component.runTournament();
       component.saveRunSettings();
       component.loadTournament();

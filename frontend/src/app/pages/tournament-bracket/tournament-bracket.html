@@ -81,14 +81,27 @@
                     ? 'Finished'
                     : 'Auto-run off'
             }}
-            · {{ runningGames() }} of {{ t.maxConcurrentGames ?? 2 }} games ·
-            {{ runSpend() | currency: 'USD' }}
-            @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
-              of {{ t.budgetUsd | currency: 'USD' }}
+            @if (hasActiveRun() || t.autoRunStatus === 'FINISHED') {
+              · {{ runningGames() }} {{ runningGames() === 1 ? 'game' : 'games' }} running (limit
+              {{ t.maxConcurrentGames ?? 2 }}) · {{ runSpend() | currency: 'USD' }}
+              @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
+                of {{ t.budgetUsd | currency: 'USD' }}
+              }
+              spent
+              @if (t.budgetUsd === null || t.budgetUsd === undefined) {
+                · no budget cap
+              }
+              · {{ attentionGames() }} need attention
             } @else {
-              · No budget cap
+              · limit {{ runConcurrency }} ·
+              @if (!validRunBudget) {
+                budget needs correction
+              } @else if (runBudgetUsd !== null) {
+                {{ runBudgetUsd | currency: 'USD' }} budget
+              } @else {
+                no budget cap
+              }
             }
-            · {{ attentionGames() }} games need attention
           </p>
           @if (t.autoRunPauseReason) {
             <p>{{ t.autoRunPauseReason }}</p>
@@ -139,14 +152,21 @@
                 {{ t.autoRunStatus === 'PAUSED' ? 'Resume run' : 'Run tournament' }}
               </button>
             }
-            <button
-              mat-stroked-button
-              class="save-run"
-              (click)="saveRunSettings()"
-              [disabled]="!canRun() || !validRunSettings || !runDraftDirty"
-            >
-              Save limits
-            </button>
+            @if (hasActiveRun()) {
+              <div class="run-save-controls">
+                <button
+                  mat-stroked-button
+                  class="save-run"
+                  (click)="saveRunSettings()"
+                  [disabled]="!canRun() || !validRunSettings || !runSettingsChanged"
+                >
+                  Save limits
+                </button>
+                @if (runSettingsChanged) {
+                  <span class="run-unsaved run-hint">Unsaved changes</span>
+                }
+              </div>
+            }
           </div>
           @if (!validRunBudget) {
             <p id="run-budget-error" role="alert">
