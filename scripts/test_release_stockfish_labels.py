@@ -1,10 +1,52 @@
 #!/usr/bin/env python3
-"""Exercise the release workflow's real label gate without Docker or a registry."""
+"""Check release build labels and the real label gate without Docker or a registry."""
 
 import os
 from pathlib import Path
+import re
+import shlex
 import subprocess
 import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+LICENSE_LABEL = 'org.opencontainers.image.licenses'
+
+
+class ReleaseBuildLabelsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        workflow = (ROOT / '.github/workflows/release.yml').read_text()
+        job = workflow.split('\n  build-candidates:\n', 1)[1].split('\n  smoke-test:\n', 1)[0]
+        cls.metadata = job.split('      - name: Docker metadata\n', 1)[1].split('\n      - name:', 1)[0]
+        cls.build = job.split('      - name: Build and push candidate image\n', 1)[1]
+
+    def test_backend_metadata_license_matches_dockerfile(self):
+        dockerfile = (ROOT / 'backend/Dockerfile').read_text().replace('\\\n', ' ')
+        labels = {}
+        for instruction in dockerfile.splitlines():
+            if instruction.startswith('LABEL '):
+                labels.update(token.split('=', 1) for token in shlex.split(instruction)[1:])
+        licenses = labels[LICENSE_LABEL]
+        # Require a backend-only override: an empty frontend input keeps its generated labels.
+        label_input = re.search(r'^          labels: \|\n((?:            .*\n)+)', self.metadata, re.MULTILINE)
+        self.assertIsNotNone(label_input, 'Metadata must explicitly preserve the backend Dockerfile license')
+        self.assertEqual(
+            f"${{{{ matrix.component == 'backend' && '{LICENSE_LABEL}={licenses}' || '' }}}}",
+            '\n'.join(line.removeprefix('            ') for line in label_input[1].splitlines()),
+        )
+
+    def test_candidate_build_publishes_all_metadata_labels_for_selected_dockerfile(self):
+        self.assertRegex(self.metadata, r'(?m)^        id: meta$')
+        self.assertRegex(self.metadata, r'(?m)^        uses: docker/metadata-action@\S+$')
+        self.assertRegex(self.build, r'(?m)^        uses: docker/build-push-action@\S+$')
+        for key, value in {
+            'context': './${{ matrix.component }}',
+            'file': './${{ matrix.component }}/Dockerfile',
+            'labels': '${{ steps.meta.outputs.labels }}',
+        }.items():
+            with self.subTest(input=key):
+                self.assertRegex(self.build, rf'(?m)^          {key}: {re.escape(value)}$')
 
 
 class StockfishReleaseLabelsTest(unittest.TestCase):
@@ -66,6 +108,11 @@ function docker() {
 
     def test_wrong_license_is_rejected(self):
         self.assertNotEqual(0, self.check_labels(licenses='MIT, GPL-3.0-only'))
+
+    def test_repository_only_license_is_rejected(self):
+        for arch in ['amd64', 'arm64']:
+            with self.subTest(arch=arch):
+                self.assertNotEqual(0, self.check_labels(licenses='MIT', bad_arch=arch))
 
     def test_missing_labels_are_rejected(self):
         for label in ['version', 'source', 'licenses']:

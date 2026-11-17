@@ -155,6 +155,8 @@ Releases use `vX.Y.Z`. The workflow runs full CI, builds both images and smoke-t
 
 Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. Documentation links and images point to the released tag, used Markdown references are retained, and fenced code examples stay intact. See [release publishing notes](docs/deployment.md#release-publishing-notes).
 
+Release builds preserve the backend Dockerfile's `MIT, GPL-3.0-or-later` licence label for bundled Stockfish. Frontend and other generated OCI labels are unchanged.
+
 ## Credits
 
 Chess piece images (Cburnett set) by Colin M.L. Burnett, with later revisions by Wikimedia Commons contributors, from Wikimedia Commons, used under the BSD licence option; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md#chess-piece-images-cburnett-set).

@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- Preserve the backend Dockerfile's `MIT, GPL-3.0-or-later` licence label in release images instead of overriding it with the repository's MIT licence, so Stockfish licence checks pass. Frontend and other generated OCI labels are unchanged.
+
 ## [1.5.0] - 2026-11-17
 
 Variety and robustness: opening variety (standard, random book line or a fixed opening), optional win adjudication with missed-mate markers and a Conversion table, cancelling a tournament, a random bracket draw, prompt-caching metrics, drawn SVG chess pieces, Stockfish 19, and release images for amd64 and arm64 (Apple Silicon runs natively). Release notes now come from this changelog.
