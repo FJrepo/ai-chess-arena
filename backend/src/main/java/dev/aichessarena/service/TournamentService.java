@@ -13,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.transaction.TransactionSynchronizationRegistry;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -68,6 +69,9 @@ public class TournamentService {
     @Inject
     GameEngineService gameEngineService;
 
+    @Inject
+    TransactionSynchronizationRegistry transactionRegistry;
+
     @ConfigProperty(name = "openrouter.validate-participant-models", defaultValue = "true")
     boolean validateParticipantModels;
 
@@ -87,8 +91,7 @@ public class TournamentService {
         tournament.autoRunPauseReason = null;
         tournament.updatedAt = LocalDateTime.now();
         for (Game game : gameRepository.findByTournamentId(tournamentId)) {
-            UUID gameId = game.id;
-            gameLifecycleService.cancelGame(gameId, () -> gameEngineService.requestStop(gameId));
+            gameLifecycleService.cancelGame(game.id);
         }
         return tournament;
     }
@@ -698,9 +701,12 @@ public class TournamentService {
             return false;
         }
 
+        // Capture IDs while the rows still exist. Rollback must leave conversations and loop owners intact.
+        List<UUID> gameIds = gameRepository.findIdsByTournamentId(tournamentId);
         // Remove games first so participant FK references in games cannot block tournament delete.
         gameRepository.delete("tournament.id", tournamentId);
         tournamentRepository.delete(tournament);
+        AfterCommit.run(transactionRegistry, () -> gameIds.forEach(gameEngineService::requestStop));
         return true;
     }
 }

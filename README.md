@@ -73,6 +73,8 @@ From v1.6.0: two-file setup, see the [5-minute start](docs/deployment.md#5-minut
 
 Models receive the current position, legal moves and recent conversation. Answers are checked for legality; exhausted attempts or turn deadlines cause forfeits. Provider problems pause play for you to resume.
 
+[Conversation history](docs/how-it-works.md#prompt-caching) survives human turns; deleting or finishing a game clears its retained history, with periodic cleanup as a safety net.
+
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions.
 
 Built for **one operator on localhost**, without authentication or accounts, on desktop browsers. Read the [supported scope and limitations](docs/how-it-works.md#scope-and-interpretation) before changing network access.

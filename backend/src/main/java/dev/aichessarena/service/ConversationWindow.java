@@ -4,14 +4,36 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Bounds the conversation sent to a model. Each turn prompt is self-contained (PGN, FEN, legal moves), so
- * older exchanges add cost and context length without adding information.
+ * Bounds each side's append-only conversation. Re-anchoring happens only between turns; requests and
+ * retries inside a chunk replay the original messages verbatim. Every new turn contains the full position and PGN.
  */
 final class ConversationWindow {
 
-    static final int DEFAULT_PRIOR_MESSAGES = 6;
+    static final int DEFAULT_MAX_PRIOR_MESSAGES = 12;
+    static final int DEFAULT_RETAINED_MESSAGES = 4;
+    static final int LEGACY_PRIOR_MESSAGES = 6;
 
     private ConversationWindow() {
+    }
+
+    /**
+     * Before appending a new turn, keep the current anchor until its prior-message budget is exceeded.
+     * Then retain at most {@code retainedMessages}, starting at a complete turn (never an answer or retry).
+     * The system prompt is outside the budget. Current-turn retries are also outside this prior-message budget.
+     */
+    static void reanchor(List<OpenRouterService.ChatMsg> history, int maxPriorMessages, int retainedMessages) {
+        if (maxPriorMessages < 0 || retainedMessages < 0 || retainedMessages > maxPriorMessages) {
+            throw new IllegalArgumentException("Prompt history requires 0 <= retained messages <= max prior messages");
+        }
+        int base = !history.isEmpty() && "system".equals(history.getFirst().role()) ? 1 : 0;
+        if (history.size() - base <= maxPriorMessages) {
+            return;
+        }
+        int anchor = Math.max(base, history.size() - retainedMessages);
+        while (anchor < history.size() && !history.get(anchor).startsTurn()) {
+            anchor++;
+        }
+        history.subList(base, anchor).clear();
     }
 
     /**

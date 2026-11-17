@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.ChatMode;
@@ -490,14 +491,14 @@ class PromptServiceTest {
     }
 
     /**
-     * Measures what one side sends per move over a 70-ply game: system prompt, the last six prior messages and
-     * the current turn (see {@link ConversationWindow}). The setup page estimates spend with
+     * Measures the legacy (prompt caching disabled) window over a 70-ply game: system prompt, six prior messages and
+     * the current turn. The setup page's rough estimate uses
      * {@code PROMPT_TOKENS_PER_MOVE = 1400} in tournament-setup.ts; at roughly 3.2 characters per token for
      * FEN, SAN lists and the ASCII board this averages about 4,500 characters (about 1,600 at the first move,
      * about 5,000 late in the game). Update both if the prompts change a lot.
      */
     @Test
-    void boundedTurnWindowAveragesAboutFourteenHundredPromptTokens() {
+    void legacyTurnWindowAveragesAboutFourteenHundredPromptTokens() {
         ChessService chess = new ChessService();
         Board board = chess.createBoard();
         List<List<OpenRouterService.ChatMsg>> histories = List.of(
@@ -518,7 +519,7 @@ class PromptServiceTest {
             history.add(new OpenRouterService.ChatMsg("user", promptService.buildTurnPrompt(
                     pgn, board.getFen(), chess.toAsciiBoard(board), white ? "WHITE" : "BLACK", moveNumber,
                     legalMoves, white ? "Beta" : "Alpha", lastMove, "Nice try.", ply == 0)));
-            totalChars += ConversationWindow.trim(history, turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES)
+            totalChars += ConversationWindow.trim(history, turnStart, ConversationWindow.LEGACY_PRIOR_MESSAGES)
                     .stream()
                     .mapToInt(message -> message.content().length())
                     .sum();
@@ -535,6 +536,65 @@ class PromptServiceTest {
         double averageTokens = (double) totalChars / plies / 3.2;
         assertTrue(plies >= 40, "the sample game should last long enough: " + plies);
         assertTrue(averageTokens > 1150 && averageTokens < 1650, "average prompt tokens: " + averageTokens);
+    }
+
+    @Test
+    void chunkedGamePromptsKeepBookPgnAndEachSidesPrefixWithinTheMessageBudget() {
+        ChessService chess = new ChessService();
+        Board board = chess.createBoard();
+        for (String move : List.of("e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6")) {
+            assertTrue(chess.validateAndApply(board, move).valid());
+        }
+        String bookPgn = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6";
+        String pgn = bookPgn;
+        String lastMove = "Nf6";
+        List<List<OpenRouterService.ChatMsg>> histories = List.of(
+                new ArrayList<>(List.of(system("WHITE", "Beta"))),
+                new ArrayList<>(List.of(system("BLACK", "Alpha"))));
+        List<List<OpenRouterService.ChatMsg>> previous = new ArrayList<>(List.of(List.of(), List.of()));
+        int boundaries = 0;
+        int plies = 0;
+        for (int ply = 0; ply < 70 && !chess.isGameOver(board); ply++) {
+            boolean white = "WHITE".equals(chess.getSideToMove(board));
+            int side = white ? 0 : 1;
+            List<OpenRouterService.ChatMsg> history = histories.get(side);
+            OpenRouterService.ChatMsg system = history.getFirst();
+            boolean reanchored = history.size() - 1 > ConversationWindow.DEFAULT_MAX_PRIOR_MESSAGES;
+            ConversationWindow.reanchor(history, ConversationWindow.DEFAULT_MAX_PRIOR_MESSAGES,
+                    ConversationWindow.DEFAULT_RETAINED_MESSAGES);
+            assertSame(system, history.getFirst());
+            assertTrue(history.size() - 1 <= 12, "system and current-turn suffix are outside the prior budget");
+            if (reanchored) {
+                boundaries++;
+                assertEquals(5, history.size(), "keep exactly two completed exchanges in this retry-free game");
+            }
+            List<String> legal = chess.getLegalMovesAsSan(board);
+            int moveNumber = chess.getMoveNumber(board);
+            String turn = promptService.buildTurnPrompt(pgn, board.getFen(), chess.toAsciiBoard(board),
+                    white ? "WHITE" : "BLACK", moveNumber, legal, white ? "Beta" : "Alpha", lastMove, "Nice try.", false);
+            assertTrue(turn.contains(pgn));
+            assertTrue(turn.contains(bookPgn), "book PGN is still available after every reanchor");
+            assertTrue(turn.contains(board.getFen()));
+            assertTrue(turn.contains(chess.toAsciiBoard(board)));
+            assertTrue(turn.contains(lastMove));
+            assertTrue(turn.contains("Nice try."));
+            for (String san : legal) {
+                assertTrue(turn.contains(san));
+            }
+            history.add(new OpenRouterService.ChatMsg("user", turn, true));
+            if (!reanchored && !previous.get(side).isEmpty()) {
+                assertEquals(previous.get(side), history.subList(0, previous.get(side).size()));
+            }
+            previous.set(side, List.copyOf(history));
+            String san = legal.get((ply * 7 + 3) % legal.size());
+            history.add(new OpenRouterService.ChatMsg("assistant", "{\"move\":\"" + san + "\"}"));
+            assertTrue(chess.validateAndApply(board, san).valid());
+            pgn += " " + (white ? moveNumber + ". " : "") + san;
+            lastMove = san;
+            plies++;
+        }
+        assertTrue(plies >= 40, "exercise a long game: " + plies);
+        assertTrue(boundaries >= 4, "exercise reanchoring for both sides: " + boundaries);
     }
 
     private OpenRouterService.ChatMsg system(String color, String opponent) {

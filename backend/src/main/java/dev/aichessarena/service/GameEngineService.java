@@ -23,6 +23,7 @@ import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -65,10 +66,13 @@ public class GameEngineService {
      */
     private final Map<UUID, GameLoop> runningGames = new ConcurrentHashMap<>();
 
+    /** Only human waits retain a conversation; active loops own theirs exclusively. Never persisted. */
+    private final Map<UUID, GameConversationService.ConversationState> humanConversations = new ConcurrentHashMap<>();
+
     static final class GameLoop {
         private volatile boolean stopRequested;
 
-        void requestStop() {
+        synchronized void requestStop() {
             stopRequested = true;
         }
 
@@ -103,6 +107,7 @@ public class GameEngineService {
             runningGames.remove(gameId, loop);
             throw e;
         }
+        humanConversations.remove(gameId);
         if (transactionRegistry != null && transactionRegistry.getTransactionStatus() == Status.STATUS_ACTIVE) {
             transactionRegistry.registerInterposedSynchronization(new Synchronization() {
                 @Override
@@ -133,7 +138,7 @@ public class GameEngineService {
         spawnGameLoop(gameId, loop, lastMoveSan, lastMessage);
     }
 
-    private void spawnGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
+    void spawnGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
         Thread.startVirtualThread(() -> {
             ManagedContext requestContext = Arc.container().requestContext();
             requestContext.activate();
@@ -143,6 +148,9 @@ public class GameEngineService {
                 LOG.errorf(e, "Game loop failed for game %s", gameId);
                 pauseAfterLoopFailure(gameId, e);
             } finally {
+                if (!loop.shouldContinue()) {
+                    humanConversations.remove(gameId);
+                }
                 runningGames.remove(gameId, loop);
                 // A pause may have flagged this loop just as it was finishing (e.g. returning for a human turn).
                 // Paired with the re-check in pauseGame, at least one side persists the pause.
@@ -165,6 +173,7 @@ public class GameEngineService {
     }
 
     private void pauseAfterLoopFailure(UUID gameId, Exception failure) {
+        humanConversations.remove(gameId);
         try {
             gameLifecycleService.pauseWithReason(gameId,
                     "The game loop stopped unexpectedly (" + failure.getClass().getSimpleName() + "); resume to retry");
@@ -178,6 +187,7 @@ public class GameEngineService {
      * (repeated requests are harmless); a game waiting for a human move is paused immediately.
      */
     public void pauseGame(UUID gameId) {
+        humanConversations.remove(gameId);
         GameLoop loop = runningGames.get(gameId);
         if (loop != null) {
             loop.requestStop();
@@ -209,6 +219,28 @@ public class GameEngineService {
         if (loop != null) {
             loop.requestStop();
         }
+        humanConversations.remove(gameId);
+    }
+
+    /** A fresh scalar read avoids retaining a game deleted or finished since this turn began. */
+    void retainHumanConversation(UUID gameId, GameLoop loop, GameConversationService.ConversationState conversation) {
+        boolean eligible = gameRepository.findConversationEligibleIds(Set.of(gameId)).contains(gameId);
+        synchronized (loop) {
+            // A commit can stop the loop after the eligibility read. Serialize the put with its stop flag.
+            if (eligible && loop.shouldContinue()) {
+                humanConversations.put(gameId, conversation);
+            }
+        }
+    }
+
+    /** Safety net for missed cleanup, using one query for the retained waits and none for an empty cache. */
+    void sweepRetainedConversations() {
+        var snapshot = Map.copyOf(humanConversations);
+        if (snapshot.isEmpty()) return;
+        Set<UUID> eligible = gameRepository.findConversationEligibleIds(snapshot.keySet());
+        snapshot.forEach((id, conversation) -> {
+            if (!eligible.contains(id)) humanConversations.remove(id, conversation);
+        });
     }
 
     /**
@@ -223,7 +255,10 @@ public class GameEngineService {
     }
 
     void runGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
-        GameConversationService.ConversationState conversation = gameConversationService.initializeConversation(gameId);
+        GameConversationService.ConversationState retained = humanConversations.remove(gameId);
+        GameConversationService.ConversationState conversation = retained == null
+                ? gameConversationService.initializeConversation(gameId)
+                : gameConversationService.continueConversation(gameId, retained);
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
         List<OpenRouterService.ChatMsg> blackHistory = conversation.blackHistory();
@@ -265,7 +300,11 @@ public class GameEngineService {
             List<OpenRouterService.ChatMsg> history = "WHITE".equals(sideToMove) ? whiteHistory : blackHistory;
 
             if (isHumanTurn(game, sideToMove)) {
+                retainHumanConversation(gameId, loop, conversation);
                 gameTurnService.broadcastHumanTurnReady(gameId, game.totalCostUsd, sideToMove);
+                if (!loop.shouldContinue()) {
+                    humanConversations.remove(gameId);
+                }
                 return;
             }
 
@@ -275,13 +314,8 @@ public class GameEngineService {
             Integer moveTimeoutSeconds = moveTimeoutSecondsFor(game);
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
-            // A changed chat mode or resignation setting applies from this turn on: rebuild both prompts so prompt,
-            // answer handling and the mode and prompt version recorded on the move agree.
-            if (GameConversationService.configuredChatMode(game) != conversation.chatMode()
-                    || GameConversationService.configuredResignationAllowed(game)
-                    != conversation.resignationAllowed()) {
-                conversation = gameConversationService.refreshSystemPrompts(game, conversation);
-            }
+            // Compare resolved hashes every turn, including templates and participant/shared instructions.
+            conversation = gameConversationService.refreshSystemPrompts(game, conversation);
             GameConversationService.PromptContext prompt =
                     "WHITE".equals(sideToMove) ? conversation.whitePrompt() : conversation.blackPrompt();
             GameTurnService.TurnResult turnResult = gameTurnService.playTurn(new GameTurnService.TurnRequest(
@@ -334,6 +368,7 @@ public class GameEngineService {
     }
 
     void endGame(UUID gameId, Board board) {
+        humanConversations.remove(gameId);
         ChessService.GameEndInfo endInfo = chessService.getGameEndInfo(board);
         gameLifecycleService.completeGame(gameId, endInfo);
     }

@@ -2,6 +2,7 @@ package dev.aichessarena.repository;
 
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.Tournament.TournamentStatus;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.panache.common.Parameters;
@@ -11,7 +12,9 @@ import jakarta.persistence.LockModeType;
 import jakarta.transaction.Status;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
@@ -23,6 +26,25 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
 
     public List<Game> findByTournamentId(UUID tournamentId) {
         return list("tournament.id = ?1", tournamentId);
+    }
+
+    /** IDs for post-delete cleanup, without attaching game entities that a bulk delete would leave stale. */
+    public List<UUID> findIdsByTournamentId(UUID tournamentId) {
+        return getEntityManager().createQuery("select g.id from Game g where g.tournament.id = :tournamentId", UUID.class)
+                .setParameter("tournamentId", tournamentId).getResultList();
+    }
+
+    /** Reads committed eligibility without reusing possibly stale game/tournament entities in a loop's session. */
+    public Set<UUID> findConversationEligibleIds(Set<UUID> gameIds) {
+        return getEntityManager().createQuery("""
+                select g.id from Game g left join g.tournament t
+                where g.id in :ids and g.status = :active
+                  and (t.id is null or t.status not in :terminal)
+                """, UUID.class)
+                .setParameter("ids", gameIds)
+                .setParameter("active", GameStatus.IN_PROGRESS)
+                .setParameter("terminal", List.of(TournamentStatus.COMPLETED, TournamentStatus.CANCELLED))
+                .getResultStream().collect(Collectors.toSet());
     }
 
     /**
