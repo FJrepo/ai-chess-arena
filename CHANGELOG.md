@@ -7,13 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-17
+
+Patch release: fairness and correctness fixes. A tournament can no longer forfeit a game without asking the model (zero attempts, or a cache-marker rejection followed by a timeout), viewers only see moves that were actually saved, and the scoresheet records the move the board played. In auto-run, Resume now queues while all slots are busy instead of failing. Back up the database before upgrading.
+
 ### Upgrade notes
 
+- Back up the database before upgrading (see `docs/deployment.md`, *Backups and rollback*); migration V23 runs automatically on start.
 - Flyway `V23__queued_game_resume.sql` adds nullable `games.resume_requested_at` with no backfill. Rebuild and recreate the backend and frontend to enable queued resumes.
-
-### Added
-
-### Changed
 
 ### Fixed
 
@@ -25,6 +26,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Viewers receive moves and accompanying chat only after the move is saved, with chat sent first. Chat events carry the stored message ID and move events carry their ply and game status revision.
 - New scoresheet and PGN entries use the board's move notation, including accurate check and mate markers. Attempt history keeps the model's original move, including check and mate suffixes extracted from plain text. A plain-text `O-O-O++` now plays queenside castling when legal.
 - Switching among many analytics filters now uses bounded cache memory.
+
+### Known issues
+
+- If a queued game ends (for example by forfeit) while the game view is waiting for its queue update, the view can show the result with an older board. Reload the page to see the final position. A redesign of live game updates is planned for v1.8.
 
 ## [1.7.0] - 2026-11-17
 
