@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Filter comparison and play quality by observed reasoning effort, see token-reporting coverage alongside ACPL, and identify effort in Elo rows.
+
 ### Changed
 
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.

@@ -1,5 +1,6 @@
 package dev.aichessarena.repository;
 
+import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,6 +24,30 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
     public List<Move> findByTournamentId(UUID tournamentId) {
         return list("game.tournament.id = ?1", tournamentId);
     }
+
+    /** Lightweight canonical plies for all-time reasoning coverage, without game or move payloads. */
+    public List<ReasoningPly> findFinishedReasoningPlies() {
+        return getEntityManager().createQuery("""
+                select m.game.id, m.color, m.modelId, m.moveNumber, m.retryCount, m.isBook, m.isOverride
+                from Move m where m.game.status in :terminal and m.game.completedAt is not null
+                and m.game.whiteModelId is not null and m.game.blackModelId is not null
+                and m.modelId is not null and m.isBook = false and m.isOverride = false
+                and not exists (
+                    select 1 from Move earlier where earlier.game = m.game and earlier.color = m.color
+                    and earlier.moveNumber = m.moveNumber and (
+                        earlier.createdAt < m.createdAt or (earlier.createdAt = m.createdAt and earlier.id < m.id)
+                    )
+                )
+                """, Object[].class)
+                .setParameter("terminal", List.of(GameStatus.COMPLETED, GameStatus.FORFEIT))
+                .getResultList().stream()
+                .map(row -> new ReasoningPly((UUID) row[0], (String) row[1], (String) row[2], (Integer) row[3],
+                        (Integer) row[4], (Boolean) row[5], (Boolean) row[6]))
+                .toList();
+    }
+
+    public record ReasoningPly(UUID gameId, String color, String modelId, int moveNumber, int retryCount,
+                               boolean book, boolean override) {}
 
     /** Moves of the games in an analytics window (see {@link GameRepository#findInWindow}). */
     public List<Move> findInWindow(LocalDateTime cutoff, UUID tournamentId) {

@@ -52,9 +52,10 @@ public class AnalyticsResource {
     public Response getComparison(
             @QueryParam("days") @DefaultValue("30") int days,
             @QueryParam("tournamentId") UUID tournamentId,
-            @QueryParam("minGames") @DefaultValue("0") int minGames
+            @QueryParam("minGames") @DefaultValue("0") int minGames,
+            @QueryParam("reasoningEffort") String reasoningEffort
     ) {
-        return Response.ok(analyticsService.getComparison(days, tournamentId, minGames)).build();
+        return Response.ok(analyticsService.getComparison(days, tournamentId, minGames, reasoningEffort)).build();
     }
 
     @GET

@@ -27,10 +27,12 @@ import dev.aichessarena.repository.MoveAttemptRepository.RejectedAttemptCost;
 import dev.aichessarena.repository.MoveAttemptRepository.ResignationTurnAttempt;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
+import dev.aichessarena.service.ReasoningAnalytics.Side;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -41,6 +43,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 @ApplicationScoped
 public class AnalyticsService {
@@ -195,10 +198,16 @@ public class AnalyticsService {
     }
 
     public AnalyticsModelComparisonDto getComparison(int requestedDays, UUID tournamentId, int requestedMinGames) {
+        return getComparison(requestedDays, tournamentId, requestedMinGames, null);
+    }
+
+    public AnalyticsModelComparisonDto getComparison(int requestedDays, UUID tournamentId, int requestedMinGames,
+                                                     String requestedEffort) {
+        String effort = ReasoningAnalytics.validateFilter(requestedEffort);
         int days = normalizeDays(requestedDays);
         int minGames = normalizeMinGames(requestedMinGames);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return comparisonCache.get(key, () -> buildComparison(days, tournamentId, minGames));
+        return comparisonCache.get(key + "|" + effort, () -> buildComparison(days, tournamentId, minGames, effort));
     }
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
@@ -324,7 +333,7 @@ public class AnalyticsService {
             registerGame(byModel, game.blackModelId, game, false);
         }
 
-        registerModelMoves(scope, plies, id -> byModel.computeIfAbsent(id, ignored -> new ReliabilityAccumulator()));
+        registerModelMoves(scope, plies, id -> byModel.computeIfAbsent(id, ignored -> new ReliabilityAccumulator()), side -> true);
         resignedTurnFailures(scope.resignationAttempts()).forEach((modelId, failures) -> {
             ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
             accumulator.resignedTurnsWithFailures += failures.turns();
@@ -393,29 +402,48 @@ public class AnalyticsService {
         return new ModelReliabilityResponseDto(days, tournamentId, minGames, rows);
     }
 
-    private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames) {
+    private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames, String effort) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
         List<Game> terminalGames = scope.games();
         List<Move> plies = CanonicalPlies.of(scope.moves());
 
+        Map<Side, ReasoningAnalytics.Sample> samples = ReasoningAnalytics.bySide(
+                moveAttemptRepository.findReasoningAttempts(LocalDateTime.now().minusDays(days), tournamentId), plies.stream().map(ReasoningAnalytics::modelPly).toList());
         Map<String, ComparisonAccumulator> byModel = new HashMap<>();
+        Set<Side> selectedSides = new HashSet<>();
+        long gamesCount = 0;
         for (Game game : terminalGames) {
-            registerComparisonGame(byModel, game.whiteModelId, game, true);
-            registerComparisonGame(byModel, game.blackModelId, game, false);
+            boolean counted = false;
+            for (boolean white : new boolean[] {true, false}) {
+                String model = modelSide(game, white);
+                Side side = Side.of(game.id, white ? "WHITE" : "BLACK", model);
+                ReasoningAnalytics.Sample sample = samples.get(side);
+                if (model == null || (effort != null && !effort.equals(ReasoningAnalytics.effortOf(sample)))) continue;
+                selectedSides.add(side);
+                registerComparisonGame(byModel, model, game, white);
+                byModel.get(model).reasoning.include(sample);
+                counted = true;
+            }
+            if (effort == null || counted) gamesCount++;
         }
+        Predicate<Side> selected = effort == null ? side -> true : selectedSides::contains;
 
-        registerModelMoves(scope, plies, id -> byModel.computeIfAbsent(id, ignored -> new ComparisonAccumulator()));
-        registerMoveQuality(byModel, plies);
-        registerConversion(byModel, terminalGames, plies);
-        registerTalkativeness(byModel, plies, scope.messages());
-        registerResignations(byModel, terminalGames, plies);
+        List<Move> selectedPlies = plies.stream().filter(move -> selected.test(sideOf(move))).toList();
+        registerModelMoves(scope, selectedPlies, id -> byModel.computeIfAbsent(id, ignored -> new ComparisonAccumulator()),
+                selected);
+        registerMoveQuality(byModel, plies, selected);
+        registerConversion(byModel, terminalGames, plies, selected);
+        registerTalkativeness(byModel, selectedPlies, scope.messages());
+        registerResignations(byModel, terminalGames, plies, selected);
         for (AttemptUsage usage : scope.attemptUsage()) {
-            if (hasTrackedModelId(usage.modelId())) {
+            if (hasTrackedModelId(usage.modelId()) && selected.test(Side.of(usage.gameId(), usage.color(), usage.modelId()))) {
                 byModel.computeIfAbsent(normalizeModelId(usage.modelId()), ignored -> new ComparisonAccumulator())
                         .cacheUsage.add(usage);
             }
         }
-        resignedTurnFailures(scope.resignationAttempts()).forEach((modelId, failures) -> {
+        resignedTurnFailures(scope.resignationAttempts().stream()
+                .filter(attempt -> selected.test(Side.of(attempt.gameId(), attempt.color(), attempt.modelId())))
+                .toList()).forEach((modelId, failures) -> {
             ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
             accumulator.resignedTurnsWithFailures += failures.turns();
             accumulator.resignedTurnFailures += failures.failures();
@@ -516,7 +544,8 @@ public class AnalyticsService {
                             accumulator.evaluatedGames == 0 ? null : accumulator.converted,
                             accumulator.evaluatedGames == 0 ? null : accumulator.adjudicatedWins,
                             accumulator.evaluatedGames == 0 ? null : accumulator.thrownAway,
-                            accumulator.analyzedMoves == 0 ? null : accumulator.missedMates)
+                            accumulator.analyzedMoves == 0 ? null : accumulator.missedMates),
+                    accumulator.reasoning.toDto()
             ));
         }
 
@@ -526,12 +555,12 @@ public class AnalyticsService {
                         .thenComparing(Comparator.comparingLong(AnalyticsModelComparisonRowDto::gamesPlayed).reversed())
         );
 
-        return new AnalyticsModelComparisonDto(days, tournamentId, minGames, terminalGames.size(), rows);
+        return new AnalyticsModelComparisonDto(days, tournamentId, minGames, gamesCount, rows);
     }
 
     /** Score each played ply once, but count every priced answer in the selected games. */
     private void registerModelMoves(AnalyticsWindowLoader.AnalyticsScope scope, List<Move> plies,
-                                    Function<String, ModelMoveAccumulator> forModel) {
+                                    Function<String, ModelMoveAccumulator> forModel, Predicate<Side> selected) {
         for (Move move : plies) {
             if (move.isBook || !hasTrackedModelId(move.modelId)) continue;
             ModelMoveAccumulator accumulator = forModel.apply(normalizeModelId(move.modelId));
@@ -545,7 +574,7 @@ public class AnalyticsService {
             }
         }
         for (Move move : scope.moves()) {
-            if (move.isBook || !hasTrackedModelId(move.modelId)) continue;
+            if (move.isBook || !hasTrackedModelId(move.modelId) || !selected.test(sideOf(move))) continue;
             ModelMoveAccumulator accumulator = forModel.apply(normalizeModelId(move.modelId));
             if (move.costUsd == null) {
                 accumulator.missingMovePrice = true;
@@ -554,7 +583,10 @@ public class AnalyticsService {
                 accumulator.hasReportedCost = true;
             }
         }
-        rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
+        var selectedCosts = scope.rejectedAttemptCosts().stream()
+                .filter(cost -> selected.test(Side.of(cost.gameId(), cost.color(), cost.modelId())))
+                .toList();
+        rejectedCostByModel(selectedCosts).forEach((modelId, cost) -> {
             ModelMoveAccumulator accumulator = forModel.apply(modelId);
             accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
             accumulator.hasReportedCost = true;
@@ -640,7 +672,8 @@ public class AnalyticsService {
      * Adds each model's judged moves (see {@link MoveQualityClassifier}). Quality depends on the move before, so
      * every game's moves are put in play order first; only moves with a model id count (not humans or overrides).
      */
-    private void registerMoveQuality(Map<String, ComparisonAccumulator> byModel, List<Move> moves) {
+    private void registerMoveQuality(Map<String, ComparisonAccumulator> byModel, List<Move> moves,
+                                     Predicate<Side> selected) {
         Map<UUID, List<Move>> movesByGame = new HashMap<>();
         for (Move move : moves) {
             movesByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(move);
@@ -651,7 +684,8 @@ public class AnalyticsService {
             for (int i = 0; i < gameMoves.size(); i++) {
                 Move move = gameMoves.get(i);
                 MoveQuality quality = qualities.get(i);
-                if (!MoveQualityClassifier.counts(quality) || !hasTrackedModelId(move.modelId)) {
+                if (!MoveQualityClassifier.counts(quality) || !hasTrackedModelId(move.modelId)
+                        || !selected.test(sideOf(move))) {
                     continue;
                 }
                 ComparisonAccumulator accumulator =
@@ -680,7 +714,8 @@ public class AnalyticsService {
      * Each model side/game counts once if any evaluated position (including the opponent's moves, overrides and
      * forced moves) reached 90% winning chances. Missing evaluations give no evidence, never an assumed zero.
      */
-    private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> plies) {
+    private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> plies,
+                                    Predicate<Side> selected) {
         Map<UUID, List<MoveQualityClassifier.Score>> scoresByGame = new HashMap<>();
         for (Move move : plies) {
             if (move.isBook) {
@@ -699,7 +734,7 @@ public class AnalyticsService {
             }
             for (boolean white : new boolean[] {true, false}) {
                 String model = modelSide(game, white);
-                if (model == null) {
+                if (model == null || !selected.test(Side.of(game.id, white ? "WHITE" : "BLACK", model))) {
                     continue;
                 }
                 ComparisonAccumulator accumulator = byModel.computeIfAbsent(model, ignored -> new ComparisonAccumulator());
@@ -765,7 +800,8 @@ public class AnalyticsService {
      * least 35% ("resigned while not losing"); for the model on the other side, a win by resignation. Human sides
      * are skipped.
      */
-    private void registerResignations(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
+    private void registerResignations(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves,
+                                      Predicate<Side> selected) {
         Map<UUID, List<Move>> movesByGame = new HashMap<>();
         for (Move move : moves) {
             if (move.game != null) {
@@ -779,7 +815,8 @@ public class AnalyticsService {
             }
             boolean whiteResigned = "WHITE".equals(color);
             String resignedModel = modelSide(game, whiteResigned);
-            if (resignedModel != null) {
+            if (resignedModel != null
+                    && selected.test(Side.of(game.id, color, resignedModel))) {
                 List<Move> gameMoves = new ArrayList<>(movesByGame.getOrDefault(game.id, List.of()));
                 gameMoves.sort(MoveQualityClassifier.PLAY_ORDER);
                 Double winChance = ResignationAnalysis.winChanceAtResignation(gameMoves, color);
@@ -794,7 +831,8 @@ public class AnalyticsService {
                 }
             }
             String winnerModel = modelSide(game, !whiteResigned);
-            if (winnerModel != null) {
+            if (winnerModel != null
+                    && selected.test(Side.of(game.id, whiteResigned ? "BLACK" : "WHITE", winnerModel))) {
                 byModel.computeIfAbsent(winnerModel, ignored -> new ComparisonAccumulator()).wonByResignation++;
             }
         }
@@ -870,6 +908,10 @@ public class AnalyticsService {
             return null;
         }
         return usage.stream().mapToLong(attempt -> counter.apply(attempt)).sum();
+    }
+
+    private static Side sideOf(Move move) {
+        return Side.of(move.game == null ? null : move.game.id, move.color, move.modelId);
     }
 
     private record PlyKey(UUID gameId, int moveNumber, String color) {
@@ -1027,6 +1069,7 @@ public class AnalyticsService {
         private long adjudicatedWins;
         private long thrownAway;
         private long missedMates;
+        private final ReasoningAnalytics.Sample reasoning = new ReasoningAnalytics.Sample();
         private final List<AttemptUsage> cacheUsage = new ArrayList<>();
     }
 

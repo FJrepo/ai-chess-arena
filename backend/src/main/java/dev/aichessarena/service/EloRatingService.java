@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import dev.aichessarena.dto.LeaderboardDto;
 import dev.aichessarena.dto.LeaderboardDto.HistoryPoint;
 import dev.aichessarena.entity.Game.GameResult;
+import dev.aichessarena.service.ReasoningAnalytics.Side;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
@@ -26,6 +27,11 @@ public class EloRatingService {
     }
 
     public LeaderboardDto calculate(List<RatedGame> games, boolean includeForfeits) {
+        return calculate(games, includeForfeits, Map.of());
+    }
+
+    LeaderboardDto calculate(List<RatedGame> games, boolean includeForfeits,
+                             Map<Side, ReasoningAnalytics.Sample> reasoning) {
         Map<String, Rating> ratings = new HashMap<>();
         Set<UUID> seen = new HashSet<>();
         List<RatedGame> ordered = games.stream()
@@ -52,6 +58,8 @@ public class EloRatingService {
             black.value += blackDelta;
             white.recordResult(score, game.result() == GameResult.WHITE_FORFEIT, game.completedAt());
             black.recordResult(1.0 - score, game.result() == GameResult.BLACK_FORFEIT, game.completedAt());
+            white.reasoning.include(reasoning.get(Side.of(game.id(), "WHITE", game.whiteModelId())));
+            black.reasoning.include(reasoning.get(Side.of(game.id(), "BLACK", game.blackModelId())));
             white.recordHistory(game);
             if (white != black) {
                 black.recordHistory(game);
@@ -75,6 +83,7 @@ public class EloRatingService {
 
     private static final class Rating {
         private final String modelId;
+        private final ReasoningAnalytics.Sample reasoning = new ReasoningAnalytics.Sample();
         private double value = 1500;
         private long games;
         private long wins;
@@ -113,7 +122,7 @@ public class EloRatingService {
         private LeaderboardDto.Model toDto() {
             String displayName = modelId.substring(modelId.lastIndexOf('/') + 1);
             return new LeaderboardDto.Model(modelId, displayName, (int) Math.round(value), games, wins, draws,
-                    losses, forfeits, lastPlayed, games < 10, modelId.startsWith("~"), List.copyOf(history));
+                    losses, forfeits, lastPlayed, games < 10, modelId.startsWith("~"), List.copyOf(history), reasoning.effort());
         }
     }
 }

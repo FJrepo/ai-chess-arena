@@ -3,6 +3,7 @@ package dev.aichessarena.repository;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.ReasoningEffort;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -16,7 +17,7 @@ import java.util.UUID;
 @ApplicationScoped
 public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt, UUID> {
 
-    private static final String REJECTED_COST_SELECT = "select a.game.id, a.modelId, sum(a.costUsd) "
+    private static final String REJECTED_COST_SELECT = "select a.game.id, a.modelId, sum(a.costUsd), a.color "
             + "from MoveAttempt a where a.outcome <> :accepted and a.costUsd is not null and a.modelId is not null";
 
     /**
@@ -27,10 +28,43 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
         return list("game.id = ?1 order by moveNumber, color desc, createdAt, attemptNumber", gameId);
     }
 
+    /** Request telemetry only, without raw responses. The caller selects eligible finished model sides. */
+    public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId) {
+        String condition = cutoff == null ? "" : " and " + GameRepository.windowPredicate("a.game")
+                + GameRepository.tournamentPredicate("a.game", tournamentId);
+        var query = getEntityManager().createQuery(
+                "select a.game.id, a.color, a.modelId, a.moveNumber, a.attemptNumber, a.outcome, "
+                        + "a.reasoningEffort, a.effectiveMaxOutputTokens, a.reasoningTokens, "
+                        + "case when a.rawResponse is not null or a.promptTokens is not null then true else false end "
+                        + "from MoveAttempt a where a.modelId is not null and a.game.status in :terminal" + condition
+                        + " order by a.createdAt, a.id", Object[].class);
+        query.setParameter("terminal", List.of(Game.GameStatus.COMPLETED, Game.GameStatus.FORFEIT));
+        if (cutoff != null) {
+            GameRepository.windowParameters(cutoff, tournamentId).map().forEach(query::setParameter);
+        }
+        return query.getResultList().stream()
+                .map(row -> new ReasoningAttempt((UUID) row[0], (String) row[1], (String) row[2],
+                        (Integer) row[3], (Integer) row[4], (Outcome) row[5], (ReasoningEffort) row[6],
+                        (Integer) row[7], (Integer) row[8], (Boolean) row[9]))
+                .toList();
+    }
+
+    public record ReasoningAttempt(UUID gameId, String color, String modelId, int moveNumber, int attemptNumber,
+                                   Outcome outcome, ReasoningEffort effort, Integer requestTokenLimit,
+                                   Integer reasoningTokens, boolean hasResponse) {
+        public boolean responseEvidence() {
+            // Some provider and deadline failures happen locally, before a request can be transmitted.
+            return hasResponse || switch (outcome) {
+                case PROVIDER_RETRYABLE, PROVIDER_FATAL, TIMEOUT -> false;
+                default -> true;
+            };
+        }
+    }
+
     /** Lightweight usage projection for every outcome, without loading raw responses. */
     public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
         TypedQuery<Object[]> query = getEntityManager().createQuery(
-                "select a.game.id, a.modelId, a.promptTokens, a.cachedPromptTokens, a.cacheWriteTokens "
+                "select a.game.id, a.modelId, a.promptTokens, a.cachedPromptTokens, a.cacheWriteTokens, a.color "
                         + "from MoveAttempt a where (a.promptTokens is not null or a.completionTokens is not null "
                         + "or a.costUsd is not null or a.cachedPromptTokens is not null or a.cacheWriteTokens is not null) "
                         + "and " + GameRepository.windowPredicate("a.game")
@@ -41,12 +75,12 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
         }
         return query.getResultList().stream()
                 .map(row -> new AttemptUsage((UUID) row[0], (String) row[1], (Integer) row[2],
-                        (Integer) row[3], (Integer) row[4]))
+                        (Integer) row[3], (Integer) row[4], (String) row[5]))
                 .toList();
     }
 
     public record AttemptUsage(UUID gameId, String modelId, Integer promptTokens,
-                               Integer cachedPromptTokens, Integer cacheWriteTokens) {
+                               Integer cachedPromptTokens, Integer cacheWriteTokens, String color) {
     }
 
     /**
@@ -68,7 +102,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
 
     private List<RejectedAttemptCost> rejectedCosts(String condition, Parameters parameters) {
         TypedQuery<Object[]> query = getEntityManager().createQuery(
-                REJECTED_COST_SELECT + condition + " group by a.game.id, a.modelId",
+                REJECTED_COST_SELECT + condition + " group by a.game.id, a.modelId, a.color",
                 Object[].class
         );
         query.setParameter("accepted", Outcome.ACCEPTED);
@@ -76,7 +110,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
             query.setParameter(parameter.getKey(), parameter.getValue());
         }
         return query.getResultList().stream()
-                .map(row -> new RejectedAttemptCost((UUID) row[0], (String) row[1], (BigDecimal) row[2]))
+                .map(row -> new RejectedAttemptCost((UUID) row[0], (String) row[1], (BigDecimal) row[2], (String) row[3]))
                 .toList();
     }
 
@@ -116,6 +150,9 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
     }
 
     /** Summed cost of one model's rejected attempts in one game. */
-    public record RejectedAttemptCost(UUID gameId, String modelId, BigDecimal costUsd) {
+    public record RejectedAttemptCost(UUID gameId, String modelId, BigDecimal costUsd, String color) {
+        public RejectedAttemptCost(UUID gameId, String modelId, BigDecimal costUsd) {
+            this(gameId, modelId, costUsd, null);
+        }
     }
 }

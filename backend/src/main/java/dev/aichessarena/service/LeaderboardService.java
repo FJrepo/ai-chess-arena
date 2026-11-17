@@ -4,6 +4,8 @@ import dev.aichessarena.dto.LeaderboardDto;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.LeaderboardRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.EloRatingService.RatedGame;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -17,13 +19,21 @@ public class LeaderboardService {
     @Inject
     EloRatingService ratings;
 
+    @Inject
+    MoveAttemptRepository moveAttemptRepository;
+
+    @Inject
+    MoveRepository moveRepository;
+
     /** Recompute per request so finishing, deleting or correcting games cannot leave stale ratings. */
     public LeaderboardDto getLeaderboard(boolean includeForfeits) {
         return ratings.calculate(repository.findFinishedModelGames().stream()
                 .filter(LeaderboardService::isRatedGame)
                 .map(game -> new RatedGame(game.id, game.completedAt, game.whiteModelId.trim(),
                         game.blackModelId.trim(), game.result))
-                .toList(), includeForfeits);
+                .toList(), includeForfeits, ReasoningAnalytics.bySide(
+                        moveAttemptRepository.findReasoningAttempts(null, null),
+                        moveRepository.findFinishedReasoningPlies()));
     }
 
     static boolean isRatedGame(Game game) {

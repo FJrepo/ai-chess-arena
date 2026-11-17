@@ -78,6 +78,57 @@ describe('AnalyticsDashboard', () => {
     expect(harness.routeNativeElement!.querySelector('.conversion-table')).not.toBeNull();
   });
 
+  it('filters comparison by observed effort and displays reported zero next to ACPL', async () => {
+    const { harness, component, api } = await renderDashboard('?tab=quality');
+    api.getAnalyticsComparison.mockReturnValueOnce(
+      of({
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        gamesCount: 1,
+        models: [
+          comparisonRow('model.sample', {
+            analyzedMoves: 9,
+            averageCentipawnLoss: 38,
+            reasoning: { effort: 'medium', averageTokens: 0, reportedMoves: 8, modelMoves: 10 },
+          }),
+          comparisonRow('model.unjudged', {
+            reasoning: { effort: 'medium', averageTokens: 25, reportedMoves: 1, modelMoves: 1 },
+          }),
+        ],
+      }),
+    );
+    component.selectedReasoningEffort = 'medium';
+    component.onCommonFiltersChanged();
+    harness.detectChanges();
+
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith({
+      days: 30,
+      tournamentId: null,
+      minGames: 0,
+      reasoningEffort: 'medium',
+    });
+    expect(api.getAnalyticsHealth).toHaveBeenLastCalledWith({ days: 30, tournamentId: null });
+    expect(api.getAnalyticsReliability).toHaveBeenLastCalledWith({
+      days: 30,
+      tournamentId: null,
+      minGames: 0,
+    });
+    const quality = harness.routeNativeElement!.querySelector('.quality-table')!;
+    const columns = Array.from(quality.querySelectorAll('th')).map((cell) =>
+      cell.textContent?.trim(),
+    );
+    expect(columns.slice(1, 3)).toEqual(['ACPL', 'Reasoning tokens / accepted move']);
+    const unjudged = quality.querySelector('tbody tr:nth-child(2)');
+    expect(unjudged?.querySelector('td:nth-child(2)')?.textContent).toBe('n/a');
+    expect(unjudged?.querySelector('td:nth-child(3)')?.textContent).toContain('25');
+    expect(quality.querySelector('tbody td')?.textContent).toContain('Medium');
+    expect(quality.querySelector('tbody td:nth-child(3)')?.textContent).toContain('0');
+    expect(quality.querySelector('tbody td:nth-child(3) .table-note')?.textContent).toBe(
+      '8/10 reported',
+    );
+  });
+
   it('updates the tab query parameter with replaceUrl and keeps other parameters', async () => {
     const { harness, api } = await renderDashboard('?tab=quality&scope=sample');
     const router = TestBed.inject(Router);

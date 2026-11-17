@@ -42,6 +42,22 @@ export function reasoningEffortLabel(effort: string | null | undefined): string 
   return isReasoningEffort(effort) ? LABELS[effort] : effort;
 }
 
+export type ObservedReasoningEffort = ReasoningEffort | 'default' | 'unknown' | 'mixed';
+
+export function observedReasoningEffortLabel(effort: ObservedReasoningEffort | undefined): string {
+  switch (effort) {
+    case 'mixed':
+      return 'Mixed effort';
+    case 'default':
+      return 'No explicit effort';
+    case 'unknown':
+    case undefined:
+      return 'Effort unknown';
+    default:
+      return reasoningEffortLabel(effort);
+  }
+}
+
 /**
  * The levels a model offers, in order from least to most; empty for a model without reasoning control (no
  * reasoning, or a catalog entry without effort levels). Unknown level names are left out.

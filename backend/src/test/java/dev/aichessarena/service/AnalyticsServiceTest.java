@@ -1167,7 +1167,7 @@ class AnalyticsServiceTest {
 
     private MoveAttemptRepository.AttemptUsage usage(Game game, String model, Integer prompt,
                                                     Integer cached, Integer writes) {
-        return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes);
+        return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes, null);
     }
 
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
@@ -1339,6 +1339,11 @@ class AnalyticsServiceTest {
 
         private FakeMoveAttemptRepository(List<RejectedAttemptCost> costs) {
             this.costs = costs;
+        }
+
+        @Override
+        public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId) {
+            return List.of();
         }
 
         @Override

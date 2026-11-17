@@ -80,6 +80,7 @@
                         <span>{{ row.displayName }}</span>
                       </div>
                       <span class="model-id">{{ row.modelId }}</span>
+                      <span class="model-id">{{ effortLabel(row.reasoningEffort) }}</span>
                       <div class="badges">
                         @if (row.provisional) {
                           <span class="badge provisional" title="Fewer than 10 rated games"
