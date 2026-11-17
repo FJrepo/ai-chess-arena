@@ -999,7 +999,7 @@ Your opponent is %s (%s).`;
 
     const concurrency = this.rematchConcurrency();
     const details = {
-      name: this.name,
+      name: this.sourceId() ? this.name.trim() : this.name,
       sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
       // 0 means no time limit per move.
       moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : 0,

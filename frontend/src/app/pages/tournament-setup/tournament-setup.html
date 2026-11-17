@@ -854,7 +854,10 @@
                 <button mat-button type="button" (click)="loadModels()">Retry model catalog</button>
               </p>
             }
-            @if (createError()?.startsWith('Model is not allowed by backend policy:')) {
+            @if (
+              unavailableModels().length ||
+              createError()?.startsWith('Model is not allowed by backend policy:')
+            ) {
               <button mat-button type="button" (click)="loadModels()" [disabled]="modelsLoading()">
                 Refresh model catalog
               </button>

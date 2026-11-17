@@ -117,11 +117,7 @@
           <div class="run-controls">
             <mat-form-field appearance="outline">
               <mat-label>Concurrent games</mat-label>
-              <mat-select
-                [(ngModel)]="runConcurrency"
-                (ngModelChange)="runDraftDirty = true"
-                [disabled]="!canRun()"
-              >
+              <mat-select [(ngModel)]="runConcurrency" [disabled]="!canRun()">
                 @for (n of concurrencyOptions; track n) {
                   <mat-option [value]="n">{{ n }}</mat-option>
                 }
@@ -136,7 +132,6 @@
                 [attr.aria-invalid]="!validRunBudget"
                 [attr.aria-describedby]="!validRunBudget ? 'run-budget-error' : null"
                 [(ngModel)]="runBudget"
-                (ngModelChange)="runDraftDirty = true"
                 [disabled]="!canRun()"
               />
             </mat-form-field>

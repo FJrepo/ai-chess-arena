@@ -172,6 +172,29 @@ describe('TournamentSetup', () => {
     expect(setup.readiness().canCreate).toBe(true);
   });
 
+  it('refreshes a missing model without clearing the draft and submits the trimmed name', async () => {
+    const api = createApiService();
+    const getModels = vi
+      .fn()
+      .mockReturnValueOnce(of({ data: [catalogModel('b/two', 'Two')] }))
+      .mockReturnValueOnce(of({ data: [catalogModel('a/one', 'One')] }));
+    Object.assign(api, { getTournament: () => of(rematchSource()), getModels });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    const normalizedName = 'A'.repeat(255);
+    setup.name = '\u00a0' + normalizedName;
+    const refresh = (
+      Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]
+    ).find((button) => button.textContent.trim() === 'Refresh model catalog');
+    expect(refresh).toBeDefined();
+    refresh?.click();
+    fixture.detectChanges();
+    expect(setup.name).toBe('\u00a0' + normalizedName);
+    expect(setup.unavailableModels()).toHaveLength(0);
+    setup.create();
+    expect(api.createTournamentPayload?.['name']).toBe(normalizedName);
+  });
+
   it('disowns creation when the same setup route opens a different source', async () => {
     const api = createApiService();
     const source = rematchSource();
