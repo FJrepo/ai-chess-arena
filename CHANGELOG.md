@@ -8,6 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- Cross-tournament Leaderboard with all-time Elo per OpenRouter model id, provisional and moving-alias badges, bounded rating-history sparklines and an include-forfeits toggle. Ratings replay finished model-vs-model outcomes on each request through `GET /api/analytics/leaderboard`; no migration or backfill.
 - GitHub Release setup assets from v1.6.0: `docker-compose.yml` defaults both application images to the release's version tag, alongside `env.example`. Both assets are attached when the immutable release is created and linked under Verification / Assets in its notes.
 - Python 3.12 script tests in reusable CI, gating pull requests and releases with the same dependency installation and unittest discovery.
 

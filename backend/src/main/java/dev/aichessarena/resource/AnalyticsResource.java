@@ -2,6 +2,7 @@ package dev.aichessarena.resource;
 
 import dev.aichessarena.dto.ModelReliabilityDetailDto;
 import dev.aichessarena.service.AnalyticsService;
+import dev.aichessarena.service.LeaderboardService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
@@ -19,6 +20,15 @@ public class AnalyticsResource {
 
     @Inject
     AnalyticsService analyticsService;
+
+    @Inject
+    LeaderboardService leaderboardService;
+
+    @GET
+    @Path("/leaderboard")
+    public Response getLeaderboard(@QueryParam("includeForfeits") @DefaultValue("true") boolean includeForfeits) {
+        return Response.ok(leaderboardService.getLeaderboard(includeForfeits)).build();
+    }
 
     @GET
     @Path("/health")

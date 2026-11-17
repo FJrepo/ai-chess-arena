@@ -18,6 +18,25 @@ describe('ApiService bracket draw', () => {
 
   afterEach(() => http.verify());
 
+  it.each([true, false])('loads leaderboard with includeForfeits=%s', (includeForfeits) => {
+    const received = vi.fn();
+    api.getLeaderboard(includeForfeits).subscribe(received);
+    const request = http.expectOne(`/api/analytics/leaderboard?includeForfeits=${includeForfeits}`);
+    expect(request.request.method).toBe('GET');
+    const response = { includeForfeits, gamesCount: 0, models: [] };
+    request.flush(response);
+    expect(received).toHaveBeenCalledWith(response);
+  });
+
+  it('includes forfeits by default on the leaderboard', () => {
+    api.getLeaderboard().subscribe();
+    http.expectOne('/api/analytics/leaderboard?includeForfeits=true').flush({
+      includeForfeits: true,
+      gamesCount: 0,
+      models: [],
+    });
+  });
+
   it('loads the authored opening catalog', () => {
     const lines = [
       {
