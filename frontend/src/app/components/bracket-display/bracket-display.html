@@ -61,6 +61,11 @@
                       </span>
                     }
                   </div>
+                  @if (series.currentGame.openingName) {
+                    <p class="series-context opening-label">
+                      {{ series.currentGame.openingEco }} · {{ series.currentGame.openingName }}
+                    </p>
+                  }
                   <div class="players-block">
                     <div
                       class="player white"

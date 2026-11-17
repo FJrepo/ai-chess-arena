@@ -64,6 +64,7 @@ public class GameTurnService {
     MoveAttemptService moveAttemptService;
 
     public TurnResult playTurn(TurnRequest request) {
+        boolean mayResign = mayResign(request);
         String turnPrompt = promptService.buildTurnPrompt(
                 request.pgn(),
                 request.fen(),
@@ -76,7 +77,7 @@ public class GameTurnService {
                 request.lastMessage(),
                 request.isFirstMove(),
                 request.chatMode(),
-                mayResign(request)
+                mayResign
         );
 
         int turnStart = request.history().size();
@@ -225,7 +226,7 @@ public class GameTurnService {
             }
 
             if (parseResult.resign()) {
-                if (mayResign(request)) {
+                if (mayResign) {
                     // Resign wins: a move sent along is ignored.
                     return resign(request, effort, attempt, parseResult, llmResponse);
                 }
@@ -330,9 +331,11 @@ public class GameTurnService {
         return TurnResult.terminal();
     }
 
-    /** Whether this side may resign now: offered by its prompt and at least its {@code MIN_RESIGNATION_MOVE}th move. */
-    static boolean mayResign(TurnRequest request) {
-        return request.resignationAllowed() && request.moveNumber() >= Tournament.MIN_RESIGNATION_MOVE;
+    /** Whether resignation is offered and the current move is at least this side's tenth non-book move. */
+    boolean mayResign(TurnRequest request) {
+        return request.resignationAllowed()
+                && 1 + moveRepository.countNonBookByGameIdAndColor(request.gameId(), request.sideToMove())
+                >= Tournament.MIN_RESIGNATION_MOVE;
     }
 
     /**
@@ -526,7 +529,7 @@ public class GameTurnService {
             // The tournament's configured chat mode, shown live in the game view.
             ChatMode tournamentChatMode,
             // Whether this side's prompt offers resignation (see GameConversationService.PromptContext); it may resign
-            // from move Tournament.MIN_RESIGNATION_MOVE on.
+            // from its own non-book move Tournament.MIN_RESIGNATION_MOVE on.
             boolean resignationAllowed,
             // The reasoning effort this side asks for (participant override, else the tournament's); null for the
             // model default. playTurn maps it to a level the model supports before sending it.

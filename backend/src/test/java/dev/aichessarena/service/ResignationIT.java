@@ -197,7 +197,7 @@ class ResignationIT {
         assertEquals(ScriptedModel.SCRIPT.size(), model.calls.size(), String.join("\n----\n", model.lastMessages()));
         // Not offered: the retry explains it. Offered but before move 10: the retry says so.
         assertTrue(model.calls.get(2).getLast().content().contains("Resigning is not allowed in this game"));
-        assertTrue(model.calls.get(9).getLast().content().contains("Resigning is not allowed before move 10"));
+        assertTrue(model.calls.get(9).getLast().content().contains("Resigning is not allowed before your own move 10 (book moves do not count)"));
         // The setting changed during call 6 (White's 3rd move) applies from Black's 3rd move on.
         assertFalse(model.calls.get(5).getFirst().content().contains("9. Resigning is allowed"));
         assertTrue(model.calls.get(6).getFirst().content().contains("9. Resigning is allowed"));

@@ -627,7 +627,7 @@ class GameTurnServiceTest {
         Fixture fixture = new Fixture(resigning);
         List<OpenRouterService.ChatMsg> history = new ArrayList<>();
 
-        GameTurnService.TurnRequest request = resignationRequest(history, 3, 10, true, ChatMode.OPTIONAL);
+        GameTurnService.TurnRequest request = fixture.resignationRequest(history, 3, 10, true, ChatMode.OPTIONAL);
         GameTurnService.TurnResult result = fixture.service.playTurn(request);
 
         assertTrue(result.isTerminal());
@@ -655,7 +655,7 @@ class GameTurnServiceTest {
     void lastWordsAreDroppedWithChatOff() {
         Fixture fixture = new Fixture(answer("{\"resign\":true,\"message\":\"Bye.\"}"));
 
-        fixture.service.playTurn(resignationRequest(new ArrayList<>(), 3, 12, true, ChatMode.OFF));
+        fixture.service.playTurn(fixture.resignationRequest(new ArrayList<>(), 3, 12, true, ChatMode.OFF));
 
         assertNull(fixture.lifecycle.resignation.message());
         assertEquals(List.of(Outcome.RESIGNED), fixture.attempts.outcomes());
@@ -667,7 +667,7 @@ class GameTurnServiceTest {
         List<OpenRouterService.ChatMsg> history = new ArrayList<>();
 
         GameTurnService.TurnResult result = fixture.service.playTurn(
-                resignationRequest(history, 3, 9, true, ChatMode.OPTIONAL));
+                fixture.resignationRequest(history, 3, 9, true, ChatMode.OPTIONAL));
 
         assertTrue(result.moveRecorded());
         assertNull(fixture.lifecycle.resignation);
@@ -675,11 +675,11 @@ class GameTurnServiceTest {
         assertEquals(1, fixture.moves.lastRetryCount, "the rejected resignation counts as a retry");
         assertNull(fixture.moves.lastRecordedMessage, "the message of a rejected answer is not kept");
         assertEquals(List.of(Outcome.RESIGN_NOT_ALLOWED, Outcome.ACCEPTED), fixture.attempts.outcomes());
-        assertEquals("Resigning is not allowed before move 10; send a legal move.",
+        assertEquals("Resigning is not allowed before your own move 10 (book moves do not count); send a legal move.",
                 fixture.attempts.recorded.getFirst().errorMessage());
         assertEquals(List.of("RESIGN_NOT_ALLOWED"), fixture.websocket.retryOutcomes);
         String retryPrompt = fixture.openRouter.sentMessages.get(1).getLast().content();
-        assertTrue(retryPrompt.contains("Resigning is not allowed before move 10; send a legal move."), retryPrompt);
+        assertTrue(retryPrompt.contains("Resigning is not allowed before your own move 10 (book moves do not count); send a legal move."), retryPrompt);
         assertTrue(retryPrompt.contains("Attempt 2 of 3"), retryPrompt);
         assertFalse(fixture.openRouter.sentMessages.getFirst().getLast().content().contains("You may resign"));
     }
@@ -689,7 +689,7 @@ class GameTurnServiceTest {
         Fixture fixture = new Fixture(answer("{\"resign\":true}"));
 
         GameTurnService.TurnResult result = fixture.service.playTurn(
-                resignationRequest(new ArrayList<>(), 2, 30, false, ChatMode.MANDATORY));
+                fixture.resignationRequest(new ArrayList<>(), 2, 30, false, ChatMode.MANDATORY));
 
         assertTrue(result.isTerminal());
         assertNull(fixture.lifecycle.resignation);
@@ -705,7 +705,7 @@ class GameTurnServiceTest {
         Fixture fixture = new Fixture(answer("{\"resign\":true,\"move\":\"Bc5\",\"message\":\"Just kidding\"}"));
 
         GameTurnService.TurnResult result = fixture.service.playTurn(
-                resignationRequest(new ArrayList<>(), 3, 5, true, ChatMode.OPTIONAL));
+                fixture.resignationRequest(new ArrayList<>(), 3, 5, true, ChatMode.OPTIONAL));
 
         assertTrue(result.moveRecorded());
         assertEquals("Bc5", fixture.moves.lastRecordedSan);
@@ -719,7 +719,7 @@ class GameTurnServiceTest {
     void anIllegalMoveSentWithAResignationThatIsNotAllowedIsAnIllegalMove() {
         Fixture fixture = new Fixture(answer("{\"resign\":true,\"move\":\"Qxf7\"}"), answer("{\"move\":\"Nf6\"}"));
 
-        fixture.service.playTurn(resignationRequest(new ArrayList<>(), 3, 4, false, ChatMode.OPTIONAL));
+        fixture.service.playTurn(fixture.resignationRequest(new ArrayList<>(), 3, 4, false, ChatMode.OPTIONAL));
 
         assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.ACCEPTED), fixture.attempts.outcomes());
         assertEquals("Nf6", fixture.moves.lastRecordedSan);
@@ -730,7 +730,7 @@ class GameTurnServiceTest {
         Fixture fixture = new Fixture(answer("{\"move\":\"Qxf7\"}"), answer("{\"resign\":true}"));
 
         GameTurnService.TurnResult result = fixture.service.playTurn(
-                resignationRequest(new ArrayList<>(), 3, 15, true, ChatMode.OPTIONAL));
+                fixture.resignationRequest(new ArrayList<>(), 3, 15, true, ChatMode.OPTIONAL));
 
         assertTrue(result.isTerminal());
         assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.RESIGNED), fixture.attempts.outcomes());
@@ -743,7 +743,7 @@ class GameTurnServiceTest {
         fixture.lifecycle.resignConflict = new GameStateConflictException("Game is no longer in progress");
 
         GameTurnService.TurnResult result = fixture.service.playTurn(
-                resignationRequest(new ArrayList<>(), 3, 20, true, ChatMode.OPTIONAL));
+                fixture.resignationRequest(new ArrayList<>(), 3, 20, true, ChatMode.OPTIONAL));
 
         assertEquals(GameTurnService.Status.STOPPED, result.status());
         assertEquals(List.of(Outcome.DISCARDED), fixture.attempts.outcomes());
@@ -755,7 +755,7 @@ class GameTurnServiceTest {
         Fixture fixture = new Fixture(truncated("{\"resign\":true}", null));
 
         GameTurnService.TurnResult result = fixture.service.playTurn(
-                resignationRequest(new ArrayList<>(), 3, 3, true, ChatMode.OPTIONAL));
+                fixture.resignationRequest(new ArrayList<>(), 3, 3, true, ChatMode.OPTIONAL));
 
         assertTrue(result.pausedGame());
         assertEquals(List.of(Outcome.TRUNCATED), fixture.attempts.outcomes());
@@ -893,45 +893,46 @@ class GameTurnServiceTest {
         );
     }
 
-    /**
-     * Black's turn at {@code moveNumber} in an Italian-game position, with resignation offered or not. White's last move
-     * was Bc4, so Black has legal moves like Nf6 and Bc5.
-     */
-    private static GameTurnService.TurnRequest resignationRequest(List<OpenRouterService.ChatMsg> history,
-                                                                  int maxRetries, int moveNumber,
-                                                                  boolean resignationAllowed, ChatMode chatMode) {
-        Board board = new Board();
-        board.loadFromFen("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 " + moveNumber);
-        ChessService chess = new ChessService();
-        return new GameTurnService.TurnRequest(
-                UUID.randomUUID(),
-                "1. e4 e5 2. Nf3 Nc6 3. Bc4",
-                board.getFen(),
-                board,
-                "BLACK",
-                moveNumber,
-                chess.getLegalMovesAsSan(board),
-                "model-b",
-                "Model B",
-                "Model A",
-                history,
-                "Bc4",
-                "Your move.",
-                false,
-                maxRetries,
-                null,
-                resignationAllowed ? "v2-resign" : "v2",
-                "hash-1",
-                BigDecimal.ZERO,
-                () -> true,
-                MAX_OUTPUT_TOKENS,
-                chatMode,
-                chatMode,
-                resignationAllowed
-        );
-    }
-
     private static final class Fixture {
+        /**
+         * Black's turn at {@code moveNumber} in an Italian-game position, with resignation offered or not. White's last move
+         * was Bc4, so Black has legal moves like Nf6 and Bc5.
+         */
+        private GameTurnService.TurnRequest resignationRequest(List<OpenRouterService.ChatMsg> history,
+                                                                      int maxRetries, int moveNumber,
+                                                                      boolean resignationAllowed, ChatMode chatMode) {
+            ((CountingMoveRepository) service.moveRepository).nonBookMoves = moveNumber - 1;
+            Board board = new Board();
+            board.loadFromFen("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 " + moveNumber);
+            ChessService chess = new ChessService();
+            return new GameTurnService.TurnRequest(
+                    UUID.randomUUID(),
+                    "1. e4 e5 2. Nf3 Nc6 3. Bc4",
+                    board.getFen(),
+                    board,
+                    "BLACK",
+                    moveNumber,
+                    chess.getLegalMovesAsSan(board),
+                    "model-b",
+                    "Model B",
+                    "Model A",
+                    history,
+                    "Bc4",
+                    "Your move.",
+                    false,
+                    maxRetries,
+                    null,
+                    resignationAllowed ? "v2-resign" : "v2",
+                    "hash-1",
+                    BigDecimal.ZERO,
+                    () -> true,
+                    MAX_OUTPUT_TOKENS,
+                    chatMode,
+                    chatMode,
+                    resignationAllowed
+            );
+        }
+
         final GameTurnService service = new GameTurnService();
         final RecordingLifecycleService lifecycle = new RecordingLifecycleService();
         final RecordingGameMoveService moves = new RecordingGameMoveService();
@@ -1121,6 +1122,13 @@ class GameTurnServiceTest {
     }
 
     private static final class CountingMoveRepository extends MoveRepository {
+        private long nonBookMoves;
+
+        @Override
+        public long countNonBookByGameIdAndColor(UUID gameId, String color) {
+            return nonBookMoves;
+        }
+
         @Override
         public long count(String query, Object... params) {
             return 0;

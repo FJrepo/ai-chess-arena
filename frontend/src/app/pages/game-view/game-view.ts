@@ -347,13 +347,15 @@ export class GameView implements OnInit, OnDestroy {
           ? `${move.retryCount} retr${move.retryCount === 1 ? 'y' : 'ies'}`
           : null);
       const overrideSuffix = move.isOverride ? ' (override)' : '';
-      const badge = qualityBadge(move.quality);
+      const badge = move.isBook ? null : qualityBadge(move.quality);
       events.push({
         id: `move-${move.id || `${move.moveNumber}-${move.color}`}`,
         type: 'move',
         quality: badge ? { badge, tooltip: qualityTooltip(move.quality) } : null,
         label: `${move.color === 'WHITE' ? 'White' : 'Black'} played ${move.san}`,
-        detail: `${this.timelinePlayerName(move.color, move.modelId)}${overrideSuffix}`,
+        detail: move.isBook
+          ? 'Book move'
+          : `${this.timelinePlayerName(move.color, move.modelId)}${overrideSuffix}`,
         attemptSummary,
         tone: move.isOverride ? 'warning' : 'move',
         icon: move.isOverride ? 'edit' : 'arrow_right_alt',

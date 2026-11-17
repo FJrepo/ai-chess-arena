@@ -5,6 +5,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 ## Contents
 
 - [Tournament formats and draw policies](#tournament-formats-and-draw-policies)
+- [Opening variety](#opening-variety)
 - [Cancelling a tournament](#cancelling-a-tournament)
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
 - [Model turns and prompts](#model-turns-and-prompts)
@@ -50,6 +51,34 @@ When level after N games (or a drawn single game), the tournament's draw policy 
 ### Cost estimate
 
 The **cost estimate** before you start shows expected games, runtime and spend for the chosen models and format.
+
+## Opening variety
+
+Choose **Opening mode** during setup:
+
+- **Standard** (default): start every game from the normal initial position, as before.
+- **Random book**: choose uniformly from 42 short authored opening lines for each new pairing.
+- **Fixed book line**: choose one named line from the book for every new game.
+
+The backend ships [the full book](../backend/src/main/resources/openings.tsv), written from standard opening theory under this repository's MIT license, without importing an opening database. Each line has a stable id, ECO code, name and 4–8 SAN plies. ECO labels were cross-checked against the [Lichess CC0 reference](https://github.com/lichess-org/chess-openings); no reference database is bundled. These are short introductions rather than full tabiyas: the Open Sicilian line can lead toward a Najdorf, whose defining moves exceed the eight-ply limit.
+
+The book covers Ruy Lopez (including Morphy and Berlin), Italian and Two Knights, Scotch, Four Knights, Petroff, Vienna, Bishop's Opening and Philidor; Open, Closed, Alapin, Rossolimo and Kan Sicilians; French (Advance, Exchange, Winawer, Tarrasch), Caro-Kann (Advance, Classical), Scandinavian, Pirc, Modern and Alekhine; Queen's Gambit Declined/Accepted, Slav, Semi-Slav, King's Indian, Nimzo-Indian, Queen's Indian, Grunfeld, Catalan, London, English (Symmetrical and Reversed Sicilian), Reti and Dutch.
+
+### Series fairness and settings changes
+
+Regular color-reversed partners **games 1–2, 3–4 and 5–6** share exactly the same stored opening, with participants swapping colors. The line is selected when the odd-numbered game is created. An unpaired last regular game selects a line independently. Early series completion can leave a pair unfinished. Every sudden-death **tiebreak may select a fresh line**, even if it reverses the preceding game's colors; with Fixed it uses the currently selected line. Random selection may repeat a line.
+
+Opening settings apply only to **games created after the change**, never to running, paused or already waiting games. Future-round placeholder games are created with the bracket and retain that snapshot too. The even game of a regular pair always reuses its partner's stored line, including Standard, even if settings have since changed. Byes have no book moves. Existing games remain Standard with their stored history unchanged; no backfill is performed.
+
+### History, evaluation and analytics
+
+Book moves are actual stored move rows marked `isBook: true`. The board, PGN export and every model's turn prompt include the full opening history. Models (and humans) begin after the last book ply, on the correct side and move number. Start and resume initialize the opponent's last move from the final stored ply, including book moves; a message is restored only when attached to that exact ply. Without a last move, the opponent-played sentence is omitted. Resume replays the same history. The game view and bracket show the opening name/ECO, and the move list marks book plies in grey with **book**; those moves remain selectable for reviewing the board.
+
+Book plies have no model, chat mode, prompt, attempts, usage, response time or cost. They never count toward model move totals, reliability, move quality, missed mates, talkativeness, Conversion or the ten-ply adjudication window. Only the final book position is evaluated in the background, as the baseline for judging the first played move; a missing baseline leaves that move unjudged until evaluation arrives. Paid prompt tokens still include the book history. Normal board-ending rules, including repetition and the fifty-move counter, use the complete game history.
+
+The build's unit tests replay every line with chesslib and reject illegal or terminal positions. When Stockfish is installed, an additional depth-12 check rejects mate scores or positions beyond ±150 cp; without it that check is skipped and legality is still tested. Short theoretical lines and shallow evaluations do not guarantee perfectly equal positions.
+
+API: `GET /api/openings` returns `{id, eco, name, moves}` for each line. `POST`/`PUT /api/tournaments` accept `openingMode` (`STANDARD`, `RANDOM_BOOK`, `FIXED`, case-insensitive) and `openingId`. Fixed requires a known id; an id with another mode is a 400. Omitted/null fields retain defaults on create or current settings on update; changing away from Fixed clears its id. An id-only update changes the line of an already Fixed tournament. Game responses expose the immutable `openingId`, `openingName` and `openingEco` snapshot (omitted for Standard) and move responses expose `isBook`. Completed/cancelled tournaments reject settings changes as before.
 
 ## Cancelling a tournament
 
@@ -203,11 +232,11 @@ A legacy custom system prompt stored with a tournament or participant is used as
 
 Resignation is off by default, so every game is played to the end.
 
-With *Allow resignation* in the setup page (next to *Chat*; API field `resignationAllowed` on `POST`/`PUT /api/tournaments`, a boolean, default `false`; omitted keeps the current value on update) both models may resign instead of moving, from their own 10th move on (a fixed minimum, `Tournament.MIN_RESIGNATION_MOVE`, so a game cannot end on move 3 because a model loses its nerve).
+With *Allow resignation* in the setup page (next to *Chat*; API field `resignationAllowed` on `POST`/`PUT /api/tournaments`, a boolean, default `false`; omitted keeps the current value on update) both models may resign instead of moving, from their own 10th non-book move on (a fixed minimum, `Tournament.MIN_RESIGNATION_MOVE`). A side must have completed at least nine non-book plies; authored book moves do not count. With an eight-ply opening (four book moves per side), resignation first becomes eligible at fullmove 14, each side's tenth played move. Standard games retain the fullmove-10 minimum.
 
-The system prompt then gets rule 9, which says that both players may resign from their 10th move on, so the opponent can resign too, and shows the answer that resigns; it states this as a rule and neither encourages nor discourages resigning or talking the opponent into it.
+The system prompt then gets rule 9, which says that both players may resign from their own 10th move on, explicitly excluding book moves, so the opponent can resign too, and shows the answer that resigns; it states this as a rule and neither encourages nor discourages resigning or talking the opponent into it.
 
-From move 10 the turn prompt adds "You may resign instead of moving (rule 9)."
+From the side's tenth non-book move the turn prompt adds "You may resign instead of moving (rule 9)." The same eligibility check controls whether a resignation is accepted. The turn prompt's chess move number still uses the board's fullmove number, including the opening.
 
 ### Answer format
 
@@ -227,7 +256,7 @@ The answer is recorded in `GET /api/games/{id}/attempts` as `RESIGNED`, with tok
 
 ### Not allowed
 
-When resignation is not offered, or before the side's 10th move: if the answer also has a legal move, the move is played and the flag ignored; otherwise it is an invalid answer, recorded as `RESIGN_NOT_ALLOWED`, and retried with "Resigning is not allowed in this game; send a legal move." (or "... before move 10 ...").
+When resignation is not offered, or before the side's 10th non-book move: if the answer also has a legal move, the move is played and the flag ignored; otherwise it is an invalid answer, recorded as `RESIGN_NOT_ALLOWED`, and retried with "Resigning is not allowed in this game; send a legal move." (or "Resigning is not allowed before your own move 10 (book moves do not count); send a legal move.").
 
 It counts against reliability exactly like an illegal move: it uses up an attempt, makes the move that follows a retried one, and repeated it forfeits the game.
 

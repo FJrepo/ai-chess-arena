@@ -184,7 +184,7 @@ public final class MoveQualityClassifier {
 
     /** Quality of {@code move}, given the move played just before it ({@code null} for the first move). */
     static MoveQuality quality(Move move, Move previous) {
-        if (move.color == null) {
+        if (move.isBook || move.color == null) {
             return null;
         }
         Score after = score(move.evaluationCp, move.evaluationMate, move.color);

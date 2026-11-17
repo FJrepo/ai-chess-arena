@@ -53,6 +53,49 @@ class AnalyticsServiceTest {
     private static final LocalDateTime YESTERDAY = LocalDateTime.now().minusDays(1);
 
     @Test
+    void bookMovesNeverCountForModelHealthReliabilityCostChatQualityOrConversion() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Move book = move(game, "model.alpha", 90000L, "9.000000", 8);
+        book.isBook = true;
+        book.moveNumber = 1;
+        book.color = "WHITE";
+        book.evaluationCp = 1200;
+        book.chatMode = ChatMode.MANDATORY;
+        book.promptTokens = 99999;
+        Move played = move(game, "model.beta", 100L, "0.010000");
+        played.moveNumber = 1;
+        played.color = "BLACK";
+        played.chatMode = ChatMode.OPTIONAL;
+        played.evaluationCp = 0;
+        AnalyticsService service = service(List.of(game), List.of(book, played), List.of(),
+                List.of(new PlyMessage(game.id, 1, "WHITE", 50), new PlyMessage(game.id, 1, "BLACK", 10)));
+        var comparison = service.getComparison(30, null, 0);
+        var alpha = row(comparison, "model.alpha");
+        var beta = row(comparison, "model.beta");
+        assertEquals(0, alpha.movesSampled());
+        assertEquals(0, alpha.analyzedMoves());
+        assertEquals(0, alpha.mandatoryChat().moves());
+        assertNull(alpha.totalCostUsd());
+        assertEquals(0, alpha.conversion().winningPositionsReached());
+        assertEquals(1, beta.movesSampled());
+        assertEquals(1, beta.analyzedMoves(), "last book evaluation is still the real move's baseline");
+        assertEquals(1, beta.optionalChat().moves());
+        assertEquals(1, beta.optionalChat().messages());
+        assertEquals(new BigDecimal("0.010000"), beta.totalCostUsd());
+        var health = service.getHealth(30, null);
+        assertEquals(1, health.movesCount());
+        assertEquals(0, health.retriesTotal());
+        assertEquals(0, health.promptTokensTotal());
+        assertEquals(new BigDecimal("0.010000"), health.costTotalUsd());
+        assertEquals(0, service.getReliability(30, null, 0).models().stream()
+                .filter(row -> "model.alpha".equals(row.modelId())).findFirst().orElseThrow().movesSampled());
+        played.evaluationCp = null;
+        assertEquals(0, row(service(List.of(game), List.of(book, played), List.of()).getComparison(30, null, 0), "model.alpha").conversion().evaluatedGames(),
+                "book-only scores cannot supply conversion coverage");
+    }
+
+
+    @Test
     void comparisonSeparatesDrawsForfeitsAndColorSplits() {
         Game game1 = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
         Game game2 = finishedGame("model.alpha", "model.gamma", Game.GameResult.DRAW, null, YESTERDAY);

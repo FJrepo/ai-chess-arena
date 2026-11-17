@@ -9,6 +9,10 @@
     (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
   />
 
+  @if (g.openingName) {
+    <p class="opening-label">{{ g.openingEco }} · {{ g.openingName }}</p>
+  }
+
   <div class="view-actions">
     <button mat-stroked-button (click)="goToTournament()" [disabled]="!g.tournamentId">
       <mat-icon>arrow_back</mat-icon>

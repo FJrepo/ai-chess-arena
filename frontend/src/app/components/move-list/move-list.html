@@ -11,10 +11,14 @@
             <span
               class="move white-move"
               [class.active]="currentIndex === pair.whiteIdx"
+              [class.book-move]="pair.white.isBook"
               [attr.title]="tooltip(pair.white)"
               (click)="onMoveClick(pair.whiteIdx)"
             >
               <span class="san">{{ pair.white.san }}</span>
+              @if (pair.white.isBook) {
+                <span class="book-badge">book</span>
+              }
               @if (badge(pair.white); as b) {
                 <span
                   class="quality-badge"
@@ -37,10 +41,14 @@
             <span
               class="move black-move"
               [class.active]="currentIndex === pair.blackIdx"
+              [class.book-move]="pair.black.isBook"
               [attr.title]="tooltip(pair.black)"
               (click)="onMoveClick(pair.blackIdx)"
             >
               <span class="san">{{ pair.black.san }}</span>
+              @if (pair.black.isBook) {
+                <span class="book-badge">book</span>
+              }
               @if (badge(pair.black); as b) {
                 <span
                   class="quality-badge"

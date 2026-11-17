@@ -64,7 +64,8 @@ public class PromptService {
    * the rule neither asks for nor discourages that).
    */
   static final String RESIGNATION_RULE = ("9. Resigning is allowed in this tournament: both players may resign from "
-      + "their move %d on, so your opponent can resign too. Instead of a move you may then answer %%s and the game "
+      + "their own move %d on (book moves do not count), so your opponent can resign too. Instead of a move you may "
+      + "then answer %%s and the game "
       + "ends at once: your opponent wins. This is the only exception to rule 3. If you resign, any \"move\" in the "
       + "same answer is ignored.")
       .formatted(Tournament.MIN_RESIGNATION_MOVE);
@@ -300,6 +301,8 @@ public class PromptService {
     String opponentSection;
     if (isFirstMove) {
       opponentSection = "You have the first move. Open the game.";
+    } else if (lastMove == null || lastMove.isBlank()) {
+      opponentSection = "";
     } else if (opponentMessage != null && !opponentMessage.isBlank()) {
       opponentSection = "Your opponent (%s) played %s and says:\n\"%s\""
           .formatted(opponentName, lastMove, opponentMessage);
@@ -371,7 +374,8 @@ public class PromptService {
    */
   public String getResignationNotAllowedError(boolean resignationOffered) {
     return resignationOffered
-        ? "Resigning is not allowed before move %d; send a legal move.".formatted(Tournament.MIN_RESIGNATION_MOVE)
+        ? ("Resigning is not allowed before your own move %d (book moves do not count); send a legal move.")
+            .formatted(Tournament.MIN_RESIGNATION_MOVE)
         : "Resigning is not allowed in this game; send a legal move.";
   }
 

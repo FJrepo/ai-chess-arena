@@ -37,6 +37,12 @@ Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 net
 - For native development, `make install-stockfish` installs checksum-verified Stockfish 19 for Linux (x86-64 or ARM64) or macOS (universal). An explicit `--version sf_18` selection remains supported on the previously supported platforms.
 - Rebuild/recreate the backend to use the upgraded binary. No migration or backfill is needed; existing evaluations remain unchanged.
 
+## Opening variety migration (V19)
+
+Back up before upgrading. Flyway V19 adds `tournaments.opening_mode` (Standard by default), its optional Fixed `opening_id`, game opening metadata and `moves.is_book` (false for all existing rows). Existing game positions, moves, results and spend are unchanged; no backfill or external opening-data download is required. The authored book is bundled in the backend resources.
+
+Rebuild/recreate the backend and frontend when deploying this feature. Opening settings affect newly created games only, including bracket placeholders; a running or waiting game retains its original history. See [opening variety and series fairness](how-it-works.md#opening-variety). Restore the pre-upgrade backup to roll back: older versions cannot exclude book rows from model metrics. No container image dependency or third-party software is added by this feature.
+
 ## First-Time Setup
 1. Create the environment file with owner-only permissions:
 

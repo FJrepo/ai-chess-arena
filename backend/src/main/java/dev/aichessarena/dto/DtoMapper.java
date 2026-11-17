@@ -34,7 +34,8 @@ public final class DtoMapper {
                                 .map(g -> g.advancedParticipant.playerName)
                                 .findFirst()
                                 .orElse(null)
-                        : null
+                        : null,
+                t.openingMode.name(), t.openingId
         );
     }
 
@@ -97,7 +98,8 @@ public final class DtoMapper {
                 includeMoves ? adjudication(g, g.moves) : null,
                 g.statusRevision,
                 apiValue(g.requestedReasoningEffort("WHITE")),
-                apiValue(g.requestedReasoningEffort("BLACK"))
+                apiValue(g.requestedReasoningEffort("BLACK")),
+                g.openingId, g.openingName, g.openingEco
         );
     }
 
@@ -172,7 +174,8 @@ public final class DtoMapper {
                 m.isOverride, m.evaluationCp, m.evaluationMate,
                 m.createdAt,
                 toDto(quality),
-                m.chatMode != null ? m.chatMode.name() : null
+                m.chatMode != null ? m.chatMode.name() : null,
+                m.isBook
         );
     }
 

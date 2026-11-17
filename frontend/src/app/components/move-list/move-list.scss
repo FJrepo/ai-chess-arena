@@ -147,3 +147,12 @@
     font-size: 0.86em;
   }
 }
+
+.book-move {
+  color: var(--mat-sys-on-surface-variant, #777);
+}
+.book-badge {
+  font-size: 0.65rem;
+  margin-left: 0.3rem;
+  font-weight: normal;
+}

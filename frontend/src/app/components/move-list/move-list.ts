@@ -74,16 +74,16 @@ export class MoveListComponent implements AfterViewChecked {
 
   /** The move's ?! / ? / ?? annotation, if it was judged an error. */
   badge(move: Move): QualityBadge | null {
-    return qualityBadge(move.quality);
+    return move.isBook ? null : qualityBadge(move.quality);
   }
 
   /** "Blunder: winning chances 72% → 18% (−3.2)", or a note for forced and overridden moves. */
   tooltip(move: Move): string | null {
-    return qualityTooltip(move.quality);
+    return move.isBook ? 'Book move: excluded from model metrics' : qualityTooltip(move.quality);
   }
 
   missedMate(move: Move): string | null {
-    return missedMateTooltip(move.quality);
+    return move.isBook ? null : missedMateTooltip(move.quality);
   }
 
   formatTime(ms: number | null): string {

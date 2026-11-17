@@ -11,9 +11,11 @@ import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveRepository;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -238,6 +240,12 @@ class GameEngineServiceTest {
         game.totalCostUsd = BigDecimal.ZERO;
 
         GameEngineService service = new GameEngineService();
+        service.moveRepository = new MoveRepository() {
+            @Override
+            public List<Move> findByGameId(UUID gameId) {
+                return List.of();
+            }
+        };
         service.chessService = new ChessService();
         service.gameRepository = new FakeGameRepository(Map.of(game.id, game));
         service.gameConversationService = new GameConversationService() {

@@ -18,6 +18,10 @@ import java.util.UUID;
  * <p>{@code adjudicationEnabled} enables decisive-position adjudication for model-vs-model games; null keeps the
  * default (false) on create and the current value on update. A change applies from the next turn.
  *
+ * <p>{@code openingMode} is STANDARD (default), RANDOM_BOOK or FIXED. FIXED requires a known {@code openingId}.
+ * Null settings retain defaults on create and current settings on update. Only newly created games are affected;
+ * regular color-reversed partners reuse the first game's stored opening even after a settings change.
+ *
  * <p>{@code reasoningEffort} is OpenRouter's reasoning effort for all models (none, minimal, low, medium, high, xhigh,
  * max; case-insensitive) or {@code "default"} for each model's own default. Null keeps the model default on create
  * and the current value on update; {@code "default"} clears it on update.
@@ -37,8 +41,21 @@ public record CreateTournamentRequest(
         String chatMode,
         Boolean resignationAllowed,
         String reasoningEffort,
-        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean adjudicationEnabled
+        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean adjudicationEnabled,
+        String openingMode,
+        String openingId
 ) {
+    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
+                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
+                                   Boolean trashTalkEnabled, String drawPolicy,
+                                   List<AddParticipantRequest> participants, UUID clientRequestId,
+                                   Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
+                                   String reasoningEffort, Boolean adjudicationEnabled) {
+        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
+                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
+                resignationAllowed, reasoningEffort, adjudicationEnabled, null, null);
+    }
+
     /** Compatibility constructor for callers without adjudication settings. */
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
                                    Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,

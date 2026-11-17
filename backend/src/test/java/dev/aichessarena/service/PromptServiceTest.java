@@ -11,10 +11,25 @@ import dev.aichessarena.entity.ChatMode;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PromptServiceTest {
 
     private final PromptService promptService = new PromptService();
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t"})
+    void absentLastSanOmitsTheOpponentMoveSentence(String lastSan) {
+        String prompt = promptService.buildTurnPrompt(null, new Board().getFen(), "board", "BLACK", 1,
+                List.of("e5"), "Opponent", lastSan, "Older message", false);
+
+        assertFalse(prompt.contains("Your opponent"), prompt);
+        assertFalse(prompt.contains("Older message"), prompt);
+        assertFalse(prompt.contains("null"), prompt);
+    }
 
     @Test
     void buildRetryPromptUsesConfiguredMaxAttempts() {
@@ -214,18 +229,18 @@ class PromptServiceTest {
     @Test
     void resignationPromptsHaveTheirOwnVersionsAndHashes() {
         assertResignationPrompt(ChatMode.OPTIONAL, null, "v2-resign",
-                "09a8a3fb57767e8e1731999b489ad634be770cc92ab212ca9671ea30362db367");
+                "e8659256d65d0931ce93c47394e3a1bb566c22a821045784a0944c226887ec44");
         assertResignationPrompt(ChatMode.OPTIONAL, "Play the London.", "v2+custom-instructions-resign",
-                "dcbb3797eef942a621ea44700c367eb932b30b8523ee367c8c4db75dc4e005dc");
+                "0b8855423c8e4832ff9849ed1eaf8824851e501ae9aa02d65156012311e01fd3");
         assertResignationPrompt(ChatMode.OFF, null, "v2-silent-resign",
-                "8b0e737791f92fd06a225822b811065dec59ca5af39bace427840b43c7d2f14a");
+                "8a838783553b8628c1b00e2158fffa62f1a59f942b32f0b18dc4fe361a5721ce");
         assertResignationPrompt(ChatMode.OFF, "Play the London.", "v2+custom-instructions-silent-resign",
-                "ba1c405a710f745876ab6e98e95d12b19607a364f92780cf823777283d10b2f6");
+                "8cf2c5c6207d2e76b1ba7635c6c356061dd7d68b56d99b75a36aaf1cf8e9781f");
         assertResignationPrompt(ChatMode.MANDATORY, null, "v2-chat-required-resign",
-                "8e019481d37dedc11f9c11c01bb5427c1e28148b71e70c488d731cd9144b5fd4");
+                "f8e4a11e3ba240852a8f33a43e177887bb0be06001df22782966cab3ac898536");
         assertResignationPrompt(ChatMode.MANDATORY, "Play the London.",
                 "v2+custom-instructions-chat-required-resign",
-                "fdc2d237179bd08262d8d92d6e843647077ce9dc41d381da38c98c1732dfbd79");
+                "14ae0ce4dc14d094c5cf6c4fc9566c0499eb1bdc4744e9c2dd0a4f3029c5cda2");
     }
 
     private void assertResignationPrompt(ChatMode mode, String customInstructions, String version, String hash) {
@@ -258,14 +273,14 @@ class PromptServiceTest {
 
     /** Rule 9 word for word: both players may resign (the opponent too), stated as a fact, no advice either way. */
     private static final String RESIGNATION_RULE_WITH_LAST_WORDS = "9. Resigning is allowed in this tournament: both "
-            + "players may resign from their move 10 on, so your opponent can resign too. Instead of a move you may "
+            + "players may resign from their own move 10 on (book moves do not count), so your opponent can resign too. Instead of a move you may "
             + "then answer {\"resign\": true, \"message\": \"<optional last words to your opponent>\"} and the game "
             + "ends at once: your opponent wins. This is the only exception to rule 3. If you resign, any \"move\" in "
             + "the same answer is ignored.";
 
     /** With chat OFF the resigning answer has no message. */
     private static final String SILENT_RESIGNATION_RULE = "9. Resigning is allowed in this tournament: both players "
-            + "may resign from their move 10 on, so your opponent can resign too. Instead of a move you may then "
+            + "may resign from their own move 10 on (book moves do not count), so your opponent can resign too. Instead of a move you may then "
             + "answer {\"resign\": true} and the game ends at once: your opponent wins. This is the only exception to "
             + "rule 3. If you resign, any \"move\" in the same answer is ignored.";
 
@@ -312,7 +327,7 @@ class PromptServiceTest {
     void theCorrectiveMessageSaysWhyResigningIsNotAllowed() {
         assertEquals("Resigning is not allowed in this game; send a legal move.",
                 promptService.getResignationNotAllowedError(false));
-        assertEquals("Resigning is not allowed before move 10; send a legal move.",
+        assertEquals("Resigning is not allowed before your own move 10 (book moves do not count); send a legal move.",
                 promptService.getResignationNotAllowedError(true));
     }
 

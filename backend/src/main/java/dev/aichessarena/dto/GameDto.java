@@ -49,5 +49,8 @@ public record GameDto(
          * the nearest one the model supports (see MoveAttemptDto.reasoningEffort).
          */
         String whiteReasoningEffort,
-        String blackReasoningEffort
+        String blackReasoningEffort,
+        String openingId,
+        String openingName,
+        String openingEco
 ) {}

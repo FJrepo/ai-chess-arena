@@ -1,10 +1,14 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveRepository;
 import com.github.bhlangonijr.chesslib.Board;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
@@ -29,6 +33,12 @@ public class GameEngineService {
 
     @Inject
     GameRepository gameRepository;
+
+    @Inject
+    MoveRepository moveRepository;
+
+    @Inject
+    ChatMessageRepository chatMessageRepository;
 
     @Inject
     GameLifecycleService gameLifecycleService;
@@ -186,6 +196,14 @@ public class GameEngineService {
         Board board = conversation.board();
         List<OpenRouterService.ChatMsg> whiteHistory = conversation.whiteHistory();
         List<OpenRouterService.ChatMsg> blackHistory = conversation.blackHistory();
+
+        // Starting, resuming and continuing after a human move all use the final committed ply as context.
+        List<Move> moves = moveRepository.findByGameId(gameId);
+        Move lastMove = moves.isEmpty() ? null : moves.getLast();
+        lastMoveSan = lastMove != null ? lastMove.san : null;
+        ChatMessage lastChat = lastMove != null && !lastMove.isBook
+                ? chatMessageRepository.findByPly(gameId, lastMove.moveNumber, lastMove.color) : null;
+        lastMessage = lastChat != null ? lastChat.message : null;
 
         while (loop.shouldContinue()) {
             if (chessService.isGameOver(board)) {

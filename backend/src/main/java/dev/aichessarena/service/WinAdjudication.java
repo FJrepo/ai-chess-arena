@@ -27,7 +27,7 @@ public final class WinAdjudication {
 
     /** Winner (WHITE/BLACK), or null, from canonical plies; missing scores never wait. */
     public static String winner(List<Move> moves) {
-        moves = CanonicalPlies.of(moves);
+        moves = CanonicalPlies.of(moves).stream().filter(move -> !move.isBook).toList();
         if (moves.size() < WINDOW_PLIES) {
             return null;
         }

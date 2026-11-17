@@ -146,6 +146,57 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
 }
 
 describe('GameView', () => {
+  it('labels book moves in the feed without attributing them to a player', () => {
+    const { component } = createComponent();
+    component.game.set(gameWith({ openingName: 'Ruy Lopez', openingEco: 'C60' }));
+    component.moves.set([
+      { ...storedMove(1, 'WHITE', 'e4', AFTER_E4), isBook: true, modelId: null },
+    ]);
+    const event = component.timelineEvents().find((entry) => entry.type === 'move');
+    expect(event?.detail).toBe('Book move');
+    expect(event?.quality).toBeNull();
+    expect(event?.attemptSummary).toBeNull();
+  });
+
+  it('renders the stored opening name and ECO above the game controls', async () => {
+    TestBed.configureTestingModule({
+      imports: [GameView],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () =>
+              of(gameWith({ openingName: 'Ruy Lopez', openingEco: 'C60', status: 'WAITING' })),
+            getGameAttempts: () => of([]),
+            getSystemStatus: () => EMPTY,
+            getModels: () => of({ data: [] }),
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => EMPTY,
+            reconnected: () => EMPTY,
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.opening-label')?.textContent,
+    ).toContain('C60 · Ruy Lopez');
+  });
+
   it('hides the evaluation bar when stockfish is unavailable', () => {
     const { component } = createComponent();
 

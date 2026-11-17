@@ -636,6 +636,19 @@ describe('BracketDisplay rendering', () => {
     expect(viewed).toEqual([second]);
   });
 
+  it('shows the stored opening on a bracket card', () => {
+    const fixture = render([
+      game('final-1', 'Final', 0, {
+        openingId: 'ruy-lopez',
+        openingName: 'Ruy Lopez',
+        openingEco: 'C60',
+      }),
+    ]);
+    expect(fixture.nativeElement.querySelector('.opening-label').textContent).toContain(
+      'C60 · Ruy Lopez',
+    );
+  });
+
   it('does not offer to start a pending Final', () => {
     const fixture = render([
       game('final-1', 'Final', 0, {
