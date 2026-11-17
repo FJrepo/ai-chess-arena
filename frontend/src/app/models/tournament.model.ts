@@ -393,6 +393,6 @@ export interface CreateTournamentRequest extends Partial<
   clientRequestId?: string;
   /** Create-only draw choice; API default ORDER preserves seeds, setup defaults to RANDOM. */
   drawMode?: BracketDrawMode;
-  /** Omitted: generate with >=2 participants, otherwise create a draft. Explicit true requires >=2. */
-  generateBracket?: boolean;
+  /** Only true generates on create (requires >=2); omitted, null or false keeps a draft. */
+  generateBracket?: boolean | null;
 }

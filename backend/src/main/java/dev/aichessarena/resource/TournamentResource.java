@@ -88,7 +88,7 @@ public class TournamentResource {
             }
         }
         BracketDrawMode mode = parseBracketDrawMode(req.drawMode() == null ? "ORDER" : req.drawMode());
-        boolean generate = req.generateBracket() != null ? req.generateBracket() : participants.size() >= 2;
+        boolean generate = Boolean.TRUE.equals(req.generateBracket());
         t.creationDrawMode = generate ? mode : null;
         TournamentCreationService.Result result = tournamentCreationService.create(t, participants, req.clientRequestId());
         Response.Status status = result.created() ? Response.Status.CREATED : Response.Status.OK;

@@ -10,8 +10,8 @@ import java.util.UUID;
  * used on create: the tournament and all participants are stored together or not at all, and repeating a
  * request with the same {@code clientRequestId} returns the tournament created by the first one.
  * The original creation's bracket choice is retained on retries. {@code drawMode} defaults to ORDER;
- * {@code generateBracket} defaults to true for at least two participants, false otherwise (incremental
- * API creation). Explicit true requires at least two participants. These fields are create-only.
+ * {@code generateBracket} generates only when explicitly true, which requires at least two participants.
+ * Omitted, null or false preserves draft creation for API clients. These fields are create-only.
  *
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.

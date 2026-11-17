@@ -36,8 +36,9 @@ class TournamentCreationIT {
     TournamentService service;
 
     @Test
-    void completeLineupGeneratesByDefaultInApiSeedOrder() {
+    void explicitGenerationUsesApiSeedOrderByDefault() {
         var body = request(4);
+        body.put("generateBracket", true);
         TournamentDto created = create(body, 201);
 
         assertReady(created, 3);
@@ -78,13 +79,41 @@ class TournamentCreationIT {
     }
 
     @Test
-    void nullCreationOptionsUseTheApiDefaults() {
+    void nullDrawModeUsesApiSeedOrderForExplicitGeneration() {
         var body = request(2);
         body.put("drawMode", null);
-        body.put("generateBracket", null);
+        body.put("generateBracket", true);
         TournamentDto created = create(body, 201);
         assertReady(created, 1);
         assertEquals(List.of(10, 20), seeds(created));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void legacyCreationWithoutOptInAllowsAddingBeforeRandomGeneration(boolean explicitNull) {
+        var body = request(2);
+        if (explicitNull) {
+            body.put("drawMode", null);
+            body.put("generateBracket", null);
+        }
+        TournamentDto draft = create(body, 201);
+        assertDraft(draft);
+        assertEquals(List.of(10, 20), seeds(draft));
+        assertDraft(get(draft.id()));
+        for (int i = 2; i < 4; i++) {
+            given().contentType("application/json").body(participant(i))
+                    .post("/api/tournaments/{id}/participants", draft.id()).then().statusCode(201);
+        }
+        TournamentDto expanded = get(draft.id());
+        assertDraft(expanded);
+        assertEquals(4, expanded.participants().size());
+        given().contentType("application/json").queryParam("drawMode", "RANDOM")
+                .post("/api/tournaments/{id}/generate-bracket", draft.id()).then().statusCode(200);
+        TournamentDto generated = get(draft.id());
+        assertReady(generated, 3);
+        assertEquals(List.of(0, 1, 2, 3), seeds(generated));
+        assertEquals(List.of("P0", "P1", "P2", "P3"), generated.participants().stream()
+                .map(p -> p.playerName()).sorted().toList());
     }
 
     @Test
@@ -188,6 +217,7 @@ class TournamentCreationIT {
     void concurrentCreateRetriesBothReturnTheSameReadyBracket() throws Exception {
         var body = request(4);
         body.put("drawMode", "RANDOM");
+        body.put("generateBracket", true);
         body.put("clientRequestId", UUID.randomUUID());
         var go = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {

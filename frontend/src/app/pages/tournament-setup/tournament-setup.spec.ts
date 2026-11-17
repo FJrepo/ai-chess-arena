@@ -85,10 +85,11 @@ describe('TournamentSetup', () => {
   });
 
   it.each(['RANDOM', 'ORDER'] as const)(
-    'chooses bracket draw in Matches and creates a ready bracket with %s',
+    'explicitly opts into bracket creation from Matches with %s',
     async (mode) => {
       const api = createApiService();
       const fixture = await renderSetup(api);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
       const component = fixture.componentInstance;
       component.name = 'Ready Arena';
       component.participants.set([
@@ -107,6 +108,8 @@ describe('TournamentSetup', () => {
       fixture.nativeElement.querySelector('.create-button').click();
       expect(api.createTournamentPayload?.['drawMode']).toBe(mode);
       expect(api.createTournamentPayload?.['generateBracket']).toBe(true);
+      expect(api.createTournamentPayload?.['participants']).toHaveLength(2);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(['/tournaments', 't-1']);
     },
   );
 
