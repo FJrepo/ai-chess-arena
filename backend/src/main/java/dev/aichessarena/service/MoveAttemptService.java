@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
@@ -38,6 +39,9 @@ public class MoveAttemptService {
     GameWebSocket gameWebSocket;
 
     @Inject
+    LiveGameUpdates liveUpdates;
+
+    @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
     @Inject
@@ -54,8 +58,16 @@ public class MoveAttemptService {
             String errorMessage,
             OpenRouterService.LlmResponse response,
             // The reasoning effort sent with the request; null when none was sent.
-            ReasoningEffort reasoningEffort
+            ReasoningEffort reasoningEffort,
+            Long turnStatusRevision
     ) {
+        public AttemptRecord(UUID gameId, int moveNumber, String color, int attemptNumber, String modelId,
+                             Outcome outcome, String proposedMove, String errorMessage,
+                             OpenRouterService.LlmResponse response, ReasoningEffort reasoningEffort) {
+            this(gameId, moveNumber, color, attemptNumber, modelId, outcome, proposedMove, errorMessage, response,
+                    reasoningEffort, null);
+        }
+
         /** An attempt sent without a reasoning effort. */
         public AttemptRecord(UUID gameId, int moveNumber, String color, int attemptNumber, String modelId,
                              Outcome outcome, String proposedMove, String errorMessage,
@@ -83,6 +95,7 @@ public class MoveAttemptService {
             row.proposedMove = truncate(attempt.proposedMove(), MAX_PROPOSED_MOVE_CHARS);
             row.errorMessage = truncate(attempt.errorMessage(), MAX_ERROR_CHARS);
             row.reasoningEffort = attempt.reasoningEffort();
+            row.turnStatusRevision = attempt.turnStatusRevision();
             OpenRouterService.LlmResponse response = attempt.response();
             if (response != null) {
                 row.promptTokens = response.promptTokensReported() ? response.promptTokens() : null;
@@ -107,6 +120,10 @@ public class MoveAttemptService {
             if (autoRuns != null) autoRuns.afterAttempt(game);
             // A paid answer can arrive after cancellation's status update. Invalidate only after the
             // attempt and its cost are visible, without inventing another status change/revision.
+            if (liveUpdates != null) {
+                liveUpdates.changed(game, liveUpdates.entityChange("committedAttempt", game.id, "attempt",
+                        DtoMapper.toDto(row)));
+            }
             AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));
         } catch (RuntimeException e) {
             LOG.warnf(e, "Could not record %s attempt for game %s", attempt.outcome(), attempt.gameId());

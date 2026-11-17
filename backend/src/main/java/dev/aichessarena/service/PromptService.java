@@ -13,6 +13,7 @@ import java.util.List;
 public class PromptService {
 
   private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
+  static final String LEGACY_CUSTOM_TEMPLATE_VERSION = "legacy-custom-template";
 
   /** Version suffix of prompts rendered with chat OFF. */
   static final String SILENT_VERSION_SUFFIX = "-silent";
@@ -172,7 +173,7 @@ public class PromptService {
 
   public String resolvePromptVersion(String promptTemplate, String customInstructions) {
     if (isLegacyTemplateOverride(promptTemplate)) {
-      return "legacy-custom-template";
+      return LEGACY_CUSTOM_TEMPLATE_VERSION;
     }
     return hasCustomInstructions(customInstructions)
         ? DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions"
@@ -220,7 +221,7 @@ public class PromptService {
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
           legacyPromptTemplate.formatted(color, opponentName, opponentModel),
-          "legacy-custom-template",
+          LEGACY_CUSTOM_TEMPLATE_VERSION,
           mode == ChatMode.MANDATORY ? ChatMode.OPTIONAL : mode,
           false);
     }

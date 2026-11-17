@@ -66,6 +66,9 @@ public class GameTurnService {
     GameWebSocket gameWebSocket;
 
     @Inject
+    GameTurnTiming turnTiming;
+
+    @Inject
     GameLifecycleService gameLifecycleService;
 
     @Inject
@@ -113,17 +116,16 @@ public class GameTurnService {
         // One absolute deadline on the monotonic clock is enforced for the whole turn; every attempt gets exactly the
         // time that is left. The wall-clock instants are only shown to viewers.
         Integer moveTimeoutSeconds = request.moveTimeoutSeconds();
-        Instant turnStartedAt = Instant.now();
-        Instant turnDeadlineAt = null;
-        OpenRouterService.AnswerDeadline turnDeadline = null;
-        if (moveTimeoutSeconds != null) {
-            turnDeadlineAt = turnStartedAt.plusSeconds(moveTimeoutSeconds);
-            turnDeadline = OpenRouterService.AnswerDeadline.after(
-                    Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
+        GameTurnTiming.TurnTimes timing;
+        if (turnTiming != null) {
+            timing = turnTiming.record(request);
+            if (timing == null) return TurnResult.stopped();
+        } else {
+            timing = GameTurnTiming.TurnTimes.start(moveTimeoutSeconds);
+            broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), timing.startedAt(),
+                    timing.deadlineAt(), request.tournamentChatMode(), request.tournamentBanterLevel());
         }
-
-        broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
-                request.tournamentChatMode(), request.tournamentBanterLevel());
+        OpenRouterService.AnswerDeadline turnDeadline = null;
 
         int maxAttempts = Math.clamp(request.maxRetries(), Tournament.MIN_MOVE_ATTEMPTS, Tournament.MAX_MOVE_ATTEMPTS);
         if (maxAttempts != request.maxRetries()) {
@@ -141,7 +143,11 @@ public class GameTurnService {
                 return TurnResult.paused();
             }
 
-            if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
+            if (turnDeadline == null && moveTimeoutSeconds != null) {
+                // Database timing and admission work must finish before the model's first answer budget starts.
+                turnDeadline = OpenRouterService.AnswerDeadline.after(
+                        Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
+            } else if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
                 if (lastProviderFailure != null) {
                     // No next request was sent. Attribute an unrecorded marker rejection to its actual attempt.
                     if (unrecordedCacheRejectionAttempt != 0) {
@@ -470,7 +476,7 @@ public class GameTurnService {
         try {
             moveAttemptService.record(new MoveAttemptService.AttemptRecord(
                     request.gameId(), request.moveNumber(), request.sideToMove(), attempt, request.modelId(),
-                    outcome, proposedMove, errorMessage, response, effort));
+                    outcome, proposedMove, errorMessage, response, effort, request.statusRevision()));
         } catch (RuntimeException e) {
             // The attempt is committed in its own transaction; a failed commit must not interrupt the game.
             LOG.warnf(e, "Game %s: could not record %s attempt", request.gameId(), outcome);
@@ -583,8 +589,21 @@ public class GameTurnService {
             // The reasoning effort this side asks for (participant override, else the tournament's); null for the
             // model default. playTurn maps it to a level the model supports before sending it.
             ReasoningEffort reasoningEffort,
-            BanterLevel tournamentBanterLevel
+            BanterLevel tournamentBanterLevel,
+            Long statusRevision
     ) {
+        public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
+                           List<String> legalMoves, String modelId, String playerName, String opponentName,
+                           List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
+                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
+                           int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode,
+                           boolean resignationAllowed, ReasoningEffort reasoningEffort, BanterLevel banterLevel) {
+            this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
+                    resignationAllowed, reasoningEffort, banterLevel, null);
+        }
         /** Compatibility for callers without banter metadata. */
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
