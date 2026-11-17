@@ -122,7 +122,7 @@ cd frontend && npm ci && npm start
 make test                               # backend unit + frontend tests
 (cd backend && mvn verify)              # + PostgreSQL integration tests (Docker required)
 (cd frontend && npm run lint && npm run typecheck && npm run format:check)
-python3 -B -m unittest discover -s scripts -p 'test_*.py' # offline installer tests
+python3 -B -m unittest discover -s scripts -p 'test_*.py' # offline installer and release tests
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
@@ -151,6 +151,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 ## Releases
 
 Releases use `vX.Y.Z`. The workflow runs full CI, builds both images and smoke-tests them together before publishing to GHCR as the version tag and `latest`. Deploy a pinned version; `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases) and [CHANGELOG.md](CHANGELOG.md).
+
+Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. Documentation links and images point to the released tag, used Markdown references are retained, and fenced code examples stay intact. See [release publishing notes](docs/deployment.md#release-publishing-notes).
 
 ## Credits
 
