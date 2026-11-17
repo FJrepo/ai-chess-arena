@@ -54,7 +54,7 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          if ! python3 scripts/release_notes.py "$VERSION" CHANGELOG.md > /dev/null; then
+          if ! python3 scripts/release_notes.py "$VERSION" CHANGELOG.md --repository "$GITHUB_REPOSITORY" > /dev/null; then
             echo "::error::CHANGELOG.md must contain a release section for $VERSION."
             exit 1
           fi
@@ -379,7 +379,7 @@ jobs:
           BACKEND_DIGEST: ${{ needs.smoke-test.outputs.backend_digest }}
           FRONTEND_DIGEST: ${{ needs.smoke-test.outputs.frontend_digest }}
         run: |
-          python3 scripts/release_notes.py "$VERSION" CHANGELOG.md > release-notes.md
+          python3 scripts/release_notes.py "$VERSION" CHANGELOG.md --repository "$GITHUB_REPOSITORY" > release-notes.md
 
           # Find the closest reachable release tag, ignoring candidates and prereleases.
           matches=()
