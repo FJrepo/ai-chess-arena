@@ -8,11 +8,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
-- GitHub Release setup assets: `docker-compose.yml` defaults both application images to the release's version tag, alongside `.env.example`. Both assets are attached when the immutable release is created and linked under Verification / Assets in its notes.
+- GitHub Release setup assets from v1.6.0: `docker-compose.yml` defaults both application images to the release's version tag, alongside `env.example`. Both assets are attached when the immutable release is created and linked under Verification / Assets in its notes.
+- Python 3.12 script tests in reusable CI, gating pull requests and releases with the same dependency installation and unittest discovery.
 
 ### Changed
-- Set up from Docker and two downloaded release assets: the README now gives a 5-minute start with only an OpenRouter key and a user-chosen database password to configure. The production image namespace defaults to `fjrepo`; explicit namespace/tag overrides and existing database volumes remain supported. The repository's `docker-compose.prod.yml` still requires an explicit image tag.
+- Keep the v1.5.0 source-checkout quick start in the README; document the two-file 5-minute start in the deployment guide for v1.6.0 onward. The production image namespace defaults to `fjrepo`; explicit namespace/tag overrides and existing database volumes remain supported. The repository's `docker-compose.prod.yml` still requires an explicit image tag.
 - Tournament setup page: the add-participant form comes first, and the tournament name, seeded lineup, readiness checklist and Create button sit together in the right column, with the estimate below it. The column stays sticky only when its measured height fits the window with space above and below; without ResizeObserver support, it uses normal page scrolling. Below 1200px, settings precede the lineup to match keyboard navigation. Participant reasoning-effort overrides remain visible in roster rows. Participant and shared custom instructions and the system rules are collapsed by default; collapsing participant instructions preserves the draft when adding. Long helper texts are now one line with details in a "?" tooltip. The estimate reads as a rough heuristic ("Tournament Estimate", "about $X", "can be higher with reasoning models"), and the risk bands are Low risk / Moderate risk / High cost.
+
+### Fixed
+- Generate and upload the release template explicitly as `env.example`, with one canonical download link in release notes, avoiding GitHub's renaming of dot-prefixed assets.
+- Create the downloaded setup's `.env` with mode `0600` before editing on macOS/Linux; document keeping it private in the Windows user profile. Source-checkout `make setup` continues to enforce `0600` while preserving existing credentials.
 
 ## [1.5.0] - 2026-11-17
 

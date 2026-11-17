@@ -79,6 +79,44 @@ class ReleaseAssetsTest(unittest.TestCase):
         self.assertEqual(compose.count('\r\n'), generated.count('\r\n'))
 
 
+class SetupCredentialsTest(unittest.TestCase):
+    def test_documented_install_creates_private_credentials_under_common_umask(self):
+        guide = (ROOT / 'docs/deployment.md').read_text(encoding='utf-8')
+        setup = guide.split('### 5-minute start (from v1.6.0)\n', 1)[1].split('\n### ', 1)[0]
+        command = next(line for line in setup.splitlines() if line.startswith('install '))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'env.example').write_bytes(ENV_EXAMPLE)
+            result = subprocess.run(['sh', '-eu', '-c', command], cwd=root, umask=0o022,
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(ENV_EXAMPLE, (root / '.env').read_bytes())
+            self.assertEqual(0o600, (root / '.env').stat().st_mode & 0o777)
+
+    def run_make_setup(self, root):
+        (root / 'Makefile').write_bytes((ROOT / 'Makefile').read_bytes())
+        (root / '.env.example').write_bytes(ENV_EXAMPLE)
+        result = subprocess.run(['make', 'setup'], cwd=root, umask=0o022,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0o600, (root / '.env').stat().st_mode & 0o777)
+
+    def test_make_setup_creates_private_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.run_make_setup(root)
+            self.assertEqual(ENV_EXAMPLE, (root / '.env').read_bytes())
+
+    def test_make_setup_preserves_existing_credentials_and_tightens_permissions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = b'# Existing operator configuration\nIMAGE_TAG=v1.5.0\n'
+            (root / '.env').write_bytes(existing)
+            (root / '.env').chmod(0o644)
+            self.run_make_setup(root)
+            self.assertEqual(existing, (root / '.env').read_bytes())
+
+
 class ReleaseAssetsWorkflowTest(unittest.TestCase):
     def test_workflow_generates_both_assets_before_release_creation(self):
         prepare = next(step for step in STEPS if step['name'] == 'Prepare setup assets')
@@ -97,8 +135,8 @@ class ReleaseAssetsWorkflowTest(unittest.TestCase):
                                     capture_output=True, text=True, check=False)
             self.assertEqual(0, result.returncode, result.stderr)
             assets = root / 'release-assets'
-            self.assertEqual({'.env.example', 'docker-compose.yml'}, {p.name for p in assets.iterdir()})
-            self.assertEqual(ENV_EXAMPLE, (assets / '.env.example').read_bytes())
+            self.assertEqual({'env.example', 'docker-compose.yml'}, {p.name for p in assets.iterdir()})
+            self.assertEqual(ENV_EXAMPLE, (assets / 'env.example').read_bytes())
             self.assertEqual(release_compose(COMPOSE, 'v1.5.1').encode('utf-8'),
                              (assets / 'docker-compose.yml').read_bytes())
 
@@ -106,7 +144,7 @@ class ReleaseAssetsWorkflowTest(unittest.TestCase):
         creators = [step for step in STEPS if step.get('uses', '').startswith('softprops/action-gh-release@')]
         self.assertEqual(1, len(creators))
         inputs = creators[0]['with']
-        self.assertEqual({'release-assets/docker-compose.yml', 'release-assets/.env.example'},
+        self.assertEqual({'release-assets/docker-compose.yml', 'release-assets/env.example'},
                          set(inputs['files'].splitlines()))
         self.assertTrue(inputs['fail_on_unmatched_files'])
         self.assertEqual('release-notes.md', inputs['body_path'])

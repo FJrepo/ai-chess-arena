@@ -30,7 +30,7 @@ def main():
         parser.exit(1, f'{error}\n')
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / 'docker-compose.yml').write_bytes(compose.encode('utf-8'))
-    (args.output_dir / '.env.example').write_bytes(env_example)
+    (args.output_dir / 'env.example').write_bytes(env_example)
 
 
 if __name__ == '__main__':

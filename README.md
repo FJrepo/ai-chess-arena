@@ -47,29 +47,42 @@ Concurrent catalog lookups use a consistent snapshot for freshness and model dat
 
 Legacy duplicate move rows count as one ply for adjudication, move quality (including missed mates), Conversion and talkativeness: the earliest `created_at` wins, with `id` breaking ties. Later duplicates cannot supply a missing evaluation or extend the ten-ply window. Stored rows and completed results remain unchanged; see [duplicate-move troubleshooting](docs/deployment.md#migration-v8-reports-skipping-uq_moves_game_ply).
 
-## 5-minute start
+## Quick start
 
-You need **Docker Desktop on macOS or Windows** (including Apple Silicon), or **Docker Engine on Linux with Compose**, and an [OpenRouter API key](https://openrouter.ai/keys). Docker Engine 28.0+ is required for localhost isolation. Release images support amd64 and arm64.
+You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).
 
-In a new folder, download the two [latest release](https://github.com/FJrepo/ai-chess-arena/releases/latest) assets (use `curl.exe` in Windows PowerShell):
-
-```bash
-mkdir chess-arena
-cd chess-arena
-curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
-curl -fL -o .env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
-cp .env.example .env
-```
-
-Edit `.env`: set `OPENROUTER_API_KEY` to your key and `DB_PASSWORD` to a strong password you choose. Leave `IMAGE_TAG` empty to use the downloaded release's pinned images. Then start:
+Release images support amd64 and arm64, including Apple Silicon.
 
 ```bash
-docker compose up -d
+git clone https://github.com/FJrepo/ai-chess-arena.git && cd ai-chess-arena
+make setup                     # creates .env (mode 0600) from .env.example
 ```
 
-Open **http://localhost:4200**, create a tournament, generate the bracket and start the first game. Only the frontend is exposed, on loopback; the API is under `/api` and the database stays internal to Docker.
+Edit `.env`:
 
-For source checkouts, `make doctor` checks prerequisites. See [deployment](docs/deployment.md) for upgrades, backups, optional ports and `ALLOWED_HOSTS`.
+```bash
+IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
+IMAGE_TAG=v1.5.0               # a release from https://github.com/FJrepo/ai-chess-arena/releases
+OPENROUTER_API_KEY=sk-or-...
+DB_PASSWORD='choose-a-strong-password'
+```
+
+Start it:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Open **http://localhost:4200**, create a tournament, generate the bracket and start the first game. The API is available under `http://localhost:4200/api`.
+
+Everything binds to `127.0.0.1` only; set `FRONTEND_PORT` in `.env` to change the UI port. nginx proxies `/api` and `/ws` from the same origin.
+
+The frontend accepts `localhost`, `127.0.0.1` and `[::1]`; other host names need [`ALLOWED_HOSTS`](docs/deployment.md#host-names-allowed_hosts).
+
+See [docs/deployment.md](docs/deployment.md) for upgrades, backups, password rotation and troubleshooting.
+
+From v1.6.0: two-file setup, see the [5-minute start](docs/deployment.md#5-minute-start-from-v160).
 
 ## How it works
 
@@ -145,7 +158,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
 Releases use `vX.Y.Z`. The workflow runs full CI, builds both images and smoke-tests them together before publishing to GHCR as the version tag and `latest`. Deploy a pinned version; `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases) and [CHANGELOG.md](CHANGELOG.md).
 
-Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. Each release includes `docker-compose.yml` pinned to its tag and `.env.example`, attached when the immutable release is created. See [release publishing notes](docs/deployment.md#release-publishing-notes).
+Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. From v1.6.0, releases will include `docker-compose.yml` pinned to the release tag and `env.example`, attached when the immutable release is created. See [release publishing notes](docs/deployment.md#release-publishing-notes).
 
 Release builds preserve the backend Dockerfile's `MIT, GPL-3.0-or-later` licence label for bundled Stockfish. Frontend and other generated OCI labels are unchanged.
 

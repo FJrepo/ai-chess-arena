@@ -1,7 +1,7 @@
 # Deployment Guide
 
 ## Overview
-Run released images with the two setup assets from [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases): `docker-compose.yml` and `.env.example`. No source checkout, Make, Java or Node.js is needed.
+Run released images from a source checkout using the [README quick start](../README.md#quick-start), which works with v1.5.0. From v1.6.0, [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases) will also offer two setup assets: `docker-compose.yml` and `env.example`. That setup needs no source checkout, Make, Java or Node.js.
 
 The **downloaded** `docker-compose.yml` is generated from the repository's `docker-compose.prod.yml`, changing only the two `IMAGE_TAG` expressions to default to that release's exact `vX.Y.Z` tag. Both application images stay pinned even when you downloaded the files through the `latest` release URL. Explicit `IMAGE_TAG` and `IMAGE_NAMESPACE` settings still override those defaults.
 
@@ -40,19 +40,35 @@ Back up before upgrading. Flyway V19 adds `tournaments.opening_mode` (Standard b
 Rebuild/recreate the backend and frontend when deploying this feature. Opening settings affect newly created games only, including bracket placeholders; a running or waiting game retains its original history. See [opening variety and series fairness](how-it-works.md#opening-variety). Restore the pre-upgrade backup to roll back: older versions cannot exclude book rows from model metrics. No container image dependency or third-party software is added by this feature.
 
 ## First-Time Setup
-Download the two assets into a new directory (use `curl.exe` in Windows PowerShell):
+
+For v1.5.0, follow the [README quick start](../README.md#quick-start). In a source checkout, `make setup` creates `.env` from `.env.example` with mode `0600`, or preserves its contents and tightens permissions.
+
+### 5-minute start (from v1.6.0)
+
+These instructions apply once v1.6.0 is published with both setup assets; v1.5.0 has no setup assets. You need Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Compose, and an [OpenRouter API key](https://openrouter.ai/keys). The Docker Engine must be 28.0+ for localhost isolation.
+
+On macOS/Linux, download the two assets into a new directory and create the credential file with mode `0600` before editing:
 
 ```bash
 mkdir chess-arena
 cd chess-arena
-curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
-curl -fL -o .env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
-cp .env.example .env
+curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/docker-compose.yml
+curl -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/env.example
+install -m 600 env.example .env
 ```
 
-GitHub can strip leading periods from uploaded filenames, storing `.env.example` as `env.example`; the command saves it locally as `.env.example`. The release action retains `.env.example` as its display label. If your release retains the leading dot in the download name, use `/.env.example` instead of `/env.example` in that URL; release notes link both forms. See [GitHub's asset naming rules](https://docs.github.com/en/rest/releases/assets#upload-a-release-asset).
+Windows: keep `.env` in your user profile; don't share it. In PowerShell:
 
-On macOS/Linux, run `chmod 600 .env` to restrict credential access to your user; on Windows, restrict access with file permissions. Edit `.env`, setting only the two required values:
+```powershell
+Set-Location $env:USERPROFILE
+mkdir chess-arena
+cd chess-arena
+curl.exe -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/docker-compose.yml
+curl.exe -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/env.example
+Copy-Item env.example .env
+```
+
+Edit `.env`, setting only the two required values:
 
 - `OPENROUTER_API_KEY`
   - your OpenRouter API key
@@ -79,7 +95,9 @@ docker compose ps
 docker compose logs --tail=120 backend frontend
 ```
 
-Open **http://localhost:4200** (or your `FRONTEND_PORT`). To select a specific release at download time, replace `/releases/latest/download/` in both URLs with `/releases/download/vX.Y.Z/`. Do not overwrite an existing `.env` during upgrades.
+Open **http://localhost:4200** (or your `FRONTEND_PORT`), create a tournament, generate the bracket and start the first game. The API is under `/api`; only the frontend is exposed on loopback. To select a later release, replace `v1.6.0` in both download URLs with its exact version tag. Do not overwrite an existing `.env` during upgrades.
+
+Release maintainer: the v1.6.0 release PR should promote this 5-minute start into the README. Verify that the published release is latest, both setup assets download successfully, and both versioned GHCR images are available before making it the primary quick start.
 
 ### Source checkouts and operating commands
 
@@ -225,7 +243,9 @@ Release metadata explicitly preserves the backend Dockerfile's `org.opencontaine
 
 GitHub Release notes come from the tagged version's section in [CHANGELOG.md](../CHANGELOG.md), extracted by `python3 scripts/release_notes.py vX.Y.Z CHANGELOG.md --repository OWNER/REPO`. The workflow supplies the release tag and `GITHUB_REPOSITORY`. The introduction becomes Highlights, Upgrade notes comes first, and other sections retain changelog order. The workflow appends Verification with both image index digests, an Assets subsection linking the two setup files, and a Full Changelog comparison to the closest reachable previous `vX.Y.Z` tag (or the tagged commit history for the first release); it does not generate a PR list. A missing version entry fails tag validation before CI, builds or promotion.
 
-`python3 scripts/release_assets.py vX.Y.Z` writes `release-assets/docker-compose.yml` with both application images defaulting to the validated release tag, plus an exact copy of `.env.example`. Every other Compose byte is preserved. Both files are supplied to the same action step that creates the GitHub Release, with missing files treated as errors: release immutability prevents uploading them afterwards. GitHub may normalize the template's filename to `env.example`; release notes include both download forms. This adds no application migration or backfill and leaves existing installations and stored data unchanged. The assets become available when a release containing this workflow is published; older releases are unchanged.
+`python3 scripts/release_assets.py vX.Y.Z` writes `release-assets/docker-compose.yml` with both application images defaulting to the validated release tag, plus `release-assets/env.example`, an exact copy of the repository's `.env.example`. Every other Compose byte is preserved. The template is generated and uploaded as `env.example`; release notes link only that canonical filename. Both files are supplied to the same action step that creates the GitHub Release, with missing files treated as errors: release immutability prevents uploading them afterwards. This adds no application migration or backfill and leaves existing installations and stored data unchanged. Setup assets are planned from v1.6.0; older releases are unchanged.
+
+The reusable CI workflow includes a Python 3.12 job that installs `scripts/requirements-test.txt` and runs `python -m unittest discover -s scripts -p 'test_*.py'`. Script regressions gate pull requests and releases alongside backend and frontend checks.
 
 Repository-relative Markdown links resolve from the repository root to `https://github.com/OWNER/REPO/blob/vX.Y.Z/…`, preserving query strings and fragments; images use the corresponding `raw` URL. Absolute URLs, anchors and mail links are unchanged. Used reference definitions are collected from the entire changelog and appended to the notes, including definitions within an entry or after older releases. Only the next release heading (`## [`) ends an entry. Fenced code examples are preserved without interpreting their headings, references or links. These changes apply to future release generation; existing releases and persisted application data are unchanged.
 

@@ -419,10 +419,12 @@ class ReleaseNotesWorkflowTest(unittest.TestCase):
             self.assertIn(f'- `{self.env[component + "_IMAGE"]}:v1.4.0` '
                           f'(`{self.env[component + "_DIGEST"]}`)', verification)
         self.assertIn('\n### Assets\n\n', verification)
-        for label, asset in [('docker-compose.yml', 'docker-compose.yml'), ('.env.example', 'env.example'),
-                             ('original filename', '.env.example')]:
-            self.assertIn(f'[{label}](https://github.com/example/chess/releases/download/v1.4.0/{asset})',
+        for asset in ['docker-compose.yml', 'env.example']:
+            self.assertIn(f'[{asset}](https://github.com/example/chess/releases/download/v1.4.0/{asset})',
                           verification)
+        self.assertEqual(1, verification.count('/env.example)'))
+        self.assertNotIn('/.env.example', verification)
+        self.assertNotIn('original filename', verification)
         self.assertTrue(notes.endswith('[Full Changelog](https://github.com/example/chess/compare/v1.3.1...v1.4.0)\n'))
         self.assertEqual('Verification', headings(notes)[-1])
 
