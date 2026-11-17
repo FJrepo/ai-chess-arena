@@ -182,7 +182,7 @@ API: `GET /api/models?featuredOnly=false&limit=0` returns the whole catalog (`li
 
 ## Model turns and prompts
 
-Models are asked to answer in JSON, but the parser also extracts moves from plain text. A move must be legal and arrive within the tournament's move time limit when one is set. Attempt history preserves the proposed check (`+`) or mate (`#`) suffix, including on castling. The scoresheet uses the board's notation for the legal move.
+Models are asked to answer in JSON, but the parser also extracts moves from plain text. A move must be legal and arrive within the tournament's move time limit when one is set. Attempt history preserves the proposed suffix (`+`, `++` or `#`), including on castling. For example, `My move is O-O-O++.` proposes queenside castling. The scoresheet uses the board's notation for the legal move.
 
 *Max attempts per move* (API field `maxRetries`) accepts whole numbers from 1 to 20 and defaults to 3, which allows two retries. A model forfeits if it exhausts its attempts or its move time. For older tournaments, the game loop clamps the stored limit to 1–20 on each turn.
 

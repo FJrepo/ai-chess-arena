@@ -157,8 +157,8 @@ export interface ModelReliability {
   /** Share of turns answered with a legal move on the first attempt (0–1). */
   firstTryLegalRate: number;
   averageResponseTimeMs: number | null;
-  /** Includes the cost of rejected attempts. */
-  averageCostPerMoveUsd: number;
+  /** Includes rejected attempts. Null when pricing is incomplete or there are no priced plies. */
+  averageCostPerMoveUsd: number | null;
   movesSampled: number;
   finalScore: number;
   band: string;
