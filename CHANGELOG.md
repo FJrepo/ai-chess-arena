@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
+
 ## [1.6.0] - 2026-11-17
 
 Hands-off tournaments: auto-run a whole bracket with a concurrency and budget cap, an all-time Elo leaderboard, PGN/CSV/JSON export, cache-friendly prompts that roughly halved Sonnet's cost per answer in a live test, a two-file setup from release assets, a redesigned setup page and a new logo.
