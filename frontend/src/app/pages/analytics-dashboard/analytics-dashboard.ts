@@ -17,7 +17,7 @@ import {
   NgTemplateOutlet,
 } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import { finalize, Subscription } from 'rxjs';
+import { finalize, Subscription, timeout } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import {
@@ -266,6 +266,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return (this.reliability()?.models ?? []).filter((m) => m.insufficientData).length;
   });
 
+  private static readonly REPORT_TIMEOUT_MS = 60_000;
+
   private readonly subscriptions = new Subscription();
   private reports = new Subscription();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -426,7 +428,10 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
       })
-      .pipe(finalize(() => this.healthLoading.set(false)))
+      .pipe(
+        timeout(AnalyticsDashboard.REPORT_TIMEOUT_MS),
+        finalize(() => this.healthLoading.set(false)),
+      )
       .subscribe({
         next: (response) => {
           this.health.set(response);
@@ -448,7 +453,10 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         tournamentId: this.currentTournamentFilter(),
         minGames: Math.max(0, this.minGames),
       })
-      .pipe(finalize(() => this.comparisonLoading.set(false)))
+      .pipe(
+        timeout(AnalyticsDashboard.REPORT_TIMEOUT_MS),
+        finalize(() => this.comparisonLoading.set(false)),
+      )
       .subscribe({
         next: (response) => {
           this.comparison.set(response);
@@ -470,7 +478,10 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         tournamentId: this.currentTournamentFilter(),
         minGames: Math.max(0, this.minGames),
       })
-      .pipe(finalize(() => this.reliabilityLoading.set(false)))
+      .pipe(
+        timeout(AnalyticsDashboard.REPORT_TIMEOUT_MS),
+        finalize(() => this.reliabilityLoading.set(false)),
+      )
       .subscribe({
         next: (response) => {
           this.reliability.set(response);

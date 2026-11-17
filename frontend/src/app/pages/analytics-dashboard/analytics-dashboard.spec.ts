@@ -208,6 +208,49 @@ describe('AnalyticsDashboard', () => {
     },
   );
 
+  it('times out a stalled report and retries it independently on a later tick', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const stalled = new Subject<AnalyticsComparisonResponse>();
+      const { harness, component, api } = await renderDashboard();
+      const previous = component.comparison();
+      const recovery: AnalyticsComparisonResponse = {
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        gamesCount: 3,
+        models: [comparisonRow('model.recovered')],
+      };
+      api.getAnalyticsComparison.mockReturnValueOnce(stalled).mockReturnValue(of(recovery));
+      // Start between polling ticks so the timeout can be checked before the next retry.
+      vi.advanceTimersByTime(1);
+      component.manualRefresh();
+
+      vi.advanceTimersByTime(44999);
+      expect(stalled.observed).toBe(true);
+      expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(2);
+      expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(5);
+      expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(5);
+
+      vi.advanceTimersByTime(15001);
+      expect(stalled.observed).toBe(false);
+      expect(component.comparisonLoading()).toBe(false);
+      expect(component.comparisonError()).toBe('Failed to load model comparison metrics.');
+      expect(component.comparison()).toBe(previous);
+
+      vi.advanceTimersByTime(14999);
+      expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(3);
+      expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(7);
+      expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(7);
+      expect(component.comparisonError()).toBeNull();
+      stalled.next({ ...recovery, models: [comparisonRow('model.stale')] });
+      expect(component.comparison()).toEqual(recovery);
+      harness.fixture.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels pending dashboard requests and stops polling on destruction', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     try {
