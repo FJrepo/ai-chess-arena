@@ -8,6 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Changed
+- Analytics page in four tabs, Overview, Play quality, Behaviour and Cost & reliability, instead of one long comparison tab; all tables and explanations stay, and `?tab=` links open a tab directly ([how it works](docs/how-it-works.md)).
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 
 ## [1.6.0] - 2026-11-17
