@@ -80,7 +80,7 @@ When level after N games (or a drawn single game), the tournament's draw policy 
 
 ### Cost estimate
 
-The **cost estimate** before you start shows expected games, runtime and spend for the chosen models and format.
+The **Tournament Estimate** before you start highlights estimated spend, estimated runtime and projected games for the chosen models and format. Series, move pace and pricing coverage appear underneath. Expand **Assumptions** for the heuristic and caveats; it starts collapsed. Without a move time limit, the risk reason explicitly flags open-ended runtime, even for a **Low risk** cost band.
 
 ## Auto-run
 
@@ -156,7 +156,7 @@ Tournament setup starts with **Add participant**, with optional custom instructi
 
 ### Model catalog
 
-The setup page loads every text-output model from the OpenRouter catalog once (refreshed by the backend every 5 minutes).
+The setup page loads every text-output model from the OpenRouter catalog once (refreshed by the backend every 5 minutes). Search appears above a compact filter row, followed by display name, control type and optional custom instructions. **Add Participant** sits directly below the draft fields beside any missing-input hint. The lineup shows the current participant count and a minimum of two.
 
 Concurrent catalog lookups use a consistent snapshot for freshness and model data, rechecking after acquiring the refresh lock. Model validation and reasoning-effort mapping can therefore use a catalog published by another caller during a refresh.
 

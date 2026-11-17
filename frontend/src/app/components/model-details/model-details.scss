@@ -98,3 +98,19 @@
     color: var(--mat-sys-primary);
   }
 }
+
+:host(.setup-model-details) {
+  .fact dt {
+    font-size: var(--mat-sys-label-large-size);
+  }
+
+  .alias-badge,
+  .details-attribution {
+    font-size: var(--app-text-secondary-size);
+  }
+
+  .details-id .mono {
+    font-family: var(--mat-sys-body-medium-font);
+    font-size: inherit;
+  }
+}
