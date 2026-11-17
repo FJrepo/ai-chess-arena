@@ -4,6 +4,7 @@ import dev.aichessarena.dto.PromptTemplateDto;
 import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.service.OpenRouterService;
+import dev.aichessarena.service.OpenRouterKeyStore;
 import dev.aichessarena.service.PromptService;
 import dev.aichessarena.service.StockfishService;
 import jakarta.inject.Inject;
@@ -22,6 +23,9 @@ public class ModelResource {
 
     @Inject
     OpenRouterService openRouterService;
+
+    @Inject
+    OpenRouterKeyStore keys;
 
     @Inject
     PromptService promptService;
@@ -51,8 +55,9 @@ public class ModelResource {
     @GET
     @Path("/config/openrouter-status")
     public Response checkStatus() {
-        boolean valid = openRouterService.checkApiKey();
-        return Response.ok("{\"valid\": " + valid + "}").build();
+        var key = keys.status();
+        return Response.ok(new OpenRouterStatusResponse("valid".equals(key.validation()), key))
+                .header("Cache-Control", "no-store").build();
     }
 
     @GET
@@ -101,21 +106,26 @@ public class ModelResource {
     @Path("/config/system-status")
     public Response getSystemStatus() {
         var stockfish = stockfishService.status();
+        var key = keys.status();
         SystemStatusResponse dto = new SystemStatusResponse(
                 applicationVersion,
-                openRouterService.checkApiKey(),
+                "valid".equals(key.validation()),
                 stockfish.available(),
                 stockfish.reason(),
-                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
+                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString(),
+                key
         );
-        return Response.ok(dto).build();
+        return Response.ok(dto).header("Cache-Control", "no-store").build();
     }
+
+    public record OpenRouterStatusResponse(boolean valid, OpenRouterKeyStore.Status key) {}
 
     public record SystemStatusResponse(
             String backendVersion,
             boolean openRouterValid,
             boolean stockfishAvailable,
             String stockfishReason,
-            String checkedAt
+            String checkedAt,
+            OpenRouterKeyStore.Status key
     ) {}
 }

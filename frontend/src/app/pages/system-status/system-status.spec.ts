@@ -22,7 +22,12 @@ describe('SystemStatus', () => {
   it('reports a failed dependency as degraded when the backend answers', () => {
     const component = new SystemStatus(
       createApiService(() =>
-        of({ ...healthyStatus(), openRouterValid: false, stockfishAvailable: false }),
+        of({
+          ...healthyStatus(),
+          openRouterValid: false,
+          key: { ...healthyStatus().key, validation: 'invalid' },
+          stockfishAvailable: false,
+        }),
       ),
     );
 
@@ -33,6 +38,27 @@ describe('SystemStatus', () => {
     expect(
       component.dependencyLabel(component.stockfishTone(), 'Eval online', 'Eval unavailable'),
     ).toBe('Eval unavailable');
+  });
+
+  it('shows an untested configured key as unknown without claiming it is invalid', () => {
+    const status = healthyStatus();
+    status.openRouterValid = false;
+    status.key = { ...status.key, validation: 'unknown', lastValidatedAt: null };
+    const component = new SystemStatus(createApiService(() => of(status)));
+    component.refresh();
+    expect(component.openRouterTone()).toBe('unknown');
+    expect(component.openRouterSummary()).toContain('has not been checked');
+    expect(component.openRouterSummary()).toContain('Test key');
+  });
+
+  it('reports no key as needing a connection', () => {
+    const status = healthyStatus();
+    status.openRouterValid = false;
+    status.key = { source: 'none', maskedSuffix: null, validation: 'none', lastValidatedAt: null };
+    const component = new SystemStatus(createApiService(() => of(status)));
+    component.refresh();
+    expect(component.openRouterTone()).toBe('degraded');
+    expect(component.openRouterSummary()).toContain('Connect OpenRouter');
   });
 
   it('surfaces backend status fetch failures clearly', () => {
@@ -92,6 +118,12 @@ function healthyStatus(): SystemStatusResponse {
   return {
     backendVersion: '0.2.1',
     openRouterValid: true,
+    key: {
+      source: 'ui',
+      maskedSuffix: '••••-key',
+      validation: 'valid',
+      lastValidatedAt: '2026-03-06T18:00:00Z',
+    },
     stockfishAvailable: true,
     stockfishReason: null,
     checkedAt: '2026-03-06T18:00:00Z',

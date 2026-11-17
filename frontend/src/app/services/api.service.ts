@@ -16,6 +16,7 @@ import {
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import { LeaderboardResponse } from '../models/leaderboard.model';
 import { ReasoningEffort } from '../utils/reasoning-effort';
+import { OpenRouterStatus } from './openrouter-client';
 import {
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
@@ -42,9 +43,15 @@ export interface PromptTemplateResponse {
   >;
 }
 
+export interface OpenRouterStatusResponse {
+  valid: boolean;
+  key: OpenRouterStatus['key'];
+}
+
 export interface SystemStatusResponse {
   backendVersion: string;
   openRouterValid: boolean;
+  key: OpenRouterStatus['key'];
   stockfishAvailable: boolean;
   stockfishReason: string | null;
   checkedAt: string;
@@ -215,8 +222,8 @@ export class ApiService {
     });
   }
 
-  checkOpenRouterStatus(): Observable<{ valid: boolean }> {
-    return this.http.get<{ valid: boolean }>(`${this.baseUrl}/config/openrouter-status`);
+  checkOpenRouterStatus(): Observable<OpenRouterStatusResponse> {
+    return this.http.get<OpenRouterStatusResponse>(`${this.baseUrl}/config/openrouter-status`);
   }
 
   getPromptTemplate(): Observable<PromptTemplateResponse> {

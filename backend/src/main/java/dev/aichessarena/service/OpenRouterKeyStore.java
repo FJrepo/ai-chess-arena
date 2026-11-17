@@ -1,34 +1,30 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.config.SecretFileConfigInterceptor;
+import io.smallrye.config.ConfigValue;
+import io.smallrye.config.SmallRyeConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Optional;
-import java.util.function.Function;
+import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /** The only runtime credential source. No credential-bearing object has a generated toString. */
 @ApplicationScoped
 public class OpenRouterKeyStore {
-    private final Function<String, String> environment;
-    private final String configured;
+    private final SmallRyeConfig config;
     private final Path directory;
     private String validatedFingerprint;
     private Instant lastValidatedAt;
     private String validation = "unknown";
 
     @Inject
-    public OpenRouterKeyStore(@ConfigProperty(name = "openrouter.api-key") Optional<String> configured,
+    public OpenRouterKeyStore(Config config,
                               @ConfigProperty(name = "instance.secrets-dir") String directory) {
-        this(configured.orElse(""), Path.of(directory), System::getenv);
-    }
-
-    OpenRouterKeyStore(String configured, Path directory, Function<String, String> environment) {
-        this.configured = configured;
-        this.directory = directory;
-        this.environment = environment;
+        this.config = config.unwrap(SmallRyeConfig.class);
+        this.directory = Path.of(directory);
     }
 
     Path directory() {
@@ -36,28 +32,25 @@ public class OpenRouterKeyStore {
     }
 
     public String key() {
-        String explicit = environment.apply("OPENROUTER_API_KEY");
-        if (explicit != null && !explicit.isBlank()) return explicit;
-        String file = environment.apply("OPENROUTER_API_KEY_FILE");
-        if (file != null && !file.isBlank()) {
-            String value = PrivateFiles.read(Path.of(file));
-            if (value == null || value.isBlank()) {
-                throw new IllegalStateException("OPENROUTER_API_KEY_FILE must name a readable, non-empty secret file");
-            }
-            return value;
-        }
-        if (configured != null && !configured.isBlank()) return configured;
+        return key(config.getConfigValue("openrouter.api-key"));
+    }
+
+    private String key(ConfigValue configured) {
+        if (configured.getValue() != null && !configured.getValue().isBlank()) return configured.getValue();
         String value = PrivateFiles.read(directory.resolve("openrouter_key"));
         return value == null ? "" : value;
     }
 
     public String source() {
-        String explicit = environment.apply("OPENROUTER_API_KEY");
-        if (explicit != null && !explicit.isBlank()) return "env";
-        String file = environment.apply("OPENROUTER_API_KEY_FILE");
-        if (file != null && !file.isBlank()) return "file";
-        if (configured != null && !configured.isBlank()) return "env";
-        return key().isBlank() ? "none" : "ui";
+        ConfigValue configured = config.getConfigValue("openrouter.api-key");
+        return source(configured, key(configured));
+    }
+
+    private String source(ConfigValue configured, String key) {
+        if (configured.getValue() != null && !configured.getValue().isBlank()) {
+            return SecretFileConfigInterceptor.FILE_SOURCE.equals(configured.getConfigSourceName()) ? "file" : "env";
+        }
+        return key.isBlank() ? "none" : "ui";
     }
 
     public void requireKey() {
@@ -65,7 +58,8 @@ public class OpenRouterKeyStore {
     }
 
     public void requireMutable() {
-        if (source().equals("env") || source().equals("file")) {
+        String source = source();
+        if (source.equals("env") || source.equals("file")) {
             throw new WebApplicationException("OpenRouter key is operator-managed; change its environment or secret file", 409);
         }
     }
@@ -91,11 +85,12 @@ public class OpenRouterKeyStore {
     }
 
     public synchronized Status status() {
-        String key = key();
+        ConfigValue configured = config.getConfigValue("openrouter.api-key");
+        String key = key(configured);
         boolean same = Pkce.challenge(key).equals(validatedFingerprint);
         // Never reveal the whole value, even for an invalid short operator credential.
         String suffix = key.length() > 4 ? "••••" + key.substring(key.length() - 4) : null;
-        return new Status(source(), suffix, same ? lastValidatedAt : null,
+        return new Status(source(configured, key), suffix, same ? lastValidatedAt : null,
                 key.isBlank() ? "none" : same ? validation : "unknown");
     }
 

@@ -65,9 +65,6 @@ public class OpenRouterService {
     @Inject
     OpenRouterKeyStore keyStore;
 
-    @Inject
-    OpenRouterConnection connection;
-
     @ConfigProperty(name = "openrouter.base-url")
     String baseUrl;
 
@@ -713,10 +710,6 @@ public class OpenRouterService {
 
     private String effectiveKey() {
         return keyStore == null ? "" : keyStore.key();
-    }
-
-    public boolean checkApiKey() {
-        return connection != null && "valid".equals(connection.test().validation());
     }
 
     private JsonNode fetchRawModels() {

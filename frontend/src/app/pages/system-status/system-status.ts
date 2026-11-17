@@ -35,8 +35,12 @@ export class SystemStatus implements OnInit {
   backendReachable = computed(() => this.status() !== null && !this.error());
   backendVersion = computed(() => this.status()?.backendVersion ?? 'unknown');
 
-  /** OpenRouter and Stockfish are checked by the backend, so without it their state is unknown. */
-  openRouterTone = computed(() => this.dependencyTone(this.status()?.openRouterValid));
+  /** Provider status reflects the last explicit key validation, without a live request. */
+  openRouterTone = computed(() => {
+    const validation = this.status()?.key.validation;
+    if (validation === 'unknown') return 'unknown';
+    return this.dependencyTone(this.status()?.openRouterValid);
+  });
   stockfishTone = computed(() => this.dependencyTone(this.status()?.stockfishAvailable));
 
   constructor(private api: ApiService) {}
@@ -85,9 +89,16 @@ export class SystemStatus implements OnInit {
   openRouterSummary(): string {
     const status = this.status();
     if (!status) return 'Provider status unknown: the backend is unreachable.';
-    return status.openRouterValid
-      ? 'OpenRouter API key validated successfully.'
-      : 'OpenRouter API key is invalid or unavailable.';
+    switch (status.key.validation) {
+      case 'none':
+        return 'Connect OpenRouter to use a provider key.';
+      case 'unknown':
+        return 'OpenRouter API key has not been checked. Use Test key below.';
+      case 'valid':
+        return 'OpenRouter API key validated successfully at the last check.';
+      default:
+        return 'OpenRouter API key was invalid or unavailable at the last check.';
+    }
   }
 
   private dependencyTone(ok: boolean | undefined): StatusTone {

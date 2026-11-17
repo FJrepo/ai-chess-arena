@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.config.OpenRouterKeyStoreFixture;
 import dev.aichessarena.dto.AnalyticsHealthDto;
 import dev.aichessarena.dto.AnalyticsHealthModelRowDto;
 import dev.aichessarena.dto.AnalyticsModelComparisonDto;
@@ -789,7 +790,7 @@ class AnalyticsServiceTest {
                 }
             };
             catalog.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-            catalog.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
+            catalog.keyStore = OpenRouterKeyStoreFixture.keys("test-key", java.nio.file.Path.of("target/test-keys"));
             catalog.objectMapper = new ObjectMapper();
             catalog.modelsClock = now::get;
             if (stale) {

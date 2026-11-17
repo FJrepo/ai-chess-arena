@@ -72,7 +72,7 @@ class TournamentCreationIT {
         body.put("generateBracket", false);
         TournamentDto replay = create(body, 200);
         assertEquals(created.id(), replay.id());
-        assertEquals(created.participants(), replay.participants());
+        assertEquals(participantsById(created), participantsById(replay));
         assertEquals(gameIds(created), gameIds(replay));
         given().contentType("application/json").queryParam("drawMode", "RANDOM").post("/api/tournaments/{id}/generate-bracket", created.id())
                 .then().statusCode(409);
@@ -238,7 +238,7 @@ class TournamentCreationIT {
             assertReady(ta, 3);
             assertReady(tb, 3);
             assertEquals(ta.id(), tb.id());
-            assertEquals(ta.participants(), tb.participants());
+            assertEquals(participantsById(ta), participantsById(tb));
             assertEquals(gameIds(ta), gameIds(tb));
         }
     }
@@ -261,6 +261,11 @@ class TournamentCreationIT {
 
     private static List<Integer> seeds(TournamentDto t) {
         return t.participants().stream().map(p -> p.seed()).sorted().toList();
+    }
+
+    private static List<dev.aichessarena.dto.ParticipantDto> participantsById(TournamentDto t) {
+        // Response collection order is unspecified; compare every DTO field and preserve duplicates.
+        return t.participants().stream().sorted(Comparator.comparing(p -> p.id())).toList();
     }
 
     private static List<UUID> gameIds(TournamentDto t) {

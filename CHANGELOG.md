@@ -20,15 +20,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Per-tournament Banter tone: Original, Polite, Playful or Spicy for Optional/Mandatory chat, with setup rule previews and a live game label. Changes apply next turn; Off ignores the retained tone and legacy full prompt overrides remain unchanged. Tone guidance combines with resignation and custom instructions; invalid API values return 400.
 
 ### Changed
-- OpenRouter credentials are optional at startup. Dynamic precedence is explicit environment/property, operator secret file, UI key, then none; UI changes and file rotation apply on the next request. The public catalog cache is independent of credentials. Release setup now downloads, starts, opens, then connects.
+- OpenRouter credentials are optional at startup. Precedence follows Quarkus: system property, explicit environment, operator secret file, UI key, then none; UI changes and file rotation apply on the next request. The public catalog cache is independent of credentials. Release setup now downloads, starts, opens, then connects.
 - Creating a tournament from setup now generates its bracket, with Bracket draw (Random by default) under Tournament Settings → Matches. The create API accepts `drawMode` (default ORDER) and `generateBracket`; only explicit `generateBracket: true` generates at creation; omitted, null or false retains draft creation for API clients. Repeated `clientRequestId` requests preserve the original choice and bracket, including recovery after interrupted generation. Existing drafts retain manual generation.
 - Analytics page in four tabs, Overview, Play quality, Behaviour and Cost & reliability, instead of one long comparison tab; all tables and explanations stay, and `?tab=` links open a tab directly ([how it works](docs/how-it-works.md)).
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 - New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; connect in System after startup, or use an operator env value/file.
 
 ### Fixed
+- Keep legacy OpenRouter/system status GETs passive, reporting masked metadata and the last stored validation result; only an authorized Test key POST performs an explicit test. Honor Quarkus property precedence without reading losing secret files, and accept nginx-valid underscore host names for credential routes.
+- Remove unsupported TLS reverse-proxy claim instructions; `APP_ORIGIN` only changes the logged HTTP setup link. Keep network exposure unsupported.
+- Replace key-like test fixtures, ignore the exact historical false positive, and compare creation-retry participant DTOs independently of unspecified response order.
 - Match only the application's exact secret placeholders and preserve higher-priority Quarkus values and other expressions. Keep an explicit database password in the v1.6.0 source-checkout example; generated secrets require v1.7.0+ images.
-
 - Preserve legacy API create-then-add-participants-then-generate workflows when `generateBracket` is omitted or null; the setup UI explicitly opts into creation-time brackets.
 
 ## [1.6.0] - 2026-11-17

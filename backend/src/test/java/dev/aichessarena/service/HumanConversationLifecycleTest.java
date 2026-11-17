@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.bhlangonijr.chesslib.Board;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.config.OpenRouterKeyStoreFixture;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.ChatMode;
@@ -248,7 +249,7 @@ class HumanConversationLifecycleTest {
             server.start();
             router.objectMapper = JSON;
             router.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-            router.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
+            router.keyStore = OpenRouterKeyStoreFixture.keys("test-key", java.nio.file.Path.of("target/test-keys"));
             engine = buildEngine();
         }
 

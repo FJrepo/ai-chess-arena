@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -21,6 +22,9 @@ import org.jboss.logging.Logger;
 @ApplicationScoped
 public class InstanceAccess {
     private static final Set<String> LOOPBACK = Set.of("localhost", "127.0.0.1", "[::1]");
+    // Match nginx's dot-separated name labels, including underscores and bracketed IPv6.
+    private static final Pattern AUTHORITY = Pattern.compile(
+            "^(\\[[0-9a-fA-F:]+\\]|[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.?)(?::[0-9]+)?$");
     private final OpenRouterKeyStore keys;
     private final String[] hosts;
     private final String publicOrigin;
@@ -59,8 +63,14 @@ public class InstanceAccess {
         return value.toLowerCase(Locale.ROOT).replaceFirst("\\.$", "");
     }
 
+    private static String requestHost(URI request) {
+        var authority = AUTHORITY.matcher(request.getRawAuthority() == null ? "" : request.getRawAuthority());
+        return authority.matches() ? host(authority.group(1)) : null;
+    }
+
     public void requireHost(URI request) {
-        if (request.getHost() == null || !allowed(host(request.getHost()))) {
+        String candidate = requestHost(request);
+        if (candidate == null || !allowed(candidate)) {
             throw new WebApplicationException("Host is not in ALLOWED_HOSTS", 421);
         }
     }
@@ -107,7 +117,7 @@ public class InstanceAccess {
     public synchronized boolean authorized(String browser, URI request) {
         requireHost(request);
         if (browser == null || !browser.matches("[A-Za-z0-9_-]{43}")) return false;
-        if (!lan() && LOOPBACK.contains(host(request.getHost()))) {
+        if (!lan() && LOOPBACK.contains(requestHost(request))) {
             if (PrivateFiles.read(claimFile()) == null) {
                 PrivateFiles.write(claimFile(), Pkce.challenge(browser));
                 PrivateFiles.delete(keys.directory().resolve("setup_token"));

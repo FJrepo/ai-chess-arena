@@ -109,6 +109,12 @@ describe('TournamentList', () => {
     component.systemStatus.set({
       backendVersion: '0.4.0',
       openRouterValid: true,
+      key: {
+        source: 'ui',
+        maskedSuffix: '••••-key',
+        validation: 'valid',
+        lastValidatedAt: '2026-03-06T18:00:00Z',
+      },
       stockfishAvailable: true,
       stockfishReason: null,
       checkedAt: '2026-03-06T21:30:00Z',

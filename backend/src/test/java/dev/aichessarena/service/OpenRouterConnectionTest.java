@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.config.OpenRouterKeyStoreFixture;
 import jakarta.ws.rs.WebApplicationException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -29,7 +30,7 @@ class OpenRouterConnectionTest {
     OpenRouterKeyStore keys;
     OpenRouterConnection connection;
     ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    String providerKey = "fixture-private-credential-1234";
+    String providerKey = "test-provider-key";
     int exchangeStatus = 200;
     int validationStatus = 200;
     String validationBody = "{\"data\":{}}";
@@ -56,7 +57,7 @@ class OpenRouterConnectionTest {
             request.close();
         });
         server.start();
-        keys = new OpenRouterKeyStore("", directory, name -> null);
+        keys = OpenRouterKeyStoreFixture.keys(null, directory);
         connection = new OpenRouterConnection(keys, mapper, "http://127.0.0.1:" + server.getAddress().getPort());
     }
 
@@ -87,7 +88,7 @@ class OpenRouterConnectionTest {
         assertEquals(providerKey, keys.key());
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(directory.resolve("openrouter_key"))));
         assertEquals("valid", keys.status().validation());
-        assertEquals("••••1234", keys.status().maskedSuffix());
+        assertEquals("••••-key", keys.status().maskedSuffix());
         assertNotNull(keys.status().lastValidatedAt());
         String response = mapper.writeValueAsString(keys.status());
         assertFalse(response.contains(providerKey));
@@ -135,12 +136,12 @@ class OpenRouterConnectionTest {
     @Test
     void invalidValidationKeepsPreviousKeyAndRejectsOauthAndPaste() {
         connection.manual(providerKey);
-        providerKey = "fixture-replacement-5678";
+        providerKey = "test-replacement-key";
         validationStatus = 401;
         String state = state(connection.start(browser, origin));
         assertThrows(WebApplicationException.class, () -> connection.complete(browser, origin, state, "fake-code"));
         assertThrows(WebApplicationException.class, () -> connection.manual(providerKey));
-        assertEquals("fixture-private-credential-1234", keys.key());
+        assertEquals("test-provider-key", keys.key());
     }
 
     @Test
@@ -176,23 +177,30 @@ class OpenRouterConnectionTest {
     @Test
     void envAndFilePrecedenceAreDynamicAndImmutable() throws Exception {
         Map<String, String> environment = new HashMap<>();
-        keys = new OpenRouterKeyStore("", directory, environment::get);
+        keys = OpenRouterKeyStoreFixture.keys(null, directory, environment);
         keys.save(providerKey);
         Path operatorFile = directory.resolve("operator");
-        Files.writeString(operatorFile, "  fixture-operator-abcd\n");
+        Files.writeString(operatorFile, "  test-operator-key\n");
         environment.put("OPENROUTER_API_KEY_FILE", operatorFile.toString());
+        keys = OpenRouterKeyStoreFixture.keys(null, directory, environment);
         assertEquals("file", keys.source());
-        assertEquals("fixture-operator-abcd", keys.key());
+        assertEquals("test-operator-key", keys.key());
         assertEquals(409, assertThrows(WebApplicationException.class, keys::delete).getResponse().getStatus());
-        assertThrows(WebApplicationException.class, () -> keys.save("fixture-overwrite-9999"));
-        Files.writeString(operatorFile, "fixture-rotated-efgh");
-        assertEquals("fixture-rotated-efgh", keys.key());
-        environment.put("OPENROUTER_API_KEY", "fixture-env-ijkl");
+        assertThrows(WebApplicationException.class, () -> keys.save("test-overwrite-key"));
+        keys.checked(keys.key(), "valid");
+        assertNotNull(keys.status().lastValidatedAt());
+        Files.writeString(operatorFile, "test-rotated-key");
+        assertEquals("test-rotated-key", keys.key());
+        assertEquals("unknown", keys.status().validation());
+        assertNull(keys.status().lastValidatedAt());
+        environment.put("OPENROUTER_API_KEY", "test-env-key");
+        keys = OpenRouterKeyStoreFixture.keys(null, directory, environment);
         assertEquals("env", keys.source());
-        assertEquals("fixture-env-ijkl", keys.key());
+        assertEquals("test-env-key", keys.key());
         assertNull(keys.status().lastValidatedAt());
         environment.put("OPENROUTER_API_KEY", "");
         environment.remove("OPENROUTER_API_KEY_FILE");
+        keys = OpenRouterKeyStoreFixture.keys(null, directory, environment);
         assertEquals(providerKey, keys.key());
         keys.delete();
         assertEquals("none", keys.source());
@@ -201,11 +209,11 @@ class OpenRouterConnectionTest {
 
     @Test
     void shortConfiguredCredentialIsNeverReturnedAndEmptyFileFailsClosed() throws Exception {
-        var shortKey = new OpenRouterKeyStore("1234", directory, name -> null);
+        var shortKey = OpenRouterKeyStoreFixture.keys("1234", directory);
         assertNull(shortKey.status().maskedSuffix());
         Path file = directory.resolve("empty");
         Files.writeString(file, "\n");
-        var fileKeys = new OpenRouterKeyStore("", directory, name -> name.endsWith("_FILE") ? file.toString() : null);
+        var fileKeys = OpenRouterKeyStoreFixture.keys(null, directory, Map.of("OPENROUTER_API_KEY_FILE", file.toString()));
         assertThrows(IllegalStateException.class, fileKeys::key);
     }
 
@@ -239,11 +247,11 @@ class OpenRouterConnectionTest {
             assertTrue(first.isProviderFailure());
             assertFalse(first.rawResponse().contains(providerKey));
             assertFalse(first.errorMessage().contains(providerKey));
-            connection.manual("fixture-next-key-5678");
+            connection.manual("test-next-key");
             router.chat("fake/model", List.of(new OpenRouterService.ChatMsg("user", "move")));
-            assertEquals("Bearer fixture-next-key-5678", sent.get());
+            assertEquals("Bearer test-next-key", sent.get());
             assertFalse(logs.toString().contains(providerKey));
-            assertFalse(logs.toString().contains("fixture-next-key-5678"));
+            assertFalse(logs.toString().contains("test-next-key"));
             keys.delete();
             assertTrue(router.chat("fake/model", List.of()).isProviderFailure());
         } finally {
