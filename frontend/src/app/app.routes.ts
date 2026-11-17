@@ -13,6 +13,11 @@ export const routes: Routes = [
       import('./pages/tournament-list/tournament-list').then((m) => m.TournamentList),
   },
   {
+    path: 'tournaments/:sourceId/rematch',
+    loadComponent: () =>
+      import('./pages/tournament-setup/tournament-setup').then((m) => m.TournamentSetup),
+  },
+  {
     path: 'tournaments/new',
     loadComponent: () =>
       import('./pages/tournament-setup/tournament-setup').then((m) => m.TournamentSetup),

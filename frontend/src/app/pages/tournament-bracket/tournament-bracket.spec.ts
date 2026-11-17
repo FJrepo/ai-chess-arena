@@ -55,6 +55,18 @@ describe('TournamentBracket', () => {
     expect(element.querySelector('.start-run')?.textContent).toContain('Run tournament');
   });
 
+  it('links to setup with only the tournament ID in the rematch URL', () => {
+    const original = {
+      ...tournament('COMPLETED', 'Winner', finalGame({ status: 'COMPLETED' })),
+      sharedCustomInstructions: 'Private instructions',
+    };
+    const element = render(original);
+    const action = Array.from(element.querySelectorAll('a')).find(
+      (link) => link.textContent.trim() === 'Run this tournament again',
+    );
+    expect(action?.getAttribute('href')).toBe('/tournaments/' + original.id + '/rematch');
+  });
+
   function runPage(
     status: Tournament['status'] = 'IN_PROGRESS',
     runStatus: Tournament['autoRunStatus'] = 'OFF',

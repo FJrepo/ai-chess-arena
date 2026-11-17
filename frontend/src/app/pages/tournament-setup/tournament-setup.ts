@@ -12,7 +12,8 @@ import {
   computed,
   signal,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -95,6 +96,7 @@ type TournamentConfidence = {
   selector: 'app-tournament-setup',
   imports: [
     FormsModule,
+    RouterLink,
     MatCardModule,
     MatFormFieldModule,
     MatInputModule,
@@ -242,6 +244,60 @@ Your opponent is %s (%s).`;
     });
   }
 
+  readonly sourceId = signal<string | null>(null);
+  readonly rematchSource = signal<Tournament | null>(null);
+  readonly rematchLoadError = signal<string | null>(null);
+  readonly rematchAcknowledged = signal(false);
+  readonly rematchConcurrency = signal<number | null>(2);
+  readonly rematchBudget = signal('');
+  readonly concurrencyOptions = [1, 2, 3, 4, 5, 6, 7, 8];
+  private readonly subscriptions = new Subscription();
+  private sourceRequest?: Subscription;
+
+  readonly validRunSettings = computed(() => {
+    const concurrency = this.rematchConcurrency();
+    const budget = this.rematchBudget();
+    return (
+      concurrency !== null &&
+      this.concurrencyOptions.includes(concurrency) &&
+      (budget === '' ||
+        /^(?=.{1,20}$)(?=.*[1-9])(?:\d{1,17}(?:\.\d{0,2})?|\.\d{1,2})$/.test(budget))
+    );
+  });
+
+  readonly unavailableModels = computed(() => {
+    if (!this.sourceId() || this.modelsLoading() || this.modelsError()) return [];
+    const catalog = new Set(this.models().map((model) => model.id));
+    return this.participants().filter(
+      (participant) => participant.controlType === 'AI' && !catalog.has(participant.modelId ?? ''),
+    );
+  });
+  readonly rematchWarnings = computed(() => {
+    const source = this.rematchSource();
+    if (!source) return [];
+    const warnings: string[] = [];
+    if (source.legacySystemPrompt) warnings.push('Tournament-wide legacy system template');
+    for (const participant of source.participants) {
+      if (participant.legacySystemPrompt)
+        warnings.push('Legacy system template for ' + participant.playerName);
+    }
+    if (new Set(source.participants.map((p) => p.seed)).size !== source.participants.length) {
+      warnings.push('Original lineup has tied seeds. Exact pairings may change.');
+    }
+    if (source.format !== 'SINGLE_ELIMINATION') warnings.push('Tournament format ' + source.format);
+    if (source.maxConcurrentGames === undefined)
+      warnings.push('Original concurrency limit unavailable');
+    if (source.budgetUsd === undefined) warnings.push('Original budget unavailable');
+    if (source.maxOutputTokens === undefined)
+      warnings.push('Original output-token limit unavailable');
+    if (source.openingMode === undefined) warnings.push('Original opening policy unavailable');
+    if (source.resignationAllowed === undefined)
+      warnings.push('Original resignation setting unavailable');
+    if (source.adjudicationEnabled === undefined)
+      warnings.push('Original adjudication setting unavailable');
+    return warnings;
+  });
+
   readonly openingValid = computed(
     () =>
       this.openingMode() === 'STANDARD' ||
@@ -254,11 +310,15 @@ Your opponent is %s (%s).`;
   matchupBestOf: Tournament['matchupBestOf'] = 1;
   finalsBestOf: Tournament['finalsBestOf'] = null;
 
+  readonly editingParticipantIndex = signal<number | null>(null);
   newPlayerName = '';
   newControlType: Participant['controlType'] = 'AI';
   newModelId = '';
   newCustomInstructions = '';
   showParticipantInstructions = false;
+
+  @ViewChild('participantName', { read: ElementRef })
+  private participantName?: ElementRef<HTMLInputElement>;
 
   @ViewChild('setupAside') private setupAside!: ElementRef<HTMLElement>;
   readonly asideSticky = signal(false);
@@ -367,13 +427,216 @@ Your opponent is %s (%s).`;
   ) {}
 
   ngOnInit(): void {
-    this.route.queryParamMap.subscribe((params) => {
-      this.applyPreset(params.get('preset'));
-    });
+    const routeSource = this.route.snapshot?.paramMap?.get('sourceId');
+    if (routeSource) {
+      this.subscriptions.add(
+        this.route.paramMap.subscribe((params) => {
+          this.sourceId.set(params.get('sourceId'));
+          this.loadRematch();
+        }),
+      );
+    } else {
+      this.subscriptions.add(
+        this.route.queryParamMap.subscribe((params) => {
+          this.applyPreset(params.get('preset'));
+        }),
+      );
+    }
     this.loadPromptTemplate();
     this.loadOpenRouterStatus();
     this.loadModels();
     this.loadOpenings();
+  }
+
+  loadRematch(): void {
+    const id = this.sourceId();
+    if (!id) return;
+
+    this.rematchSource.set(null);
+    this.rematchLoadError.set(null);
+    this.rematchAcknowledged.set(false);
+    this.pendingSubmission = null;
+    this.createError.set(null);
+    this.resetParticipantForm();
+    this.sourceRequest?.unsubscribe();
+    this.sourceRequest = this.api.getTournament(id).subscribe({
+      next: (source) => {
+        if (this.sourceId() !== id) return;
+        this.name = source.name + ' (rematch)';
+        this.sharedCustomInstructions = source.sharedCustomInstructions ?? '';
+        this.limitMoveTime = source.moveTimeoutSeconds != null;
+        this.moveTimeout = source.moveTimeoutSeconds ?? 120;
+        this.maxRetries.set(source.maxRetries);
+        this.maxOutputTokens = source.maxOutputTokens ?? 16384;
+        this.reasoningEffort =
+          source.reasoningEffort === 'default' ? null : (source.reasoningEffort ?? null);
+        this.chatMode = source.chatMode ?? (source.trashTalkEnabled ? 'OPTIONAL' : 'OFF');
+        this.banterLevel = source.banterLevel ?? null;
+        this.resignationAllowed = source.resignationAllowed ?? false;
+        this.adjudicationEnabled = source.adjudicationEnabled ?? false;
+        this.openingMode.set(source.openingMode ?? 'STANDARD');
+        this.openingId.set(source.openingId ?? null);
+        this.drawMode = 'ORDER';
+        this.drawPolicy = source.drawPolicy;
+        this.matchupBestOf = source.matchupBestOf;
+        this.finalsBestOf = source.finalsBestOf ?? null;
+        this.rematchConcurrency.set(source.maxConcurrentGames ?? 2);
+        this.rematchBudget.set(
+          source.budgetUsdExact ?? (source.budgetUsd == null ? '' : String(source.budgetUsd)),
+        );
+        const ordered = [...source.participants].sort((a, b) => a.seed - b.seed);
+        this.participants.set(
+          ordered.map(
+            ({ playerName, controlType, modelId, customInstructions, seed, reasoningEffort }) => ({
+              playerName,
+              controlType,
+              modelId,
+              customInstructions,
+              seed,
+              reasoningEffort,
+            }),
+          ),
+        );
+        this.rematchSource.set({ ...source, participants: ordered });
+      },
+      error: (err) => {
+        if (this.sourceId() !== id) return;
+        this.rematchLoadError.set(
+          err?.status === 404
+            ? 'Source tournament not found.'
+            : 'Could not load the source tournament.',
+        );
+      },
+    });
+  }
+
+  rematchChanges(source: Tournament): { setting: string; before: string; after: string }[] {
+    const changes: { setting: string; before: string; after: string }[] = [];
+    const compare = (
+      setting: string,
+      before: unknown,
+      after: unknown,
+      label: (value: unknown) => string = String,
+    ) => {
+      if (before !== after) changes.push({ setting, before: label(before), after: label(after) });
+    };
+    const nullable = (value: unknown) =>
+      value === undefined ? 'Unavailable' : String(value ?? 'None');
+    const toggle = (value: unknown) => (value === undefined ? 'Unavailable' : value ? 'On' : 'Off');
+    const draw = (value: unknown) =>
+      value === 'ORDER'
+        ? 'Stored seed order'
+        : value === 'RANDOM'
+          ? 'Random draw'
+          : 'Original draw unavailable';
+    compare('Name', source.name, this.name.trim());
+    compare('Format', source.format, 'SINGLE_ELIMINATION', (value) =>
+      value === 'SINGLE_ELIMINATION' ? 'Single elimination' : String(value),
+    );
+    compare('Auto-run state', source.autoRunStatus ?? 'OFF', 'OFF');
+    compare('Bracket draw', source.creationDrawMode, this.drawMode, draw);
+    compare(
+      'Draw policy',
+      source.drawPolicy,
+      this.drawPolicy,
+      (value) =>
+        this.drawPolicyOptions.find((option) => option.value === value)?.label ?? String(value),
+    );
+    compare('Matchup length', source.matchupBestOf, this.matchupBestOf);
+    compare('Final length', source.finalsBestOf ?? null, this.finalsBestOf, (value) =>
+      String(value ?? 'Same as matchups'),
+    );
+    compare(
+      'Opening policy',
+      source.openingMode === 'FIXED' ? (source.openingId ?? 'Missing opening') : source.openingMode,
+      this.openingMode() === 'FIXED'
+        ? (this.openingId() ?? 'Choose an opening')
+        : this.openingMode(),
+      (value) =>
+        this.openings().find((line) => line.id === value)?.name ??
+        (value === 'STANDARD'
+          ? 'Standard'
+          : value === 'RANDOM_BOOK'
+            ? 'Random book'
+            : nullable(value)),
+    );
+    compare(
+      'Move time limit',
+      source.moveTimeoutSeconds ?? null,
+      this.limitMoveTime ? this.moveTimeout : null,
+      (value) => (value == null ? 'No limit' : value + ' s'),
+    );
+    compare('Attempts per move', source.maxRetries, this.maxRetries());
+    compare('Output-token cap', source.maxOutputTokens, this.maxOutputTokens, nullable);
+    compare(
+      'Chat',
+      source.chatMode ?? (source.trashTalkEnabled ? 'OPTIONAL' : 'OFF'),
+      this.chatMode,
+    );
+    compare('Banter tone', source.banterLevel ?? null, this.banterLevel, (value) =>
+      String(value ?? 'Original tone'),
+    );
+    compare('Resignation', source.resignationAllowed, this.resignationAllowed, toggle);
+    compare('Adjudication', source.adjudicationEnabled, this.adjudicationEnabled, toggle);
+    compare(
+      'Reasoning effort',
+      source.reasoningEffort === 'default' ? null : (source.reasoningEffort ?? null),
+      this.reasoningEffort,
+      (value) => String(value ?? 'Model default'),
+    );
+    compare(
+      'Maximum concurrent games',
+      source.maxConcurrentGames,
+      this.rematchConcurrency(),
+      nullable,
+    );
+    const beforeBudget = source.budgetUsdExact ?? source.budgetUsd;
+    compare(
+      'Budget',
+      beforeBudget === undefined ? undefined : canonicalBudget(String(beforeBudget ?? '')),
+      canonicalBudget(this.rematchBudget()),
+      (value) => (value === undefined ? 'Unavailable' : value === '' ? 'No cap' : '$' + value),
+    );
+    const instructions = this.normalizeInstructions(this.sharedCustomInstructions);
+    if ((source.sharedCustomInstructions ?? null) !== instructions) {
+      changes.push({
+        setting: 'Shared instructions',
+        before: source.sharedCustomInstructions ? 'Custom instructions' : 'None',
+        after: instructions
+          ? source.sharedCustomInstructions
+            ? 'Edited instructions'
+            : 'Custom instructions'
+          : 'None',
+      });
+    }
+    const before = source.participants;
+    const after = this.participants();
+    const player = (p: SetupParticipant | undefined) =>
+      p
+        ? [
+            p.playerName,
+            p.controlType === 'HUMAN' ? 'Human' : p.modelId,
+            p.reasoningEffort,
+            p.customInstructions ? 'Custom instructions' : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : 'None';
+    for (let i = 0; i < Math.max(before.length, after.length); i++) {
+      const original = before[i];
+      const draft = after[i];
+      const previous = player(original);
+      const current = player(draft);
+      if (previous !== current) compare('Lineup position ' + (i + 1), previous, current);
+      else if ((original?.customInstructions ?? null) !== (draft?.customInstructions ?? null)) {
+        changes.push({
+          setting: 'Instructions for ' + draft?.playerName,
+          before: 'Custom instructions',
+          after: 'Edited instructions',
+        });
+      }
+    }
+    return changes;
   }
 
   ngAfterViewInit(): void {
@@ -387,6 +650,8 @@ Your opponent is %s (%s).`;
   }
 
   ngOnDestroy(): void {
+    this.sourceRequest?.unsubscribe();
+    this.subscriptions.unsubscribe();
     this.asideObserver?.disconnect();
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', this.updateAsideSticky);
@@ -544,14 +809,15 @@ Your opponent is %s (%s).`;
       return;
     }
 
-    this.participants.update((list) => [
-      ...list,
-      {
+    const editing = this.editingParticipantIndex();
+    this.participants.update((list) => {
+      const previous = editing === null ? undefined : list[editing];
+      const participant: SetupParticipant = {
         playerName: this.newPlayerName.trim(),
         controlType: this.newControlType,
         modelId: this.newControlType === 'AI' ? this.newModelId : null,
         customInstructions:
-          this.newControlType === 'AI'
+          this.newControlType === 'AI' || previous?.controlType === 'HUMAN'
             ? this.normalizeInstructions(this.newCustomInstructions)
             : null,
         promptPricePerMillion:
@@ -562,16 +828,40 @@ Your opponent is %s (%s).`;
           this.newControlType === 'AI'
             ? (this.selectedModel()?.completionPricePerMillion ?? null)
             : null,
-        seed: list.length,
+        seed:
+          previous?.seed ??
+          (this.sourceId() ? Math.max(-1, ...list.map((p) => p.seed ?? 0)) + 1 : list.length),
         reasoningEffort:
           this.newControlType === 'AI' &&
           this.newReasoningEffort &&
-          this.selectedModelEfforts().includes(this.newReasoningEffort)
+          (this.selectedModelEfforts().includes(this.newReasoningEffort) ||
+            (previous?.modelId === this.newModelId &&
+              previous.reasoningEffort === this.newReasoningEffort))
             ? this.newReasoningEffort
             : null,
-      },
-    ]);
+      };
+      return editing === null
+        ? [...list, participant]
+        : list.map((p, i) => (i === editing ? participant : p));
+    });
 
+    this.resetParticipantForm();
+  }
+
+  editParticipant(index: number): void {
+    const participant = this.participants()[index];
+    this.editingParticipantIndex.set(index);
+    this.newPlayerName = participant.playerName ?? '';
+    this.newControlType = participant.controlType ?? 'AI';
+    this.newModelId = participant.modelId ?? '';
+    this.newReasoningEffort = participant.reasoningEffort ?? null;
+    this.newCustomInstructions = participant.customInstructions ?? '';
+    this.showParticipantInstructions = !!participant.customInstructions;
+    this.participantName?.nativeElement.focus();
+  }
+
+  resetParticipantForm(): void {
+    this.editingParticipantIndex.set(null);
     this.newPlayerName = '';
     this.newControlType = 'AI';
     this.newModelId = '';
@@ -582,6 +872,9 @@ Your opponent is %s (%s).`;
 
   removeParticipant(index: number) {
     this.participants.update((list) => list.filter((_, i) => i !== index));
+    const editing = this.editingParticipantIndex();
+    if (editing === index) this.resetParticipantForm();
+    else if (editing !== null && editing > index) this.editingParticipantIndex.set(editing - 1);
   }
 
   creating = signal(false);
@@ -589,7 +882,7 @@ Your opponent is %s (%s).`;
 
   /** One model for the launch checklist and the Create button: a name, at least two participants, not already submitting. */
   readonly readiness = computed(() => {
-    const named = !!this.nameValue();
+    const named = !!this.nameValue().trim();
     const count = this.participants().length;
     const participantsOk = count >= 2;
     const creating = this.creating();
@@ -602,9 +895,22 @@ Your opponent is %s (%s).`;
         named &&
         participantsOk &&
         !creating &&
+        this.rematchReady() &&
         this.openingValid() &&
         this.validMaxRetries() !== null,
     };
+  });
+  private readonly rematchReady = computed(() => {
+    if (!this.sourceId()) return true;
+    const hasModels = this.participants().some((p) => p.controlType === 'AI');
+    return (
+      this.rematchSource() !== null &&
+      this.editingParticipantIndex() === null &&
+      (!hasModels ||
+        (!this.modelsLoading() && !this.modelsError() && !this.unavailableModels().length)) &&
+      this.validRunSettings() &&
+      (!this.rematchWarnings().length || this.rematchAcknowledged())
+    );
   });
   /**
    * Request id bound to exactly the submitted details: retrying the same details reuses it (so a request that
@@ -613,18 +919,29 @@ Your opponent is %s (%s).`;
   private pendingSubmission: { key: string; requestId: string } | null = null;
 
   create() {
-    if (this.connection) this.connection.withKey(() => this.createWithKey());
-    else this.createWithKey();
+    if (this.sourceId() && !this.readiness().canCreate) return;
+    const source = this.rematchSource();
+    const submit = () => {
+      if (!this.subscriptions.closed && this.rematchSource() === source) this.createWithKey();
+    };
+    if (this.connection) this.connection.withKey(submit);
+    else submit();
   }
 
   private createWithKey() {
     const maxRetries = this.validMaxRetries();
-    if (this.creating() || !this.openingValid() || maxRetries === null) {
+    if (
+      this.creating() ||
+      !this.openingValid() ||
+      maxRetries === null ||
+      (this.sourceId() && !this.readiness().canCreate)
+    ) {
       return;
     }
     this.creating.set(true);
     this.createError.set(null);
 
+    const concurrency = this.rematchConcurrency();
     const details = {
       name: this.name,
       sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
@@ -645,6 +962,14 @@ Your opponent is %s (%s).`;
       drawPolicy: this.drawPolicy,
       drawMode: this.drawMode,
       generateBracket: true,
+      ...(this.sourceId() && concurrency !== null
+        ? {
+            runSettings: {
+              maxConcurrentGames: concurrency,
+              budgetUsd: canonicalBudget(this.rematchBudget()) || null,
+            },
+          }
+        : {}),
       participants: this.participants().map((p) => ({
         playerName: p.playerName,
         controlType: p.controlType,
@@ -659,28 +984,30 @@ Your opponent is %s (%s).`;
       this.pendingSubmission = { key, requestId: newRequestId() };
     }
 
-    this.api
-      .createTournament({ ...details, clientRequestId: this.pendingSubmission.requestId })
-      .subscribe({
-        next: (tournament) => {
-          this.pendingSubmission = null;
-          this.creating.set(false);
-          this.router.navigate(['/tournaments', tournament.id]);
-        },
-        error: (err) => {
-          const serverError = err?.error;
-          const status = typeof err?.status === 'number' ? err.status : 0;
-          const message =
-            typeof serverError === 'string' ? serverError : (serverError?.error ?? null);
-          this.createError.set(
-            status === 0 || status >= 500 || !message
-              ? 'The server did not confirm the tournament. Retry with the same details: if it was ' +
-                  'saved after all, you will get that tournament instead of a duplicate.'
-              : message,
-          );
-          this.creating.set(false);
-        },
-      });
+    this.subscriptions.add(
+      this.api
+        .createTournament({ ...details, clientRequestId: this.pendingSubmission.requestId })
+        .subscribe({
+          next: (tournament) => {
+            this.pendingSubmission = null;
+            this.creating.set(false);
+            this.router.navigate(['/tournaments', tournament.id]);
+          },
+          error: (err) => {
+            const serverError = err?.error;
+            const status = typeof err?.status === 'number' ? err.status : 0;
+            const message =
+              typeof serverError === 'string' ? serverError : (serverError?.error ?? null);
+            this.createError.set(
+              status === 0 || status >= 500 || !message
+                ? 'The server did not confirm the tournament. Retry with the same details: if it was ' +
+                    'saved after all, you will get that tournament instead of a duplicate.'
+                : message,
+            );
+            this.creating.set(false);
+          },
+        }),
+    );
   }
 
   hasSharedInstructions(): boolean {
@@ -746,10 +1073,21 @@ Your opponent is %s (%s).`;
       maxRuntimeMinutes = null;
     }
 
-    const participantsWithPricing = this.participants().filter(
-      (participant) =>
-        participant.promptPricePerMillion != null && participant.completionPricePerMillion != null,
-    );
+    const participantsWithPricing = this.participants()
+      .map((participant) => {
+        if (participant.controlType !== 'AI' || !this.sourceId()) return participant;
+        const model = this.models().find((option) => option.id === participant.modelId);
+        return {
+          ...participant,
+          promptPricePerMillion: model?.promptPricePerMillion,
+          completionPricePerMillion: model?.completionPricePerMillion,
+        };
+      })
+      .filter(
+        (participant) =>
+          participant.promptPricePerMillion != null &&
+          participant.completionPricePerMillion != null,
+      );
     const pricingCoverage = participantsWithPricing.length;
 
     let averageMoveCostUsd: number | null = null;
@@ -865,8 +1203,19 @@ Your opponent is %s (%s).`;
   }
 
   hasHumanParticipant(): boolean {
-    return this.participants().some((participant) => participant.controlType === 'HUMAN');
+    return this.participants().some(
+      (participant, index) =>
+        participant.controlType === 'HUMAN' && index !== this.editingParticipantIndex(),
+    );
   }
+}
+
+function canonicalBudget(value: string): string {
+  if (!value) return '';
+  const [integer, fraction] = value.split('.');
+  const whole = integer.replace(/^0+/, '') || '0';
+  const cents = fraction?.replace(/0+$/, '');
+  return cents ? whole + '.' + cents : whole;
 }
 
 function newRequestId(): string {

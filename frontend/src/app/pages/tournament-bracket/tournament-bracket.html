@@ -36,6 +36,9 @@
       </div>
 
       <div class="header-right">
+        <a mat-stroked-button [routerLink]="['/tournaments', t.id, 'rematch']">
+          Run this tournament again
+        </a>
         @for (format of exportFormats; track format) {
           <button
             mat-stroked-button

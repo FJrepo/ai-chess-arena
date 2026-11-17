@@ -66,6 +66,16 @@ Participant array order in API responses is unspecified; use each participant’
 
 Existing tournaments without a bracket, including API drafts, keep **Generate Tournament Bracket** and its draw selector on the tournament page. API: `POST /api/tournaments/{id}/generate-bracket?drawMode=RANDOM` requests a random draw; `drawMode=ORDER` or omitting the parameter preserves the existing seed order. No request body is required; an empty JSON object also works. An invalid mode returns 400. Generation stores the drawn seeds and bracket together. Repeated or concurrent manual generation requests return 409 after the first succeeds. Creation-only fields do not change settings through PUT. Migration V22 stores the original creation draw choice; existing tournaments retain their bracket/draft state, with no generation backfill.
 
+### Run this tournament again
+
+Choose **Run this tournament again** on the bracket page to open a new, editable setup with the source tournament’s current lineup and settings. The draft includes the players’ names, model IDs, control types, reasoning efforts and custom instructions, plus the match rules, opening policy, prompt options, concurrency and budget. The URL contains only the source tournament ID. Changes to the draft stay in memory until you choose **Create Tournament**.
+
+The draft uses the original stored seed order by default. Choose **Random draw** to reshuffle. **Before you create** shows changes from the source, including a different draw choice or an original draw method that was never recorded. Random-book policies select new book lines. The draft uses the current prompt rules. Historical full system-template overrides are identified by name and require acknowledgement, and unavailable models or fixed openings must be replaced or removed before creating.
+
+Create gives the tournament and its participants new IDs, prepares a new bracket and leaves auto-run off. Play and model charges begin only after you start a game or run the tournament. The source, its results and its spend stay with the original tournament.
+
+API clients can read `creationDrawMode` when known and `legacySystemPrompt` presence flags on the tournament and its participants from `GET /api/tournaments/{id}`. The flags contain no template text. `POST /api/tournaments` accepts an optional `runSettings` object with `maxConcurrentGames` from 1 to 8 and `budgetUsd` as null for no cap or a positive decimal with up to two fractional digits. Create also accepts an exact decimal string for `budgetUsd`. The response includes `budgetUsdExact` for a non-null budget so clients can preserve cents beyond JavaScript’s numeric precision.
+
 ### Best of N
 
 A series lasts at most N games. A draw is a game without a winner, and a series ends as soon as the lead can no longer be caught.

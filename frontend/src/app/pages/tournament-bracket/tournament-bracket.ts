@@ -1,7 +1,7 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -23,6 +23,7 @@ import { downloadBlob } from '../../utils/download';
   selector: 'app-tournament-bracket',
   imports: [
     FormsModule,
+    RouterLink,
     MatInputModule,
     MatFormFieldModule,
     MatSelectModule,
