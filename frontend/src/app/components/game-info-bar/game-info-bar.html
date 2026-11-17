@@ -140,7 +140,8 @@
               min="128"
               [max]="allowedOutputMaximum()"
               step="128"
-              [(ngModel)]="newMaxOutputTokens"
+              [ngModel]="newMaxOutputTokens"
+              (ngModelChange)="editOutputLimit($event)"
             />
             <mat-hint>{{ outputLimitHint() }}</mat-hint>
           </mat-form-field>
@@ -148,7 +149,8 @@
             <mat-form-field appearance="outline" class="effort-field" subscriptSizing="dynamic">
               <mat-label>Reasoning effort for {{ truncationEffort!.playerName }}</mat-label>
               <mat-select
-                [(ngModel)]="newReasoningEffort"
+                [ngModel]="newReasoningEffort"
+                (ngModelChange)="editReasoningEffort($event)"
                 [placeholder]="tournamentEffortOptionLabel()"
               >
                 <mat-option [value]="null">{{ tournamentEffortOptionLabel() }}</mat-option>

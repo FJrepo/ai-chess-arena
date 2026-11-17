@@ -118,6 +118,24 @@ describe('OpenRouter action prompts', () => {
     expect(snackbar.open).toHaveBeenCalled();
   });
 
+  it.each([missing, connected, new Error('offline')])(
+    'silences a delayed preflight result after its action is retired',
+    (result) => {
+      const { access, client, dialog, snackbar } = harness();
+      const response = new Subject<OpenRouterStatus>();
+      client.status.mockReturnValue(response);
+      const action = vi.fn();
+      let current = true;
+      access.withKey(action, () => current);
+      current = false;
+      if (result instanceof Error) response.error(result);
+      else response.next(result);
+      expect(action).not.toHaveBeenCalled();
+      expect(dialog.open).not.toHaveBeenCalled();
+      expect(snackbar.open).not.toHaveBeenCalled();
+    },
+  );
+
   it('uses the prompt from setup Create without entering a submitting state', () => {
     const { access, dialog } = harness();
     const api = { createTournament: vi.fn() };

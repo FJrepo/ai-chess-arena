@@ -53,6 +53,41 @@ public class Game extends PanacheEntityBase {
     @Column(name = "status_revision", nullable = false)
     public long statusRevision;
 
+    @Column(name = "live_revision", nullable = false)
+    public long liveRevision;
+
+    @Column(name = "turn_started_at")
+    public Instant turnStartedAt;
+
+    @Column(name = "turn_deadline_at")
+    public Instant turnDeadlineAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "turn_chat_mode", length = 16)
+    public ChatMode turnChatMode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "turn_banter_level", length = 16)
+    public BanterLevel turnBanterLevel;
+
+    public void clearTurn() {
+        turnStartedAt = null;
+        turnDeadlineAt = null;
+        turnChatMode = null;
+        turnBanterLevel = null;
+    }
+
+    public String activeColor() {
+        if (status != GameStatus.IN_PROGRESS || currentFen == null) return null;
+        String[] fields = currentFen.split(" ", 3);
+        if (fields.length < 2) return null;
+        return switch (fields[1]) {
+            case "w" -> "WHITE";
+            case "b" -> "BLACK";
+            default -> null;
+        };
+    }
+
     @Enumerated(EnumType.STRING)
     public GameResult result;
 

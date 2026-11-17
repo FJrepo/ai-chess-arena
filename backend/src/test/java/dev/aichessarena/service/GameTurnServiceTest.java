@@ -97,6 +97,24 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void aTimingCommitCannotUseUpTheModelsFirstAnswerBudget() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+        fixture.service.turnTiming = new GameTurnTiming() {
+            @Override
+            TurnTimes record(GameTurnService.TurnRequest request) {
+                TurnTimes stored = TurnTimes.start(request.moveTimeoutSeconds());
+                fixture.openRouter.clockNanos[0] += Duration.ofSeconds(12).toNanos();
+                return stored;
+            }
+        };
+
+        assertTrue(fixture.service.playTurn(request(new ArrayList<>(), 3, 10)).moveRecorded());
+        assertEquals(1, fixture.openRouter.calls);
+        assertEquals(List.of(10000L), fixture.openRouter.remainingMsAtCall);
+        assertNull(fixture.lifecycle.lastForfeitColor);
+    }
+
+    @Test
     void timedOutModelResponseForfeitsTheTurn() {
         Fixture fixture = new Fixture(new LlmResponse(null, 0, 0, null, 0, null, true, "timeout"));
 

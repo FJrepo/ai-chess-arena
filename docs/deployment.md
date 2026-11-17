@@ -49,6 +49,12 @@ For native runs, export these variables in the backend process environment. For 
 
 Flyway adds a required tournament hint flag with a default of true and expands the move prompt version column to 96 characters. Existing tournaments retain hints on, including drafts and in-progress tournaments. Historical moves, prompt metadata, scores and costs are preserved. Back up the database before upgrading, rebuild and recreate the backend and frontend, and restore the pre-upgrade backup if rolling back the schema.
 
+## Live game revisions migration (V24)
+
+Back up the database before upgrading. Rebuild or pull and recreate both application services. Flyway `V24__live_game_revision.sql` initializes existing games at revision zero and adds nullable turn timestamps, chat mode and tone. Older attempts have no originating status revision. Stored moves, chat, attempts, results and spend are retained. The usual startup recovery pauses games interrupted by the restart. Resuming a game starts a new turn clock. Restore the pre-upgrade backup when rolling back.
+
+A frontend temporarily connected to an older backend falls back to periodic reads. Older clients can still subscribe for legacy WebSocket messages. Run one backend instance for this deployment. See [Live game synchronization](how-it-works.md#live-game-synchronization) for the protocol.
+
 ## Creation-time brackets migration (V22)
 
 Back up before upgrading. Rebuild and recreate backend and frontend together. Flyway `V22__creation_bracket_intent.sql` adds nullable `tournaments.creation_draw_mode`, preserving the original create intent so a retry with the same `clientRequestId` can finish generation after an interrupted request. Existing tournaments receive null and keep their current draft/bracket state; no generation backfill runs. Games, seeds, results and spend remain unchanged. Restore the pre-upgrade database backup to roll back. See [Bracket](how-it-works.md#bracket) for explicit generation opt-in, draft defaults and recovery.

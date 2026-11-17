@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 
+- Flyway `V24__live_game_revision.sql` adds game revisions, nullable model-turn metadata and an optional originating status revision for attempts. Back up before upgrading and recreate backend and frontend together. Existing moves, attempts, chat, results and spend are retained.
 - Flyway `V25__tournament_legal_move_hints.sql` defaults all existing tournaments to hints on and widens the stored prompt version column. Back up the database and rebuild/recreate the backend and frontend to use the new setting.
 
 ### Added
@@ -26,6 +27,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
+- Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
 
 ## [1.7.1] - 2026-11-17
 

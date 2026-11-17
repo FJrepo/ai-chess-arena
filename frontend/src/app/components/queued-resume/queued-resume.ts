@@ -16,6 +16,7 @@ import { RunCapacity } from '../../models/tournament.model';
       mat-button
       type="button"
       aria-label="Cancel queued resume"
+      [disabled]="cancelDisabled()"
       (click)="cancelRequest.emit()"
     >
       Cancel
@@ -33,5 +34,6 @@ import { RunCapacity } from '../../models/tournament.model';
 })
 export class QueuedResume {
   readonly capacity = input<RunCapacity | null | undefined>();
+  readonly cancelDisabled = input(false);
   readonly cancelRequest = output<void>();
 }

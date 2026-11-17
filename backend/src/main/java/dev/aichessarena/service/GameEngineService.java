@@ -365,7 +365,8 @@ public class GameEngineService {
                     prompt.resignationOffered(),
                     // Read with the game this turn, so a changed tournament level or participant override applies now.
                     game.requestedReasoningEffort(sideToMove),
-                    game.tournament != null ? game.tournament.banterLevel : null
+                    game.tournament != null ? game.tournament.banterLevel : null,
+                    game.statusRevision
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

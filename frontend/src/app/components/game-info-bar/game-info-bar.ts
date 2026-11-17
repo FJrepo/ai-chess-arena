@@ -61,7 +61,24 @@ export interface RaiseLimitRequest {
   styleUrl: './game-info-bar.scss',
 })
 export class GameInfoBar {
-  @Input() game!: Game;
+  private currentGame!: Game;
+
+  @Input()
+  set game(value: Game) {
+    if (this.currentGame && (this.currentGame.id !== value.id || value.status !== 'PAUSED')) {
+      this.outputLimitEdited = false;
+      this.effortDraftParticipantId = null;
+      if (this.currentGame.id !== value.id) {
+        this.effortChoice = null;
+        this.prefillOutputLimit();
+      }
+    }
+    this.currentGame = value;
+  }
+
+  get game(): Game {
+    return this.currentGame;
+  }
   @Input() retryInfo: string | null = null;
   /** Saving a raised output-token limit is in progress. */
   @Input() saving = false;
@@ -79,6 +96,12 @@ export class GameInfoBar {
   /** Suggested limit, bounded by the model maximum but never below the current tournament limit. */
   newMaxOutputTokens: number | null = null;
   private currentLimit: number | null = null;
+  private outputLimitEdited = false;
+
+  editOutputLimit(value: number | null): void {
+    this.newMaxOutputTokens = value;
+    this.outputLimitEdited = true;
+  }
 
   /**
    * The tournament's current output-token limit when the game is paused because an answer was cut off at
@@ -125,6 +148,7 @@ export class GameInfoBar {
   }
 
   private prefillOutputLimit(): void {
+    if (this.outputLimitEdited) return;
     this.newMaxOutputTokens =
       this.currentLimit == null
         ? null
@@ -135,12 +159,27 @@ export class GameInfoBar {
   /** Value of the reasoning-effort select; pre-selects a lower level (low) for the cut-off side. */
   newReasoningEffort: ReasoningEffort | null = null;
   private effortChoice: TruncationEffortChoice | null = null;
+  private effortDraftParticipantId: string | null = null;
+
+  editReasoningEffort(value: ReasoningEffort | null): void {
+    this.newReasoningEffort = value;
+    this.effortDraftParticipantId = this.effortChoice?.participantId ?? null;
+  }
 
   /** The cut-off side's reasoning effort to offer next to the limit; null hides the select. */
   @Input()
   set truncationEffort(value: TruncationEffortChoice | null) {
     const previous = this.effortChoice;
     this.effortChoice = value;
+    if (this.effortDraftParticipantId) {
+      if (
+        !value ||
+        (value.participantId === this.effortDraftParticipantId &&
+          (this.newReasoningEffort === null || value.options.includes(this.newReasoningEffort)))
+      )
+        return;
+      this.effortDraftParticipantId = null;
+    }
     const sameChoice =
       previous != null &&
       value != null &&

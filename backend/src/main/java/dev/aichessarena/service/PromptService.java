@@ -13,6 +13,7 @@ import java.util.List;
 public class PromptService {
 
   private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
+  static final String LEGACY_CUSTOM_TEMPLATE_VERSION = "legacy-custom-template";
   public static final String NO_HINTS_VERSION_SUFFIX = "-no-hints";
   public static final String NO_HINTS_RULE = "Determine your legal move from the position shown in each turn.";
 
@@ -172,9 +173,14 @@ public class PromptService {
     }
   }
 
+  static boolean isLegacyTemplateVersion(String version) {
+    return LEGACY_CUSTOM_TEMPLATE_VERSION.equals(version)
+        || (LEGACY_CUSTOM_TEMPLATE_VERSION + NO_HINTS_VERSION_SUFFIX).equals(version);
+  }
+
   public String resolvePromptVersion(String promptTemplate, String customInstructions) {
     if (isLegacyTemplateOverride(promptTemplate)) {
-      return "legacy-custom-template";
+      return LEGACY_CUSTOM_TEMPLATE_VERSION;
     }
     return hasCustomInstructions(customInstructions)
         ? DEFAULT_SYSTEM_PROMPT_VERSION + "+custom-instructions"
@@ -230,7 +236,7 @@ public class PromptService {
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
           legacyPromptTemplate.formatted(color, opponentName, opponentModel),
-          "legacy-custom-template" + hintsSuffix,
+          LEGACY_CUSTOM_TEMPLATE_VERSION + hintsSuffix,
           mode == ChatMode.MANDATORY ? ChatMode.OPTIONAL : mode,
           false);
     }

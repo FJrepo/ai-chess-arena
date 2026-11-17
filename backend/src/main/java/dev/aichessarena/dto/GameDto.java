@@ -56,7 +56,15 @@ public record GameDto(
         String openingId,
         String openingName,
         String openingEco,
-        boolean legalMoveHints
+        boolean legalMoveHints,
+        long liveRevision,
+        String activeColor,
+        Instant turnStartedAt,
+        Instant turnDeadlineAt,
+        String turnChatMode,
+        String turnBanterLevel,
+        List<MoveAttemptDto> attempts,
+        String streamId
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

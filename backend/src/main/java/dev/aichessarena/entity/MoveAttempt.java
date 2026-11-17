@@ -96,6 +96,10 @@ public class MoveAttempt extends PanacheEntityBase {
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt = LocalDateTime.now();
 
+    /** The status revision that owned the model turn, before a possible pause, resume or cancellation. */
+    @Column(name = "turn_status_revision")
+    public Long turnStatusRevision;
+
     public enum Outcome {
         ACCEPTED(false),
         ILLEGAL_MOVE(true),
