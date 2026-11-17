@@ -129,6 +129,84 @@ describe('SystemStatus', () => {
     http.verify();
   });
 
+  it.each(['fails', 'returns late'])(
+    'uses a fresh credential check when system status %s',
+    (systemOutcome) => {
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      });
+      const fixture = TestBed.createComponent(SystemStatus);
+      const http = TestBed.inject(HttpTestingController);
+      const element: HTMLElement = fixture.nativeElement;
+      const status = healthyStatus();
+      status.key = { ...status.key, source: 'env', validation: 'unknown', lastValidatedAt: null };
+      const systemUrl = '/api/config/system-status';
+      const settingsUrl = '/api/config/openrouter';
+      const unavailable = { status: 503, statusText: 'Service Unavailable' };
+      const providerHeading = () =>
+        Array.from(element.querySelectorAll('.status-card h2'))[1]?.textContent?.trim();
+
+      TestBed.inject(OpenRouterClient).reconcileKeyStatus(healthyStatus().key);
+      fixture.detectChanges();
+      http.expectOne(systemUrl).flush(null, unavailable);
+      http.expectOne(settingsUrl).flush(null, unavailable);
+      fixture.detectChanges();
+      expect(providerHeading()).toBe('Unknown');
+
+      element.querySelector<HTMLButtonElement>('.system-header-actions button')!.click();
+      const systemRequest = http.expectOne(systemUrl);
+      if (systemOutcome === 'fails') systemRequest.flush(null, unavailable);
+      http.expectOne(settingsUrl).flush({ key: status.key, canManage: true });
+      fixture.detectChanges();
+      expect(providerHeading()).toBe('Key configured');
+      const testKey = element.querySelector<HTMLButtonElement>('.connection-actions button')!;
+      expect(testKey.disabled).toBe(false);
+
+      testKey.click();
+      http.expectOne({ method: 'POST', url: settingsUrl + '/test' }).flush({
+        key: { ...status.key, validation: 'valid' },
+        canManage: true,
+      });
+      if (systemOutcome === 'returns late') systemRequest.flush(status);
+      fixture.detectChanges();
+      expect(providerHeading()).toBe('Connected');
+      expect(fixture.componentInstance.openRouterTone()).toBe('healthy');
+      expect(fixture.componentInstance.backendReachable()).toBe(systemOutcome === 'returns late');
+
+      element.querySelector<HTMLButtonElement>('.system-header-actions button')!.click();
+      http.expectOne(systemUrl).flush(null, unavailable);
+      http.expectOne(settingsUrl).flush(null, unavailable);
+      fixture.detectChanges();
+      expect(providerHeading()).toBe('Unknown');
+      http.verify();
+    },
+  );
+
+  it('keeps newer validation when a credential read started before the test result arrives', () => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    });
+    const fixture = TestBed.createComponent(SystemStatus);
+    const http = TestBed.inject(HttpTestingController);
+    const client = TestBed.inject(OpenRouterClient);
+    const settingsUrl = '/api/config/openrouter';
+    fixture.detectChanges();
+    const pending = http.expectOne(settingsUrl);
+    http.expectOne('/api/config/system-status').flush(null, {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+
+    const testedKey = healthyStatus().key;
+    client.test().subscribe();
+    http.expectOne(settingsUrl + '/test').flush({ key: testedKey, canManage: true });
+    pending.flush({ key: { ...testedKey, validation: 'unknown' }, canManage: true });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.openRouterTone()).toBe('healthy');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Validation: valid');
+    http.verify();
+  });
+
   it('reports no key as needing a connection', () => {
     const status = healthyStatus();
     status.openRouterValid = false;

@@ -5,7 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { Router } from '@angular/router';
-import { Observable, finalize } from 'rxjs';
+import { Observable, finalize, map, tap } from 'rxjs';
 import { OpenRouterClient, OpenRouterStatus } from '../../services/openrouter-client';
 import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 import { rememberOpenRouterReturnUrl } from '../../utils/openrouter-return-url';
@@ -33,7 +33,14 @@ export class OpenRouterSettings implements OnInit, OnDestroy {
     this.refresh();
   }
   refresh() {
-    if (!this.busy()) this.update(this.client.status());
+    if (this.busy()) return;
+    this.update(
+      this.client.status().pipe(
+        // The shared client rejects key metadata from reads that a successful write superseded.
+        map((status) => ({ ...status, key: this.client.keyStatus() ?? status.key })),
+        tap({ error: () => this.status.set(null) }),
+      ),
+    );
   }
   ngOnDestroy() {
     this.clearManualEntry();

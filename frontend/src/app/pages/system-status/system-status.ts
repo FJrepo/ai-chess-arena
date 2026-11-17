@@ -1,6 +1,6 @@
 import { OpenRouterSettings } from '../../components/openrouter-settings/openrouter-settings';
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, computed, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
@@ -37,7 +37,12 @@ export class SystemStatus implements OnInit {
   backendReachable = computed(() => this.status() !== null && !this.error());
   backendVersion = computed(() => this.status()?.backendVersion ?? 'unknown');
 
+  @ViewChild(OpenRouterSettings, { static: true }) private settings?: OpenRouterSettings;
+
   private openRouterKey = computed(() => {
+    // The credential endpoint has its own availability and may return while system health is loading.
+    const key = this.settings?.status()?.key;
+    if (key) return key;
     const status = this.status();
     return status ? (this.connection.keyStatus() ?? status.key) : null;
   });
@@ -110,7 +115,7 @@ export class SystemStatus implements OnInit {
 
   openRouterSummary(): string {
     const key = this.openRouterKey();
-    if (!key) return 'Provider status unknown: the backend is unreachable.';
+    if (!key) return 'Provider validation status is unknown.';
     if (!openRouterConnected(key)) return 'Connect OpenRouter to use a provider key.';
     switch (key.validation) {
       case 'valid':
