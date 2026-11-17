@@ -400,8 +400,10 @@ app-advantage-bar {
 }
 
 .captured-piece {
-  font-size: 22px;
-  line-height: 26px;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  user-select: none;
 }
 
 .capture-empty {
@@ -442,8 +444,11 @@ app-advantage-bar {
 }
 
 .promotion-piece {
-  font-size: 1.3rem;
-  line-height: 1;
+  width: 28px;
+  height: 26px;
+  object-fit: contain;
+  vertical-align: middle;
+  user-select: none;
   margin-right: 4px;
   // A light-square chip, like the capture trays, so both piece colours read on the button.
   padding: 1px 3px;

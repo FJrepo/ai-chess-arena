@@ -1,29 +1,14 @@
 import { Component, EventEmitter, Input, OnChanges, Output, signal } from '@angular/core';
 import { LastMove } from '../../utils/last-move';
-
-// Both colours use the solid glyphs; the stylesheet colours them, so white pieces read as
-// solid pieces rather than outlines.
-const PIECE_UNICODE: Record<string, string> = {
-  K: '\u265A',
-  Q: '\u265B',
-  R: '\u265C',
-  B: '\u265D',
-  N: '\u265E',
-  P: '\u265F',
-  k: '\u265A',
-  q: '\u265B',
-  r: '\u265C',
-  b: '\u265D',
-  n: '\u265E',
-  p: '\u265F',
-};
+import { PieceType, pieceImage, pieceName } from '../../utils/piece-assets';
 
 interface Square {
   file: number;
   rank: number;
   coord: string;
   pieceCode: string | null;
-  piece: string;
+  pieceImage: string;
+  pieceName: string;
   pieceColor: 'white' | 'black' | null;
   isLight: boolean;
 }
@@ -75,7 +60,8 @@ export class ChessboardComponent implements OnChanges {
               rank: 7 - rank,
               coord: this.toCoord(file, 7 - rank),
               pieceCode: null,
-              piece: '',
+              pieceImage: '',
+              pieceName: '',
               pieceColor: null,
               isLight: (file + (7 - rank)) % 2 !== 0,
             });
@@ -88,7 +74,8 @@ export class ChessboardComponent implements OnChanges {
             rank: 7 - rank,
             coord: this.toCoord(file, 7 - rank),
             pieceCode: ch,
-            piece: PIECE_UNICODE[ch] || '',
+            pieceImage: pieceImage(pieceColor, ch.toUpperCase() as PieceType),
+            pieceName: pieceName(pieceColor, ch.toUpperCase() as PieceType),
             pieceColor,
             isLight: (file + (7 - rank)) % 2 !== 0,
           });

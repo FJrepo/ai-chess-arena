@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ChessboardComponent } from './chessboard';
 
 function squareAt(board: ChessboardComponent, coord: string) {
@@ -66,8 +66,8 @@ describe('ChessboardComponent last-move highlight', () => {
 
     expect(element.querySelectorAll('.square.last-move-from')).toHaveLength(1);
     expect(element.querySelectorAll('.square.last-move-to')).toHaveLength(1);
-    expect(element.querySelector('.square.last-move-to .piece')?.textContent?.trim()).toBe(
-      '\u265F',
+    expect(element.querySelector('.square.last-move-to img.piece')?.getAttribute('src')).toBe(
+      'pieces/cburnett/wP.svg',
     );
 
     fixture.componentRef.setInput('lastMove', null);
@@ -76,41 +76,136 @@ describe('ChessboardComponent last-move highlight', () => {
   });
 });
 
-describe('ChessboardComponent piece glyphs', () => {
+function renderedSquareAt(fixture: ComponentFixture<ChessboardComponent>, coord: string) {
+  const index = fixture.componentInstance
+    .squares()
+    .flat()
+    .findIndex((square) => square.coord === coord);
+  return (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.square')[index];
+}
+
+describe('ChessboardComponent piece images', () => {
   const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
-  // Both colours use the solid glyphs; the colour class tells them apart.
-  it.each([
-    ['K', 'e1', '♚', 'white-piece'],
-    ['Q', 'd1', '♛', 'white-piece'],
-    ['R', 'a1', '♜', 'white-piece'],
-    ['B', 'c1', '♝', 'white-piece'],
-    ['N', 'b1', '♞', 'white-piece'],
-    ['P', 'e2', '♟', 'white-piece'],
-    ['k', 'e8', '♚', 'black-piece'],
-    ['q', 'd8', '♛', 'black-piece'],
-    ['r', 'a8', '♜', 'black-piece'],
-    ['b', 'c8', '♝', 'black-piece'],
-    ['n', 'b8', '♞', 'black-piece'],
-    ['p', 'e7', '♟', 'black-piece'],
-  ])('renders %s on %s as %s with %s', (code, coord, glyph, colourClass) => {
+  function renderBoard() {
     const fixture = TestBed.createComponent(ChessboardComponent);
     fixture.componentRef.setInput('fen', START_FEN);
+    fixture.componentRef.setInput('interactiveColor', 'WHITE');
     fixture.detectChanges();
+    return fixture;
+  }
+
+  it('renders 32 piece images and leaves empty squares empty', () => {
+    const fixture = renderBoard();
+    const element: HTMLElement = fixture.nativeElement;
+
+    expect(element.querySelectorAll('.square')).toHaveLength(64);
+    expect(element.querySelectorAll('img.piece')).toHaveLength(32);
+    expect(renderedSquareAt(fixture, 'e4').querySelector('img')).toBeNull();
+  });
+
+  it.each([
+    ['K', 'e1', 'wK', 'white king'],
+    ['Q', 'd1', 'wQ', 'white queen'],
+    ['R', 'a1', 'wR', 'white rook'],
+    ['B', 'c1', 'wB', 'white bishop'],
+    ['N', 'b1', 'wN', 'white knight'],
+    ['P', 'e2', 'wP', 'white pawn'],
+    ['k', 'e8', 'bK', 'black king'],
+    ['q', 'd8', 'bQ', 'black queen'],
+    ['r', 'a8', 'bR', 'black rook'],
+    ['b', 'c8', 'bB', 'black bishop'],
+    ['n', 'b8', 'bN', 'black knight'],
+    ['p', 'e7', 'bP', 'black pawn'],
+  ])('renders %s on %s with image %s and name %s', (code, coord, image, name) => {
+    const fixture = renderBoard();
+    expect(squareAt(fixture.componentInstance, coord).pieceCode).toBe(code);
+
+    const piece = renderedSquareAt(fixture, coord).querySelector('img.piece');
+    expect(piece?.getAttribute('src')).toBe(`pieces/cburnett/${image}.svg`);
+    expect(piece?.getAttribute('alt')).toBe(`${name} on ${coord}`);
+    expect(piece?.getAttribute('draggable')).toBe(code === code.toUpperCase() ? 'true' : 'false');
+  });
+
+  it('keeps image names and coordinates correct when flipped', () => {
+    const fixture = renderBoard();
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.querySelector('.square img')?.getAttribute('alt')).toBe('black rook on a8');
+
+    fixture.componentRef.setInput('flipped', true);
+    fixture.detectChanges();
+
+    const topLeft = element.querySelector('.square img');
+    expect(topLeft?.getAttribute('alt')).toBe('white rook on h1');
+    expect(topLeft?.getAttribute('src')).toBe('pieces/cburnett/wR.svg');
+    expect(renderedSquareAt(fixture, 'c1').querySelector('img')?.getAttribute('alt')).toBe(
+      'white bishop on c1',
+    );
+    expect(element.querySelector('.rank-label')?.textContent?.trim()).toBe('1');
+    expect(element.querySelector('.file-label')?.textContent?.trim()).toBe('h');
+  });
+
+  it('selects through an image click and emits a move on a square click', () => {
+    const fixture = renderBoard();
+    const emit = vi.spyOn(fixture.componentInstance.moveAttempt, 'emit');
+    const source = renderedSquareAt(fixture, 'e2');
+    source.querySelector('img')!.click();
+    fixture.detectChanges();
+    expect(source.classList.contains('selected')).toBe(true);
+
+    renderedSquareAt(fixture, 'e4').click();
+    fixture.detectChanges();
+    expect(emit).toHaveBeenCalledWith({ from: 'e2', to: 'e4', promotionRequired: false });
+    expect(source.classList.contains('selected')).toBe(false);
+  });
+
+  it('uses the image as the drag ghost and lets drag/drop bubble through target images', () => {
+    const fixture = renderBoard();
     const board = fixture.componentInstance;
-    const index = board
-      .squares()
-      .flat()
-      .findIndex((square) => square.coord === coord);
-    expect(squareAt(board, coord).pieceCode).toBe(code);
+    const emit = vi.spyOn(board.moveAttempt, 'emit');
+    const source = renderedSquareAt(fixture, 'e2').querySelector('img')!;
+    const target = renderedSquareAt(fixture, 'd7');
+    const dataTransfer = {
+      setData: vi.fn(),
+      getData: vi.fn(() => 'e2'),
+      setDragImage: vi.fn(),
+    };
+    const start = new Event('dragstart', { bubbles: true, cancelable: true });
+    Object.defineProperty(start, 'dataTransfer', { value: dataTransfer });
+    source.dispatchEvent(start);
+    expect(start.defaultPrevented).toBe(false);
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'e2');
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(source, 20, 20);
+    expect(board.dragSource()).toBe('e2');
 
-    const piece = (fixture.nativeElement as HTMLElement)
-      .querySelectorAll('.square')
-      [index].querySelector('.piece');
-    const otherClass = colourClass === 'white-piece' ? 'black-piece' : 'white-piece';
+    const over = new Event('dragover', { bubbles: true, cancelable: true });
+    target.querySelector('img')!.dispatchEvent(over);
+    fixture.detectChanges();
+    expect(over.defaultPrevented).toBe(true);
+    expect(target.classList.contains('drop-target')).toBe(true);
 
-    expect(piece?.textContent?.trim()).toBe(glyph);
-    expect(piece?.classList.contains(colourClass)).toBe(true);
-    expect(piece?.classList.contains(otherClass)).toBe(false);
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer });
+    target.querySelector('img')!.dispatchEvent(drop);
+    fixture.detectChanges();
+    expect(drop.defaultPrevented).toBe(true);
+    expect(emit).toHaveBeenCalledWith({ from: 'e2', to: 'd7', promotionRequired: false });
+    expect(board.dragSource()).toBeNull();
+    expect(target.classList.contains('drop-target')).toBe(false);
+  });
+
+  it('clears drag state when an image drag ends without a drop', () => {
+    const fixture = renderBoard();
+    const source = renderedSquareAt(fixture, 'e2').querySelector('img')!;
+    source.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    renderedSquareAt(fixture, 'e4').dispatchEvent(
+      new Event('dragover', { bubbles: true, cancelable: true }),
+    );
+    source.dispatchEvent(new Event('dragend', { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.dragSource()).toBeNull();
+    expect(fixture.componentInstance.dropTarget()).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.drop-target')).toBeNull();
   });
 });

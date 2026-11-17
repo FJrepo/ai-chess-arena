@@ -17,17 +17,15 @@
           (dragleave)="onDragLeave(sq)"
           (drop)="onDrop($event, sq)"
         >
-          @if (sq.piece) {
-            <span
-              class="piece chess-piece"
-              [class.white-piece]="sq.pieceColor === 'white'"
-              [class.black-piece]="sq.pieceColor === 'black'"
+          @if (sq.pieceCode) {
+            <img
+              class="piece"
+              [src]="sq.pieceImage"
+              [alt]="sq.pieceName + ' on ' + sq.coord"
               [attr.draggable]="canDrag(sq)"
               (dragstart)="onDragStart($event, sq)"
               (dragend)="onDragEnd()"
-            >
-              {{ sq.piece }}
-            </span>
+            />
           }
         </div>
       }

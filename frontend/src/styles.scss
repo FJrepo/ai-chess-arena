@@ -43,11 +43,6 @@ html {
   // Inner edge of the selection and drop-target rings: keeps them >= 3:1 against both square
   // colours, with or without the last-move wash.
   --app-board-ring-edge: #23262d;
-  // Pieces (same in both themes, like the squares): solid glyphs, white ones with a dark edge.
-  --app-piece-white: #f7f5f0;
-  --app-piece-white-edge: #23262d;
-  --app-piece-black: #1b1e25;
-  --app-piece-black-edge: color-mix(in srgb, #ffffff 30%, transparent);
   // Move-quality annotations (?! inaccuracy, ? mistake, ?? blunder): the tertiary role, the warning
   // orange used for status tones, and the error role.
   --app-quality-inaccuracy: var(--mat-sys-tertiary);
@@ -209,24 +204,6 @@ mat-chip {
 
   .page-actions {
     justify-content: flex-start;
-  }
-}
-
-// Solid chess glyphs (board, capture trays, promotion picker). Kept as text, never colour emoji,
-// so the colours apply; white pieces get a dark edge drawn outside the fill, black pieces a faint
-// light edge that lifts them off the dark squares.
-.chess-piece {
-  font-variant-emoji: text;
-  paint-order: stroke fill;
-
-  &.white-piece {
-    color: var(--app-piece-white);
-    -webkit-text-stroke: 0.07em var(--app-piece-white-edge);
-  }
-
-  &.black-piece {
-    color: var(--app-piece-black);
-    -webkit-text-stroke: 0.04em var(--app-piece-black-edge);
   }
 }
 
