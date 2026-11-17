@@ -450,7 +450,9 @@ The analytics page shares its analysis window, tournament, legal move hints and 
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 
-Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries. Shared filters and the refresh schedule stay in place.
+
+Changing a shared filter clears the previous results and cancels pending report requests. Each report loads the new selection independently. Every 15 seconds, the dashboard refreshes each report that has no request in progress. A request still pending after 60 seconds times out and becomes eligible for the next poll. **Sync Data** replaces any pending requests immediately.
 
 The **Legal move hints** filter starts at **On or off**, which combines games from either mode. Select **On only** or **Off only** to compare like-for-like. Tournament choices also show their mode. Historical tournaments created before this setting count as hints on. Model metrics use finished games and operational health also includes unfinished games. The health, comparison, reliability and per-model reliability APIs accept optional `legalMoveHints=true` or `legalMoveHints=false`. Other supplied values return HTTP 400.
 

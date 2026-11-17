@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Observable, of, Subject } from 'rxjs';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { Tournament } from '../../models/tournament.model';
 import { ApiService } from '../../services/api.service';
 import {
   AnalyticsComparisonModel,
@@ -134,6 +135,165 @@ describe('AnalyticsDashboard', () => {
       expect(harness.routeNativeElement!.querySelector('.comparison-table')).not.toBeNull();
     },
   );
+
+  it.each(['overview', 'quality', 'behaviour', 'cost'])(
+    'cancels superseded reports and removes their data on the %s tab',
+    async (tab) => {
+      const { harness, component, api } = await renderDashboard(`?tab=${tab}`);
+      const oldComparison = component.comparison()!;
+      const oldHealth = component.health()!;
+      const oldReliability = component.reliability()!;
+      const comparison = new Subject<AnalyticsComparisonResponse>();
+      const health = new Subject<AnalyticsHealthResponse>();
+      const reliability = new Subject<ModelReliabilityResponse>();
+      const nextComparison = new Subject<AnalyticsComparisonResponse>();
+      const nextHealth = new Subject<AnalyticsHealthResponse>();
+      const nextReliability = new Subject<ModelReliabilityResponse>();
+      api.getAnalyticsComparison
+        .mockReturnValueOnce(comparison)
+        .mockReturnValueOnce(nextComparison);
+      api.getAnalyticsHealth.mockReturnValueOnce(health).mockReturnValueOnce(nextHealth);
+      api.getAnalyticsReliability
+        .mockReturnValueOnce(reliability)
+        .mockReturnValueOnce(nextReliability);
+      component.manualRefresh();
+      component.selectedTournamentId = 'tournament-b';
+      component.selectedDays = 7;
+      component.minGames = 3;
+      component.onCommonFiltersChanged();
+
+      expect([comparison.observed, health.observed, reliability.observed]).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      expect([
+        component.comparison(),
+        component.health(),
+        component.reliability(),
+        component.lastUpdated(),
+      ]).toEqual([null, null, null, null]);
+      expect([
+        component.comparisonLoading(),
+        component.healthLoading(),
+        component.reliabilityLoading(),
+      ]).toEqual([true, true, true]);
+      harness.detectChanges();
+      expect(harness.routeNativeElement!.textContent).not.toContain('model.sample');
+      const scope = { windowDays: 7, tournamentId: 'tournament-b' };
+      nextComparison.next({ ...oldComparison, ...scope, minGames: 3 });
+      nextHealth.next({ ...oldHealth, ...scope });
+      nextReliability.next({ ...oldReliability, ...scope, minGames: 3 });
+      comparison.next(oldComparison);
+      health.next(oldHealth);
+      reliability.next(oldReliability);
+      expect(component.comparison()).toMatchObject({ ...scope, minGames: 3 });
+      expect(component.health()).toMatchObject(scope);
+      expect(component.reliability()).toMatchObject({ ...scope, minGames: 3 });
+    },
+  );
+
+  it.each(['comparison', 'health', 'reliability'] as const)(
+    'refreshes idle reports independently while %s is pending and retries it after failure',
+    async (source) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        const pending = new Subject<never>();
+        const { component, api } = await renderDashboard('', { [source]: pending });
+        const reports = {
+          comparison: api.getAnalyticsComparison,
+          health: api.getAnalyticsHealth,
+          reliability: api.getAnalyticsReliability,
+        };
+        const loading = {
+          comparison: component.comparisonLoading,
+          health: component.healthLoading,
+          reliability: component.reliabilityLoading,
+        };
+        for (const report of Object.values(reports)) report.mockReturnValue(of());
+        vi.advanceTimersByTime(15000);
+        for (const [name, report] of Object.entries(reports)) {
+          expect(report).toHaveBeenCalledTimes(name === source ? 1 : 2);
+        }
+        expect(loading[source]()).toBe(true);
+        pending.error(new Error('Report failed'));
+        expect(loading[source]()).toBe(false);
+        vi.advanceTimersByTime(15000);
+        expect(reports[source]).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('times out a stalled report and retries it independently on a later tick', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const stalled = new Subject<AnalyticsComparisonResponse>();
+      const { harness, component, api } = await renderDashboard();
+      const previous = component.comparison();
+      const recovery: AnalyticsComparisonResponse = {
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        gamesCount: 3,
+        models: [comparisonRow('model.recovered')],
+      };
+      api.getAnalyticsComparison.mockReturnValueOnce(stalled).mockReturnValue(of(recovery));
+      // Start between polling ticks so the timeout can be checked before the next retry.
+      vi.advanceTimersByTime(1);
+      component.manualRefresh();
+
+      vi.advanceTimersByTime(44999);
+      expect(stalled.observed).toBe(true);
+      expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(2);
+      expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(5);
+      expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(5);
+
+      vi.advanceTimersByTime(15001);
+      expect(stalled.observed).toBe(false);
+      expect(component.comparisonLoading()).toBe(false);
+      expect(component.comparisonError()).toBe('Failed to load model comparison metrics.');
+      expect(component.comparison()).toBe(previous);
+
+      vi.advanceTimersByTime(14999);
+      expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(3);
+      expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(7);
+      expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(7);
+      expect(component.comparisonError()).toBeNull();
+      stalled.next({ ...recovery, models: [comparisonRow('model.stale')] });
+      expect(component.comparison()).toEqual(recovery);
+      harness.fixture.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels pending dashboard requests and stops polling on destruction', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const comparison = new Subject<AnalyticsComparisonResponse>();
+      const health = new Subject<AnalyticsHealthResponse>();
+      const reliability = new Subject<ModelReliabilityResponse>();
+      const tournaments = new Subject<Tournament[]>();
+      const { harness, api } = await renderDashboard('', {
+        comparison,
+        health,
+        reliability,
+        tournaments,
+      });
+      const requests = [comparison, health, reliability, tournaments];
+      expect(requests.every((request) => request.observed)).toBe(true);
+      harness.fixture.destroy();
+      expect(requests.every((request) => !request.observed)).toBe(true);
+      vi.advanceTimersByTime(15000);
+      expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(1);
+      expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(1);
+      expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('restores selection on query changes and keeps shared filters across tabs', async () => {
     const { harness, component, api } = await renderDashboard();
@@ -759,13 +919,14 @@ function createDashboard(): AnalyticsDashboard {
 async function renderDashboard(
   query = '',
   responses: {
+    tournaments?: Observable<Tournament[]>;
     comparison?: Observable<AnalyticsComparisonResponse>;
     health?: Observable<AnalyticsHealthResponse>;
     reliability?: Observable<ModelReliabilityResponse>;
   } = {},
 ) {
   const api = {
-    getTournaments: vi.fn(() => of([])),
+    getTournaments: vi.fn(() => responses.tournaments ?? of([])),
     getAnalyticsComparison: vi.fn(
       () =>
         responses.comparison ??
