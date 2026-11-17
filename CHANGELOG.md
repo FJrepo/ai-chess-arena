@@ -7,7 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-17
+
+Variety and robustness: opening variety (standard, random book line or a fixed opening), optional win adjudication with missed-mate markers and a Conversion table, cancelling a tournament, a random bracket draw, prompt-caching metrics, drawn SVG chess pieces, Stockfish 19, and release images for amd64 and arm64 (Apple Silicon runs natively). Release notes now come from this changelog.
+
 ### Upgrade notes
+- Back up the database before upgrading (see `docs/deployment.md`, *Backups and rollback*); migrations V17–V19 run automatically on start.
 - Flyway `V19__opening_variety.sql` adds tournament opening settings (default Standard), immutable game opening metadata and `moves.is_book` (false for existing rows). Existing positions, history, results and spend stay unchanged; no backfill. Back up before upgrading; rollback requires restoring the backup because older versions do not distinguish book moves in analytics.
 - Flyway `V18__adjudication.sql` adds `tournaments.adjudication_enabled` (not null, default false). Existing tournaments keep adjudication off; existing results and evaluations stay unchanged. Missed mates and conversion metrics derive from stored evaluations without backfill. Back up before upgrading.
 - Flyway migration `V17__cache_tokens.sql` adds nullable `cached_prompt_tokens` and `cache_write_tokens` columns to `move_attempts` on backend startup. Back up before upgrading. Existing rows and costs remain unchanged; historical cache usage is not backfilled.
