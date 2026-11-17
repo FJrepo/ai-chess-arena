@@ -38,36 +38,31 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 ## Quick start
 
-You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).
-
-Release images support amd64 and arm64, including Apple Silicon.
+You need Docker Desktop on macOS/Windows (including Apple Silicon), or Docker Engine 28+ with Compose on Linux, and an [OpenRouter API key](https://openrouter.ai/keys).
 
 ```bash
-git clone https://github.com/FJrepo/ai-chess-arena.git && cd ai-chess-arena
-make setup                     # creates .env (mode 0600) from .env.example
+mkdir chess-arena
+cd chess-arena
+curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
+curl -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
+install -m 600 env.example .env
 ```
 
-Edit `.env`:
+Set `OPENROUTER_API_KEY` and a strong `DB_PASSWORD` in `.env`, then start:
 
 ```bash
-IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
-IMAGE_TAG=v1.6.0               # a release from https://github.com/FJrepo/ai-chess-arena/releases
-OPENROUTER_API_KEY=sk-or-...
-DB_PASSWORD='choose-a-strong-password'
-```
-
-Start it:
-
-```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 Open **http://localhost:4200**, create a tournament, generate the bracket and start the first game. The API is available under `http://localhost:4200/api`.
 
-Everything binds to loopback. See the [deployment guide](docs/deployment.md) for ports, host names, upgrades, backups and troubleshooting.
+Windows: use the [PowerShell variant](docs/deployment.md#windows-powershell).
 
-From v1.6.0: two-file setup, see the [5-minute start](docs/deployment.md#5-minute-start-from-v160).
+Pin a version: replace `latest/download` with `download/vX.Y.Z`.
+
+Contributors: see the [source-checkout setup](docs/deployment.md#run-from-a-source-checkout) using `make setup` and `docker-compose.prod.yml`.
+
+Everything binds to loopback. See the [deployment guide](docs/deployment.md) for ports, host names, upgrades, backups and troubleshooting.
 
 ## How it works
 

@@ -1,14 +1,14 @@
 # Deployment Guide
 
 ## Overview
-Run released images from a source checkout using the [README quick start](../README.md#quick-start), which works with v1.5.0. From v1.6.0, [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases) will also offer two setup assets: `docker-compose.yml` and `env.example`. That setup needs no source checkout, Make, Java or Node.js.
+Run released images using the [README quick start](../README.md#quick-start) or the detailed [5-minute start](#5-minute-start) below. Download `docker-compose.yml` and `env.example` from [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases); no source checkout, Make, Java or Node.js is needed.
 
 The **downloaded** `docker-compose.yml` is generated from the repository's `docker-compose.prod.yml`, changing only the two `IMAGE_TAG` expressions to default to that release's exact `vX.Y.Z` tag. Both application images stay pinned even when you downloaded the files through the `latest` release URL. Explicit `IMAGE_TAG` and `IMAGE_NAMESPACE` settings still override those defaults.
 
 In a **source checkout**, `docker-compose.yml` builds the development stack from source; use `docker-compose.prod.yml` to run released images. That repository file continues to require an explicit `IMAGE_TAG`.
 
 ## Image Platforms
-Starting with the next release, both backend and frontend images are multi-arch OCI indexes for `linux/amd64` and `linux/arm64`, including Apple Silicon and ARM servers. Older release tags retain their original platforms. Docker selects the host's native platform automatically; Stockfish 19 uses the matching checksum-pinned universal binary.
+Both backend and frontend release images are multi-arch OCI indexes for `linux/amd64` and `linux/arm64`, including Apple Silicon and ARM servers. Older release tags retain their original platforms. Docker selects the host's native platform automatically; Stockfish 19 uses the matching checksum-pinned universal binary.
 
 To force a platform for a pull, use `docker pull --platform linux/arm64 ghcr.io/<owner>/chess-backend:<tag>` (likewise for `chess-frontend`). To force the whole Compose stack, set `DOCKER_DEFAULT_PLATFORM=linux/arm64` for both the `docker compose -f docker-compose.prod.yml pull` and `up -d` commands. Use `linux/amd64` to force x86-64 instead. Running a foreign platform requires QEMU/binfmt support, which Docker Desktop includes; native deployment needs no emulation.
 
@@ -61,32 +61,34 @@ Rebuild/recreate the backend and frontend when deploying this feature. Opening s
 
 ## First-Time Setup
 
-For v1.5.0, follow the [README quick start](../README.md#quick-start). In a source checkout, `make setup` creates `.env` from `.env.example` with mode `0600`, or preserves its contents and tightens permissions.
+### 5-minute start
 
-### 5-minute start (from v1.6.0)
-
-These instructions apply once v1.6.0 is published with both setup assets; v1.5.0 has no setup assets. You need Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Compose, and an [OpenRouter API key](https://openrouter.ai/keys). The Docker Engine must be 28.0+ for localhost isolation.
+You need Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Compose, and an [OpenRouter API key](https://openrouter.ai/keys). The Docker Engine must be 28.0+ for localhost isolation.
 
 On macOS/Linux, download the two assets into a new directory and create the credential file with mode `0600` before editing:
 
 ```bash
 mkdir chess-arena
 cd chess-arena
-curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/docker-compose.yml
-curl -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/env.example
+curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
+curl -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
 install -m 600 env.example .env
 ```
 
-Windows: keep `.env` in your user profile; don't share it. In PowerShell:
+#### Windows (PowerShell)
+
+Keep `.env` in your user profile; don't share it. In PowerShell:
 
 ```powershell
 Set-Location $env:USERPROFILE
 mkdir chess-arena
 cd chess-arena
-curl.exe -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/docker-compose.yml
-curl.exe -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/download/v1.6.0/env.example
+curl.exe -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
+curl.exe -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
 Copy-Item env.example .env
 ```
+
+#### Configure and start
 
 Edit `.env`, setting only the two required values:
 
@@ -115,19 +117,40 @@ docker compose ps
 docker compose logs --tail=120 backend frontend
 ```
 
-Open **http://localhost:4200** (or your `FRONTEND_PORT`), create a tournament, generate the bracket and start the first game. The API is under `/api`; only the frontend is exposed on loopback. To select a later release, replace `v1.6.0` in both download URLs with its exact version tag. Do not overwrite an existing `.env` during upgrades.
+Open **http://localhost:4200** (or your `FRONTEND_PORT`), create a tournament, generate the bracket and start the first game. The API is under `/api`; only the frontend is exposed on loopback.
 
-Release maintainer: the v1.6.0 release PR should promote this 5-minute start into the README. Verify that the published release is latest, both setup assets download successfully, and both versioned GHCR images are available before making it the primary quick start.
+Pin a version: replace `latest/download` with `download/vX.Y.Z` in both download URLs. Do not overwrite an existing `.env` during upgrades.
 
-### Source checkouts and operating commands
+### Run from a source checkout
 
-In a source checkout, `make doctor` checks local prerequisites. `make setup` creates `.env` from the same template with mode `0600`, or preserves its contents and tightens permissions. Set an explicit `IMAGE_TAG` as well as the two credentials, then use:
+Contributors can run released images from a source checkout with Git, Make and the [prerequisites](#prerequisites) above:
+
+```bash
+git clone https://github.com/FJrepo/ai-chess-arena.git
+cd ai-chess-arena
+make setup
+```
+
+`make setup` creates `.env` from `.env.example` with mode `0600`, or preserves its contents and tightens permissions. `make doctor` checks local prerequisites. Edit `.env`:
+
+```bash
+IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
+IMAGE_TAG=v1.6.0               # choose an exact tag from GitHub Releases
+OPENROUTER_API_KEY=sk-or-...
+DB_PASSWORD='choose-a-strong-password'
+```
+
+Start the released images using the production Compose file:
 
 ```bash
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml ps
 ```
+
+Open **http://localhost:4200**. To build the application from source instead, see [Development](../README.md#development).
+
+### Operating commands
 
 The operating commands below use the source checkout's `-f docker-compose.prod.yml`. **With downloaded release assets, substitute `-f docker-compose.yml`** (or omit `-f` if no other Compose files are present). Keep the same installation directory and Compose project name when upgrading so the stack continues to use its existing database volume.
 
@@ -152,7 +175,9 @@ and pass both files explicitly (an override file is only picked up automatically
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.debug.yml up -d backend
 curl http://127.0.0.1:8081/q/health/ready
-``` The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
+```
+
+The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
 
 The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default: widening a bind address requires an operator-provided authentication boundary, TLS, authorization for mutations, and appropriate firewall/rate-limit controls.
 
@@ -263,7 +288,7 @@ Release metadata explicitly preserves the backend Dockerfile's `org.opencontaine
 
 GitHub Release notes come from the tagged version's section in [CHANGELOG.md](../CHANGELOG.md), extracted by `python3 scripts/release_notes.py vX.Y.Z CHANGELOG.md --repository OWNER/REPO`. The workflow supplies the release tag and `GITHUB_REPOSITORY`. The introduction becomes Highlights, Upgrade notes comes first, and other sections retain changelog order. The workflow appends Verification with both image index digests, an Assets subsection linking the two setup files, and a Full Changelog comparison to the closest reachable previous `vX.Y.Z` tag (or the tagged commit history for the first release); it does not generate a PR list. A missing version entry fails tag validation before CI, builds or promotion.
 
-`python3 scripts/release_assets.py vX.Y.Z` writes `release-assets/docker-compose.yml` with both application images defaulting to the validated release tag, plus `release-assets/env.example`, an exact copy of the repository's `.env.example`. Every other Compose byte is preserved. The template is generated and uploaded as `env.example`; release notes link only that canonical filename. Both files are supplied to the same action step that creates the GitHub Release, with missing files treated as errors: release immutability prevents uploading them afterwards. This adds no application migration or backfill and leaves existing installations and stored data unchanged. Setup assets are planned from v1.6.0; older releases are unchanged.
+`python3 scripts/release_assets.py vX.Y.Z` writes `release-assets/docker-compose.yml` with both application images defaulting to the validated release tag, plus `release-assets/env.example`, an exact copy of the repository's `.env.example`. Every other Compose byte is preserved. The template is generated and uploaded as `env.example`; release notes link only that canonical filename. Both files are supplied to the same action step that creates the GitHub Release, with missing files treated as errors: release immutability prevents uploading them afterwards. This adds no application migration or backfill and leaves existing installations and stored data unchanged. Setup assets are available from v1.6.0; older releases are unchanged.
 
 The reusable CI workflow includes a Python 3.12 job that installs `scripts/requirements-test.txt` and runs `python -m unittest discover -s scripts -p 'test_*.py'`. Script regressions gate pull requests and releases alongside backend and frontend checks.
 
