@@ -580,7 +580,8 @@ class TournamentAutoRunIT {
         QuarkusMock.installMockForType(new GameWebSocket() {
             @Override public void broadcastGameStatus(UUID changedId, String status, String announcedResult,
                     String announcedReason, int totalMoves, BigDecimal cost, String activeColor,
-                    java.time.Instant startedAt, java.time.Instant deadlineAt, String detail, String chatMode) {}
+                    java.time.Instant startedAt, java.time.Instant deadlineAt, String detail, String chatMode,
+                    String banterLevel) {}
 
             @Override public void broadcastMove(UUID changedId, int moveNumber, String color, String san,
                     String fen, String pgn, String model, long responseTimeMs, int retries, boolean override) {}

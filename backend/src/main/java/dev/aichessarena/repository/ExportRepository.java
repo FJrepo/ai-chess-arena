@@ -2,6 +2,7 @@ package dev.aichessarena.repository;
 
 import dev.aichessarena.dto.TournamentExportDto.Attempt;
 import dev.aichessarena.entity.ChatMessage;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
@@ -47,6 +48,7 @@ public class ExportRepository {
                    t.matchupBestOf as matchupBestOf,
                    t.finalsBestOf as finalsBestOf,
                    t.chatMode as chatMode,
+                   t.banterLevel as banterLevel,
                    t.resignationAllowed as resignationAllowed,
                    t.adjudicationEnabled as adjudicationEnabled,
                    t.maxOutputTokens as maxOutputTokens,
@@ -229,6 +231,7 @@ public class ExportRepository {
         t.matchupBestOf = row.get("matchupBestOf", Integer.class);
         t.finalsBestOf = row.get("finalsBestOf", Integer.class);
         t.chatMode = row.get("chatMode", ChatMode.class);
+        t.banterLevel = row.get("banterLevel", BanterLevel.class);
         t.resignationAllowed = row.get("resignationAllowed", Boolean.class);
         t.adjudicationEnabled = row.get("adjudicationEnabled", Boolean.class);
         t.maxOutputTokens = row.get("maxOutputTokens", Integer.class);

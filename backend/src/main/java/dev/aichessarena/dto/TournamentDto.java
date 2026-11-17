@@ -21,6 +21,7 @@ public record TournamentDto(
         // True unless chatMode is OFF; kept for older clients.
         boolean trashTalkEnabled,
         String chatMode,
+        @JsonInclude(JsonInclude.Include.ALWAYS) String banterLevel,
         // Models may resign instead of moving from their 10th move on (Tournament.MIN_RESIGNATION_MOVE).
         boolean resignationAllowed,
         boolean adjudicationEnabled,

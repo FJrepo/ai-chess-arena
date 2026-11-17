@@ -45,6 +45,12 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Banter level migration (V21)
+
+Back up before upgrading. Flyway `V21__banter_level.sql` adds nullable, checked `tournaments.banter_level` on backend startup. Existing tournaments keep Original (`null`), preserving their prompt texts, versions and hashes. Existing moves, games, results and spend remain unchanged; no backfill is needed.
+
+Rebuild/recreate both backend and frontend to deploy the setting, prompt variants and controls. Backend restart discards in-memory conversations as usual. Restore the pre-upgrade backup to roll back. No bundled third-party software changes. See [Chat mode and banter](how-it-works.md#chat-mode) for live-change and legacy-template behavior.
+
 ## Auto-run migration (V20)
 
 Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend startup and adds tournament run state (`OFF` for every existing tournament), concurrency (default 2), optional budget (null/no cap), and pause reason. Existing game positions, attempts, results and spend remain unchanged; no historical backfill is needed. No bundled third-party software changes.

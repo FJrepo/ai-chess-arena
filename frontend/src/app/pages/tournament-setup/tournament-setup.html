@@ -411,6 +411,23 @@
                   <mat-button-toggle [value]="option.value">{{ option.label }}</mat-button-toggle>
                 }
               </mat-button-toggle-group>
+              @if (chatMode !== 'OFF') {
+                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                  <mat-label>Banter</mat-label>
+                  <mat-select
+                    id="banter-level"
+                    [(ngModel)]="banterLevel"
+                    placeholder="Original"
+                    aria-describedby="banter-hint"
+                  >
+                    <mat-option [value]="null">Original</mat-option>
+                    @for (option of banterOptions; track option.value) {
+                      <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                    }
+                  </mat-select>
+                  <mat-hint id="banter-hint">{{ banterHint() }}</mat-hint>
+                </mat-form-field>
+              }
               @let chatHintParts = hintParts(chatModeCaptions[chatMode]);
               <span class="caption chat-mode-hint" id="chat-mode-hint">
                 {{ chatHintParts[0] }}

@@ -76,6 +76,11 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "chat_mode", nullable = false, length = 16)
     public ChatMode chatMode = ChatMode.OPTIONAL;
 
+    /** Optional tone for chat; applied from the next turn and ignored when chat is OFF. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "banter_level", length = 16)
+    public BanterLevel banterLevel;
+
     /**
      * The pre-1.4 column {@code trash_talk_enabled}, kept in sync with {@link #chatMode} (false only for OFF). Not
      * read by this version; to be dropped in a later release. Rolling back to an older version requires restoring
