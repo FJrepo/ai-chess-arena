@@ -25,6 +25,12 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
         return list("tournament.id = ?1", tournamentId);
     }
 
+    /** IDs for post-delete cleanup, without attaching game entities that a bulk delete would leave stale. */
+    public List<UUID> findIdsByTournamentId(UUID tournamentId) {
+        return getEntityManager().createQuery("select g.id from Game g where g.tournament.id = :tournamentId", UUID.class)
+                .setParameter("tournamentId", tournamentId).getResultList();
+    }
+
     /**
      * Detaches every entity the current session has loaded, so the next read comes from the database. For a
      * long-lived request context outside a transaction (the game loop), whose session would otherwise keep returning

@@ -479,7 +479,7 @@ class GameTurnServiceTest {
         List<OpenRouterService.ChatMsg> sent = fixture.openRouter.sentMessages.getFirst();
         assertEquals(1 + ConversationWindow.LEGACY_PRIOR_MESSAGES + 1, sent.size());
         assertEquals("turn 17", sent.get(1).content());
-        assertEquals(43, history.size());
+        assertEquals(9, history.size(), "the retained history is bounded as well as the outbound request");
     }
 
     @Test

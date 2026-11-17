@@ -65,6 +65,32 @@ class HumanConversationLifecycleTest {
     }
 
     @Test
+    void disablingCachingBoundsRetainedHistoryAcrossManyHumanTurns() throws Exception {
+        Fixture f = new Fixture();
+        f.router.promptCaching = false;
+        f.engine.gameTurnService.promptCaching = false;
+        f.modelMoves = List.of("e4", "Nf3", "Bc4", "d3", "O-O", "Re1", "c3", "Bb3", "Nbd2", "h3", "Bc2", "Nf1");
+        List<String> humanMoves = List.of("e5", "Nc6", "Nf6", "Bc5", "d6", "O-O", "a6", "Ba7", "h6", "Be6", "Qd7");
+
+        f.engine.startGame(f.game.id);
+        for (int turn = 0; turn < f.modelMoves.size(); turn++) {
+            if (turn > 0) f.human(humanMoves.get(turn - 1));
+            JsonNode sent = f.requests.getLast().path("messages");
+            assertEquals(Math.min(2 + 2 * turn, 8), sent.size());
+            var retained = waitingConversations(f.engine).get(f.game.id);
+            assertEquals(Math.min(3 + 2 * turn, 9), retained.whiteHistory().size());
+            assertEquals(1, retained.blackHistory().size());
+            for (int i = 0; i < sent.size(); i++) {
+                assertEquals(retained.whiteHistory().get(i).content(), sent.get(i).path("content").asText());
+                assertTrue(sent.get(i).path("content").isTextual());
+            }
+            assertEquals(sent.get(0), f.requests.getFirst().path("messages").get(0));
+            assertEquals(Game.GameStatus.IN_PROGRESS, f.game.status);
+        }
+        assertEquals(12, f.requests.size());
+    }
+
+    @Test
     void editingSharedInstructionsAppliesNextTurnAndResetsThePrefixOnlyOnce() throws Exception {
         Fixture f = new Fixture();
         f.engine.startGame(f.game.id);
@@ -121,9 +147,15 @@ class HumanConversationLifecycleTest {
     }
 
     private static void assertNoWaitingConversation(GameEngineService engine) throws Exception {
+        assertTrue(waitingConversations(engine).isEmpty(), "finished or paused games must release retained history");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<UUID, GameConversationService.ConversationState> waitingConversations(GameEngineService engine)
+            throws Exception {
         var cache = GameEngineService.class.getDeclaredField("humanConversations");
         cache.setAccessible(true);
-        assertTrue(((Map<?, ?>) cache.get(engine)).isEmpty(), "finished or paused games must release retained history");
+        return (Map<UUID, GameConversationService.ConversationState>) cache.get(engine);
     }
 
     private final class Fixture {
@@ -131,6 +163,7 @@ class HumanConversationLifecycleTest {
         private final List<Move> moves = new ArrayList<>();
         private final List<JsonNode> requests = new ArrayList<>();
         private final List<String> promptHashes = new ArrayList<>();
+        private List<String> modelMoves = List.of("e4", "Nf3", "Bc4", "d3");
         private final ChessService chess = new ChessService();
         private final OpenRouterService router = new OpenRouterService();
         private final GameRepository games = new GameRepository() {
@@ -195,7 +228,7 @@ class HumanConversationLifecycleTest {
             server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
             server.createContext("/chat/completions", exchange -> {
                 requests.add(JSON.readTree(exchange.getRequestBody().readAllBytes()));
-                String san = List.of("e4", "Nf3", "Bc4", "d3").get(requests.size() - 1);
+                String san = modelMoves.get(requests.size() - 1);
                 String answer = "{ \"move\": \"" + san + "\" }\n";
                 var body = JSON.createObjectNode();
                 body.putArray("choices").addObject().putObject("message").put("content", answer);

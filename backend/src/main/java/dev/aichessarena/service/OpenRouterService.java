@@ -152,7 +152,8 @@ public class OpenRouterService {
      * response body, must have arrived; preparing the request counts against it, and a deadline that has already
      * passed fails at once without sending anything. Exceeding it is the model's timeout
      * ({@link ProviderOutcome#TIMEOUT}), unless the response had already started with an error status: then the
-     * provider classification of that status applies. {@code null} means no move time limit. Every request is
+     * provider classification of that status applies. A cache-control rejection also keeps its provider
+     * attribution if its plain retry exhausts the deadline. {@code null} means no move time limit. Every request is
      * also bounded by the technical safety cap ({@code openrouter.request-safety-cap}); reaching that cap first
      * is a provider problem ({@link ProviderOutcome#RETRYABLE}), never the model's timeout.
      */
@@ -186,14 +187,14 @@ public class OpenRouterService {
         boolean limitedByMoveTime = answerDeadline != null && answerDeadline.isBefore(safetyDeadline);
         AnswerDeadline deadline = limitedByMoveTime ? answerDeadline : safetyDeadline;
         return sendChatRequest(modelId, messages, maxOutputTokens, reasoningEffort, startNanos, deadline,
-                limitedByMoveTime, true);
+                limitedByMoveTime, null);
     }
 
     private LlmResponse sendChatRequest(String modelId, List<ChatMsg> messages, int maxOutputTokens,
                                         ReasoningEffort reasoningEffort, long startNanos, AnswerDeadline deadline,
-                                        boolean limitedByMoveTime, boolean allowExplicitCaching) {
+                                        boolean limitedByMoveTime, CacheRejection cacheRejection) {
         if (deadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
-            return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos));
+            return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos), cacheRejection);
         }
         // Known as soon as the status line and headers arrive, long before an error body may be complete.
         AtomicInteger responseStatus = new AtomicInteger();
@@ -208,7 +209,7 @@ public class OpenRouterService {
             }
 
             ArrayNode msgs = body.putArray("messages");
-            int breakpoint = allowExplicitCaching && promptCaching && needsCacheBreakpoint(modelId)
+            int breakpoint = cacheRejection == null && promptCaching && needsCacheBreakpoint(modelId)
                     ? stablePrefixEnd(messages) : -1;
             for (int i = 0; i < messages.size(); i++) {
                 ChatMsg msg = messages.get(i);
@@ -229,7 +230,7 @@ public class OpenRouterService {
             long sendBudgetNanos = deadline.remainingNanos(nanoClock.getAsLong());
             if (sendBudgetNanos <= 0) {
                 // Preparing the request used up the rest of the time: do not send it.
-                return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos));
+                return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos), cacheRejection);
             }
             // The request timeout only bounds the time until the response headers arrive, and OpenRouter starts
             // long answers early: the deadline for the complete body is enforced by waiting on the future below.
@@ -257,16 +258,16 @@ public class OpenRouterService {
             long elapsed = elapsedMs(startNanos);
 
             if (response.statusCode() != 200) {
-                boolean cacheRejection = isCacheControlRejection(response.statusCode(), response.body());
-                if (breakpoint >= 0 && cacheRejection) {
+                boolean rejectedCacheControl = isCacheControlRejection(response.statusCode(), response.body());
+                if (breakpoint >= 0 && rejectedCacheControl) {
                     explicitCachingRejected.add(modelId);
                     LOG.warnf("OpenRouter rejected explicit caching for %s; retrying once with plain messages", modelId);
                     return sendChatRequest(modelId, messages, maxOutputTokens, reasoningEffort, startNanos, deadline,
-                            limitedByMoveTime, false);
+                            limitedByMoveTime, new CacheRejection(response.statusCode(), response.body()));
                 }
                 LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
                 return withReportedUsage(LlmResponse.providerFailure(
-                        cacheRejection ? ProviderOutcome.RETRYABLE : classifyHttpStatus(response.statusCode()),
+                        rejectedCacheControl ? ProviderOutcome.RETRYABLE : classifyHttpStatus(response.statusCode()),
                         response.statusCode(),
                         describeHttpFailure(response.statusCode(), response.body()),
                         elapsed,
@@ -277,12 +278,13 @@ public class OpenRouterService {
             return parseCompletion(modelId, response.body(), elapsed);
         } catch (TimeoutException e) {
             pending.cancel(true);
-            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos));
+            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos), cacheRejection);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
                     ? e.getCause().getCause()
                     : e.getCause();
-            return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos));
+            return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos),
+                    cacheRejection);
         } catch (InterruptedException e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -415,7 +417,7 @@ public class OpenRouterService {
     }
 
     private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime,
-                                         int responseStatus, long elapsed) {
+                                         int responseStatus, long elapsed, CacheRejection cacheRejection) {
         if (cause instanceof HttpConnectTimeoutException) {
             LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, cause.getMessage());
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
@@ -423,7 +425,7 @@ public class OpenRouterService {
         }
         if (cause instanceof HttpTimeoutException) {
             // No response headers within the wait: the same deadline as for the complete answer.
-            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus, elapsed);
+            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus, elapsed, cacheRejection);
         }
         if (cause instanceof IOException) {
             LOG.warnf("OpenRouter request failed for model %s: %s", modelId, cause.toString());
@@ -439,10 +441,18 @@ public class OpenRouterService {
     /**
      * The wait ended before the complete answer arrived. {@code responseStatus} is the HTTP status if the response
      * had started (0 otherwise): an error status is OpenRouter's failure even when its body stalls, never the
-     * model's timeout.
+     * model's timeout. A cache rejection remains the provider's fault if its plain retry exhausts the deadline.
      */
     private LlmResponse deadlineExceeded(String modelId, boolean limitedByMoveTime, int responseStatus,
-                                         long elapsed) {
+                                         long elapsed, CacheRejection cacheRejection) {
+        if (cacheRejection != null) {
+            LOG.warnf("Plain retry for model %s exhausted the deadline after a cache-control rejection (HTTP %d)",
+                    modelId, cacheRejection.status());
+            return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, cacheRejection.status(),
+                    describeHttpFailure(cacheRejection.status(), cacheRejection.body())
+                            + "; plain retry did not finish within the original request deadline after cache-control rejection",
+                    elapsed, cacheRejection.body()), cacheRejection.body());
+        }
         if (responseStatus != 0 && responseStatus != 200) {
             LOG.warnf("OpenRouter answered HTTP %d for model %s, but the error body did not arrive in time",
                     responseStatus, modelId);
@@ -458,6 +468,9 @@ public class OpenRouterService {
                 "OpenRouter request did not finish within the safety limit of " + describe(requestSafetyCap),
                 elapsed, null);
     }
+
+    /** Attribution carried by the single plain retry; it shares the marked request's original deadlines. */
+    private record CacheRejection(int status, String body) { }
 
     private static String describe(Duration duration) {
         long seconds = duration.toSeconds();

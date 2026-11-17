@@ -6,15 +6,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.bhlangonijr.chesslib.Board;
 import com.sun.net.httpserver.HttpServer;
+import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.OpenRouterService.ChatMsg;
+import dev.aichessarena.websocket.GameWebSocket;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -241,16 +248,94 @@ class OpenRouterPromptCachingTest {
         service.nanoClock = nanos::get;
         service.requestSafetyCap = Duration.ofSeconds(10);
         rejectionStatus = 404;
-        afterRejection = () -> nanos.set(Duration.ofSeconds(6).toNanos());
+        afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
         afterPlain = () -> nanos.set(Duration.ofSeconds(11).toNanos());
         var deadline = timed ? OpenRouterService.AnswerDeadline.after(Duration.ofSeconds(10), 0) : null;
         if (timed) {
             service.requestSafetyCap = Duration.ofSeconds(20);
         }
         var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")), deadline, 100);
-        assertEquals(timed ? OpenRouterService.ProviderOutcome.TIMEOUT : OpenRouterService.ProviderOutcome.RETRYABLE,
-                response.outcome());
+        assertEquals(OpenRouterService.ProviderOutcome.RETRYABLE, response.outcome());
+        assertFalse(response.timedOut());
+        assertEquals(404, response.httpStatus());
+        assertEquals(rejectionBody, response.rawResponse());
+        assertTrue(response.errorMessage().contains("cache"));
+        assertEquals(11_000, response.responseTimeMs());
         assertEquals(2, requests.size());
+    }
+
+    @Test
+    void rejectionAtTheDeadlineRemainsAProviderFailureWithoutSendingAPlainRetry() throws Exception {
+        OpenRouterService service = stub();
+        AtomicLong nanos = new AtomicLong();
+        service.nanoClock = nanos::get;
+        rejectionStatus = 400;
+        afterRejection = () -> nanos.set(Duration.ofSeconds(10).toNanos());
+        var deadline = OpenRouterService.AnswerDeadline.after(Duration.ofSeconds(10), 0);
+
+        var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")), deadline, 100);
+
+        assertEquals(OpenRouterService.ProviderOutcome.RETRYABLE, response.outcome());
+        assertFalse(response.timedOut());
+        assertEquals(400, response.httpStatus());
+        assertEquals(rejectionBody, response.rawResponse());
+        assertEquals(1, requests.size());
+    }
+
+    @Test
+    void latePlainFallbackPausesTheRealTurnWithoutRecordingAModelTimeoutOrForfeit() throws Exception {
+        OpenRouterService router = stub();
+        AtomicLong nanos = new AtomicLong();
+        router.nanoClock = nanos::get;
+        rejectionStatus = 404;
+        afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
+        afterPlain = () -> nanos.set(Duration.ofSeconds(11).toNanos());
+        GameTurnService turn = new GameTurnService();
+        turn.nanoClock = nanos::get;
+        turn.openRouterService = router;
+        turn.chessService = new ChessService();
+        turn.promptService = new PromptService();
+        turn.moveRepository = new MoveRepository() {
+            @Override
+            public long count(String query, Object... params) { return 0; }
+        };
+        List<String> pauses = new ArrayList<>();
+        turn.gameLifecycleService = new GameLifecycleService() {
+            @Override
+            public void pauseForProviderFailure(UUID id, String detail) { pauses.add(detail); }
+
+            @Override
+            public void forfeitTimeout(UUID id, String color, int seconds) {
+                throw new AssertionError("Cache rejection must not cause a timeout loss");
+            }
+        };
+        List<MoveAttemptService.AttemptRecord> attempts = new ArrayList<>();
+        turn.moveAttemptService = new MoveAttemptService() {
+            @Override
+            public void record(AttemptRecord record) { attempts.add(record); }
+        };
+        turn.gameWebSocket = new GameWebSocket() {
+            @Override
+            public void broadcastGameStatus(UUID id, String status, String result, String reason, int count,
+                                            BigDecimal cost, String color, java.time.Instant start,
+                                            java.time.Instant deadline, String detail, String mode) { }
+        };
+        Board board = new Board();
+        var request = new GameTurnService.TurnRequest(UUID.randomUUID(), "", board.getFen(), board, "WHITE", 1,
+                List.of("e4"), "google/gemini-pro", "White", "Black",
+                new ArrayList<>(List.of(new ChatMsg("system", "rules"))), null, null, true, 3, 10,
+                "v2", "hash", BigDecimal.ZERO, () -> true, 100, ChatMode.OPTIONAL, ChatMode.OPTIONAL);
+
+        var result = turn.playTurn(request);
+
+        assertTrue(result.pausedGame());
+        assertFalse(result.isTerminal());
+        assertEquals(1, pauses.size());
+        assertTrue(pauses.getFirst().contains("cache"));
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), attempts.stream()
+                .map(MoveAttemptService.AttemptRecord::outcome).toList());
+        assertEquals(404, attempts.getFirst().response().httpStatus());
+        assertEquals(2, requests.size(), "only the marked request and its plain fallback are sent");
     }
 
     private static List<String> messageText(JsonNode messages) {

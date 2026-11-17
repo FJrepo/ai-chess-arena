@@ -196,7 +196,11 @@ class OpeningTurnIT {
         engine.startGame(id);
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
         while (System.nanoTime() < deadline) {
-            if (!engine.isRunning(id)) {
+            // A terminal commit flags the loop before its final attempt transaction finishes. Wait for
+            // the owner to release its claim so assertions see all work from that turn.
+            GameEngineService.GameLoop claim = engine.tryClaimLoop(id);
+            if (claim != null) {
+                engine.releaseLoop(id, claim);
                 assertEquals(expected, QuarkusTransaction.requiringNew().call(() -> games.findById(id).status));
                 assertFalse(model.calls.isEmpty(), "the model received a prompt");
                 return;

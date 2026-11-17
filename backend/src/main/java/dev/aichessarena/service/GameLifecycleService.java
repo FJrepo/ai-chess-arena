@@ -43,6 +43,9 @@ public class GameLifecycleService {
     TournamentService tournamentService;
 
     @Inject
+    GameEngineService gameEngineService;
+
+    @Inject
     GameWebSocket gameWebSocket;
 
     /** Null outside CDI (unit tests): then broadcasts go out at once. */
@@ -88,7 +91,7 @@ public class GameLifecycleService {
 
     /** Called in the tournament cancellation transaction, under the tournament then game locks. */
     @Transactional
-    public void cancelGame(UUID gameId, Runnable stopLoop) {
+    public void cancelGame(UUID gameId) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || isTerminal(game)) {
             return;
@@ -101,7 +104,7 @@ public class GameLifecycleService {
         game.completedAt = LocalDateTime.now();
         game.statusRevision++;
         gameRepository.persist(game);
-        announceStatus(game, stopLoop, null);
+        announceStatus(game, null, null);
     }
 
     /** Must be checked under the tournament/game locks by mutation paths, also for legacy inconsistent rows. */
@@ -324,7 +327,11 @@ public class GameLifecycleService {
         long revision = game.statusRevision;
         int moves = totalMoves(gameId);
         BigDecimal cost = game.totalCostUsd;
+        boolean terminal = isTerminal(game);
         afterCommit(() -> {
+            if (terminal && gameEngineService != null) {
+                gameEngineService.requestStop(gameId);
+            }
             if (first != null) {
                 first.run();
             }

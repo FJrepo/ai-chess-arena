@@ -95,8 +95,13 @@ public class GameTurnService {
 
         if (promptCaching) {
             ConversationWindow.reanchor(request.history(), maxPriorMessages, retainedMessages);
+        } else {
+            // Human waits retain this backing list, so bounding only an outbound copy leaks old exchanges.
+            List<OpenRouterService.ChatMsg> window = ConversationWindow.trim(request.history(), request.history().size(),
+                    ConversationWindow.LEGACY_PRIOR_MESSAGES);
+            request.history().clear();
+            request.history().addAll(window);
         }
-        int turnStart = request.history().size();
         request.history().add(new OpenRouterService.ChatMsg("user", turnPrompt, true));
 
         // Decided once per turn and before the move time starts: the catalog lookup must not eat the model's time.
@@ -144,8 +149,7 @@ public class GameTurnService {
 
             OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
                     request.modelId(),
-                    promptCaching ? List.copyOf(request.history())
-                            : ConversationWindow.trim(request.history(), turnStart, ConversationWindow.LEGACY_PRIOR_MESSAGES),
+                    List.copyOf(request.history()),
                     turnDeadline,
                     request.maxOutputTokens(),
                     effort
