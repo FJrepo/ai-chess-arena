@@ -5,12 +5,16 @@
     [truncationLimit]="truncationPauseLimit()"
     [truncationModelMaximum]="truncationModelMaximum()"
     [truncationEffort]="truncationEffort()"
-    [saving]="savingLimit()"
+    [saving]="savingLimit() || !gameActionsAvailable()"
     (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
   />
 
   @if (g.status === 'PAUSED' && g.resumeRequestedAt) {
-    <app-queued-resume [capacity]="g.runCapacity" (cancelRequest)="cancelResumeRequest(g)" />
+    <app-queued-resume
+      [capacity]="g.runCapacity"
+      [cancelDisabled]="!gameActionsAvailable()"
+      (cancelRequest)="cancelResumeRequest(g)"
+    />
   }
 
   @if (g.openingName) {
@@ -368,7 +372,7 @@
             mat-raised-button
             color="primary"
             (click)="submitHumanMove()"
-            [disabled]="humanMoveSubmitting() || !humanMove.trim()"
+            [disabled]="humanMoveSubmitting() || !humanMove.trim() || !gameActionsAvailable()"
           >
             Submit Human Move
           </button>
@@ -383,9 +387,16 @@
     </mat-expansion-panel-header>
     <div class="admin-controls">
       @if (g.status === 'IN_PROGRESS') {
-        <button mat-raised-button (click)="pauseGame()"><mat-icon>pause</mat-icon> Pause</button>
+        <button mat-raised-button [disabled]="!gameActionsAvailable()" (click)="pauseGame()">
+          <mat-icon>pause</mat-icon> Pause
+        </button>
       } @else if (g.status === 'PAUSED' && !g.resumeRequestedAt) {
-        <button mat-raised-button color="primary" [disabled]="savingLimit()" (click)="resumeGame()">
+        <button
+          mat-raised-button
+          color="primary"
+          [disabled]="savingLimit() || !gameActionsAvailable()"
+          (click)="resumeGame()"
+        >
           <mat-icon>play_arrow</mat-icon> Resume
         </button>
       }

@@ -212,10 +212,11 @@ export class GameView implements OnInit, OnDestroy {
   stockfishReason = signal<string | null>(null);
   includeChatInFeed = signal(false);
   humanMoveSubmitting = signal(false);
+  readonly gameActionsAvailable = signal(true);
   pendingPromotion = signal<{ from: string; to: string } | null>(null);
 
   boardInteractiveColor = computed(() => {
-    if (!this.isAwaitingHumanMove()) return null;
+    if (!this.gameActionsAvailable() || !this.isAwaitingHumanMove()) return null;
     const moveList = this.moves();
     if (moveList.length > 0 && this.currentMoveIndex() !== moveList.length - 1) return null;
     return this.activeColor();
@@ -274,7 +275,7 @@ export class GameView implements OnInit, OnDestroy {
   });
 
   isLive!: () => boolean;
-  overrideAllowed = computed(() => this.game()?.status === 'PAUSED');
+  overrideAllowed = computed(() => this.gameActionsAvailable() && this.game()?.status === 'PAUSED');
   activeColor!: () => 'WHITE' | 'BLACK' | null;
   moveTimerSeconds!: () => number | null;
   moveTimerDisplay!: () => string;
@@ -581,6 +582,7 @@ export class GameView implements OnInit, OnDestroy {
     this.pauseSettingsSub?.unsubscribe();
     this.gameActions.unsubscribe();
     this.gameActions = new Subscription();
+    this.gameActionsAvailable.set(false);
     this.savingLimit.set(false);
     this.humanMoveSubmitting.set(false);
     this.loadInFlight = false;
@@ -635,6 +637,7 @@ export class GameView implements OnInit, OnDestroy {
       this.loadAttempts();
     }
     this.refreshRetryFromAttempts();
+    this.gameActionsAvailable.set(true);
     this.refreshSnapshotSettings(game);
   }
 
@@ -1106,7 +1109,7 @@ export class GameView implements OnInit, OnDestroy {
 
   /** Keeps action responses scoped to the backend that received the request. */
   private runGameAction<T>(request: Observable<T>, observer: Partial<Observer<T>>): void {
-    if (this.gameActions.closed) return;
+    if (!this.gameActionsAvailable() || this.gameActions.closed) return;
     const action = new Subscription();
     this.gameActions.add(action);
     const response = request.subscribe(observer);
@@ -1115,6 +1118,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   pauseGame() {
+    if (!this.gameActionsAvailable()) return;
     this.runGameAction(this.api.pauseGame(this.gameId), {
       error: () => {
         this.snackbar.open('Failed to pause the game.', 'Dismiss', {
@@ -1153,8 +1157,9 @@ export class GameView implements OnInit, OnDestroy {
 
   private withCurrentGameKey(action: () => void): void {
     const owner = this.gameActions;
+    if (!this.gameActionsAvailable()) return;
     const run = () => {
-      if (!owner.closed) action();
+      if (!owner.closed && this.gameActionsAvailable()) action();
     };
     if (this.connection) this.connection.withKey(run);
     else run();
@@ -1173,7 +1178,12 @@ export class GameView implements OnInit, OnDestroy {
    */
   saveLimitAndResume(maxOutputTokens?: number, reasoningEffort?: ReasoningEffort | null) {
     const tournamentId = this.game()?.tournamentId;
-    if (!tournamentId || this.savingLimit() || this.refreshingPauseSettings()) {
+    if (
+      !this.gameActionsAvailable() ||
+      !tournamentId ||
+      this.savingLimit() ||
+      this.refreshingPauseSettings()
+    ) {
       return;
     }
     const effortChoice = reasoningEffort === undefined ? null : this.truncationEffort();
@@ -1243,6 +1253,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   cancelResumeRequest(displayed: Game): void {
+    if (!this.gameActionsAvailable()) return;
     if (displayed.statusRevision == null) {
       this.loadGame();
       return;
@@ -1283,7 +1294,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   submitHumanMove() {
-    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) {
+    if (!this.gameActionsAvailable() || !this.isAwaitingHumanMove() || this.humanMoveSubmitting()) {
       return;
     }
     const move = this.humanMove.trim();
@@ -1323,7 +1334,8 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   onBoardMoveAttempt(attempt: BoardMoveAttempt) {
-    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
+    if (!this.gameActionsAvailable() || !this.isAwaitingHumanMove() || this.humanMoveSubmitting())
+      return;
     if (attempt.promotionRequired) {
       this.pendingPromotion.set({ from: attempt.from, to: attempt.to });
       return;
@@ -1332,6 +1344,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   selectPromotion(piece: string) {
+    if (!this.gameActionsAvailable()) return;
     const pending = this.pendingPromotion();
     this.pendingPromotion.set(null);
     if (!pending || !this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
@@ -1343,7 +1356,8 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   private submitCoordinateMove(from: string, to: string, promotion: string | null) {
-    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
+    if (!this.gameActionsAvailable() || !this.isAwaitingHumanMove() || this.humanMoveSubmitting())
+      return;
     this.humanMoveSubmitting.set(true);
     this.runGameAction(
       this.api.submitHumanMoveCoordinates(
@@ -1380,6 +1394,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   submitOverride() {
+    if (!this.gameActionsAvailable()) return;
     if (!this.overrideAllowed()) {
       this.snackbar.open('Pause the game before submitting an override move.', 'Dismiss', {
         duration: 4000,

@@ -1754,6 +1754,34 @@ describe('GameView', () => {
     expect(startGame).not.toHaveBeenCalled();
   });
 
+  it('keeps the human move draft but blocks writes until a restored snapshot arrives', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const submit = vi.fn(() => of(void 0));
+    Object.assign(api, { submitHumanMove: submit });
+    const humanTurn = {
+      whiteControlType: 'HUMAN' as const,
+      whiteModelId: null,
+      activeColor: 'WHITE' as const,
+    };
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(gameWith({ ...humanTurn, liveRevision: 25, streamId: 'first' }));
+    component.humanMove = 'e4';
+    component.humanMessage = 'draft';
+
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3, streamId: 'restored' });
+    component.submitHumanMove();
+    expect(submit).not.toHaveBeenCalled();
+    expect(component.currentFen()).toBe(START_FEN);
+    expect(component.humanMove).toBe('e4');
+    expect(component.humanMessage).toBe('draft');
+
+    gameLoad.next(gameWith({ ...humanTurn, liveRevision: 3, streamId: 'restored' }));
+    component.submitHumanMove();
+    expect(submit).toHaveBeenCalledExactlyOnceWith('g-1', 'e4', 'draft');
+    component.ngOnDestroy();
+  });
+
   it('does not infer an expired deadline from an older server after a fallback read', () => {
     const { component, gameLoad, messages, api } = createSpectator(false);
     Object.assign(api, { getTournament: () => of({ moveTimeoutSeconds: 30 }) });
