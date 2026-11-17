@@ -7,9 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-17
+
+Zero-config start: download two files, start with generated secrets, then connect OpenRouter via OAuth in the app instead of adding a key to `.env`. The Club Scoresheet theme brings a new look and board colours, while analytics are organised into four tabs. Choose a banter level, get a bracket when creating a tournament, and use the more compact setup page (round 3).
+
 ### Upgrade notes
-- Connect OpenRouter (v1.7): existing `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` installs keep working and display as operator-managed. Rebuild/recreate backend and frontend with the updated Compose file (backend secrets mount becomes writable). Keep existing DB credentials and volumes. UI keys/claims are private files; no database migration or backfill, and persisted games remain unchanged.
-- Keep `DB_PASSWORD` unchanged in an existing `.env`: an initialized PostgreSQL volume retains its password, and an explicit value wins for both database and backend. New installs generate secrets in `secrets_prod`; retain/back up this volume with `pgdata_prod`. Recreate services with the updated Compose file and images; no schema migration or backfill, and existing database contents remain unchanged.
+- Back up the database before upgrading (see `docs/deployment.md`, *Backups and rollback*); migrations V21 and V22 run automatically on start.
+- Connect OpenRouter (v1.7): existing `OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_FILE` installs keep working and display as operator-managed (read-only in the UI). Rebuild/recreate backend and frontend with the updated Compose file (backend secrets mount becomes writable). Keep existing DB credentials and volumes. UI keys/claims are private files; no database migration or backfill, and persisted games remain unchanged.
+- Keep `DB_PASSWORD` unchanged in an existing `.env`: an initialized PostgreSQL volume retains its password, and an explicit value wins for both database and backend. The init service generates persistent secrets in `secrets_prod` on first start and never overwrites existing files. On upgrades with an explicit `DB_PASSWORD`, the generated password file is unused for database authentication; removing the existing value would not change PostgreSQL's stored password. Retain/back up `secrets_prod` with `pgdata_prod`. Recreate services with the updated Compose file and images; no schema migration or backfill, and existing database contents remain unchanged.
 - Back up before upgrading. Flyway `V21__banter_level.sql` adds nullable, checked `tournaments.banter_level`; existing tournaments keep Original (`null`) and all existing prompt texts, versions and hashes. Existing games, moves, results and spend remain unchanged; no backfill. Rebuild/recreate backend and frontend; restore the pre-upgrade backup to roll back.
 - Back up before upgrading. Flyway `V22__creation_bracket_intent.sql` stores the original creation draw choice for safe retries. Existing tournaments, brackets, games and seeds stay unchanged; no generation backfill. Rebuild/recreate backend and frontend to activate creation-time brackets. Restore the pre-upgrade backup to roll back.
 
