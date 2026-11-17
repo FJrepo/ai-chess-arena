@@ -20,6 +20,8 @@ public class TournamentRunScheduler {
     @Inject
     TournamentRepository tournaments;
     @Inject
+    GameEngineService engine;
+    @Inject
     Event<RunChanged> changes;
     private volatile boolean recovered;
 
@@ -42,6 +44,11 @@ public class TournamentRunScheduler {
     @ActivateRequestContext
     void tick() {
         if (!recovered) return;
+        try {
+            engine.sweepRetainedConversations();
+        } catch (RuntimeException e) {
+            LOG.warn("Retained conversation cleanup failed; the safety tick will retry", e);
+        }
         for (var t : tournaments.list("autoRunStatus", AutoRunStatus.RUNNING)) schedule(t.id);
     }
 

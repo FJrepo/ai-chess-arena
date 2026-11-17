@@ -41,6 +41,8 @@ Configure the backend with `OPENROUTER_PROMPT_CACHING` (default `true`), `OPENRO
 
 If a plain retry after a cache-control rejection exhausts the original deadline, the game pauses for a provider problem without a timeout loss. Committed tournament deletion and terminal game transitions stop loops and discard their retained conversations; rolled-back changes keep them intact. Rebuild/recreate the backend to apply these fixes. No migration or backfill is needed; existing persisted history is unchanged.
 
+Deletion flags the owning loop before eviction and prevents a concurrent human-turn handoff from restoring its history. New retention checks reject missing/inactive games and terminal tournaments. Every ten seconds, the existing scheduler also sweeps retained conversations against committed state, including when auto-run is off; an empty cache needs no database query. Rebuild/recreate the backend to apply this cleanup fix; persisted data stays unchanged.
+
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
 ## Auto-run migration (V20)

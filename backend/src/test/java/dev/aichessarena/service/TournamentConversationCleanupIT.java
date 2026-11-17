@@ -30,6 +30,60 @@ class TournamentConversationCleanupIT {
     @Inject GameEngineService engine;
     @Inject GameConversationService conversations;
     @Inject GameLifecycleService lifecycle;
+    @Inject TournamentRunScheduler scheduler;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "PAUSED", "COMPLETED", "FORFEIT", "CANCELLED",
+            "tournament-CANCELLED", "tournament-COMPLETED"})
+    void retentionRefusesInactiveGamesAndSafetyTickSweepsTheirStaleHistory(String state) throws Exception {
+        UUID tournamentId = seed();
+        UUID id = gameIds(tournamentId).getFirst();
+        UUID activeTournamentId = seed();
+        UUID activeId = gameIds(activeTournamentId).getFirst();
+        UUID standaloneId = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.status = Game.GameStatus.IN_PROGRESS;
+            game.whitePlayerName = "White";
+            game.blackPlayerName = "Black";
+            games.persist(game);
+            return game.id;
+        });
+        var cache = retainedConversations();
+        retain(List.of(id, activeId, standaloneId));
+        var conversation = cache.remove(id);
+        GameEngineService.GameLoop owner = engine.tryClaimLoop(id);
+        try {
+            // Simulate missed after-commit cleanup. The sweep must work from committed state, independent of owners.
+            QuarkusTransaction.requiringNew().run(() -> {
+                if (state.startsWith("tournament-")) {
+                    tournamentRepository.findByIdForUpdate(tournamentId).status =
+                            Tournament.TournamentStatus.valueOf(state.substring("tournament-".length()));
+                } else {
+                    Game game = games.findByIdForUpdate(id);
+                    if ("missing".equals(state)) games.delete(game);
+                    else game.status = Game.GameStatus.valueOf(state);
+                }
+            });
+
+            engine.retainHumanConversation(id, owner, conversation);
+            assertFalse(cache.containsKey(id), "missing/terminal games cannot store history, even without a stop flag");
+            assertTrue(owner.shouldContinue());
+
+            cache.put(id, conversation); // An orphan left by an earlier handoff or a missed cleanup callback.
+            ClientProxy.unwrap(scheduler).recoveryComplete();
+            scheduler.tick();
+
+            assertFalse(cache.containsKey(id), "the safety tick removes stale retained history");
+            assertTrue(cache.containsKey(activeId), "an active tournament keeps its human wait");
+            assertTrue(cache.containsKey(standaloneId), "active games outside tournaments also keep history");
+        } finally {
+            engine.releaseLoop(id, owner);
+            List.of(id, activeId, standaloneId).forEach(cache::remove);
+            tournaments.deleteTournament(tournamentId);
+            tournaments.deleteTournament(activeTournamentId);
+            QuarkusTransaction.requiringNew().run(() -> games.deleteById(standaloneId));
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})

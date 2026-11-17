@@ -23,6 +23,7 @@ import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -71,7 +72,7 @@ public class GameEngineService {
     static final class GameLoop {
         private volatile boolean stopRequested;
 
-        void requestStop() {
+        synchronized void requestStop() {
             stopRequested = true;
         }
 
@@ -214,11 +215,32 @@ public class GameEngineService {
 
     /** Flags the current owner without releasing its claim; only that loop can release it. */
     public void requestStop(UUID gameId) {
-        humanConversations.remove(gameId);
         GameLoop loop = runningGames.get(gameId);
         if (loop != null) {
             loop.requestStop();
         }
+        humanConversations.remove(gameId);
+    }
+
+    /** A fresh scalar read avoids retaining a game deleted or finished since this turn began. */
+    void retainHumanConversation(UUID gameId, GameLoop loop, GameConversationService.ConversationState conversation) {
+        boolean eligible = gameRepository.findConversationEligibleIds(Set.of(gameId)).contains(gameId);
+        synchronized (loop) {
+            // A commit can stop the loop after the eligibility read. Serialize the put with its stop flag.
+            if (eligible && loop.shouldContinue()) {
+                humanConversations.put(gameId, conversation);
+            }
+        }
+    }
+
+    /** Safety net for missed cleanup, using one query for the retained waits and none for an empty cache. */
+    void sweepRetainedConversations() {
+        var snapshot = Map.copyOf(humanConversations);
+        if (snapshot.isEmpty()) return;
+        Set<UUID> eligible = gameRepository.findConversationEligibleIds(snapshot.keySet());
+        snapshot.forEach((id, conversation) -> {
+            if (!eligible.contains(id)) humanConversations.remove(id, conversation);
+        });
     }
 
     /**
@@ -278,9 +300,7 @@ public class GameEngineService {
             List<OpenRouterService.ChatMsg> history = "WHITE".equals(sideToMove) ? whiteHistory : blackHistory;
 
             if (isHumanTurn(game, sideToMove)) {
-                if (loop.shouldContinue()) {
-                    humanConversations.put(gameId, conversation);
-                }
+                retainHumanConversation(gameId, loop, conversation);
                 gameTurnService.broadcastHumanTurnReady(gameId, game.totalCostUsd, sideToMove);
                 if (!loop.shouldContinue()) {
                     humanConversations.remove(gameId);

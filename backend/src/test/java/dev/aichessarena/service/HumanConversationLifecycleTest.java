@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -172,6 +173,13 @@ class HumanConversationLifecycleTest {
 
             @Override
             public void detachAll() { }
+
+            @Override
+            public Set<UUID> findConversationEligibleIds(Set<UUID> ids) {
+                return ids.contains(game.id) && game.status == Game.GameStatus.IN_PROGRESS
+                        && game.tournament.status != Tournament.TournamentStatus.CANCELLED
+                        && game.tournament.status != Tournament.TournamentStatus.COMPLETED ? Set.of(game.id) : Set.of();
+            }
         };
         private final MoveRepository moveRepo = new MoveRepository() {
             @Override
