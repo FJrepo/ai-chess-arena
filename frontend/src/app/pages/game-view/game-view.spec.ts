@@ -1732,6 +1732,28 @@ describe('GameView', () => {
     component.ngOnDestroy();
   });
 
+  it('does not resume after a delayed key check from a retired or destroyed view', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const callbacks: Array<() => void> = [];
+    const startGame = vi.fn(() => EMPTY);
+    Object.assign(api, { startGame });
+    Object.assign(component, {
+      connection: { withKey: (action: () => void) => callbacks.push(action) },
+    });
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(gameWith({ liveRevision: 25, status: 'PAUSED', streamId: 'first' }));
+    component.resumeGame();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3, streamId: 'restored' });
+    gameLoad.next(gameWith({ liveRevision: 3, status: 'PAUSED', streamId: 'restored' }));
+    callbacks[0]();
+    expect(startGame).not.toHaveBeenCalled();
+    component.resumeGame();
+    component.ngOnDestroy();
+    callbacks[1]();
+    expect(startGame).not.toHaveBeenCalled();
+  });
+
   it('does not infer an expired deadline from an older server after a fallback read', () => {
     const { component, gameLoad, messages, api } = createSpectator(false);
     Object.assign(api, { getTournament: () => of({ moveTimeoutSeconds: 30 }) });

@@ -1106,6 +1106,7 @@ export class GameView implements OnInit, OnDestroy {
 
   /** Keeps action responses scoped to the backend that received the request. */
   private runGameAction<T>(request: Observable<T>, observer: Partial<Observer<T>>): void {
+    if (this.gameActions.closed) return;
     const action = new Subscription();
     this.gameActions.add(action);
     const response = request.subscribe(observer);
@@ -1150,15 +1151,20 @@ export class GameView implements OnInit, OnDestroy {
     });
   }
 
-  /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */
-  saveTruncationFixAndResume(request: RaiseLimitRequest) {
-    if (this.connection)
-      this.connection.withKey(() => this.saveTruncationFixAndResumeWithKey(request));
-    else this.saveTruncationFixAndResumeWithKey(request);
+  private withCurrentGameKey(action: () => void): void {
+    const owner = this.gameActions;
+    const run = () => {
+      if (!owner.closed) action();
+    };
+    if (this.connection) this.connection.withKey(run);
+    else run();
   }
 
-  private saveTruncationFixAndResumeWithKey(request: RaiseLimitRequest) {
-    this.saveLimitAndResume(request.maxOutputTokens, request.reasoningEffort);
+  /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */
+  saveTruncationFixAndResume(request: RaiseLimitRequest) {
+    this.withCurrentGameKey(() =>
+      this.saveLimitAndResume(request.maxOutputTokens, request.reasoningEffort),
+    );
   }
 
   /**
@@ -1221,8 +1227,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   resumeGame() {
-    if (this.connection) this.connection.withKey(() => this.resumeGameWithKey());
-    else this.resumeGameWithKey();
+    this.withCurrentGameKey(() => this.resumeGameWithKey());
   }
 
   private resumeGameWithKey() {
