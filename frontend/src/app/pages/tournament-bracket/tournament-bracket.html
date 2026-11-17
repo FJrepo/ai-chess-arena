@@ -36,6 +36,18 @@
       </div>
 
       <div class="header-right">
+        @for (format of exportFormats; track format) {
+          <button
+            mat-stroked-button
+            class="export-tournament"
+            (click)="exportTournament(format)"
+            [disabled]="exporting()"
+            [attr.aria-label]="'Download tournament ' + format.toUpperCase()"
+          >
+            <mat-icon aria-hidden="true">download</mat-icon>
+            {{ format.toUpperCase() }}
+          </button>
+        }
         <button
           mat-stroked-button
           class="cancel-tournament"

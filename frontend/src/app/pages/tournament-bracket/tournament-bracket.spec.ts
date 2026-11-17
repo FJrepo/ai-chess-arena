@@ -6,6 +6,7 @@ import { EMPTY, of, Subject, throwError } from 'rxjs';
 import { TournamentBracket } from './tournament-bracket';
 import { ApiService } from '../../services/api.service';
 import { BracketDrawMode, Game, Tournament } from '../../models/tournament.model';
+import { MatSnackBar } from '@angular/material/snack-bar';
 
 describe('TournamentBracket', () => {
   beforeEach(() => {
@@ -57,6 +58,7 @@ describe('TournamentBracket', () => {
     const api = {
       getTournament: vi.fn().mockReturnValue(of(current)),
       getTournamentCostSummary: () => EMPTY,
+      getTournamentExport: vi.fn().mockReturnValue(of(new Blob(['export']))),
       runTournament: vi.fn().mockReturnValue(of({ ...current, autoRunStatus: 'RUNNING' })),
       updateTournamentRun: vi.fn().mockReturnValue(of(current)),
       pauseTournamentRun: vi
@@ -79,6 +81,50 @@ describe('TournamentBracket', () => {
     fixture.detectChanges();
     return { fixture, api, component: fixture.componentInstance, current };
   }
+
+  it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the tournament page', (format) => {
+    const { fixture, component, api } = runPage();
+    vi.useFakeTimers();
+    const createObjectURL = vi.fn().mockReturnValue('blob:export');
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const button = fixture.nativeElement.querySelector(
+      `[aria-label="Download tournament ${format.toUpperCase()}"]`,
+    ) as HTMLButtonElement;
+    button.click();
+    expect(api.getTournamentExport).toHaveBeenCalledWith('t-1', format);
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe(
+      `tournament-t-1.${format}`,
+    );
+    expect(component.exporting()).toBe(false);
+    vi.advanceTimersByTime(1000);
+    vi.useRealTimers();
+  });
+
+  it('disables duplicate exports while downloading and reports failures without a download', () => {
+    const { fixture, component, api } = runPage();
+    const pending = new Subject<Blob>();
+    api.getTournamentExport.mockReturnValue(pending);
+    const snackbar = vi.spyOn(TestBed.inject(MatSnackBar), 'open');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+    component.exportTournament('json');
+    component.exportTournament('csv');
+    fixture.detectChanges();
+    const buttons = Array.from(
+      fixture.nativeElement.querySelectorAll('.export-tournament'),
+    ) as HTMLButtonElement[];
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(api.getTournamentExport).toHaveBeenCalledOnce();
+    pending.error(new Error('offline'));
+    expect(component.exporting()).toBe(false);
+    expect(click).not.toHaveBeenCalled();
+    expect(snackbar).toHaveBeenCalledWith(
+      'Could not export tournament. Please try again.',
+      'OK',
+      expect.any(Object),
+    );
+  });
 
   it('runs with selected concurrency and nullable budget and renders spend and attention', () => {
     const { fixture, component, api, current } = runPage();

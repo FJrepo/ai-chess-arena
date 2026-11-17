@@ -19,6 +19,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Move quality](#move-quality) and [missed mates](#missed-mates)
 - [Conversion metrics](#conversion-metrics)
 - [Analytics and reliability](#analytics-and-reliability)
+- [Export](#export)
 - [Leaderboard](#leaderboard)
 - [Live settings](#live-settings)
 - [Scope and interpretation](#scope-and-interpretation)
@@ -419,6 +420,35 @@ Comparison API rows carry `resignations`, `resignationsEvaluated`, `resignations
 OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; so does an answer that is cut off at the output-token limit. Games interrupted by a restart can be resumed.
 
 Recognized OpenRouter failures (rate limits, server or network errors, invalid key, no credits) are retried or pause the game with the reason, and the game can be resumed. A request that simply exceeds the time limit per move still counts as the model's timeout; one that exceeds the technical 10-minute safety cap does not.
+
+## Export
+
+Use **PGN**, **CSV** or **JSON** on the tournament page to download your data. The download icon in the game view exports that game's PGN. Exports read existing records without calling a model or Stockfish, changing results or requiring a migration/backfill.
+
+| Endpoint | Contents |
+|---|---|
+| `GET /api/games/{id}/pgn` | One annotated game, compatible with the existing download icon. |
+| `GET /api/tournaments/{id}/export.pgn` | Games concatenated as a PGN collection, excluding byes. |
+| `GET /api/tournaments/{id}/export.csv` | One row per game, including byes and future bracket placeholders. |
+| `GET /api/tournaments/{id}/export.json` | Versioned tournament settings, participants and full analysis data. |
+
+All downloads are UTF-8 attachments with UUID-based filenames such as `tournament-<id>.csv` and `game-<id>.pgn`. Missing IDs return 404. An empty tournament produces an empty PGN, a CSV header, or JSON with empty participant/game arrays. Games are ordered by creation time, then bracket round/position, series game and ID; plies use move number with White before Black. As with move quality, legacy duplicate plies use the earliest stored row, with ID breaking timestamp ties; stored rows are unchanged.
+
+### PGN annotations
+
+PGN includes the Seven Tag Roster: tournament name as `Event`, `Site` = `AI Chess Arena`, the stored start date (creation date if not started), numeric bracket round as `Round` (`1`, `2`, `3`, counting from the opening round), display names as `White`/`Black`, and `Result`. Unknown names or unrecognized round labels use `?`. Bracket size comes from the participant count rounded up to a power of two, falling back to stored bracket sizes. `BracketRound` retains the human label (for example `Final` or `Tiebreak 1`), and `SeriesGame` retains the series game number (for example `2`). The round and series components are separate because chesslib imports only integer `Round` values; this preserves the imported bracket round even in a series. `WhiteModel`/`BlackModel` carry model IDs when present. Book openings include `Opening` and `ECO`; book plies have `{book}` comments. `TimeControl` is `-` without a limit or `1/120` for a 120-second per-move limit: one move per 120-second period, repeating, rather than an hourglass clock. It reflects the tournament's current setting; settings history is not reconstructed.
+
+Evaluated plies carry White-perspective pawn scores such as `{[%eval 0.35]}` or mate distances such as `{[%eval #-3]}`. Mate zero means checkmate on the board (`#0` for White's mate, `#-0` for Black's). Missing evaluations have no comment. Standard `Termination` values are `normal` (including resignation and board draws), `adjudication`, `time forfeit`, `rules infraction` (other forfeits), `abandoned` (cancelled) or `unterminated`. `TerminationDetails` retains the arena reason, for example `resignation`, `forfeit_invalid_moves` or `cancelled`.
+
+Finished games keep `1-0`, `0-1` or `1/2-1/2`. Waiting, running, paused and cancelled games are included with `*`, preserving any recorded moves; future pairings have unknown players. Downloads omit chat by default. Add `?includeChat=true` to either PGN URL for per-move chat comments and any final/unmatched messages, including resignation last words. Braces in chat become parentheses, control/format characters become spaces, and annotation introducers `[%` become `[ %` so chat cannot create evaluation or clock directives. Movetext and comments wrap to fewer than 80 characters per line; unusually long chat words are split inside their comment. Tag pairs, SAN and genuine evaluation tokens remain intact. Long tag values are not wrapped. Quotes and backslashes in tag values are escaped. These conventions follow the [PGN specification](https://www.saremba.de/chessgml/standards/pgn/pgn-complete.htm).
+
+### CSV and JSON analysis
+
+CSV columns are `game_id`, `round`, `bracket_position`, `series_game`, `white_model`, `white_name`, `black_model`, `black_name`, `result`, `termination`, `termination_details`, `plies`, `cost_usd`, `white_acpl`, `black_acpl`, `white_blunders`, `black_blunders`, `opening`, `eco`. Plies include book moves; ACPL and blunders use the existing move-quality exclusions, including book moves. An unavailable ACPL is empty. Fields use RFC 4180 quoting, doubled quotes and CRLF row endings. Text beginning with `=`, `+`, `-` or `@` (also after whitespace/control characters) gets a leading apostrophe to prevent spreadsheet formulas. Numerical cells retain their values. Chat is carried in JSON or optional PGN comments, not CSV summary rows.
+
+JSON has `schemaVersion: 1`, tournament `id`/`name`/`status`/timestamps, `settings`, `participants`, `games` and `totalCostUsd`. Settings include format, draw/series rules, move/attempt/token limits, chat/resignation/adjudication, requested reasoning effort, opening settings and auto-run limits/status. Participants include IDs, display/model names, control type, seed and effort override. Games contain bracket/series links, side/advancing participant IDs, status/result/reason/termination, FEN, opening metadata, timestamps, canonical `moves` with evaluations and derived `quality`, `qualitySummary`, `chatMessages`, per-attempt summaries and `totalCostUsd`. Attempt summaries include outcome, ply, model, token/cache/reasoning usage, effective token limits, effort actually sent, latency, reported cost and timestamp, including failed and discarded attempts. Missing nullable settings are explicit `null`; nullable nested move/quality/chat fields follow the regular API's omission convention.
+
+Exports use allowlisted scalar projections with database cursors fetching 128 rows at a time. Tournament queries bulk-fetch moves, chat (when requested) and attempts (JSON only), grouping them by game; SQL statement counts do not grow with the number of games. No managed persistence entities, raw provider answers or private prompts are loaded for exports. Response construction still uses memory proportional to the exported allowlisted data. JSON uses an explicit field list: credentials, runtime configuration, prompt templates/custom instructions, raw provider answers, provider error/status-detail text and client request IDs are excluded. Display names and chat remain user/model text; review those before sharing. Game and tournament totals use stored reported spend, including failed/discarded attempts, rather than adding attempts to move costs again. Exports are current reads: running games and pending evaluations can change during/after a download, so export after completion and evaluation for a settled analysis. No import/restore format is provided.
 
 ## Leaderboard
 

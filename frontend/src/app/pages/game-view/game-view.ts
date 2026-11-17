@@ -12,6 +12,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ApiService } from '../../services/api.service';
+import { downloadBlob } from '../../utils/download';
 import { WebSocketService } from '../../services/websocket.service';
 import {
   Game,
@@ -1186,14 +1187,16 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   exportPgn() {
-    this.api.getGamePgn(this.gameId).subscribe((pgn) => {
-      const blob = new Blob([pgn], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `game-${this.gameId}.pgn`;
-      a.click();
-      URL.revokeObjectURL(url);
+    this.api.getGamePgn(this.gameId).subscribe({
+      next: (pgn) => {
+        downloadBlob(
+          new Blob([pgn], { type: 'application/x-chess-pgn;charset=utf-8' }),
+          `game-${this.gameId}.pgn`,
+        );
+      },
+      error: () => {
+        this.snackbar.open('Could not export game. Please try again.', 'OK', { duration: 5000 });
+      },
     });
   }
 

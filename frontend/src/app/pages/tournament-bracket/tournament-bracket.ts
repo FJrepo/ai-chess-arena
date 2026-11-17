@@ -16,6 +16,7 @@ import { BracketDrawMode, Tournament, Game } from '../../models/tournament.model
 import { TournamentCostSummary } from '../../models/analytics.model';
 import { BracketDisplay } from '../../components/bracket-display/bracket-display';
 import { tournamentStatusLabel } from '../../utils/status-labels';
+import { downloadBlob } from '../../utils/download';
 
 @Component({
   selector: 'app-tournament-bracket',
@@ -43,6 +44,8 @@ export class TournamentBracket implements OnInit, OnDestroy {
   generating = signal(false);
   cancelling = signal(false);
   runBusy = signal(false);
+  exporting = signal(false);
+  readonly exportFormats = ['pgn', 'csv', 'json'] as const;
   runConcurrency = 2;
   runBudget = '';
   runDraftDirty = false;
@@ -115,6 +118,23 @@ export class TournamentBracket implements OnInit, OnDestroy {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
     }
+  }
+
+  exportTournament(format: 'pgn' | 'csv' | 'json'): void {
+    if (this.exporting()) return;
+    this.exporting.set(true);
+    this.api.getTournamentExport(this.tournamentId, format).subscribe({
+      next: (blob) => {
+        downloadBlob(blob, `tournament-${this.tournamentId}.${format}`);
+        this.exporting.set(false);
+      },
+      error: () => {
+        this.exporting.set(false);
+        this.snackBar.open('Could not export tournament. Please try again.', 'OK', {
+          duration: 5000,
+        });
+      },
+    });
   }
 
   loadTournament() {
