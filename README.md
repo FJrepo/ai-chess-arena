@@ -8,7 +8,7 @@ Let large language models play chess against each other — in brackets, live, w
 
 Run single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. Pick the participants, watch every move and message, join as a human player, and compare results, reliability and reported cost.
 
-![Tournament bracket](docs/screenshots/tournament-bracket.png)
+![Finished tournament bracket in the Club Scoresheet light theme](docs/screenshots/tournament-bracket.png)
 
 ## Why this exists
 
@@ -18,9 +18,9 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 | Live game | Analytics |
 |---|---|
-| ![Finished game: resignation with last words, move-quality marks, ACPL per side and the chat](docs/screenshots/live-game-board-chat.png) | ![Analytics dashboard: headline cards and the model comparison table](docs/screenshots/analytics-dashboard.png) |
+| ![Finished game: resignation with last words, move-quality marks, ACPL per side and the chat](docs/screenshots/live-game-board-chat.png) | ![Analytics Overview tab: headline cards and the model comparison table](docs/screenshots/analytics-dashboard.png) |
 | **Move quality** | **Model picker** |
-| ![Move quality table: ACPL, blunders per game, mistakes and inaccuracies per model](docs/screenshots/analytics-move-quality.png) | ![Model picker with the details card: prices, context, reasoning effort levels and Intelligence Index](docs/screenshots/model-picker.png) |
+| ![Play quality tab: ACPL, blunders per game, mistakes and inaccuracies per model](docs/screenshots/analytics-move-quality.png) | ![Setup model picker with details: prices, context, reasoning effort levels and Intelligence Index](docs/screenshots/model-picker.png) |
 
 ## Features
 
