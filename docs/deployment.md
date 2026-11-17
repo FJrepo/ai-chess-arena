@@ -45,6 +45,10 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Legal move hints migration (V25)
+
+Flyway adds a required tournament hint flag with a default of true and expands the move prompt version column to 96 characters. Existing tournaments retain hints on, including drafts and in-progress tournaments. Historical moves, prompt metadata, scores and costs are preserved. Back up the database before upgrading, rebuild and recreate the backend and frontend, and restore the pre-upgrade backup if rolling back the schema.
+
 ## Creation-time brackets migration (V22)
 
 Back up before upgrading. Rebuild and recreate backend and frontend together. Flyway `V22__creation_bracket_intent.sql` adds nullable `tournaments.creation_draw_mode`, preserving the original create intent so a retry with the same `clientRequestId` can finish generation after an interrupted request. Existing tournaments receive null and keep their current draft/bracket state; no generation backfill runs. Games, seeds, results and spend remain unchanged. Restore the pre-upgrade database backup to roll back. See [Bracket](how-it-works.md#bracket) for explicit generation opt-in, draft defaults and recovery.

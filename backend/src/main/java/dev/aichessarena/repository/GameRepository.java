@@ -77,11 +77,15 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
      *
      * @param tournamentId restricts the window to one tournament, or {@code null} for all tournaments
      */
-    public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
-        return list(
-                "from Game g where " + windowPredicate("g") + tournamentPredicate("g", tournamentId),
-                windowParameters(cutoff, tournamentId)
-        );
+    public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+        String where = windowPredicate("g") + tournamentPredicate("g", tournamentId);
+        Parameters parameters = windowParameters(cutoff, tournamentId);
+        if (legalMoveHints == null) {
+            return list("from Game g where " + where, parameters);
+        }
+        return list("select g from Game g left join g.tournament t where " + where
+                + " and coalesce(t.legalMoveHints, true) = :legalMoveHints",
+                parameters.and("legalMoveHints", legalMoveHints));
     }
 
     /**

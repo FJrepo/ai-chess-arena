@@ -50,6 +50,7 @@ public class ExportRepository {
                    t.chatMode as chatMode,
                    t.banterLevel as banterLevel,
                    t.resignationAllowed as resignationAllowed,
+                   t.legalMoveHints as legalMoveHints,
                    t.adjudicationEnabled as adjudicationEnabled,
                    t.maxOutputTokens as maxOutputTokens,
                    t.reasoningEffort as reasoningEffort,
@@ -233,6 +234,7 @@ public class ExportRepository {
         t.chatMode = row.get("chatMode", ChatMode.class);
         t.banterLevel = row.get("banterLevel", BanterLevel.class);
         t.resignationAllowed = row.get("resignationAllowed", Boolean.class);
+        t.legalMoveHints = row.get("legalMoveHints", Boolean.class);
         t.adjudicationEnabled = row.get("adjudicationEnabled", Boolean.class);
         t.maxOutputTokens = row.get("maxOutputTokens", Integer.class);
         t.reasoningEffort = row.get("reasoningEffort", ReasoningEffort.class);

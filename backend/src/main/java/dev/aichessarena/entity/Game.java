@@ -123,6 +123,10 @@ public class Game extends PanacheEntityBase {
     @OrderBy("createdAt ASC")
     public List<ChatMessage> chatMessages = new ArrayList<>();
 
+    public boolean hasLegalMoveHints() {
+        return tournament == null || tournament.legalMoveHints;
+    }
+
     /**
      * The reasoning effort a side asks for: its participant's override, else the tournament's; null for the model
      * default, a human side and a game outside a tournament. Read anew every turn, so a change applies from the next.

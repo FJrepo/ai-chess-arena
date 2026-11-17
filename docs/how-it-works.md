@@ -11,6 +11,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Cancelling a tournament](#cancelling-a-tournament)
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
 - [Model turns and prompts](#model-turns-and-prompts)
+- [Legal move hints](#legal-move-hints)
 - [Prompt caching](#prompt-caching)
 - [Time limit per move](#time-limit-per-move)
 - [Output-token limit](#output-token-limit) and [fixing a cut-off game](#fixing-a-cut-off-game)
@@ -186,9 +187,17 @@ Models are asked to answer in JSON, but the parser also extracts moves from plai
 
 *Max attempts per move* (API field `maxRetries`) accepts whole numbers from 1 to 20 and defaults to 3, which allows two retries. A model forfeits if it exhausts its attempts or its move time. For older tournaments, the game loop clamps the stored limit to 1–20 on each turn.
 
-Each model gets its system prompt, an append-only chunk of its own prior exchanges and the current turn. Every new turn prompt contains the moves so far (PGN, including book moves) and the full position (FEN, board, legal moves), plus the opponent's latest move/message when present. New position and opponent data go only in that newest user message; earlier messages are replayed verbatim.
+Each model gets its system prompt, an append-only chunk of its own prior exchanges and the current turn. Every new turn prompt contains the moves so far (PGN, including book moves) and the full position (FEN and board), plus the opponent's latest move/message when present. New position and opponent data go only in that newest user message; earlier messages are replayed verbatim.
 
 Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, banter level, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override.
+
+### Legal move hints
+
+**Legal move hints** is on by default in Tournament Settings. Models receive the list of legal moves in the current position on the initial request and every corrective retry. Turn it off to let models work out legal moves from the position themselves. They still get the position, recent play and response-format instructions. The same chess rules, validation, retry limit and forfeit rules apply in both modes. The tournament and game views show the mode.
+
+The setting is fixed when the tournament is created, including for drafts, so completed and resumed games keep their original mode. `POST /api/tournaments` accepts the JSON boolean `legalMoveHints`. Omission means true. Explicit null and non-booleans return HTTP 400. Supplying the field on `PUT /api/tournaments/{id}` returns HTTP 400. Reusing a creation request ID retains the first successful request's choice. Tournament and game reads and the tournament JSON export expose `legalMoveHints`.
+
+Hints on preserves the original prompt text, versions and hashes. Hints off adds `-no-hints` to the recorded prompt version and adds position-based move guidance to generated system rules. Stored legacy full system templates keep their original text. The app withholds the legal list in both the initial turn and all retry prompts.
 
 ### Prompt caching
 
@@ -434,7 +443,7 @@ Both surrounding evaluations must be available. Operator overrides and forced mo
 
 Analysis includes a bracket overview with series scores and the champion, PGN export, and analytics on results, move quality (ACPL, blunders per game), talkativeness (how often each model talks, per chat mode), resignations (including resignations while not losing), reliability (first-try legal moves, retries, timeouts, forfeits) and reported cost.
 
-The analytics page shares its analysis window, tournament and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
+The analytics page shares its analysis window, tournament, legal move hints and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
 
 - **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
 - **Play quality:** Move Quality and Conversion.
@@ -442,6 +451,8 @@ The analytics page shares its analysis window, tournament and minimum-games filt
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 
 Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
+
+The **Legal move hints** filter starts at **On or off**, which combines games from either mode. Select **On only** or **Off only** to compare like-for-like. Tournament choices also show their mode. Historical tournaments created before this setting count as hints on. Model metrics use finished games and operational health also includes unfinished games. The health, comparison, reliability and per-model reliability APIs accept optional `legalMoveHints=true` or `legalMoveHints=false`. Other supplied values return HTTP 400.
 
 Every model answer is stored, including rejected ones: the game feed lists failed attempts per move (for example "2 failed attempts: illegal Qxh7, unparseable answer") and, separately, answers cut off at the token limit, which are not counted as the model's failures, and `GET /api/games/{id}/attempts` returns them with tokens, cost and finish reason.
 
@@ -561,6 +572,8 @@ Exports use allowlisted scalar projections with database cursors fetching 128 ro
 Open **Leaderboard** next to Analytics to compare models across all tournaments and all time. Each OpenRouter model id starts at **1500 Elo**. Expected score is `1 / (1 + 10^((opponent rating - rating) / 400))`; the update is `K × (actual score - expected score)`. K is **32 for that model's first 30 rated appearances**, then **16**. Both sides use their pre-game ratings and their own K; calculations keep full precision and only displayed ratings are rounded. Rows rank by the unrounded rating, then model id, so equal displayed ratings may have different ranks.
 
 Finished model-vs-model games count, including checkmate, resignation, adjudication, draws (½ point each) and forfeits (a loss for the forfeiting side). **Include forfeits** is on by default; turning it off replays the entire history using only over-the-board results, changing ratings, game counts, records and last played together. The Forfeits column counts the model's own forfeited losses in the selected sample. Byes, cancelled games, games with either human side and unfinished games are excluded. Finished games in a cancelled tournament still count. A result without a completion timestamp is excluded because it cannot be ordered reliably.
+
+Use **Legal move hints** to replay only games with hints on or only games with hints off. The default replays both modes together. The same optional `legalMoveHints=true|false` query parameter applies to the leaderboard API and combines with `includeForfeits`.
 
 Games replay chronologically by `completedAt`, then lexicographic game id. Model identity is the exact OpenRouter id (surrounding whitespace is trimmed), independent of participant nicknames, instructions or reasoning effort. Display names use the final segment of the id. Moving ids such as `~anthropic/claude-sonnet-latest` remain separate from concrete versions and carry a **Latest alias** badge: their results may span different underlying versions. **Provisional** means fewer than 10 rated appearances. Self-play counts both sides as appearances, with one win and one loss (or two draws), no net rating change and one history point for the game. Rating uses stored game outcomes, so duplicate move rows and book moves cannot add rating events; opening choice has no separate rating adjustment.
 

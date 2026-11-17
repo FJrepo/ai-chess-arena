@@ -60,6 +60,7 @@ public class TournamentResource {
             throw new IllegalArgumentException("Request body is required");
         }
         Tournament t = new Tournament();
+        if (req.legalMoveHints() != null) t.legalMoveHints = parseLegalMoveHints(req.legalMoveHints());
         t.name = req.name();
         t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
         // null keeps the default of 60 seconds; 0 means no time limit per move.
@@ -122,6 +123,9 @@ public class TournamentResource {
     public Response update(@PathParam("id") UUID id, CreateTournamentRequest req) {
         Tournament t = tournamentRepository.findByIdForUpdate(id);
         if (t == null) return Response.status(404).build();
+        if (req.legalMoveHints() != null) {
+            throw new IllegalArgumentException("legalMoveHints can only be set when creating a tournament");
+        }
         TournamentService.requireEditableSettings(t);
         if (req.openingMode() != null || req.openingId() != null) {
             openingBook.configure(t, req.openingMode(), req.openingId());
@@ -344,6 +348,13 @@ public class TournamentResource {
             }
         }
         return trashTalkEnabled != null ? ChatMode.fromTrashTalkEnabled(trashTalkEnabled) : null;
+    }
+
+    private static boolean parseLegalMoveHints(JsonNode value) {
+        if (!value.isBoolean()) {
+            throw new IllegalArgumentException("legalMoveHints must be true or false");
+        }
+        return value.booleanValue();
     }
 
     static BanterLevel parseBanterLevel(JsonNode value) {

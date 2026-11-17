@@ -430,6 +430,16 @@
             }
           </section>
 
+          <div class="resignation-row">
+            <mat-slide-toggle [(ngModel)]="legalMoveHints" aria-describedby="legal-move-hints-help">
+              Legal move hints
+            </mat-slide-toggle>
+            <span class="caption resignation-hint" id="legal-move-hints-help">
+              Show models the list of legal moves, including on retries. This setting is fixed at
+              creation.
+            </span>
+          </div>
+
           <section class="field-group" aria-labelledby="setup-chat-heading">
             <h3 class="group-heading" id="setup-chat-heading">Chat</h3>
             <div class="chat-mode-row">

@@ -1628,6 +1628,31 @@ describe('TournamentSetup', () => {
     expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
   });
 
+  it('sends the tournament hint setting and previews the matching prompt version', () => {
+    const api = createApiService();
+    api.getPromptTemplate = () =>
+      of({
+        template: 'Rules',
+        version: 'v2',
+        hash: 'hash',
+        noHints: { rule: 'Derive the move from the position.', versionSuffix: '-no-hints' },
+      });
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+    component.name = 'Hints Arena';
+
+    component.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(true);
+    expect(component.systemRulesTemplate).toBe('Rules');
+    expect(component.systemRulesVersion()).toBe('v2');
+
+    component.legalMoveHints = false;
+    component.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(false);
+    expect(component.systemRulesTemplate).toBe('Rules\n\nDerive the move from the position.');
+    expect(component.systemRulesVersion()).toBe('v2-no-hints');
+  });
+
   it('sends adjudication off by default, on when chosen, and resets it in presets', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());

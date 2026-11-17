@@ -215,6 +215,7 @@ Your opponent is %s (%s).`;
    */
   resignationAllowed = false;
   adjudicationEnabled = false;
+  legalMoveHints = true;
   openingMode = signal<OpeningMode>('STANDARD');
   openingId = signal<string | null>(null);
   openings = signal<Opening[]>([]);
@@ -442,12 +443,17 @@ Your opponent is %s (%s).`;
     if (!templates) {
       return this.promptTemplateVersion() === 'fallback' ? TournamentSetup.PROMPT_FALLBACK : '';
     }
-    return this.selectedRules()?.template ?? templates.template;
+    const rules = this.selectedRules()?.template ?? templates.template;
+    return !this.legalMoveHints && templates.noHints
+      ? rules + '\n\n' + templates.noHints.rule
+      : rules;
   }
 
   /** The prompt version of the rules shown, e.g. v2-chat-required for MANDATORY, v2-resign with resignation. */
   systemRulesVersion(): string | null {
-    return this.selectedRules()?.version ?? this.promptTemplateVersion();
+    const version = this.selectedRules()?.version ?? this.promptTemplateVersion();
+    const suffix = this.promptTemplates?.noHints?.versionSuffix;
+    return version && !this.legalMoveHints && suffix ? version + suffix : version;
   }
 
   /** One line under the resignation switch. */
@@ -638,6 +644,7 @@ Your opponent is %s (%s).`;
       banterLevel: this.banterLevel,
       resignationAllowed: this.resignationAllowed,
       adjudicationEnabled: this.adjudicationEnabled,
+      legalMoveHints: this.legalMoveHints,
       openingMode: this.openingMode(),
       ...(this.openingMode() === 'FIXED' ? { openingId: this.openingId() } : {}),
       // Left out for the model default, so nothing is sent to OpenRouter.
@@ -858,6 +865,7 @@ Your opponent is %s (%s).`;
     // Presets play every game to the end, with each model's default reasoning effort.
     this.resignationAllowed = false;
     this.adjudicationEnabled = false;
+    this.legalMoveHints = true;
     this.openingMode.set('STANDARD');
     this.openingId.set(null);
     this.reasoningEffort = null;

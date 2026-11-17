@@ -55,7 +55,8 @@ public record GameDto(
         String blackReasoningEffort,
         String openingId,
         String openingName,
-        String openingEco
+        String openingEco,
+        boolean legalMoveHints
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

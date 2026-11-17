@@ -149,25 +149,39 @@ public class AnalyticsService {
     }
 
     public AnalyticsHealthDto getHealth(int requestedDays, UUID tournamentId) {
+        return getHealth(requestedDays, tournamentId, null);
+    }
+
+    public AnalyticsHealthDto getHealth(int requestedDays, UUID tournamentId, Boolean legalMoveHints) {
         int days = normalizeDays(requestedDays);
-        String key = days + "|" + (tournamentId != null ? tournamentId : "all");
-        return healthCache.get(key, () -> buildHealth(days, tournamentId));
+        String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + legalMoveHints;
+        return healthCache.get(key, () -> buildHealth(days, tournamentId, legalMoveHints));
     }
 
     public ModelReliabilityResponseDto getReliability(int requestedDays, UUID tournamentId, int requestedMinGames) {
+        return getReliability(requestedDays, tournamentId, requestedMinGames, null);
+    }
+
+    public ModelReliabilityResponseDto getReliability(int requestedDays, UUID tournamentId, int requestedMinGames,
+                                                     Boolean legalMoveHints) {
         int days = normalizeDays(requestedDays);
         int minGames = normalizeMinGames(requestedMinGames);
-        String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return reliabilityCache.get(key, () -> buildReliability(days, tournamentId, minGames));
+        String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames + "|" + legalMoveHints;
+        return reliabilityCache.get(key, () -> buildReliability(days, tournamentId, minGames, legalMoveHints));
     }
 
     public ModelReliabilityDetailDto getReliabilityForModel(String modelId, int requestedDays, UUID tournamentId) {
+        return getReliabilityForModel(modelId, requestedDays, tournamentId, null);
+    }
+
+    public ModelReliabilityDetailDto getReliabilityForModel(String modelId, int requestedDays, UUID tournamentId,
+                                                           Boolean legalMoveHints) {
         if (modelId == null || modelId.isBlank()) {
             return null;
         }
 
         int days = normalizeDays(requestedDays);
-        ModelReliabilityResponseDto response = getReliability(days, tournamentId, 0);
+        ModelReliabilityResponseDto response = getReliability(days, tournamentId, 0, legalMoveHints);
         ModelReliabilityDto model = response.models().stream()
                 .filter(row -> row.modelId().equals(modelId))
                 .findFirst()
@@ -198,14 +212,19 @@ public class AnalyticsService {
     }
 
     public AnalyticsModelComparisonDto getComparison(int requestedDays, UUID tournamentId, int requestedMinGames) {
-        int days = normalizeDays(requestedDays);
-        int minGames = normalizeMinGames(requestedMinGames);
-        String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return comparisonCache.get(key, () -> buildComparison(days, tournamentId, minGames));
+        return getComparison(requestedDays, tournamentId, requestedMinGames, null);
     }
 
-    private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
-        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId);
+    public AnalyticsModelComparisonDto getComparison(int requestedDays, UUID tournamentId, int requestedMinGames,
+                                                    Boolean legalMoveHints) {
+        int days = normalizeDays(requestedDays);
+        int minGames = normalizeMinGames(requestedMinGames);
+        String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames + "|" + legalMoveHints;
+        return comparisonCache.get(key, () -> buildComparison(days, tournamentId, minGames, legalMoveHints));
+    }
+
+    private AnalyticsHealthDto buildHealth(int days, UUID tournamentId, Boolean legalMoveHints) {
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId, legalMoveHints);
         List<Game> games = scope.games();
         List<Move> moves = scope.moves().stream().filter(move -> !move.isBook).toList();
 
@@ -315,8 +334,9 @@ public class AnalyticsService {
     }
 
     /** Based on finished games only, like the comparison, so both views score a model the same way. */
-    private ModelReliabilityResponseDto buildReliability(int days, UUID tournamentId, int minGames) {
-        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
+    private ModelReliabilityResponseDto buildReliability(int days, UUID tournamentId, int minGames,
+                                                          Boolean legalMoveHints) {
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId, legalMoveHints);
         List<Game> games = scope.games();
         List<Move> plies = CanonicalPlies.of(scope.moves());
 
@@ -396,8 +416,9 @@ public class AnalyticsService {
         return new ModelReliabilityResponseDto(days, tournamentId, minGames, rows);
     }
 
-    private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames) {
-        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
+    private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames,
+                                                        Boolean legalMoveHints) {
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId, legalMoveHints);
         List<Game> terminalGames = scope.games();
         List<Move> plies = CanonicalPlies.of(scope.moves());
 

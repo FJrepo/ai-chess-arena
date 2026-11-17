@@ -2,6 +2,8 @@ import { DatePipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
@@ -18,6 +20,8 @@ import { ApiService } from '../../services/api.service';
     MatButtonModule,
     MatCardModule,
     MatIconModule,
+    MatFormFieldModule,
+    MatSelectModule,
     MatProgressSpinnerModule,
     MatSlideToggleModule,
     ProviderLogoComponent,
@@ -28,6 +32,7 @@ import { ApiService } from '../../services/api.service';
 })
 export class Leaderboard implements OnInit, OnDestroy {
   readonly includeForfeits = signal(true);
+  readonly legalMoveHints = signal<boolean | 'all'>('all');
   readonly response = signal<LeaderboardResponse | null>(null);
   readonly loading = signal(false);
   readonly error = signal(false);
@@ -48,12 +53,22 @@ export class Leaderboard implements OnInit, OnDestroy {
     this.refresh();
   }
 
+  setLegalMoveHints(value: boolean | 'all'): void {
+    this.legalMoveHints.set(value);
+    this.refresh();
+  }
+
   refresh(): void {
     this.request?.unsubscribe();
     this.response.set(null);
     this.error.set(false);
     this.loading.set(true);
-    this.request = this.api.getLeaderboard(this.includeForfeits()).subscribe({
+    const hints = this.legalMoveHints();
+    const request =
+      hints === 'all'
+        ? this.api.getLeaderboard(this.includeForfeits())
+        : this.api.getLeaderboard(this.includeForfeits(), hints);
+    this.request = request.subscribe({
       next: (response) => {
         this.response.set(response);
         this.loading.set(false);

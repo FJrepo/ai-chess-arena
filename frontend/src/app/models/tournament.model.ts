@@ -57,6 +57,8 @@ export interface Tournament {
   chatMode?: ChatMode;
   /** Null retains the original tone; ignored while chat is Off. */
   banterLevel?: BanterLevel | null;
+  /** Creation-only, defaults to true, including tournaments from older backends. */
+  legalMoveHints?: boolean;
   /**
    * Whether models may resign instead of moving, from their 10th move on (default false). Absent from
    * backends before 1.4.
@@ -100,6 +102,8 @@ export interface Game {
   openingId?: string | null;
   openingName?: string | null;
   openingEco?: string | null;
+  /** Whether AI turn prompts include the legal move list. */
+  legalMoveHints?: boolean;
   id: string;
   tournamentId: string | null;
   whitePlayerName: string | null;

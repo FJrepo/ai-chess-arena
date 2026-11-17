@@ -28,6 +28,7 @@ import {
 type PromptVariant = { template: string; version: string; hash: string };
 
 export interface PromptTemplateResponse {
+  noHints?: { rule: string; versionSuffix: string };
   banterChatModes?: Partial<Record<BanterLevel, Partial<Record<ChatMode, PromptVariant>>>>;
   resignationBanterChatModes?: Partial<
     Record<BanterLevel, Partial<Record<ChatMode, PromptVariant>>>
@@ -95,7 +96,10 @@ export class ApiService {
     return this.http.post<Tournament>(`${this.baseUrl}/tournaments`, data);
   }
 
-  updateTournament(id: string, data: Partial<Tournament>): Observable<Tournament> {
+  updateTournament(
+    id: string,
+    data: Partial<Omit<Tournament, 'legalMoveHints'>>,
+  ): Observable<Tournament> {
     return this.http.put<Tournament>(`${this.baseUrl}/tournaments/${id}`, data);
   }
 
@@ -267,15 +271,19 @@ export class ApiService {
     );
   }
 
-  getLeaderboard(includeForfeits = true): Observable<LeaderboardResponse> {
+  getLeaderboard(
+    includeForfeits = true,
+    legalMoveHints?: boolean,
+  ): Observable<LeaderboardResponse> {
     return this.http.get<LeaderboardResponse>(`${this.baseUrl}/analytics/leaderboard`, {
-      params: { includeForfeits },
+      params: { includeForfeits, ...(legalMoveHints === undefined ? {} : { legalMoveHints }) },
     });
   }
 
   getAnalyticsHealth(params?: {
     days?: number;
     tournamentId?: string | null;
+    legalMoveHints?: boolean;
   }): Observable<AnalyticsHealthResponse> {
     let httpParams = new HttpParams();
     if (params?.days !== undefined) {
@@ -283,6 +291,9 @@ export class ApiService {
     }
     if (params?.tournamentId) {
       httpParams = httpParams.set('tournamentId', params.tournamentId);
+    }
+    if (params?.legalMoveHints !== undefined) {
+      httpParams = httpParams.set('legalMoveHints', params.legalMoveHints);
     }
     return this.http.get<AnalyticsHealthResponse>(`${this.baseUrl}/analytics/health`, {
       params: httpParams,
@@ -292,6 +303,7 @@ export class ApiService {
   getAnalyticsComparison(params?: {
     days?: number;
     tournamentId?: string | null;
+    legalMoveHints?: boolean;
     minGames?: number;
   }): Observable<AnalyticsComparisonResponse> {
     let httpParams = new HttpParams();
@@ -300,6 +312,9 @@ export class ApiService {
     }
     if (params?.tournamentId) {
       httpParams = httpParams.set('tournamentId', params.tournamentId);
+    }
+    if (params?.legalMoveHints !== undefined) {
+      httpParams = httpParams.set('legalMoveHints', params.legalMoveHints);
     }
     if (params?.minGames !== undefined) {
       httpParams = httpParams.set('minGames', String(params.minGames));
@@ -312,6 +327,7 @@ export class ApiService {
   getAnalyticsReliability(params?: {
     days?: number;
     tournamentId?: string | null;
+    legalMoveHints?: boolean;
     minGames?: number;
   }): Observable<ModelReliabilityResponse> {
     let httpParams = new HttpParams();
@@ -320,6 +336,9 @@ export class ApiService {
     }
     if (params?.tournamentId) {
       httpParams = httpParams.set('tournamentId', params.tournamentId);
+    }
+    if (params?.legalMoveHints !== undefined) {
+      httpParams = httpParams.set('legalMoveHints', params.legalMoveHints);
     }
     if (params?.minGames !== undefined) {
       httpParams = httpParams.set('minGames', String(params.minGames));
@@ -334,6 +353,7 @@ export class ApiService {
     params?: {
       days?: number;
       tournamentId?: string | null;
+      legalMoveHints?: boolean;
     },
   ): Observable<ModelReliabilityDetail> {
     let httpParams = new HttpParams();
@@ -342,6 +362,9 @@ export class ApiService {
     }
     if (params?.tournamentId) {
       httpParams = httpParams.set('tournamentId', params.tournamentId);
+    }
+    if (params?.legalMoveHints !== undefined) {
+      httpParams = httpParams.set('legalMoveHints', params.legalMoveHints);
     }
     return this.http.get<ModelReliabilityDetail>(
       `${this.baseUrl}/analytics/reliability/${encodeURIComponent(modelId)}`,

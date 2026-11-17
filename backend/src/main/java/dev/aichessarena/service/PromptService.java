@@ -13,6 +13,8 @@ import java.util.List;
 public class PromptService {
 
   private static final String DEFAULT_SYSTEM_PROMPT_VERSION = "v2";
+  public static final String NO_HINTS_VERSION_SUFFIX = "-no-hints";
+  public static final String NO_HINTS_RULE = "Determine your legal move from the position shown in each turn.";
 
   /** Version suffix of prompts rendered with chat OFF. */
   static final String SILENT_VERSION_SUFFIX = "-silent";
@@ -216,18 +218,29 @@ public class PromptService {
   public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
       String color, String opponentName, String opponentModel, ChatMode chatMode, boolean resignationAllowed,
       BanterLevel banterLevel) {
+    return buildSystemPrompt(legacyPromptTemplate, customInstructions, color, opponentName, opponentModel, chatMode,
+        resignationAllowed, banterLevel, true);
+  }
+
+  public ResolvedPrompt buildSystemPrompt(String legacyPromptTemplate, String customInstructions,
+      String color, String opponentName, String opponentModel, ChatMode chatMode, boolean resignationAllowed,
+      BanterLevel banterLevel, boolean legalMoveHints) {
+    String hintsSuffix = legalMoveHints ? "" : NO_HINTS_VERSION_SUFFIX;
     ChatMode mode = chatMode != null ? chatMode : ChatMode.OPTIONAL;
     if (isLegacyTemplateOverride(legacyPromptTemplate)) {
       return new ResolvedPrompt(
           legacyPromptTemplate.formatted(color, opponentName, opponentModel),
-          "legacy-custom-template",
+          "legacy-custom-template" + hintsSuffix,
           mode == ChatMode.MANDATORY ? ChatMode.OPTIONAL : mode,
           false);
     }
 
-    String versionSuffix = versionSuffix(mode, resignationAllowed, banterLevel);
+    String versionSuffix = versionSuffix(mode, resignationAllowed, banterLevel) + hintsSuffix;
     String basePrompt = applyRules(DEFAULT_SYSTEM_PROMPT, mode, resignationAllowed, banterLevel)
         .formatted(color, opponentName, opponentModel);
+    if (!legalMoveHints) {
+      basePrompt += "\n\n" + NO_HINTS_RULE;
+    }
     if (!hasCustomInstructions(customInstructions)) {
       return new ResolvedPrompt(basePrompt, DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix, mode, resignationAllowed);
     }
@@ -328,8 +341,6 @@ public class PromptService {
       List<String> legalMoves,
       String opponentName, String lastMove,
       String opponentMessage, boolean isFirstMove, ChatMode chatMode, boolean mayResign) {
-    String legalMovesStr = String.join(", ", legalMoves);
-
     String opponentSection;
     if (isFirstMove) {
       opponentSection = "You have the first move. Open the game.";
@@ -353,22 +364,26 @@ public class PromptService {
         Board:
         %s
 
-        It is your turn (%s to move). Move %d.
-        Legal moves: %s
+        It is your turn (%s to move). Move %d.%s
 
         %s
 
         %s"""
         .formatted(
             pgn != null ? pgn : "(starting position)",
-            fen, asciiBoard, color, moveNumber, legalMovesStr, opponentSection,
+            fen, asciiBoard, color, moveNumber, legalMovesLine(legalMoves), opponentSection,
             (mayResign ? MAY_RESIGN_LINE + "\n" : "")
                 + (chatMode == ChatMode.MANDATORY ? REQUIRED_MESSAGE_ANSWER_LINE : DEFAULT_ANSWER_LINE));
   }
 
   public String buildRetryPrompt(String errorReason, String fen,
       List<String> legalMoves, int attemptNumber, int maxAttempts) {
-    String legalMovesStr = String.join(", ", legalMoves);
+    String responseExample = legalMoves == null ? """
+        Response format:
+          {"move": "<SAN>"}""" : """
+        Examples of valid responses:
+          {"move": "e4", "message": "King's pawn opening!"}
+          {"move": "Nf3"}""";
     int invalidAttempts = Math.max(0, attemptNumber - 1);
     String finalAttemptWarning = "";
     if (attemptNumber >= maxAttempts) {
@@ -380,16 +395,18 @@ public class PromptService {
 
         %s
 
-        Examples of valid responses:
-          {"move": "e4", "message": "King's pawn opening!"}
-          {"move": "Nf3"}
+        %s
 
-        Current position FEN: %s
-        Legal moves: %s
+        Current position FEN: %s%s
 
         Please respond with ONLY a JSON object containing your move.
         Attempt %d of %d.%s"""
-        .formatted(errorReason, fen, legalMovesStr, attemptNumber, maxAttempts, finalAttemptWarning);
+        .formatted(errorReason, responseExample, fen, legalMovesLine(legalMoves), attemptNumber, maxAttempts,
+            finalAttemptWarning);
+  }
+
+  private static String legalMovesLine(List<String> legalMoves) {
+    return legalMoves == null ? "" : "\nLegal moves: " + String.join(", ", legalMoves);
   }
 
   public String getJsonParseError() {

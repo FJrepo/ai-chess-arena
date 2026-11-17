@@ -79,6 +79,9 @@
           statusLabel(game.status)
         }}</mat-chip>
       </mat-chip-set>
+      @if (game.whiteModelId || game.blackModelId) {
+        <span>Legal move hints {{ game.legalMoveHints === false ? 'off' : 'on' }}</span>
+      }
       @if (game.result) {
         <span class="result">{{ getResultText() }}</span>
       }

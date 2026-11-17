@@ -23,7 +23,7 @@ public final class DtoMapper {
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
                 t.banterLevel != null ? t.banterLevel.name() : null,
-                t.resignationAllowed, t.adjudicationEnabled,
+                t.resignationAllowed, t.legalMoveHints, t.adjudicationEnabled,
                 t.maxOutputTokens,
                 apiValue(t.reasoningEffort),
                 t.createdAt, t.updatedAt,
@@ -107,7 +107,7 @@ public final class DtoMapper {
                 g.statusRevision,
                 apiValue(g.requestedReasoningEffort("WHITE")),
                 apiValue(g.requestedReasoningEffort("BLACK")),
-                g.openingId, g.openingName, g.openingEco
+                g.openingId, g.openingName, g.openingEco, g.hasLegalMoveHints()
         );
     }
 
