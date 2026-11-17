@@ -8,7 +8,10 @@ import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class WinAdjudicationTest {
 
@@ -29,6 +32,28 @@ class WinAdjudicationTest {
         assertEquals("WHITE", WinAdjudication.winner(moves));
         moves.get(5).evaluationCp = 999;
         assertNull(WinAdjudication.winner(moves), "an override does not disappear from the window");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void laterLegacyRowsCannotReplaceAMissingOrNonDecisiveCanonicalEvaluation(boolean tiedTimestamp) {
+        List<Move> moves = window(10, 1000);
+        Move first = moves.getFirst();
+        first.id = new UUID(0, 1);
+        first.evaluationCp = null;
+        Move duplicate = new Move();
+        duplicate.id = new UUID(0, 2);
+        duplicate.moveNumber = first.moveNumber;
+        duplicate.color = first.color;
+        duplicate.createdAt = tiedTimestamp ? first.createdAt : first.createdAt.plusSeconds(1);
+        duplicate.evaluationCp = 1500;
+        moves.add(0, duplicate);
+
+        assertNull(WinAdjudication.winner(moves));
+        first.evaluationCp = 999;
+        assertNull(WinAdjudication.winner(moves));
+        first.evaluationCp = 1000;
+        assertEquals("WHITE", WinAdjudication.winner(moves));
     }
 
     @Test

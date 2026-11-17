@@ -181,6 +181,48 @@ class AdjudicationIT {
         assertFalse(lifecycle.adjudicateIfEligible(id, fen(id)));
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 3})
+    void sixPliesWithFourLegacyDuplicatesCannotAdjudicateOrAdvanceASeries(int bestOf) {
+        UUID id = fixture(bestOf, true, 6);
+        lifecycle.markGameStarted(id);
+        String expectedFen = fen(id);
+        List<String> announcements = recordCompletions();
+        IllegalStateException rollback = assertThrows(IllegalStateException.class,
+                () -> QuarkusTransaction.requiringNew().run(() -> {
+                    // PostgreSQL rolls this DDL back, restoring the index after the test.
+                    // Reproduce a legacy database where V8 skipped the index because duplicates existed.
+                    moveRepository.getEntityManager().createNativeQuery("DROP INDEX uq_moves_game_ply").executeUpdate();
+                    List<Move> originals = moveRepository.findByGameId(id);
+                    for (Move original : originals.subList(2, 6)) {
+                        Move duplicate = new Move();
+                        duplicate.game = original.game;
+                        duplicate.moveNumber = original.moveNumber;
+                        duplicate.color = original.color;
+                        duplicate.san = original.san;
+                        duplicate.fen = original.fen;
+                        duplicate.modelId = original.modelId;
+                        duplicate.evaluationCp = original.evaluationCp;
+                        duplicate.createdAt = original.createdAt.plusSeconds(1);
+                        moveRepository.persist(duplicate);
+                    }
+                    moveRepository.flush();
+                    assertEquals(10, moveRepository.findByGameId(id).size());
+                    assertFalse(lifecycle.adjudicateIfEligible(id, expectedFen));
+                    Game game = gameRepository.findById(id);
+                    assertEquals(Game.GameStatus.IN_PROGRESS, game.status);
+                    assertEquals(1, game.statusRevision);
+                    assertNull(game.result);
+                    assertNull(game.resultReason);
+                    assertNull(game.advancedParticipant);
+                    assertEquals(Tournament.TournamentStatus.IN_PROGRESS, game.tournament.status);
+                    assertEquals(1, gameRepository.count("tournament.id", game.tournament.id));
+                    throw new IllegalStateException("Rollback legacy duplicate fixture");
+                }));
+        assertEquals("Rollback legacy duplicate fixture", rollback.getMessage());
+        assertTrue(announcements.isEmpty());
+    }
+
     @Test
     void rollbackDoesNotBroadcastOrAdvance() {
         UUID id = fixture(1, true, 10);

@@ -3,10 +3,11 @@ package dev.aichessarena.service;
 import com.github.bhlangonijr.chesslib.Board;
 import com.github.bhlangonijr.chesslib.move.MoveGenerator;
 import dev.aichessarena.entity.Move;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Judges moves by their stored Stockfish evaluations, with the win-probability model Lichess uses. Pure: derived
@@ -42,11 +43,8 @@ public final class MoveQualityClassifier {
     /** The start position counts as roughly equal. */
     static final Score START = new Score(0, 0.0, null);
 
-    /** Moves in play order: by move number, White before Black, then by creation time. */
-    public static final Comparator<Move> PLAY_ORDER = Comparator
-            .comparingInt((Move move) -> move.moveNumber)
-            .thenComparingInt(move -> "WHITE".equals(move.color) ? 0 : 1)
-            .thenComparing(move -> move.createdAt, Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder()));
+    /** Moves in play order: by move number, White before Black, then by creation time and id. */
+    public static final Comparator<Move> PLAY_ORDER = CanonicalPlies.PLAY_ORDER;
 
     private MoveQualityClassifier() {
     }
@@ -167,15 +165,19 @@ public final class MoveQualityClassifier {
     }
 
     /**
-     * The quality of every move of a game, in the order given (play order). Entries are null for moves that cannot
-     * be judged because an evaluation is missing.
+     * The quality of every move of a game, in the order given. Only canonical plies are judged, against the
+     * previous canonical ply. Entries are null for later duplicates or when an evaluation is missing.
      */
     public static List<MoveQuality> analyze(List<Move> movesInPlayOrder) {
+        List<Move> plies = CanonicalPlies.of(movesInPlayOrder);
+        Map<Move, MoveQuality> byMove = new IdentityHashMap<>();
+        for (int i = 0; i < plies.size(); i++) {
+            Move previous = i > 0 ? plies.get(i - 1) : null;
+            byMove.put(plies.get(i), quality(plies.get(i), previous));
+        }
         List<MoveQuality> qualities = new ArrayList<>(movesInPlayOrder.size());
-        for (int i = 0; i < movesInPlayOrder.size(); i++) {
-            Move move = movesInPlayOrder.get(i);
-            Move previous = i > 0 ? movesInPlayOrder.get(i - 1) : null;
-            qualities.add(quality(move, previous));
+        for (Move move : movesInPlayOrder) {
+            qualities.add(byMove.get(move));
         }
         return qualities;
     }

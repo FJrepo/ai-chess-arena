@@ -25,8 +25,9 @@ public final class WinAdjudication {
                 && modelId != null && !modelId.isBlank();
     }
 
-    /** Winner (WHITE/BLACK), or null. Input is every played ply in play order; missing scores never wait. */
+    /** Winner (WHITE/BLACK), or null, from canonical plies; missing scores never wait. */
     public static String winner(List<Move> moves) {
+        moves = CanonicalPlies.of(moves);
         if (moves.size() < WINDOW_PLIES) {
             return null;
         }

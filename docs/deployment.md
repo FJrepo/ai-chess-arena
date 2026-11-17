@@ -255,14 +255,16 @@ Recommended tagging policy:
 ## Troubleshooting
 
 ### Migration V8 reports "Skipping uq_moves_game_ply"
-Older versions could store two moves for the same ply when moves were submitted concurrently. Migration V8 then still succeeds but skips the unique index and logs a notice. Current versions prevent new duplicates with a row lock either way. To add the index afterwards, list the affected plies, delete the unwanted duplicate rows by `id` (usually the later `created_at`), then create the index:
+Older versions could store two moves for the same ply when moves were submitted concurrently. Migration V8 then still succeeds but skips the unique index and logs a notice. Current versions prevent new duplicates with a row lock either way. Adjudication, move quality (including missed mates), Conversion and talkativeness count one canonical move per `(game_id, move_number, color)`: the earliest `created_at`, with `id` breaking ties. Later duplicates cannot fill a missing canonical evaluation, create winning positions or extend the ten-ply adjudication window. Move API rows remain available, with null quality on later duplicates; live quality updates use the canonical move and the next canonical ply.
+
+Rebuild and recreate the backend to apply this fix. No migration or backfill is needed; duplicate rows, stored evaluations and completed results remain unchanged. Previously adjudicated results and series advancement are not repaired automatically. To add the index afterwards, list the affected plies, delete the unwanted duplicate rows by `id` (keeping the first by `created_at`, then `id`), then create the index:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 ```sql
-SELECT game_id, move_number, color, array_agg(id ORDER BY created_at) AS move_ids
+SELECT game_id, move_number, color, array_agg(id ORDER BY created_at, id) AS move_ids
 FROM moves GROUP BY game_id, move_number, color HAVING COUNT(*) > 1;
 -- after removing the unwanted rows:
 CREATE UNIQUE INDEX IF NOT EXISTS uq_moves_game_ply ON moves (game_id, move_number, color);

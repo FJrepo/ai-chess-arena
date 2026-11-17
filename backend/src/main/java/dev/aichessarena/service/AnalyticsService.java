@@ -707,7 +707,7 @@ public class AnalyticsService {
      */
     private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
         Map<UUID, List<MoveQualityClassifier.Score>> scoresByGame = new HashMap<>();
-        for (Move move : moves) {
+        for (Move move : CanonicalPlies.of(moves)) {
             MoveQualityClassifier.Score score = MoveQualityClassifier.score(
                     move.evaluationCp, move.evaluationMate, move.color);
             if (score != null && move.game != null) {
@@ -762,17 +762,8 @@ public class AnalyticsService {
                         message.length());
             }
         }
-        Map<PlyKey, Move> firstMovePerPly = new HashMap<>();
-        for (Move move : moves) {
-            if (move.game == null) {
-                continue;
-            }
-            firstMovePerPly.merge(new PlyKey(move.game.id, move.moveNumber, move.color), move,
-                    (kept, other) -> FIRST_STORED.compare(other, kept) < 0 ? other : kept);
-        }
-        for (Map.Entry<PlyKey, Move> ply : firstMovePerPly.entrySet()) {
-            Move move = ply.getValue();
-            if (move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
+        for (Move move : CanonicalPlies.of(moves)) {
+            if (move.game == null || move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
                     || !hasTrackedModelId(move.modelId)) {
                 continue;
             }
@@ -782,7 +773,7 @@ public class AnalyticsService {
                     ? accumulator.mandatoryChat
                     : accumulator.optionalChat;
             talk.moves++;
-            Integer length = messageLengths.get(ply.getKey());
+            Integer length = messageLengths.get(new PlyKey(move.game.id, move.moveNumber, move.color));
             if (length != null) {
                 talk.messages++;
                 talk.messageLengthTotal += length;
@@ -875,11 +866,6 @@ public class AnalyticsService {
         String modelId = white ? game.whiteModelId : game.blackModelId;
         return hasTrackedModelId(modelId) ? normalizeModelId(modelId) : null;
     }
-
-    /** Earliest stored first; the id only breaks ties so the choice does not depend on load order. */
-    private static final Comparator<Move> FIRST_STORED = Comparator
-            .comparing((Move move) -> move.createdAt, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(move -> move.id, Comparator.nullsLast(Comparator.naturalOrder()));
 
     private TalkativenessDto talkativeness(TalkAccumulator talk) {
         return new TalkativenessDto(

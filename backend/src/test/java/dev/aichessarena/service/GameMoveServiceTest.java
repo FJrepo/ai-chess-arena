@@ -230,6 +230,49 @@ class GameMoveServiceTest {
     }
 
     @Test
+    void canonicalEvaluationUpdatesTheNextPlyAcrossLegacyDuplicates() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        Move black = storedMove(game, 1, "BLACK", null);
+        Move duplicateBlack = storedMove(game, 1, "BLACK", 0);
+        duplicateBlack.createdAt = black.createdAt.plusSeconds(1);
+        Move white = storedMove(game, 2, "WHITE", 0);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        moveRepository.gameMoves.addAll(List.of(black, duplicateBlack, white));
+        GameMoveService service = service(game, moveRepository);
+        RecordingGameWebSocket websocket = (RecordingGameWebSocket) service.gameWebSocket;
+
+        service.updateMoveEvaluation(black.id, new StockfishService.EvalResult(null, 2));
+
+        assertEquals(2, websocket.lastQualities.size());
+        PlyQualityDto missed = websocket.lastQualities.get(1);
+        assertEquals(2, missed.moveNumber());
+        assertEquals("WHITE", missed.color());
+        assertTrue(missed.quality().missedMate());
+        assertEquals(2, missed.quality().missedMateIn());
+        assertEquals(1, websocket.lastSummary.white().analyzedMoves());
+        assertEquals(1, websocket.lastSummary.black().analyzedMoves());
+    }
+
+    @Test
+    void legacyDuplicateEvaluationDoesNotBroadcastAFalseMissedMate() {
+        Game game = game(Game.GameStatus.IN_PROGRESS, START_FEN);
+        Move black = storedMove(game, 1, "BLACK", 0);
+        Move duplicateBlack = storedMove(game, 1, "BLACK", null);
+        duplicateBlack.createdAt = black.createdAt.plusSeconds(1);
+        Move white = storedMove(game, 2, "WHITE", 0);
+        TrackingMoveRepository moveRepository = new TrackingMoveRepository();
+        moveRepository.gameMoves.addAll(List.of(black, duplicateBlack, white));
+        GameMoveService service = service(game, moveRepository);
+        RecordingGameWebSocket websocket = (RecordingGameWebSocket) service.gameWebSocket;
+
+        service.updateMoveEvaluation(duplicateBlack.id, new StockfishService.EvalResult(null, 2));
+
+        assertEquals(2, duplicateBlack.evaluationMate);
+        assertNull(websocket.lastQualities);
+        assertNull(websocket.lastSummary);
+    }
+
+    @Test
     void samePositionIgnoresMoveClocks() {
         assertTrue(GameMoveService.samePosition(START_FEN, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 3 7"));
         assertFalse(GameMoveService.samePosition(START_FEN, AFTER_E4));

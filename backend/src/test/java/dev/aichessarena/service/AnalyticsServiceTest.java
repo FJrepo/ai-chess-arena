@@ -880,6 +880,60 @@ class AnalyticsServiceTest {
         assertEquals(0L, row(response, "model.at").conversion().missedMates());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void conversionIgnoresWinningAndEvaluatedPositionsFoundOnlyInLegacyDuplicates(boolean tiedTimestamp) {
+        Game draw = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Game unknown = finishedGame("model.unknown", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
+        List<Move> moves = new ArrayList<>();
+        for (Game game : List.of(draw, unknown)) {
+            Move first = evaluatedMove(game, game.whiteModelId, 1, "WHITE", game == draw ? 0 : null);
+            first.createdAt = YESTERDAY;
+            first.id = new UUID(0, 1);
+            Move duplicate = evaluatedMove(game, game.whiteModelId, 1, "WHITE", 1500);
+            duplicate.createdAt = tiedTimestamp ? YESTERDAY : YESTERDAY.plusSeconds(1);
+            duplicate.id = new UUID(0, 2);
+            moves.add(duplicate); // Deliberately loaded before the canonical row.
+            moves.add(first);
+        }
+        var response = service(List.of(draw, unknown), moves, List.of()).getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha").conversion();
+        assertEquals(1L, alpha.evaluatedGames());
+        assertEquals(0L, alpha.winningPositionsReached());
+        assertEquals(0L, alpha.converted());
+        assertEquals(0L, alpha.adjudicatedWins());
+        assertEquals(0L, alpha.thrownAway());
+        var missing = row(response, "model.unknown").conversion();
+        assertEquals(0L, missing.evaluatedGames());
+        assertNull(missing.winningPositionsReached());
+        assertNull(missing.converted());
+        assertNull(missing.missedMates());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void conversionCountsEachMissedMateOnceAndUsesTheCanonicalPreviousPly(boolean tiedTimestamp) {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Move mate = evaluatedMove(game, "model.beta", 1, "BLACK", null);
+        mate.evaluationMate = 2;
+        mate.createdAt = YESTERDAY;
+        mate.id = new UUID(0, 1);
+        Move conflictingDuplicate = evaluatedMove(game, "model.beta", 1, "BLACK", 0);
+        conflictingDuplicate.createdAt = tiedTimestamp ? YESTERDAY : YESTERDAY.plusSeconds(1);
+        conflictingDuplicate.id = new UUID(0, 2);
+        Move missed = evaluatedMove(game, "model.alpha", 2, "WHITE", 0);
+        missed.createdAt = YESTERDAY;
+        Move missedDuplicate = evaluatedMove(game, "model.alpha", 2, "WHITE", 0);
+        missedDuplicate.createdAt = YESTERDAY.plusSeconds(1);
+        var response = service(List.of(game), List.of(missedDuplicate, conflictingDuplicate, missed, mate), List.of())
+                .getComparison(30, null, 0);
+        var alpha = row(response, "model.alpha");
+        assertEquals(1, alpha.analyzedMoves());
+        assertEquals(1L, alpha.conversion().missedMates());
+        assertEquals(1L, alpha.conversion().winningPositionsReached());
+        assertEquals(1L, alpha.conversion().thrownAway());
+    }
+
     @Test
     void conversionUsesOnlyFinishedNonByeModelSidesAndCountsMateZeroForItsMover() {
         Game human = finishedGame(null, "model.alpha", Game.GameResult.BLACK_WINS, Game.ResultReason.CHECKMATE, YESTERDAY);

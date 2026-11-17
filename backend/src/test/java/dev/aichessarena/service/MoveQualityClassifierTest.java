@@ -260,6 +260,28 @@ class MoveQualityClassifierTest {
     }
 
     @Test
+    void legacyDuplicatesCannotCreateMissedMatesOrHideTheCanonicalPreviousEvaluation() {
+        Move before = move(1, "BLACK", "e5", "fen", null, 2);
+        Move duplicateBefore = move(1, "BLACK", "e5", "fen", 0, null);
+        Move missed = move(2, "WHITE", "Nf3", "fen", 0, null);
+        Move duplicateMissed = move(2, "WHITE", "Nf3", "fen", null, 3);
+        Move anotherDuplicate = move(2, "WHITE", "Nf3", "fen", 0, null);
+        List<Move> moves = List.of(before, duplicateBefore, missed, duplicateMissed, anotherDuplicate);
+        for (int i = 0; i < moves.size(); i++) {
+            moves.get(i).createdAt = LocalDateTime.of(2026, 1, 1, 0, 0).plusSeconds(i);
+        }
+
+        List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
+
+        assertNull(qualities.get(1));
+        assertTrue(qualities.get(2).missedMate());
+        assertEquals(2, qualities.get(2).missedMateIn());
+        assertNull(qualities.get(3));
+        assertNull(qualities.get(4));
+        assertEquals(1, MoveQualityClassifier.summarize(moves, qualities).white().analyzedMoves());
+    }
+
+    @Test
     void missedMatesAreMarkedEvenWhenThePositionStillHasHighWinningChances() {
         for (String color : List.of("WHITE", "BLACK")) {
             int sign = "WHITE".equals(color) ? 1 : -1;

@@ -41,6 +41,8 @@ Prompt caching savings use one cached price snapshot per comparison. Analytics n
 
 Concurrent catalog lookups use a consistent snapshot for freshness and model data, so model validation and reasoning-effort mapping can use a catalog published by another caller during a refresh.
 
+Legacy duplicate move rows count as one ply for adjudication, move quality (including missed mates), Conversion and talkativeness: the earliest `created_at` wins, with `id` breaking ties. Later duplicates cannot supply a missing evaluation or extend the ten-ply window. Stored rows and completed results remain unchanged; see [duplicate-move troubleshooting](docs/deployment.md#migration-v8-reports-skipping-uq_moves_game_ply).
+
 ## Quick start
 
 You need Docker Engine 28.0+ (or Docker Desktop with Engine 28.0+), Make, and an [OpenRouter API key](https://openrouter.ai/keys).
