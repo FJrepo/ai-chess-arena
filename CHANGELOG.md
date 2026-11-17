@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - System Status shows a neutral validation state for untested OpenRouter keys and unavailable checks. Testing the key updates the status card.
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.
+- Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
 
 ## [1.7.1] - 2026-11-17
 
