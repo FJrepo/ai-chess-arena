@@ -53,7 +53,7 @@ class TournamentIntegrityIT {
     @ValueSource(booleans = {false, true})
     void bracketApiDefaultsToOrderWithNoBodyOrAnEmptyObject(boolean sendEmptyObject) {
         UUID id = creation.create(tournament("Default order"),
-                List.of(ai("A", 10), ai("B", 20), ai("C", 30), ai("D", 40)), null).tournament().id;
+                List.of(ai("A", 10), ai("B", 20), ai("C", 30), ai("D", 40)), null).tournament().id();
         var request = given().contentType("application/json");
         if (sendEmptyObject) request.body("{}");
 
@@ -70,7 +70,7 @@ class TournamentIntegrityIT {
 
     @Test
     void bracketApiAcceptsExplicitOrder() {
-        UUID id = creation.create(tournament("Explicit order"), List.of(ai("A", 10), ai("B", 20)), null).tournament().id;
+        UUID id = creation.create(tournament("Explicit order"), List.of(ai("A", 10), ai("B", 20)), null).tournament().id();
 
         given().contentType("application/json").queryParam("drawMode", "ORDER")
                 .when().post("/api/tournaments/{id}/generate-bracket", id).then().statusCode(200);
@@ -81,7 +81,7 @@ class TournamentIntegrityIT {
     @Test
     void bracketApiPersistsRandomSeedsAndRejectsRedrawsWithoutChangingThem() {
         UUID id = creation.create(tournament("Random seeds"),
-                List.of(ai("A", 10), ai("B", 20), ai("C", 30), ai("D", 40), ai("E", 50)), null).tournament().id;
+                List.of(ai("A", 10), ai("B", 20), ai("C", 30), ai("D", 40), ai("E", 50)), null).tournament().id();
 
         given().contentType("application/json").queryParam("drawMode", "RANDOM")
                 .when().post("/api/tournaments/{id}/generate-bracket", id).then().statusCode(200);
@@ -112,7 +112,7 @@ class TournamentIntegrityIT {
 
     @Test
     void bracketApiRejectsUnknownDrawModeWithoutGeneratingOrReseeding() {
-        UUID id = creation.create(tournament("Invalid draw"), List.of(ai("A", 10), ai("B", 20)), null).tournament().id;
+        UUID id = creation.create(tournament("Invalid draw"), List.of(ai("A", 10), ai("B", 20)), null).tournament().id();
 
         for (String mode : List.of("unknown", "")) {
             given().contentType("application/json")
@@ -154,9 +154,9 @@ class TournamentIntegrityIT {
 
         assertTrue(first.created());
         assertFalse(second.created());
-        assertEquals(first.tournament().id, second.tournament().id);
+        assertEquals(first.tournament().id(), second.tournament().id());
         long participants = QuarkusTransaction.requiringNew().call(
-                () -> participantRepository.count("tournament.id", first.tournament().id));
+                () -> participantRepository.count("tournament.id", first.tournament().id()));
         assertEquals(2, participants);
     }
 
@@ -177,7 +177,7 @@ class TournamentIntegrityIT {
             TournamentCreationService.Result first = results.get(0).get(30, TimeUnit.SECONDS);
             TournamentCreationService.Result second = results.get(1).get(30, TimeUnit.SECONDS);
 
-            assertEquals(first.tournament().id, second.tournament().id);
+            assertEquals(first.tournament().id(), second.tournament().id());
             assertEquals(1, (first.created() ? 1 : 0) + (second.created() ? 1 : 0));
         } finally {
             pool.shutdownNow();
@@ -193,7 +193,7 @@ class TournamentIntegrityIT {
     @Test
     void concurrentBracketGenerationCreatesExactlyOneBracket() throws Exception {
         UUID id = creation.create(tournament("Bracket race"),
-                List.of(ai("A", 0), ai("B", 1), ai("C", 2), ai("D", 3)), null).tournament().id;
+                List.of(ai("A", 0), ai("B", 1), ai("C", 2), ai("D", 3)), null).tournament().id();
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch go = new CountDownLatch(1);

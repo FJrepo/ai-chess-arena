@@ -387,4 +387,8 @@ export interface CreateTournamentRequest extends Partial<
 > {
   participants?: Array<Partial<Participant>>;
   clientRequestId?: string;
+  /** Create-only draw choice; API default ORDER preserves seeds, setup defaults to RANDOM. */
+  drawMode?: BracketDrawMode;
+  /** Omitted: generate with >=2 participants, otherwise create a draft. Explicit true requires >=2. */
+  generateBracket?: boolean;
 }

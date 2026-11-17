@@ -45,6 +45,10 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Creation-time brackets migration (V21)
+
+Back up before upgrading. Rebuild and recreate backend and frontend together. Flyway V21 adds nullable `tournaments.creation_draw_mode`, preserving the original create intent so a retry with the same `clientRequestId` can finish generation after an interrupted request. Existing tournaments receive null and keep their current draft/bracket state; no generation backfill runs. Games, seeds, results and spend remain unchanged. Restore the pre-upgrade database backup to roll back. See [Bracket](how-it-works.md#bracket) for API defaults, draft opt-out and recovery.
+
 ## Auto-run migration (V20)
 
 Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend startup and adds tournament run state (`OFF` for every existing tournament), concurrency (default 2), optional budget (null/no cap), and pause reason. Existing game positions, attempts, results and spend remain unchanged; no historical backfill is needed. No bundled third-party software changes.

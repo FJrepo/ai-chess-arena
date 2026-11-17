@@ -8,6 +8,9 @@ import java.util.UUID;
  * Create (POST) or update (PUT) a tournament. {@code participants} and {@code clientRequestId} are only
  * used on create: the tournament and all participants are stored together or not at all, and repeating a
  * request with the same {@code clientRequestId} returns the tournament created by the first one.
+ * The original creation's bracket choice is retained on retries. {@code drawMode} defaults to ORDER;
+ * {@code generateBracket} defaults to true for at least two participants, false otherwise (incremental
+ * API creation). Explicit true requires at least two participants. These fields are create-only.
  *
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
@@ -43,8 +46,23 @@ public record CreateTournamentRequest(
         String reasoningEffort,
         @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean adjudicationEnabled,
         String openingMode,
-        String openingId
+        String openingId,
+        String drawMode,
+        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket
 ) {
+    /** Compatibility constructor for callers without creation-time bracket settings. */
+    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
+                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
+                                   Boolean trashTalkEnabled, String drawPolicy,
+                                   List<AddParticipantRequest> participants, UUID clientRequestId,
+                                   Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
+                                   String reasoningEffort, Boolean adjudicationEnabled,
+                                   String openingMode, String openingId) {
+        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
+                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
+                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null);
+    }
+
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
                                    Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
                                    Boolean trashTalkEnabled, String drawPolicy,

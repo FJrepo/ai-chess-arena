@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.dto.CreateTournamentRequest;
+import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.TournamentDto;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.ReasoningEffort;
@@ -218,7 +219,7 @@ class TournamentResourceTest {
             @Override
             public Result create(Tournament tournament, List<TournamentParticipant> participants,
                                  UUID clientRequestId) {
-                return new Result(tournament, true);
+                return new Result(DtoMapper.toDto(tournament), true);
             }
         };
         return resource;

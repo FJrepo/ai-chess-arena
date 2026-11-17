@@ -186,8 +186,7 @@ class ReasoningEffortIT {
                           {"playerName": "B", "modelId": "b/two", "seed": 2}]}""".formatted(UUID.randomUUID()))
                 .when().post("/api/tournaments")
                 .then().statusCode(201).extract().path("id");
-        given().contentType("application/json").when().post("/api/tournaments/{id}/generate-bracket", id)
-                .then().statusCode(200);
+        // A complete create request already has its bracket.
         String gameId = given().when().get("/api/tournaments/{id}", id)
                 .then().statusCode(200).extract().path("games[0].id");
         String pid = given().when().get("/api/tournaments/{id}", id)

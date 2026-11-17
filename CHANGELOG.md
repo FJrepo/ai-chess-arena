@@ -7,7 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- Back up before upgrading. Flyway `V21__creation_bracket_intent.sql` stores the original creation draw choice for safe retries. Existing tournaments, brackets, games and seeds stay unchanged; no generation backfill. Rebuild/recreate backend and frontend to activate creation-time brackets. Restore the pre-upgrade backup to roll back.
+
 ### Changed
+- Creating a tournament from setup now generates its bracket, with Bracket draw (Random by default) under Tournament Settings → Matches. The create API accepts `drawMode` (default ORDER) and `generateBracket`; complete lineups generate by default, smaller lineups preserve incremental draft creation, and explicit false opts out. Repeated `clientRequestId` requests preserve the original choice and bracket, including recovery after interrupted generation. Existing drafts retain manual generation.
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 
 ## [1.6.0] - 2026-11-17

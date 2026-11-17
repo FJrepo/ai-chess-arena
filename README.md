@@ -54,7 +54,7 @@ Set `OPENROUTER_API_KEY` and a strong `DB_PASSWORD` in `.env`, then start:
 docker compose up -d
 ```
 
-Open **http://localhost:4200**, create a tournament, generate the bracket and start the first game. The API is available under `http://localhost:4200/api`.
+Open **http://localhost:4200**, create a tournament and start the first game. The API is available under `http://localhost:4200/api`.
 
 Windows: use the [PowerShell variant](docs/deployment.md#windows-powershell).
 
