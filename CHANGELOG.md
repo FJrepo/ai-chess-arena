@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Upgrade notes
 - Keep `DB_PASSWORD` unchanged in an existing `.env`: an initialized PostgreSQL volume retains its password, and an explicit value wins for both database and backend. New installs generate secrets in `secrets_prod`; retain/back up this volume with `pgdata_prod`. Recreate services with the updated Compose file and images; no schema migration or backfill, and existing database contents remain unchanged.
 - Back up before upgrading. Flyway `V21__banter_level.sql` adds nullable, checked `tournaments.banter_level`; existing tournaments keep Original (`null`) and all existing prompt texts, versions and hashes. Existing games, moves, results and spend remain unchanged; no backfill. Rebuild/recreate backend and frontend; restore the pre-upgrade backup to roll back.
+- Back up before upgrading. Flyway `V22__creation_bracket_intent.sql` stores the original creation draw choice for safe retries. Existing tournaments, brackets, games and seeds stay unchanged; no generation backfill. Rebuild/recreate backend and frontend to activate creation-time brackets. Restore the pre-upgrade backup to roll back.
 
 ### Added
 - First-start production secret generation: persistent 0600 database password and instance key files, shared read-only with database/backend after successful initialization. The instance key is reserved for future encryption/signing.
@@ -17,12 +18,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Per-tournament Banter tone: Original, Polite, Playful or Spicy for Optional/Mandatory chat, with setup rule previews and a live game label. Changes apply next turn; Off ignores the retained tone and legacy full prompt overrides remain unchanged. Tone guidance combines with resignation and custom instructions; invalid API values return 400.
 
 ### Changed
+- Creating a tournament from setup now generates its bracket, with Bracket draw (Random by default) under Tournament Settings → Matches. The create API accepts `drawMode` (default ORDER) and `generateBracket`; only explicit `generateBracket: true` generates at creation; omitted, null or false retains draft creation for API clients. Repeated `clientRequestId` requests preserve the original choice and bracket, including recovery after interrupted generation. Existing drafts retain manual generation.
 - Analytics page in four tabs, Overview, Play quality, Behaviour and Cost & reliability, instead of one long comparison tab; all tables and explanations stay, and `?tab=` links open a tab directly ([how it works](docs/how-it-works.md)).
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 - New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; configure its env value or file before starting the backend.
 
 ### Fixed
 - Match only the application's exact secret placeholders and preserve higher-priority Quarkus values and other expressions. Keep an explicit database password in the v1.6.0 source-checkout example; generated secrets require v1.7.0+ images.
+
+### Fixed
+- Preserve legacy API create-then-add-participants-then-generate workflows when `generateBracket` is omitted or null; the setup UI explicitly opts into creation-time brackets.
 
 ## [1.6.0] - 2026-11-17
 

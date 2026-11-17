@@ -87,9 +87,12 @@ public class TournamentResource {
                 participants.add(toParticipant(participant));
             }
         }
+        BracketDrawMode mode = parseBracketDrawMode(req.drawMode() == null ? "ORDER" : req.drawMode());
+        boolean generate = Boolean.TRUE.equals(req.generateBracket());
+        t.creationDrawMode = generate ? mode : null;
         TournamentCreationService.Result result = tournamentCreationService.create(t, participants, req.clientRequestId());
         Response.Status status = result.created() ? Response.Status.CREATED : Response.Status.OK;
-        return Response.status(status).entity(DtoMapper.toDto(result.tournament())).build();
+        return Response.status(status).entity(result.tournament()).build();
     }
 
     @GET
@@ -245,14 +248,17 @@ public class TournamentResource {
         // Read the query map to distinguish an omitted mode from an explicitly empty one.
         var query = uriInfo.getQueryParameters();
         String drawMode = query.containsKey("drawMode") ? query.getFirst("drawMode") : "ORDER";
-        BracketDrawMode mode;
+        BracketDrawMode mode = parseBracketDrawMode(drawMode);
+        List<Game> games = tournamentService.generateBracket(id, mode);
+        return Response.ok(games.stream().map(g -> DtoMapper.toDto(g, false)).toList()).build();
+    }
+
+    private static BracketDrawMode parseBracketDrawMode(String drawMode) {
         try {
-            mode = BracketDrawMode.valueOf(drawMode == null ? "" : drawMode.trim().toUpperCase(Locale.ROOT));
+            return BracketDrawMode.valueOf(drawMode == null ? "" : drawMode.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("drawMode must be ORDER or RANDOM");
         }
-        List<Game> games = tournamentService.generateBracket(id, mode);
-        return Response.ok(games.stream().map(g -> DtoMapper.toDto(g, false)).toList()).build();
     }
 
     private TournamentParticipant toParticipant(AddParticipantRequest req) {

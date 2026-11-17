@@ -23,6 +23,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
 import {
+  BracketDrawMode,
   ChatMode,
   BanterLevel,
   Opening,
@@ -240,6 +241,7 @@ Your opponent is %s (%s).`;
           this.openings().some((line) => line.id === this.openingId()))),
   );
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
+  drawMode: BracketDrawMode = 'RANDOM';
   matchupBestOf: Tournament['matchupBestOf'] = 1;
   finalsBestOf: Tournament['finalsBestOf'] = null;
 
@@ -615,6 +617,8 @@ Your opponent is %s (%s).`;
       // Left out for the model default, so nothing is sent to OpenRouter.
       ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
       drawPolicy: this.drawPolicy,
+      drawMode: this.drawMode,
+      generateBracket: true,
       participants: this.participants().map((p) => ({
         playerName: p.playerName,
         controlType: p.controlType,

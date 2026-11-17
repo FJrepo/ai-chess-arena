@@ -45,6 +45,14 @@ describe('TournamentBracket', () => {
     return fixture.nativeElement;
   }
 
+  it('opens a newly created ready bracket with play controls and no generation step', () => {
+    const ready = tournament('IN_PROGRESS', null, finalGame({ status: 'WAITING' }));
+    const element = render(ready);
+    expect(element.querySelector('.generate-section')).toBeNull();
+    expect(element.querySelector('.bracket-container')).not.toBeNull();
+    expect(element.querySelector('.start-run')?.textContent).toContain('Run tournament');
+  });
+
   function runPage(
     status: Tournament['status'] = 'IN_PROGRESS',
     runStatus: Tournament['autoRunStatus'] = 'OFF',
@@ -681,7 +689,7 @@ describe('TournamentBracket', () => {
   }
 
   it.each(['RANDOM', 'ORDER'] as BracketDrawMode[])(
-    'defaults to Random draw, allows added order, and submits %s',
+    'keeps manual generation for existing drafts, defaults to Random, and submits %s',
     async (mode) => {
       const { fixture, api } = drawPage();
       const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(MatSelectHarness);

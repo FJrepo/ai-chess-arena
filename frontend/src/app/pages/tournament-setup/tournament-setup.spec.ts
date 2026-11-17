@@ -1,4 +1,6 @@
 import { By } from '@angular/platform-browser';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { MatSelectHarness } from '@angular/material/select/testing';
 import { MatTooltip } from '@angular/material/tooltip';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
@@ -80,6 +82,52 @@ describe('TournamentSetup', () => {
     expect(fixture.componentInstance.asideSticky()).toBe(false);
     expect(fixture.nativeElement.querySelector('.aside-sticky')).toBeNull();
     fixture.destroy();
+  });
+
+  it.each(['RANDOM', 'ORDER'] as const)(
+    'explicitly opts into bracket creation from Matches with %s',
+    async (mode) => {
+      const api = createApiService();
+      const fixture = await renderSetup(api);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+      const component = fixture.componentInstance;
+      component.name = 'Ready Arena';
+      component.participants.set([
+        pricedParticipant('Alpha', 'a/model', 0, 0),
+        { ...pricedParticipant('Beta', 'b/model', 0, 0), seed: 1 },
+      ]);
+      fixture.detectChanges();
+      const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+        MatSelectHarness.with({ selector: '[aria-labelledby="setup-matches-heading"] mat-select' }),
+      );
+      expect(await select.getValueText()).toBe('Random draw');
+      if (mode === 'ORDER') {
+        await select.open();
+        await select.clickOptions({ text: 'In added order' });
+      }
+      fixture.nativeElement.querySelector('.create-button').click();
+      expect(api.createTournamentPayload?.['drawMode']).toBe(mode);
+      expect(api.createTournamentPayload?.['generateBracket']).toBe(true);
+      expect(api.createTournamentPayload?.['participants']).toHaveLength(2);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(['/tournaments', 't-1']);
+    },
+  );
+
+  it('reuses the create request id until the draw choice changes', () => {
+    const api = createApiService();
+    const requests: Record<string, unknown>[] = [];
+    api.createTournament = ((payload: Record<string, unknown>) => {
+      requests.push(payload);
+      return throwError(() => ({ status: 0 }));
+    }) as any;
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.create();
+    component.create();
+    component.drawMode = 'ORDER';
+    component.create();
+    expect(requests[0]['clientRequestId']).toBe(requests[1]['clientRequestId']);
+    expect(requests[2]['clientRequestId']).not.toBe(requests[0]['clientRequestId']);
+    expect(requests[2]['drawMode']).toBe('ORDER');
   });
 
   it('defaults to Standard, sends fixed book selection, and omits stale ids in other modes', () => {
@@ -1728,11 +1776,11 @@ function pricedParticipant(
   };
 }
 
-async function renderSetup() {
+async function renderSetup(api = createApiService()) {
   TestBed.configureTestingModule({
     imports: [TournamentSetup],
     providers: [
-      { provide: ApiService, useValue: createApiService() },
+      { provide: ApiService, useValue: api },
       { provide: Router, useValue: createRouter() },
       { provide: ActivatedRoute, useValue: createRoute() },
     ],

@@ -130,6 +130,11 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "client_request_id", unique = true)
     public UUID clientRequestId;
 
+    /** Original create intent, used to finish generation after an interrupted request; null means draft/legacy. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "creation_draw_mode", length = 16)
+    public BracketDrawMode creationDrawMode;
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt = LocalDateTime.now();
 

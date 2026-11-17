@@ -321,6 +321,14 @@
             <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
             <div class="settings-grid matches-grid">
               <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Bracket draw</mat-label>
+                <mat-select [(ngModel)]="drawMode">
+                  <mat-option value="RANDOM">Random draw</mat-option>
+                  <mat-option value="ORDER">In added order</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" floatLabel="always">
                 <mat-label>Draw Policy</mat-label>
                 <mat-select [(ngModel)]="drawPolicy">
                   @for (option of drawPolicyOptions; track option.value) {

@@ -1,5 +1,7 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.dto.DtoMapper;
+import dev.aichessarena.dto.TournamentDto;
 import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.OpeningMode;
@@ -112,6 +114,23 @@ public class TournamentService {
             tournament.participants.add(participant);
         }
         return tournament;
+    }
+
+    /** Completes the original create intent exactly once, also when concurrent/retried creates arrive. */
+    @Transactional
+    public TournamentDto completeCreation(UUID tournamentId) {
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament == null) {
+            throw new WebApplicationException("Tournament not found", Response.Status.NOT_FOUND);
+        }
+        if (tournament.creationDrawMode != null && tournament.status == Tournament.TournamentStatus.CREATED) {
+            generateBracket(tournamentId, tournament.creationDrawMode);
+            // The create request may already hold initialized empty collections. Return the committed bracket.
+            tournamentRepository.getEntityManager().flush();
+            tournamentRepository.getEntityManager().refresh(tournament);
+        }
+        // Capture the response while relationships are attached to this transaction's session.
+        return DtoMapper.toDto(tournament);
     }
 
     @Transactional

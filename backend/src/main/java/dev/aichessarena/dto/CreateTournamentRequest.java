@@ -9,6 +9,9 @@ import java.util.UUID;
  * Create (POST) or update (PUT) a tournament. {@code participants} and {@code clientRequestId} are only
  * used on create: the tournament and all participants are stored together or not at all, and repeating a
  * request with the same {@code clientRequestId} returns the tournament created by the first one.
+ * The original creation's bracket choice is retained on retries. {@code drawMode} defaults to ORDER;
+ * {@code generateBracket} generates only when explicitly true, which requires at least two participants.
+ * Omitted, null or false preserves draft creation for API clients. These fields are create-only.
  *
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
@@ -48,20 +51,22 @@ public record CreateTournamentRequest(
         @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean adjudicationEnabled,
         String openingMode,
         String openingId,
+        String drawMode,
+        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket,
         // Omitted retains the current tone on update; explicit JSON null clears it. Only strings/null are valid.
         JsonNode banterLevel
 ) {
-    /** Compatibility constructor for requests without a banter setting. */
+    /** Compatibility constructor for callers without creation-time bracket or banter settings. */
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
                                    Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
                                    Boolean trashTalkEnabled, String drawPolicy,
                                    List<AddParticipantRequest> participants, UUID clientRequestId,
                                    Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
-                                   String reasoningEffort, Boolean adjudicationEnabled, String openingMode,
-                                   String openingId) {
+                                   String reasoningEffort, Boolean adjudicationEnabled,
+                                   String openingMode, String openingId) {
         this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
                 trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null);
+                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null);
     }
 
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,

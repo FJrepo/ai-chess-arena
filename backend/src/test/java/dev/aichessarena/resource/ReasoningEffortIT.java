@@ -181,13 +181,12 @@ class ReasoningEffortIT {
     void anOverrideCanBeChangedOnceTheBracketExists() {
         String id = given().contentType("application/json")
                 .body("""
-                        {"name": "Bracket %s", "participants": [
+                        {"name": "Bracket %s", "generateBracket": true, "participants": [
                           {"playerName": "A", "modelId": "a/one", "seed": 1},
                           {"playerName": "B", "modelId": "b/two", "seed": 2}]}""".formatted(UUID.randomUUID()))
                 .when().post("/api/tournaments")
                 .then().statusCode(201).extract().path("id");
-        given().contentType("application/json").when().post("/api/tournaments/{id}/generate-bracket", id)
-                .then().statusCode(200);
+        // Explicit generation on create already provides the bracket.
         String gameId = given().when().get("/api/tournaments/{id}", id)
                 .then().statusCode(200).extract().path("games[0].id");
         String pid = given().when().get("/api/tournaments/{id}", id)
