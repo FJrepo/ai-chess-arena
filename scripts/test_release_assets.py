@@ -47,17 +47,19 @@ class ReleaseAssetsTest(unittest.TestCase):
         self.assertEqual(['127.0.0.1:${FRONTEND_PORT:-4200}:8080'],
                          generated['services']['frontend']['ports'])
 
-    def test_only_credentials_are_required_in_release_asset(self):
+    def test_release_asset_needs_no_required_interpolation(self):
         required = set(re.findall(r'\$\{(\w+):\?', release_compose(COMPOSE, 'v1.5.1')))
-        self.assertEqual({'OPENROUTER_API_KEY', 'DB_PASSWORD'}, required)
+        self.assertEqual(set(), required)
         self.assertEqual(required | {'IMAGE_TAG'}, set(re.findall(r'\$\{(\w+):\?', COMPOSE)))
 
     def test_env_template_covers_every_production_variable_without_credentials(self):
-        values = dict(re.findall(r'^(\w+)=(.*)$', ENV_EXAMPLE.decode('utf-8'), re.MULTILINE))
+        values = dict(re.findall(r'^(?:# )?(\w+)=(.*)$', ENV_EXAMPLE.decode('utf-8'), re.MULTILINE))
         self.assertEqual(set(re.findall(r'\$\{(\w+)', COMPOSE)), set(values))
-        for variable in ['OPENROUTER_API_KEY', 'DB_PASSWORD', 'IMAGE_TAG']:
+        for variable in ['OPENROUTER_API_KEY', 'OPENROUTER_API_KEY_FILE', 'DB_PASSWORD', 'IMAGE_TAG']:
             self.assertEqual('', values[variable])
         self.assertEqual('fjrepo', values['IMAGE_NAMESPACE'])
+        for variable in ['DB_PASSWORD', 'IMAGE_NAMESPACE', 'IMAGE_TAG']:
+            self.assertNotRegex(ENV_EXAMPLE.decode('utf-8'), rf'(?m)^{variable}=')
 
     def test_invalid_tags_are_rejected(self):
         for tag in ['', 'latest', '1.5.1', 'v1.5', 'v1.5.1-rc1', 'v1.5.1\n', '${OTHER}',

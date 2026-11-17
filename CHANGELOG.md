@@ -7,8 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- Keep `DB_PASSWORD` unchanged in an existing `.env`: an initialized PostgreSQL volume retains its password, and an explicit value wins for both database and backend. New installs generate secrets in `secrets_prod`; retain/back up this volume with `pgdata_prod`. Recreate services with the updated Compose file and images; no schema migration or backfill, and existing database contents remain unchanged.
+
+### Added
+- First-start production secret generation: persistent 0600 database password and instance key files, shared read-only with database/backend after successful initialization. The instance key is reserved for future encryption/signing.
+- Backend `DB_PASSWORD_FILE` and `OPENROUTER_API_KEY_FILE` support with trimmed file contents, explicit environment precedence and sanitized failures. OpenRouter still requires an operator-provided key.
+
 ### Changed
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
+- New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; configure its env value or file before starting the backend.
 
 ## [1.6.0] - 2026-11-17
 

@@ -88,3 +88,7 @@ This software is provided by The author and contributors "as is" and any express
 ```
 
 Commons reference link for the template: http://opensource.org/licenses/bsd-license.php
+
+## BusyBox secret initializer
+
+Production Compose and its release setup asset reference the official `busybox:1.37.0` image for first-start secret generation. BusyBox is licensed under GPL-2.0-only; the image is pulled from Docker Hub and is not bundled in the application images. See the [BusyBox license](https://busybox.net/license.html), [1.37.0 source archive](https://busybox.net/downloads/busybox-1.37.0.tar.bz2) and [official image packaging](https://github.com/docker-library/busybox).
