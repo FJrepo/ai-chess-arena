@@ -555,7 +555,14 @@
       </mat-card>
     </div>
 
-    <aside class="setup-aside" tabindex="0" aria-label="Tournament preview and launch">
+    <aside
+      #setupAside
+      class="setup-aside"
+      [class.aside-sticky]="asideSticky()"
+      [style.top.px]="asideStickyTop"
+      tabindex="0"
+      aria-label="Tournament preview and launch"
+    >
       <mat-card class="panel lineup-card">
         <mat-card-header class="participants-list-head">
           <h2 mat-card-title>Tournament lineup</h2>
@@ -596,6 +603,11 @@
                       Human-controlled
                     } @else {
                       <span class="mono">{{ p.modelId }}</span>
+                      @if (p.reasoningEffort) {
+                        <span class="participant-effort-meta">
+                          · effort: {{ reasoningEffortLabel(p.reasoningEffort) }}
+                        </span>
+                      }
                     }
                   </span>
                   @if (

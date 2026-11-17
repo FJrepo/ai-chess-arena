@@ -1,5 +1,14 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, ElementRef, OnInit, ViewChild, computed, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  computed,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -99,7 +108,7 @@ type TournamentConfidence = {
   templateUrl: './tournament-setup.html',
   styleUrl: './tournament-setup.scss',
 })
-export class TournamentSetup implements OnInit {
+export class TournamentSetup implements OnInit, AfterViewInit, OnDestroy {
   private static readonly PROMPT_FALLBACK = `You are playing chess in a tournament match. This is a real competition.
 
 Respond with valid JSON only:
@@ -221,6 +230,20 @@ Your opponent is %s (%s).`;
   newCustomInstructions = '';
   showParticipantInstructions = false;
 
+  @ViewChild('setupAside') private setupAside!: ElementRef<HTMLElement>;
+  readonly asideSticky = signal(false);
+  /** Space below the sticky toolbar. Shared with the aside's CSS top offset. */
+  readonly asideStickyTop = 88;
+  private asideObserver?: ResizeObserver;
+  private readonly updateAsideSticky = () => {
+    const bottomGap = 24;
+    this.asideSticky.set(
+      window.innerWidth >= 1200 &&
+        this.setupAside.nativeElement.offsetHeight <=
+          window.innerHeight - this.asideStickyTop - bottomGap,
+    );
+  };
+
   @ViewChild('participantInstructions')
   set participantInstructions(field: ElementRef<HTMLTextAreaElement> | undefined) {
     field?.nativeElement.focus();
@@ -315,6 +338,23 @@ Your opponent is %s (%s).`;
     this.loadOpenRouterStatus();
     this.loadModels();
     this.loadOpenings();
+  }
+
+  ngAfterViewInit(): void {
+    if (typeof window === 'undefined' || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    // The observer's initial notification also measures the first rendered lineup.
+    this.asideObserver = new ResizeObserver(this.updateAsideSticky);
+    this.asideObserver.observe(this.setupAside.nativeElement);
+    window.addEventListener('resize', this.updateAsideSticky);
+  }
+
+  ngOnDestroy(): void {
+    this.asideObserver?.disconnect();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.updateAsideSticky);
+    }
   }
 
   private loadOpenRouterStatus(): void {

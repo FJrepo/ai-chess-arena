@@ -36,9 +36,6 @@
     )
   );
 
-  // Space below the sticky toolbar for the sticky preview column.
-  --setup-sticky-top: 88px;
-
   display: block;
 }
 
@@ -67,19 +64,6 @@
   display: contents;
 }
 
-.participants-card {
-  order: 1;
-}
-.lineup-card {
-  order: 2;
-}
-.settings-card {
-  order: 3;
-}
-.confidence-panel {
-  order: 4;
-}
-
 @media (min-width: 1200px) {
   .setup-layout {
     grid-template-columns: minmax(0, 1fr) clamp(360px, 28vw, 460px);
@@ -100,16 +84,12 @@
   }
 
   .setup-aside > .panel {
-    order: 0;
     flex: none;
   }
-}
 
-// Short viewports keep the full estimate in normal document flow.
-@media (min-width: 1200px) and (min-height: 950px) {
-  .setup-aside {
+  // Only stick when the measured column fits between the toolbar and bottom gap.
+  .setup-aside.aside-sticky {
     position: sticky;
-    top: var(--setup-sticky-top);
   }
 }
 

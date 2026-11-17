@@ -9,6 +9,79 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('sticks only while the measured aside fits and cleans up observation on destroy', async () => {
+    let measureAside!: () => void;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private callback: () => void) {}
+        observe(element: Element) {
+          if (element.classList.contains('setup-aside')) {
+            measureAside = this.callback;
+            observe(element);
+          }
+        }
+        unobserve() {}
+        disconnect = disconnect;
+      },
+    );
+    vi.stubGlobal('innerWidth', 1200);
+    vi.stubGlobal('innerHeight', 1000);
+    const fixture = await renderSetup();
+    const aside: HTMLElement = fixture.nativeElement.querySelector('.setup-aside');
+    const height = vi.spyOn(aside, 'offsetHeight', 'get').mockReturnValue(888);
+    expect(observe).toHaveBeenCalledWith(aside);
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+
+    measureAside();
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(true);
+    height.mockReturnValue(889);
+    measureAside();
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+    height.mockReturnValue(888);
+    measureAside();
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(true);
+
+    vi.stubGlobal('innerHeight', 999);
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+    vi.stubGlobal('innerHeight', 1000);
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(true);
+    vi.stubGlobal('innerWidth', 1199);
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+
+    fixture.destroy();
+    expect(disconnect).toHaveBeenCalled();
+    vi.stubGlobal('innerWidth', 1200);
+    window.dispatchEvent(new Event('resize'));
+    expect(fixture.componentInstance.asideSticky()).toBe(false);
+  });
+
+  it('keeps the aside in normal flow without ResizeObserver', async () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const fixture = await renderSetup();
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(fixture.componentInstance.asideSticky()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.aside-sticky')).toBeNull();
+    fixture.destroy();
+  });
+
   it('defaults to Standard, sends fixed book selection, and omits stale ids in other modes', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());
@@ -45,7 +118,7 @@ describe('TournamentSetup', () => {
     expect(component.openingsError()).toBeNull();
   });
 
-  it('renders mode hints and requires a known fixed line through the setup control', async () => {
+  it('disables Create in the lineup for Fixed until a known book line is picked', async () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
@@ -59,6 +132,14 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     const component = fixture.componentInstance;
     const element: HTMLElement = fixture.nativeElement;
+    component.name = 'Opening Arena';
+    component.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ]);
+    fixture.detectChanges();
+    const create = element.querySelector<HTMLButtonElement>('.lineup-card .create-button')!;
+    expect(create.disabled).toBe(false);
     expect(element.querySelector('#opening-hint')?.textContent).toContain('standard position');
     element.querySelector<HTMLElement>('.opening-controls mat-select')!.click();
     fixture.detectChanges();
@@ -70,6 +151,7 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     expect(component.openingMode()).toBe('FIXED');
     expect(component.openingValid()).toBe(false);
+    expect(create.disabled).toBe(true);
     expect(element.querySelector('#opening-hint')?.textContent).toContain('selected book line');
     element.querySelectorAll<HTMLElement>('.opening-controls mat-select')[1].click();
     fixture.detectChanges();
@@ -81,6 +163,7 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     expect(component.openingId()).toBe('ruy-lopez');
     expect(component.openingValid()).toBe(true);
+    expect(create.disabled).toBe(false);
   });
 
   it('adds participant-specific custom instructions when provided', () => {
@@ -660,7 +743,7 @@ describe('TournamentSetup', () => {
     expect(component.confidenceSummary()?.pricingCoverage).toBe(2);
   });
 
-  it('allows a single human participant without a model id', () => {
+  it('rejects a second human and allows one again after removing the first', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
     component.newPlayerName = 'Human Challenger';
     component.newControlType = 'HUMAN';
@@ -669,6 +752,23 @@ describe('TournamentSetup', () => {
 
     expect(component.participants()[0].controlType).toBe('HUMAN');
     expect(component.participants()[0].modelId).toBeNull();
+
+    component.newPlayerName = 'Second Human';
+    component.newControlType = 'HUMAN';
+    expect(component.canAddParticipant()).toBe(false);
+    component.addParticipant();
+    expect(component.participants()).toHaveLength(1);
+    expect(component.participants()[0].playerName).toBe('Human Challenger');
+
+    component.removeParticipant(0);
+    expect(component.canAddParticipant()).toBe(true);
+    component.addParticipant();
+    expect(component.participants()).toHaveLength(1);
+    expect(component.participants()[0]).toMatchObject({
+      playerName: 'Second Human',
+      controlType: 'HUMAN',
+      modelId: null,
+    });
   });
 
   it('derives launch readiness from the name, the participant count and the submitting state', () => {
@@ -712,7 +812,7 @@ describe('TournamentSetup', () => {
     expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
   });
 
-  it('reveals and focuses participant instructions, preserves a closed draft and resets after adding', async () => {
+  it('reveals and focuses instructions, submits a collapsed draft and resets after adding', async () => {
     const fixture = await renderSetup();
     const component = fixture.componentInstance;
     const element: HTMLElement = fixture.nativeElement;
@@ -753,6 +853,9 @@ describe('TournamentSetup', () => {
     component.newPlayerName = 'Alpha';
     component.newModelId = 'example/alpha';
     await refresh();
+    toggle.click();
+    await refresh();
+    expect(element.querySelector('#participant-instructions')).toBeNull();
     element.querySelector<HTMLButtonElement>('.add-button')!.click();
     await refresh();
     expect(component.participants()[0].customInstructions).toBe('Play actively.');
@@ -768,6 +871,15 @@ describe('TournamentSetup', () => {
     await refresh();
     expect(component.participants()[1].customInstructions).toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    component.name = 'Instruction Arena';
+    await refresh();
+    element.querySelector<HTMLButtonElement>('.lineup-card .create-button')!.click();
+    await refresh();
+    const api = TestBed.inject(ApiService) as FakeTournamentSetupApi;
+    expect(api.createTournamentPayload?.['participants']).toEqual([
+      expect.objectContaining({ playerName: 'Alpha', customInstructions: 'Play actively.' }),
+      expect.objectContaining({ playerName: 'Beta', customInstructions: null }),
+    ]);
   });
 
   it('starts advanced prompt collapsed and marks shared instructions even while closed', async () => {
@@ -917,13 +1029,14 @@ describe('TournamentSetup', () => {
     );
   });
 
-  it('keeps roster instruction notes off human rows and effort details in the tooltip', async () => {
+  it('shows labelled effort overrides in the roster and omits effort for tournament defaults', async () => {
     const fixture = await renderSetup();
     const component = fixture.componentInstance;
     component.sharedCustomInstructions = 'Play carefully.';
     component.participants.set([
       { ...pricedParticipant('Alpha', 'example/alpha', 1, 2), reasoningEffort: 'high' },
       { playerName: 'Human', controlType: 'HUMAN' },
+      pricedParticipant('Beta', 'example/beta', 1, 2),
     ]);
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
@@ -933,11 +1046,16 @@ describe('TournamentSetup', () => {
     expect(rows[0].querySelector('.participant-text')?.getAttribute('title')).toBe(
       'Uses shared tournament instructions · Reasoning effort: High',
     );
-    expect(rows[0].querySelector('.participant-effort-meta')).toBeNull();
+    expect(
+      rows[0].querySelector('.participant-meta')?.textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe('example/alpha · effort: High');
     expect(rows[1].querySelector('.participant-meta')?.textContent?.trim()).toBe(
       'Human-controlled',
     );
     expect(rows[1].querySelector('.participant-instructions')).toBeNull();
+    expect(rows[1].querySelector('.participant-effort-meta')).toBeNull();
+    expect(rows[2].querySelector('.participant-meta')?.textContent?.trim()).toBe('example/beta');
+    expect(rows[2].querySelector('.participant-effort-meta')).toBeNull();
   });
 
   it('renders heuristic band labels and approximate spend and runtime', async () => {
