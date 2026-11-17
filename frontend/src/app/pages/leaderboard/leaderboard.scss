@@ -1,0 +1,168 @@
+:host {
+  display: block;
+}
+
+.leaderboard-page {
+  grid-template-columns: minmax(0, 1fr);
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-header,
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.leaderboard-header {
+  padding: 4px;
+
+  h1 {
+    margin: 2px 0 4px;
+    font: var(--mat-sys-headline-small);
+    font-weight: 500;
+  }
+
+  p {
+    margin: 0;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.leaderboard-card {
+  min-width: 0;
+  background: var(--mat-sys-surface-container);
+  border: 1px solid var(--mat-sys-outline-variant);
+  box-shadow: none;
+}
+
+.explanation,
+caption {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.explanation {
+  margin: 16px 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+caption {
+  text-align: left;
+  padding-bottom: 12px;
+}
+
+th,
+td {
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+thead th {
+  color: var(--mat-sys-on-surface-variant);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rank {
+  width: 40px;
+}
+
+.model {
+  width: 30%;
+  max-width: 290px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.model-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+
+  app-provider-logo {
+    flex-shrink: 0;
+  }
+}
+
+.model-id {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.badge {
+  margin-top: 5px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 10px;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+}
+
+.alias {
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rating {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.last-played {
+  white-space: nowrap;
+}
+
+.trend {
+  width: 100px;
+
+  svg {
+    display: block;
+    width: 100px;
+    height: 28px;
+    color: var(--mat-sys-primary);
+  }
+
+  polyline {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 36px 12px;
+  color: var(--mat-sys-on-surface-variant);
+}

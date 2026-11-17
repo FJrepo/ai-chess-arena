@@ -19,6 +19,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Move quality](#move-quality) and [missed mates](#missed-mates)
 - [Conversion metrics](#conversion-metrics)
 - [Analytics and reliability](#analytics-and-reliability)
+- [Leaderboard](#leaderboard)
 - [Live settings](#live-settings)
 - [Scope and interpretation](#scope-and-interpretation)
 
@@ -418,6 +419,18 @@ Comparison API rows carry `resignations`, `resignationsEvaluated`, `resignations
 OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; so does an answer that is cut off at the output-token limit. Games interrupted by a restart can be resumed.
 
 Recognized OpenRouter failures (rate limits, server or network errors, invalid key, no credits) are retried or pause the game with the reason, and the game can be resumed. A request that simply exceeds the time limit per move still counts as the model's timeout; one that exceeds the technical 10-minute safety cap does not.
+
+## Leaderboard
+
+Open **Leaderboard** next to Analytics to compare models across all tournaments and all time. Each OpenRouter model id starts at **1500 Elo**. Expected score is `1 / (1 + 10^((opponent rating - rating) / 400))`; the update is `K × (actual score - expected score)`. K is **32 for that model's first 30 rated appearances**, then **16**. Both sides use their pre-game ratings and their own K; calculations keep full precision and only displayed ratings are rounded. Rows rank by the unrounded rating, then model id, so equal displayed ratings may have different ranks.
+
+Finished model-vs-model games count, including checkmate, resignation, adjudication, draws (½ point each) and forfeits (a loss for the forfeiting side). **Include forfeits** is on by default; turning it off replays the entire history using only over-the-board results, changing ratings, game counts, records and last played together. The Forfeits column counts the model's own forfeited losses in the selected sample. Byes, cancelled games, games with either human side and unfinished games are excluded. Finished games in a cancelled tournament still count. A result without a completion timestamp is excluded because it cannot be ordered reliably.
+
+Games replay chronologically by `completedAt`, then lexicographic game id. Model identity is the exact OpenRouter id (surrounding whitespace is trimmed), independent of participant nicknames, instructions or reasoning effort. Display names use the final segment of the id. Moving ids such as `~anthropic/claude-sonnet-latest` remain separate from concrete versions and carry a **Latest alias** badge: their results may span different underlying versions. **Provisional** means fewer than 10 rated appearances. Self-play counts both sides as appearances, with one win and one loss (or two draws), no net rating change and one history point for the game. Rating uses stored game outcomes, so duplicate move rows and book moves cannot add rating events; opening choice has no separate rating adjustment.
+
+Sparklines show the last **50 post-game ratings** per model, each scaled independently to show its own trend. Earlier games still contribute to the current rating. Only models with rated games appear. Use **Refresh** after games finish; every API request recomputes from stored results without a cache, model-catalog lookup or move-history scan. ACPL and first-try legality remain on the existing **Analytics** page, linked above the table; those tables have their own date and tournament filters. Arena Elo reflects this local sample and its opponents and settings; it is not a general chess or model benchmark.
+
+API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true` when absent) accepts case-insensitive `true` or `false`; any other supplied value, including an empty string, returns HTTP 400 with `{"error":"includeForfeits must be true or false"}`. A successful response contains `includeForfeits`, `gamesCount` (distinct rated games) and ranked `models`. Each row carries `modelId`, `displayName`, rounded `rating`, `games`, `wins`, `draws`, `losses`, `forfeits`, `lastPlayed`, `provisional`, `alias` and `ratingHistory`. Each history point has `gameId`, `completedAt` and rounded `rating`, oldest first, capped at 50 per model. No persistence, migration or backfill is needed; existing data stays unchanged. Deploying the view requires rebuilding both backend and frontend.
 
 ## Live settings
 

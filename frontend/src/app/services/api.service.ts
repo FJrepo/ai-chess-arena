@@ -13,6 +13,7 @@ import {
   Opening,
 } from '../models/tournament.model';
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
+import { LeaderboardResponse } from '../models/leaderboard.model';
 import { ReasoningEffort } from '../utils/reasoning-effort';
 import {
   AnalyticsComparisonResponse,
@@ -217,6 +218,12 @@ export class ApiService {
     return this.http.get<TournamentCostSummary>(
       `${this.baseUrl}/tournaments/${tournamentId}/cost-summary`,
     );
+  }
+
+  getLeaderboard(includeForfeits = true): Observable<LeaderboardResponse> {
+    return this.http.get<LeaderboardResponse>(`${this.baseUrl}/analytics/leaderboard`, {
+      params: { includeForfeits },
+    });
   }
 
   getAnalyticsHealth(params?: {

@@ -18,6 +18,10 @@ export const routes: Routes = [
       import('./pages/analytics-dashboard/analytics-dashboard').then((m) => m.AnalyticsDashboard),
   },
   {
+    path: 'leaderboard',
+    loadComponent: () => import('./pages/leaderboard/leaderboard').then((m) => m.Leaderboard),
+  },
+  {
     path: 'system',
     loadComponent: () => import('./pages/system-status/system-status').then((m) => m.SystemStatus),
   },
