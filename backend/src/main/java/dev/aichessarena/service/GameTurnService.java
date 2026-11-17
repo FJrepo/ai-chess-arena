@@ -330,8 +330,17 @@ public class GameTurnService {
                 recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
                 return TurnResult.stopped();
             }
+            // Attempt recording can pause the run and stop its loop at the budget cap. Finalize the
+            // committed move first, using the live board (including repetition history). The lifecycle
+            // rechecks cancellation under the locks before completing or advancing the tournament.
+            boolean terminal = chessService.isGameOver(request.board());
+            if (terminal) {
+                gameLifecycleService.completeGame(request.gameId(), chessService.getGameEndInfo(request.board()));
+            } else {
+                terminal = gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
+            }
             recordAttempt(request, effort, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
-            return TurnResult.recorded(parseResult.move(), message);
+            return terminal ? TurnResult.terminal() : TurnResult.recorded(parseResult.move(), message);
         }
 
         if (autoRuns != null && !autoRuns.beforeRequest(request.gameId())) return TurnResult.paused();

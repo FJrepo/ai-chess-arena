@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -15,7 +16,9 @@ import dev.aichessarena.entity.Tournament.AutoRunStatus;
 import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.repository.TournamentRepository;
+import dev.aichessarena.websocket.GameWebSocket;
 import io.quarkus.arc.ClientProxy;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusMock;
@@ -38,6 +41,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @QuarkusTest
@@ -45,6 +49,9 @@ class TournamentAutoRunIT {
     @Inject TournamentAutoRunService runs;
     @Inject TournamentRepository tournaments;
     @Inject GameRepository games;
+    @Inject MoveRepository moves;
+    @Inject ChessService chess;
+    @Inject GameMoveService gameMoves;
     @Inject GameLifecycleService lifecycle;
     @Inject GameEngineService engine;
     @Inject GameTurnService turns;
@@ -400,6 +407,222 @@ class TournamentAutoRunIT {
         }, OpenRouterService.class);
         assertTrue(turns.playTurn(turnRequest(gameId)).pausedGame());
         assertBudgetPause(id, gameIds(id), "Budget of $0.01 reached ($0.01 spent)");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "1, 7k/5Q2/6K1/8/8/8/8/8 w - - 0 1, Qg7#, CHECKMATE, WHITE_WINS",
+        "3, 7k/5Q2/6K1/8/8/8/8/8 w - - 0 1, Qg7#, CHECKMATE, WHITE_WINS",
+        "1, 7k/8/5KQ1/8/8/8/8/8 w - - 0 1, Qf7, STALEMATE, DRAW",
+        "1, 7k/8/8/8/8/3r4/2B5/K7 w - - 0 1, Bxd3, INSUFFICIENT_MATERIAL, DRAW",
+        "1, 7k/8/8/8/8/8/R7/K7 w - - 99 1, Ra3, FIFTY_MOVE, DRAW"
+    })
+    void terminalMoveAtBudgetCapCompletesAndAdvancesBeforePausingRemainingGames(
+            int bestOf, String fen, String san, String reason, String result) {
+        UUID id = budgetBracket(bestOf);
+        UUID gameId = starts.getFirst();
+        QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).currentFen = fen);
+        finishAtCap(id, gameId, "{\"move\":\"" + san + "\"}", reason, result, bestOf);
+    }
+
+    @Test
+    void repetitionAtBudgetCapUsesTheBoardsMoveHistoryAndAdvances() {
+        UUID id = budgetBracket(1);
+        UUID gameId = starts.getFirst();
+        preparePlies(gameId, List.of("Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1"));
+        finishAtCap(id, gameId, "{\"move\":\"Ng8\"}", "REPETITION", "DRAW", 1);
+    }
+
+    @Test
+    void resignationAtBudgetCapCompletesAndAdvancesBeforePausingRemainingGames() {
+        UUID id = budgetBracket(1);
+        UUID gameId = starts.getFirst();
+        preparePlies(gameId, List.of("e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O",
+                "Be7", "Re1", "b5", "Bb3", "d6", "c3", "O-O", "h3", "Nb8"));
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(id).resignationAllowed = true);
+        finishAtCap(id, gameId, "{\"resign\":true}", "RESIGNATION", "BLACK_WINS", 1);
+    }
+
+    @Test
+    void storedAdjudicationAtBudgetCapCompletesAndAdvancesBeforePausingRemainingGames() {
+        UUID id = budgetBracket(1);
+        UUID gameId = starts.getFirst();
+        preparePlies(gameId, List.of("e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O"));
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(id).adjudicationEnabled = true);
+        QuarkusMock.installMockForType(new StockfishService() {
+            @Override public java.util.concurrent.CompletableFuture<EvalResult> evaluate(String fen, int depth) {
+                return new java.util.concurrent.CompletableFuture<>();
+            }
+        }, StockfishService.class);
+        GameMoveService realMoves = ClientProxy.unwrap(gameMoves);
+        QuarkusMock.installMockForType(new GameMoveService() {
+            @Override public void recordModelMove(UUID changedId, int moveNumber, String color, String san,
+                    String fen, String model, String player, String message, OpenRouterService.LlmResponse response,
+                    int retries, String promptVersion, String promptHash, String expectedFen,
+                    dev.aichessarena.entity.ChatMode chatMode) {
+                realMoves.recordModelMove(changedId, moveNumber, color, san, fen, model, player, message, response,
+                        retries, promptVersion, promptHash, expectedFen, chatMode);
+                // Model an evaluation already committed when the move returns. Never wait for the
+                // asynchronous engine future: unavailable evaluations must not delay a budget pause.
+                QuarkusTransaction.requiringNew().run(() -> moves.findByGameId(changedId).getLast().evaluationCp = 1230);
+            }
+        }, GameMoveService.class);
+        finishAtCap(id, gameId, "{\"move\":\"Be7\"}", "ADJUDICATION", "WHITE_WINS", 1);
+    }
+
+    @Test
+    void nonterminalMoveAtBudgetCapPausesWithoutWaitingForAdjudicationEvaluations() {
+        UUID id = budgetBracket(1);
+        UUID gameId = starts.getFirst();
+        preparePlies(gameId, List.of("e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O"));
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(id).adjudicationEnabled = true);
+        QuarkusMock.installMockForType(new StockfishService() {
+            @Override public java.util.concurrent.CompletableFuture<EvalResult> evaluate(String fen, int depth) {
+                return new java.util.concurrent.CompletableFuture<>();
+            }
+        }, StockfishService.class);
+        paidAnswer("{\"move\":\"Be7\"}");
+        runLoop(gameId);
+        assertBudgetPause(id, starts, "Budget of $0.01 reached ($0.01 spent)");
+        assertNull(snapshot(gameId).result());
+        assertNull(snapshot(gameId).advancedParticipantId());
+        assertEquals(3, gameIds(id).size());
+    }
+
+    @Test
+    void cancellationAfterRecordingAMatingMoveStillPreventsCompletionAndAdvancement() {
+        UUID id = budgetBracket(1);
+        UUID gameId = starts.getFirst();
+        QuarkusTransaction.requiringNew().run(() ->
+                games.findById(gameId).currentFen = "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1");
+        QuarkusMock.installMockForType(new ChessService() {
+            @Override public boolean isGameOver(Board board) {
+                boolean terminal = super.isGameOver(board);
+                if (terminal) tournamentService.cancelTournament(id);
+                return terminal;
+            }
+        }, ChessService.class);
+        paidAnswer("{\"move\":\"Qg7#\"}");
+        runLoop(gameId);
+        GameDto finished = snapshot(gameId);
+        assertEquals("CANCELLED", finished.status());
+        assertNull(finished.result());
+        assertNull(finished.advancedParticipantId());
+        assertEquals(3, gameIds(id).size(), "no new series game");
+        assertTrue(QuarkusTransaction.requiringNew().call(() -> games.findByTournamentId(id).stream()
+                .filter(g -> "Final".equals(g.bracketRound))
+                .allMatch(g -> g.whiteParticipant == null && g.blackParticipant == null)));
+        assertEquals(AutoRunStatus.OFF, runStatus(id));
+        assertEquals(1, QuarkusTransaction.requiringNew().call(() -> moves.findByGameId(gameId).size()));
+    }
+
+    private UUID budgetBracket(int bestOf) {
+        UUID id = QuarkusTransaction.requiringNew().call(() -> {
+            Tournament t = new Tournament();
+            t.name = "Terminal answer at budget cap";
+            t.matchupBestOf = bestOf;
+            tournaments.persist(t);
+            for (int i = 0; i < 4; i++) participant(t, "Player " + i, i);
+            return t.id;
+        });
+        seeded.add(id);
+        tournamentService.generateBracket(id, dev.aichessarena.entity.BracketDrawMode.ORDER);
+        configure(id, "{\"maxConcurrentGames\":2,\"budgetUsd\":0.01}", true);
+        runs.schedule(id);
+        assertEquals(2, starts.size());
+        return id;
+    }
+
+    private void preparePlies(UUID gameId, List<String> sans) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game game = games.findById(gameId);
+            Board board = new Board();
+            for (String san : sans) {
+                var move = new dev.aichessarena.entity.Move();
+                move.game = game;
+                move.moveNumber = chess.getMoveNumber(board);
+                move.color = chess.getSideToMove(board);
+                move.san = san;
+                var applied = chess.validateAndApply(board, san);
+                assertTrue(applied.valid(), san);
+                move.fen = applied.fen();
+                move.evaluationCp = 1230;
+                moves.persist(move);
+            }
+            game.currentFen = board.getFen();
+        });
+    }
+
+    private void paidAnswer(String content) {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        QuarkusMock.installMockForType(new OpenRouterService() {
+            @Override public LlmResponse chat(String model, List<ChatMsg> history, AnswerDeadline deadline,
+                                              int tokens, dev.aichessarena.entity.ReasoningEffort effort) {
+                assertEquals(1, calls.incrementAndGet(), "no second request after the terminal answer");
+                return new LlmResponse(content, 1, 1, 0.01, 1, content, false, null);
+            }
+        }, OpenRouterService.class);
+    }
+
+    private void runLoop(UUID gameId) {
+        QuarkusMock.installMockForType(realEngine, GameEngineService.class);
+        GameEngineService.GameLoop loop = realEngine.tryClaimLoop(gameId);
+        assertNotNull(loop);
+        try {
+            realEngine.runGameLoop(gameId, loop, null, null);
+        } finally {
+            realEngine.releaseLoop(gameId, loop);
+        }
+    }
+
+    private void finishAtCap(UUID id, UUID gameId, String answer, String reason, String result, int bestOf) {
+        List<String> announcements = new ArrayList<>();
+        QuarkusMock.installMockForType(new GameWebSocket() {
+            @Override public void broadcastGameStatus(UUID changedId, String status, String announcedResult,
+                    String announcedReason, int totalMoves, BigDecimal cost, String activeColor,
+                    java.time.Instant startedAt, java.time.Instant deadlineAt, String detail, String chatMode) {}
+
+            @Override public void broadcastMove(UUID changedId, int moveNumber, String color, String san,
+                    String fen, String pgn, String model, long responseTimeMs, int retries, boolean override) {}
+
+            @Override public void broadcastAttemptsUpdated(UUID changedId) {}
+
+            @Override public void broadcastEvaluation(UUID changedId, int moveNumber, String color, Integer cp,
+                    Integer mate, List<dev.aichessarena.dto.PlyQualityDto> qualities,
+                    dev.aichessarena.dto.GameQualitySummaryDto qualitySummary) {}
+
+            @Override public void broadcastStatusChange(UUID changedId, String status, String announcedResult,
+                    String announcedReason, int totalMoves, BigDecimal cost, String detail, long revision) {
+                // Separate transactions must see completed state and progression before any budget pause.
+                GameDto stored = snapshot(gameId);
+                assertEquals("COMPLETED", stored.status());
+                assertEquals(result, stored.result());
+                assertEquals(reason, stored.resultReason());
+                assertProgression(id, gameId, bestOf);
+                assertEquals(status, status(changedId).name());
+                if (changedId.equals(gameId)) {
+                    assertEquals(AutoRunStatus.RUNNING, runStatus(id));
+                    assertEquals("COMPLETED", status);
+                    assertEquals(stored.statusRevision(), revision);
+                }
+                announcements.add(status);
+            }
+        }, GameWebSocket.class);
+        paidAnswer(answer);
+        runLoop(gameId);
+        assertEquals(List.of("COMPLETED", "PAUSED"), announcements);
+        assertNull(snapshot(gameId).statusDetail());
+        assertEquals(0, new BigDecimal("0.01").compareTo(snapshot(gameId).totalCostUsd()));
+        assertBudgetPause(id, List.of(starts.get(1)), "Budget of $0.01 reached ($0.01 spent)");
+        runs.schedule(id);
+        assertEquals(2, starts.size(), "remaining waiting games must not start");
+    }
+
+    private void assertProgression(UUID id, UUID gameId, int bestOf) {
+        assertTrue(QuarkusTransaction.requiringNew().call(() -> games.findByTournamentId(id).stream().anyMatch(g ->
+                g.status == GameStatus.WAITING && (bestOf == 1
+                        ? "Final".equals(g.bracketRound) && (g.whiteParticipant != null || g.blackParticipant != null)
+                        : g.seriesId.equals(games.findById(gameId).seriesId) && g.seriesGameNumber == 2))));
     }
 
     @Test

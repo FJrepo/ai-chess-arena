@@ -98,9 +98,10 @@
               <mat-label>Budget (USD, optional)</mat-label>
               <input
                 matInput
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text"
+                inputmode="decimal"
+                [attr.aria-invalid]="!validRunBudget"
+                [attr.aria-describedby]="!validRunBudget ? 'run-budget-error' : null"
                 [(ngModel)]="runBudget"
                 (ngModelChange)="runDraftDirty = true"
                 [disabled]="!canRun()"
@@ -135,6 +136,12 @@
               Save limits
             </button>
           </div>
+          @if (!validRunBudget) {
+            <p id="run-budget-error" role="alert">
+              Enter a positive budget with at most two decimal places, or clear the field for no
+              cap.
+            </p>
+          }
           <p class="run-hint">
             Paused games need manual attention in the game view after resuming the run. Human games
             start manually. In-flight answers can exceed the budget.

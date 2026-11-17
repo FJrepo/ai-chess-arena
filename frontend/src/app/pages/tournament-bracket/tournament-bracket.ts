@@ -44,7 +44,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   cancelling = signal(false);
   runBusy = signal(false);
   runConcurrency = 2;
-  runBudget: number | null = null;
+  runBudget = '';
   runDraftDirty = false;
   readonly concurrencyOptions = [1, 2, 3, 4, 5, 6, 7, 8];
   readonly runningGames = computed(
@@ -64,11 +64,21 @@ export class TournamentBracket implements OnInit, OnDestroy {
       Number.isInteger(this.runConcurrency) &&
       this.runConcurrency >= 1 &&
       this.runConcurrency <= 8 &&
-      (this.runBudget === null ||
-        (Number.isFinite(this.runBudget) &&
-          this.runBudget > 0 &&
-          Math.abs(this.runBudget * 100 - Math.round(this.runBudget * 100)) < 0.000001))
+      this.validRunBudget
     );
+  }
+
+  get validRunBudget(): boolean {
+    return (
+      this.runBudget === '' ||
+      (/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(this.runBudget) &&
+        Number.isFinite(Number(this.runBudget)) &&
+        Number(this.runBudget) > 0)
+    );
+  }
+
+  private get runBudgetUsd(): number | null {
+    return this.runBudget === '' ? null : Number(this.runBudget);
   }
 
   readonly canCancel = computed(() => {
@@ -169,7 +179,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.changeRun(() =>
       this.api.runTournament(this.tournamentId, {
         maxConcurrentGames: this.runConcurrency,
-        budgetUsd: this.runBudget,
+        budgetUsd: this.runBudgetUsd,
       }),
     );
   }
@@ -179,7 +189,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.changeRun(() =>
       this.api.updateTournamentRun(this.tournamentId, {
         maxConcurrentGames: this.runConcurrency,
-        budgetUsd: this.runBudget,
+        budgetUsd: this.runBudgetUsd,
       }),
     );
   }
@@ -191,7 +201,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
 
   private syncRunSettings(t: Tournament): void {
     this.runConcurrency = t.maxConcurrentGames ?? 2;
-    this.runBudget = t.budgetUsd ?? null;
+    this.runBudget = t.budgetUsd == null ? '' : String(t.budgetUsd);
   }
 
   private changeRun(request: () => Observable<Tournament>): void {

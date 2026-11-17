@@ -83,7 +83,7 @@ describe('TournamentBracket', () => {
   it('runs with selected concurrency and nullable budget and renders spend and attention', () => {
     const { fixture, component, api, current } = runPage();
     component.runConcurrency = 3;
-    component.runBudget = null;
+    component.runBudget = '';
     component.runTournament();
     expect(api.runTournament).toHaveBeenCalledWith('t-1', {
       maxConcurrentGames: 3,
@@ -113,7 +113,7 @@ describe('TournamentBracket', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Paused by user');
     expect(fixture.nativeElement.querySelector('.start-run').textContent).toContain('Resume run');
-    component.runBudget = 10;
+    component.runBudget = '10';
     component.saveRunSettings();
     expect(api.updateTournamentRun).toHaveBeenCalledWith('t-1', {
       maxConcurrentGames: 2,
@@ -137,7 +137,7 @@ describe('TournamentBracket', () => {
     expect(api.updateTournamentRun).not.toHaveBeenCalled();
   });
 
-  it.each([0, -1, 0.001, Number.NaN, Number.POSITIVE_INFINITY])(
+  it.each(['0', '-1', '0.001', 'NaN', 'Infinity', '1e', 'abc', ' '])(
     'rejects invalid budget %s',
     (budget) => {
       const { component, api } = runPage();
@@ -148,12 +148,85 @@ describe('TournamentBracket', () => {
     },
   );
 
+  it.each(['OFF', 'PAUSED', 'RUNNING'] as const)(
+    'preserves malformed 1e and blocks run/resume/save with a message when %s',
+    async (status) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      await fixture.whenStable();
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      expect(input.value).toBe('5');
+      input.value = '1e';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(component.runBudget).toBe('1e');
+      expect(component.validRunSettings).toBe(false);
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain(
+        'Enter a positive budget with at most two decimal places',
+      );
+      const run = fixture.nativeElement.querySelector('.start-run') as HTMLButtonElement | null;
+      if (run) expect(run.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.save-run').disabled).toBe(true);
+      component.runTournament();
+      component.saveRunSettings();
+      component.loadTournament();
+      expect(component.runBudget).toBe('1e');
+      expect(api.runTournament).not.toHaveBeenCalled();
+      expect(api.updateTournamentRun).not.toHaveBeenCalled();
+      expect(component.tournament()?.budgetUsd).toBe(5);
+    },
+  );
+
+  it.each(['OFF', 'PAUSED', 'RUNNING'] as const)(
+    'allows deliberately clearing an existing cap after malformed input when %s',
+    async (status) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      await fixture.whenStable();
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      input.value = '1e';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(component.runBudget).toBe('');
+      expect(component.validRunSettings).toBe(true);
+      expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+      const action = status === 'RUNNING' ? '.save-run' : '.start-run';
+      expect(fixture.nativeElement.querySelector(action).disabled).toBe(false);
+      (fixture.nativeElement.querySelector(action) as HTMLButtonElement).click();
+      const request = status === 'RUNNING' ? api.updateTournamentRun : api.runTournament;
+      expect(request).toHaveBeenCalledExactlyOnceWith('t-1', {
+        maxConcurrentGames: 2,
+        budgetUsd: null,
+      });
+    },
+  );
+
+  it('submits a decimal budget as a number after correcting invalid input', async () => {
+    const { fixture, component, api } = runPage();
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    for (const value of ['1e', '1.25']) {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+    }
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledExactlyOnceWith('t-1', {
+      maxConcurrentGames: 2,
+      budgetUsd: 1.25,
+    });
+  });
+
   it('keeps drafts across polls and ignores a poll predating a run change', () => {
     const { component, api, current } = runPage();
-    component.runBudget = 9;
+    component.runBudget = '9';
     component.runDraftDirty = true;
     component.loadTournament();
-    expect(component.runBudget).toBe(9);
+    expect(component.runBudget).toBe('9');
     const oldPoll = new Subject<Tournament>();
     api.getTournament.mockReturnValueOnce(oldPoll);
     component.loadTournament();
