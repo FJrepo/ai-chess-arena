@@ -7,10 +7,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Flyway `V23__queued_game_resume.sql` adds nullable `games.resume_requested_at` with no backfill. Rebuild and recreate the backend and frontend to enable queued resumes.
+
+### Added
+
+### Changed
+
 ### Fixed
+
+- Resume actions queue while auto-run slots are occupied or reserved. Older requests reserve slots first, and a stopping loop leaves surplus slots available. API clients can opt in with `queueIfFull=true` on `/start`.
+- Cancel queued resumes by revision from the bracket or game view. The bracket keeps newer queue updates when saving run limits, and game polling refreshes the board and move history when a queued game resumes or finishes.
 - Tournament setup and the API accept 1–20 attempts per move. Games with older zero or negative limits get one attempt.
 - Attempt history attributes timeouts caused by provider retries to the provider, so they do not count against the model.
 - Reliability and comparison count each played ply once, even in older games with duplicate moves. Spend includes every paid answer.
+- Viewers receive moves and accompanying chat only after the move is saved, with chat shown first.
+- New scoresheet and PGN entries use the board's move notation, including accurate check and mate markers. Attempt history keeps the model's original move.
+- Switching among many analytics filters now uses bounded cache memory.
 
 ## [1.7.0] - 2026-11-17
 

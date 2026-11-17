@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
@@ -19,8 +20,11 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -62,35 +66,80 @@ public class GameLifecycleService {
     TournamentRunScheduler runScheduler;
 
     /**
-     * Moves a WAITING or PAUSED game to IN_PROGRESS under the tournament and game row locks.
+     * Starts a WAITING or PAUSED game under the tournament and game row locks, or records a queued resume.
      *
      * @return the game as it is after the transition
      * @throws WebApplicationException 404 if the game does not exist, 409 if it is in any other state
      */
     @Transactional
     public GameDto markGameStarted(UUID gameId) {
-        return markGameStarted(gameId, false);
+        return markGameStarted(gameId, false, false, () -> true);
     }
 
     @Transactional
-    public GameDto markGameStarted(UUID gameId, boolean automatic) {
-        Game game = gameRepository.findByIdForUpdate(gameId);
-        if (game == null) {
-            throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
-        }
+    GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
+        Game game = requireLockedGame(gameId);
         requireActiveTournament(game);
         if (keys != null) keys.requireKey();
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
-        if (autoRuns != null) autoRuns.requireStartAllowed(game, automatic);
+        if (autoRuns != null && autoRuns.shouldQueueResume(game, automatic, queueIfFull)) {
+            RunCapacity capacity;
+            if (game.resumeRequestedAt == null) {
+                game.resumeRequestedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+                game.statusRevision++;
+                capacity = announceStatus(game, null, null);
+            } else {
+                capacity = gameRepository.queuedResumeCapacity(game);
+            }
+            return DtoMapper.toDto(game, false, capacity);
+        }
+        if (!claimLoop.getAsBoolean()) {
+            if (automatic) return null;
+            throw new GameStateConflictException("The previous game loop is still running; try again shortly");
+        }
         game.status = GameStatus.IN_PROGRESS;
+        game.resumeRequestedAt = null;
         game.startedAt = game.startedAt != null ? game.startedAt : LocalDateTime.now();
         game.statusDetail = null;
         game.statusRevision++;
         gameRepository.persist(game);
         announceStatus(game, null, null);
         return DtoMapper.toDto(game, false);
+    }
+
+    @Transactional
+    public GameDto cancelResumeRequest(UUID gameId, long statusRevision) {
+        Game game = requireLockedGame(gameId);
+        if (game.resumeRequestedAt == null || game.statusRevision != statusRevision) {
+            throw new GameStateConflictException("The queued resume has changed; refresh and try again");
+        }
+        clearResumeRequest(game);
+        return DtoMapper.toDto(game, false);
+    }
+
+    /** All callers hold the tournament row lock, including when advancing the final game. */
+    void clearResumeRequests(UUID tournamentId) {
+        for (Game game : gameRepository.list("tournament.id = ?1 and resumeRequestedAt is not null", tournamentId)) {
+            clearResumeRequest(requireLockedGame(game.id));
+        }
+    }
+
+    private void clearResumeRequest(Game game) {
+        if (game.resumeRequestedAt != null) {
+            game.resumeRequestedAt = null;
+            game.statusRevision++;
+            announceStatus(game, null, null);
+        }
+    }
+
+    private Game requireLockedGame(UUID gameId) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null) {
+            throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
+        }
+        return game;
     }
 
     /** Called in the tournament cancellation transaction, under the tournament then game locks. */
@@ -101,6 +150,7 @@ public class GameLifecycleService {
             return;
         }
         game.status = GameStatus.CANCELLED;
+        game.resumeRequestedAt = null;
         game.result = null;
         game.resultReason = null;
         game.advancedParticipant = null;
@@ -183,6 +233,7 @@ public class GameLifecycleService {
             return;
         }
         game.status = GameStatus.COMPLETED;
+        game.resumeRequestedAt = null;
         game.result = GameResult.valueOf(endInfo.result());
         game.resultReason = ResultReason.valueOf(endInfo.reason());
         game.statusDetail = null;
@@ -253,6 +304,7 @@ public class GameLifecycleService {
             chatMessageRepository.persist(chat);
         }
         game.status = GameStatus.COMPLETED;
+        game.resumeRequestedAt = null;
         game.result = "WHITE".equals(color) ? GameResult.BLACK_WINS : GameResult.WHITE_WINS;
         game.resultReason = ResultReason.RESIGNATION;
         game.statusDetail = null;
@@ -317,7 +369,7 @@ public class GameLifecycleService {
      * {@code then} run right before and after it in the same callback, for messages that belong to the change.
      * Everything sent is read now, while the game is attached.
      */
-    private void announceStatus(Game game, Runnable first, Runnable then) {
+    private RunCapacity announceStatus(Game game, Runnable first, Runnable then) {
         if (runScheduler != null && game.tournament != null) {
             UUID tournamentId = game.tournament.id;
             AfterCommit.run(transactionRegistry, () -> runScheduler.changed(tournamentId));
@@ -328,6 +380,8 @@ public class GameLifecycleService {
         String result = game.result != null ? game.result.name() : null;
         String resultReason = game.resultReason != null ? game.resultReason.name() : null;
         String detail = game.statusDetail;
+        Instant resumeRequestedAt = game.resumeRequestedAt;
+        RunCapacity capacity = resumeRequestedAt == null ? null : gameRepository.queuedResumeCapacity(game);
         long revision = game.statusRevision;
         int moves = totalMoves(gameId);
         BigDecimal cost = game.totalCostUsd;
@@ -339,11 +393,13 @@ public class GameLifecycleService {
             if (first != null) {
                 first.run();
             }
-            gameWebSocket.broadcastStatusChange(gameId, status, result, resultReason, moves, cost, detail, revision);
+            gameWebSocket.broadcastStatusChange(
+                    gameId, status, result, resultReason, moves, cost, detail, revision, resumeRequestedAt, capacity);
             if (then != null) {
                 then.run();
             }
         });
+        return capacity;
     }
 
     /** Runs {@code broadcast} after the commit (see {@link AfterCommit}). */
@@ -358,6 +414,7 @@ public class GameLifecycleService {
             return null;
         }
         game.status = GameStatus.FORFEIT;
+        game.resumeRequestedAt = null;
         game.result = "WHITE".equals(forfeitColor) ? GameResult.WHITE_FORFEIT : GameResult.BLACK_FORFEIT;
         game.resultReason = reason;
         game.statusDetail = null;

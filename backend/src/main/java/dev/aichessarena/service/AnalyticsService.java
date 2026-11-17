@@ -31,16 +31,17 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -49,7 +50,6 @@ public class AnalyticsService {
 
     private static final int DEFAULT_DAYS = 30;
     private static final int MAX_DAYS = 3650;
-    private static final long CACHE_TTL_MS = 15_000L;
 
     @Inject
     GameRepository gameRepository;
@@ -71,9 +71,9 @@ public class AnalyticsService {
 
     private final AnalyticsReliabilityScorer reliabilityScorer = new AnalyticsReliabilityScorer();
 
-    private final Map<String, CacheEntry<AnalyticsHealthDto>> healthCache = new ConcurrentHashMap<>();
-    private final Map<String, CacheEntry<ModelReliabilityResponseDto>> reliabilityCache = new ConcurrentHashMap<>();
-    private final Map<String, CacheEntry<AnalyticsModelComparisonDto>> comparisonCache = new ConcurrentHashMap<>();
+    private final ResponseCache<AnalyticsHealthDto> healthCache = new ResponseCache<>();
+    private final ResponseCache<ModelReliabilityResponseDto> reliabilityCache = new ResponseCache<>();
+    private final ResponseCache<AnalyticsModelComparisonDto> comparisonCache = new ResponseCache<>();
 
     public TournamentCostSummaryDto getTournamentCostSummary(UUID tournamentId) {
         List<Game> games = gameRepository.findByTournamentId(tournamentId);
@@ -151,14 +151,14 @@ public class AnalyticsService {
     public AnalyticsHealthDto getHealth(int requestedDays, UUID tournamentId) {
         int days = normalizeDays(requestedDays);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all");
-        return getCached(healthCache, key, () -> buildHealth(days, tournamentId));
+        return healthCache.get(key, () -> buildHealth(days, tournamentId));
     }
 
     public ModelReliabilityResponseDto getReliability(int requestedDays, UUID tournamentId, int requestedMinGames) {
         int days = normalizeDays(requestedDays);
         int minGames = normalizeMinGames(requestedMinGames);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return getCached(reliabilityCache, key, () -> buildReliability(days, tournamentId, minGames));
+        return reliabilityCache.get(key, () -> buildReliability(days, tournamentId, minGames));
     }
 
     public ModelReliabilityDetailDto getReliabilityForModel(String modelId, int requestedDays, UUID tournamentId) {
@@ -201,7 +201,7 @@ public class AnalyticsService {
         int days = normalizeDays(requestedDays);
         int minGames = normalizeMinGames(requestedMinGames);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return getCached(comparisonCache, key, () -> buildComparison(days, tournamentId, minGames));
+        return comparisonCache.get(key, () -> buildComparison(days, tournamentId, minGames));
     }
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
@@ -969,25 +969,30 @@ public class AnalyticsService {
         return BigDecimal.valueOf(value).setScale(scale, RoundingMode.HALF_UP);
     }
 
-    private <T> T getCached(Map<String, CacheEntry<T>> cache, String key, Supplier<T> supplier) {
-        long now = System.currentTimeMillis();
-        CacheEntry<T> cached = cache.get(key);
-        if (cached != null && cached.expiresAtMs > now) {
-            return cached.value;
-        }
+    private static final class ResponseCache<T> {
+        private static final int MAX_FILTERS = 64;
+        private static final long TTL_NANOS = Duration.ofSeconds(15).toNanos();
+        private final LinkedHashMap<String, Entry<T>> entries = new LinkedHashMap<>(16, 0.75f, true);
 
-        T value = supplier.get();
-        cache.put(key, new CacheEntry<>(value, now + CACHE_TTL_MS));
-        return value;
-    }
+        private record Entry<T>(T value, long startedAt) {}
 
-    private static final class CacheEntry<T> {
-        private final T value;
-        private final long expiresAtMs;
+        T get(String key, Supplier<T> load) {
+            long startedAt = System.nanoTime();
+            synchronized (entries) {
+                entries.values().removeIf(entry -> startedAt - entry.startedAt() >= TTL_NANOS);
+                Entry<T> cached = entries.get(key);
+                if (cached != null) return cached.value();
+            }
 
-        private CacheEntry(T value, long expiresAtMs) {
-            this.value = value;
-            this.expiresAtMs = expiresAtMs;
+            // Database reads for independent filters can proceed concurrently.
+            T value = load.get();
+            synchronized (entries) {
+                if (System.nanoTime() - startedAt < TTL_NANOS) {
+                    entries.putIfAbsent(key, new Entry<>(value, startedAt));
+                    if (entries.size() > MAX_FILTERS) entries.pollFirstEntry();
+                }
+            }
+            return value;
         }
     }
 

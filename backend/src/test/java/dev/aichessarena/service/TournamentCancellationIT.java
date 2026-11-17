@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.CreateTournamentRequest;
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.dto.TournamentDto;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
@@ -31,6 +32,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -434,7 +436,8 @@ class TournamentCancellationIT {
         return new GameWebSocket() {
             @Override
             public void broadcastStatusChange(UUID id, String status, String result, String reason, int totalMoves,
-                                              BigDecimal cost, String detail, long revision) {
+                                              BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 assertNull(result);
                 assertNull(reason);
                 assertEquals(TournamentStatus.CANCELLED, QuarkusTransaction.requiringNew().call(

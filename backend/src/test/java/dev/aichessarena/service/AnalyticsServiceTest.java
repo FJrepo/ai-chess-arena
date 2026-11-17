@@ -3,7 +3,9 @@ package dev.aichessarena.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,6 +55,20 @@ import org.junit.jupiter.api.Test;
 class AnalyticsServiceTest {
 
     private static final LocalDateTime YESTERDAY = LocalDateTime.now().minusDays(1);
+
+    @Test
+    void analyticsCacheEvictsLeastRecentlyUsedFilters() {
+        AnalyticsService service = service(List.of(), List.of(), List.of());
+        var first = service.getHealth(1, null);
+        var second = service.getHealth(2, null);
+        for (int days = 3; days <= 64; days++) {
+            service.getHealth(days, null);
+        }
+        assertSame(first, service.getHealth(1, null));
+        service.getHealth(65, null);
+        assertSame(first, service.getHealth(1, null));
+        assertNotSame(second, service.getHealth(2, null));
+    }
 
     @Test
     void bookMovesNeverCountForModelHealthReliabilityCostChatQualityOrConversion() {

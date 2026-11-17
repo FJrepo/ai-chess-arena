@@ -331,7 +331,7 @@ public class GameTurnService {
                         request.gameId(),
                         request.moveNumber(),
                         request.sideToMove(),
-                        parseResult.move(),
+                        moveResult.san(),
                         moveResult.fen(),
                         request.modelId(),
                         request.playerName(),
@@ -360,7 +360,7 @@ public class GameTurnService {
                 terminal = gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
             }
             recordAttempt(request, effort, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
-            return terminal ? TurnResult.terminal() : TurnResult.recorded(parseResult.move(), message);
+            return terminal ? TurnResult.terminal() : TurnResult.recorded(moveResult.san(), message);
         }
 
         if (autoRuns != null && !autoRuns.beforeRequest(request.gameId())) return TurnResult.paused();

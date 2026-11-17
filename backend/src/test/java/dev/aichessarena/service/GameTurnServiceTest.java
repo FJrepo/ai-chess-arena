@@ -65,9 +65,11 @@ class GameTurnServiceTest {
         assertNull(fixture.lifecycle.pauseDetail);
     }
 
-    @Test
-    void successfulTurnRecordsMoveAndReturnsLastMessage() {
-        Fixture fixture = new Fixture(VALID_MOVE);
+    @ParameterizedTest
+    @ValueSource(strings = {"e4", "e4#", "e4+"})
+    void successfulTurnRecordsCanonicalSanAndKeepsTheProposedMove(String proposed) {
+        String content = "{\"move\":\"" + proposed + "\",\"message\":\"Hi\"}";
+        Fixture fixture = new Fixture(answer(content));
         List<OpenRouterService.ChatMsg> history = new ArrayList<>();
 
         GameTurnService.TurnResult result = fixture.service.playTurn(request(history, 3, 30));
@@ -79,7 +81,8 @@ class GameTurnServiceTest {
         assertEquals("e4", fixture.moves.lastRecordedSan);
         assertEquals("Hi", fixture.moves.lastRecordedMessage);
         assertEquals(new Board().getFen(), fixture.moves.lastExpectedFen);
-        assertTrue(history.stream().anyMatch(msg -> "assistant".equals(msg.role()) && msg.content().contains("\"move\":\"e4\"")));
+        assertTrue(history.stream().anyMatch(msg -> "assistant".equals(msg.role()) && content.equals(msg.content())));
+        assertEquals(proposed, fixture.attempts.recorded.getFirst().proposedMove());
     }
 
     @Test

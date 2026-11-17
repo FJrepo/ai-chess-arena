@@ -2,11 +2,14 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
@@ -35,6 +38,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Live updates are sent without blocking: the send finishes later on another thread (the Vert.x event loop in
@@ -48,7 +53,7 @@ class LiveUpdateTransactionIT {
 
     private static final String START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private static final String AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
-    private static final String INSIDE = "inside an active transaction";
+    private static final String INSIDE = "inside the sender's transaction";
 
     @Inject
     GameMoveService gameMoveService;
@@ -63,6 +68,12 @@ class LiveUpdateTransactionIT {
     MoveRepository moveRepository;
 
     @Inject
+    ChatMessageRepository chatRepository;
+
+    @Inject
+    ObjectMapper json;
+
+    @Inject
     TransactionManager transactionManager;
 
     @Inject
@@ -70,6 +81,7 @@ class LiveUpdateTransactionIT {
 
     private final ExecutorService eventLoop = Executors.newSingleThreadExecutor();
     private final List<String> callbackTransactions = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> moveAndChat = Collections.synchronizedList(new ArrayList<>());
     private final CountDownLatch callbackStarted = new CountDownLatch(1);
     private final CountDownLatch releaseCallback = new CountDownLatch(1);
     private WebSocketConnection viewer;
@@ -88,27 +100,66 @@ class LiveUpdateTransactionIT {
     }
 
     /**
-     * Regression: the send of the move update finishes while the move's transaction commits. Its callback must not
-     * run inside that transaction, and the move must commit.
+     * Exercise the transport directly inside an open transaction. Even a live send initiated there must let
+     * the move commit while the send finishes on the event loop.
      */
     @Test
-    void aMoveCommitsWhileItsUpdateIsStillBeingSent() {
-        UUID gameId = runningGame();
+    void aMoveCommitsWhileALiveUpdateIsStillBeingSent() {
+        UUID gameId = game(GameStatus.IN_PROGRESS);
         gameWebSocket.onMessage(viewer, "{\"type\":\"subscribe\",\"gameId\":\"%s\"}".formatted(gameId));
 
         try {
-            gameMoveService.recordModelMove(gameId, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", null,
-                    new LlmResponse("{\"move\":\"e4\"}", 10, 5, 0.001, 1, "{}", false, null), 0, "v2", "hash",
-                    START, ChatMode.OFF);
+            QuarkusTransaction.requiringNew().run(() -> {
+                gameWebSocket.broadcastRetry(gameId, "WHITE", 1, "Retry");
+                gameMoveService.recordModelMove(gameId, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", null,
+                        new LlmResponse("{\"move\":\"e4\"}", 10, 5, 0.001, 1, "{}", false, null), 1, "v2", "hash",
+                        START, ChatMode.OFF);
+            });
         } finally {
             releaseCallback.countDown();
         }
 
-        // The move update, and (with Stockfish unavailable in tests) the evaluation update sent after the commit.
-        assertFalse(callbackTransactions.isEmpty(), "the move update was not sent");
+        assertFalse(callbackTransactions.isEmpty(), "the live update was not sent");
         assertFalse(callbackTransactions.contains(INSIDE), "a send callback ran inside a transaction");
         assertEquals(1L, QuarkusTransaction.requiringNew().call(() -> moveRepository.count("game.id", gameId)));
         assertEquals(AFTER_E4, QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(gameId).currentFen));
+    }
+
+    enum MoveSource { MODEL, HUMAN, OVERRIDE }
+
+    @ParameterizedTest
+    @EnumSource(MoveSource.class)
+    void onlyCommittedMovesReachTheViewerWithChatFirst(MoveSource source) throws Exception {
+        UUID id = game(source == MoveSource.OVERRIDE ? GameStatus.PAUSED : GameStatus.IN_PROGRESS);
+        gameWebSocket.onMessage(viewer, "{\"type\":\"subscribe\",\"gameId\":\"%s\"}".formatted(id));
+        Runnable play = switch (source) {
+            case MODEL -> () -> gameMoveService.recordModelMove(id, 1, "WHITE", "e4", AFTER_E4, "test/white",
+                    "White", "Hello", new LlmResponse("e4", 10, 5, null, 1, "{}", false, null),
+                    0, "v2", "hash", START, ChatMode.OPTIONAL);
+            case HUMAN -> () -> gameMoveService.recordHumanMove(id, 1, "WHITE", "e4", AFTER_E4, "White", "Hello", START);
+            case OVERRIDE -> () -> gameMoveService.applyOverrideMove(id, "e4", START);
+        };
+
+        assertThrows(IllegalStateException.class, () -> QuarkusTransaction.requiringNew().run(() -> {
+            play.run();
+            throw new IllegalStateException("force rollback");
+        }));
+        assertEquals(0L, QuarkusTransaction.requiringNew().call(() -> moveRepository.count("game.id", id)));
+        assertEquals(0L, QuarkusTransaction.requiringNew().call(() -> chatRepository.count("game.id", id)));
+        assertTrue(moveAndChat.isEmpty(), () -> "rolled-back updates reached the viewer: " + moveAndChat);
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            play.run();
+            assertTrue(moveAndChat.isEmpty(), "the outer transaction is still open");
+        });
+        assertEquals(source == MoveSource.OVERRIDE ? List.of("1. e4") : List.of("Hello", "1. e4"), moveAndChat);
+        assertEquals(1L, QuarkusTransaction.requiringNew().call(() -> moveRepository.count("game.id", id)));
+        assertEquals(source == MoveSource.OVERRIDE ? 0L : 1L,
+                QuarkusTransaction.requiringNew().call(() -> chatRepository.count("game.id", id)));
+        releaseCallback.countDown();
+        // Wait for the single-threaded viewer to finish the committed sends before checking their context.
+        eventLoop.submit(() -> {}).get(10, TimeUnit.SECONDS);
+        assertFalse(callbackTransactions.contains(INSIDE), "a committed send carried the transaction");
     }
 
     /**
@@ -126,7 +177,14 @@ class LiveUpdateTransactionIT {
                     case "equals" -> proxy == args[0];
                     case "toString" -> "WebSocketConnection[" + id + "]";
                     case "isOpen" -> true;
-                    case "sendText" -> slowSend();
+                    case "sendText" -> {
+                        var message = json.readTree(args[0].toString());
+                        switch (message.path("type").asText()) {
+                            case "chat" -> moveAndChat.add(message.get("message").asText());
+                            case "move" -> moveAndChat.add(message.get("pgn").asText());
+                        }
+                        yield slowSend();
+                    }
                     default -> throw new UnsupportedOperationException(method.getName());
                 }
         );
@@ -162,7 +220,7 @@ class LiveUpdateTransactionIT {
     private void onWritten() {
         try {
             Transaction transaction = transactionManager.getTransaction();
-            boolean inside = transaction != null && transaction.getStatus() == Status.STATUS_ACTIVE;
+            boolean inside = transaction != null;
             callbackTransactions.add(inside ? INSIDE : "no transaction");
             callbackStarted.countDown();
             if (inside) {
@@ -175,14 +233,14 @@ class LiveUpdateTransactionIT {
         }
     }
 
-    private UUID runningGame() {
+    private UUID game(GameStatus status) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Game game = new Game();
             game.whitePlayerName = "White";
             game.whiteModelId = "test/white";
             game.blackPlayerName = "Black";
             game.blackModelId = "test/black";
-            game.status = GameStatus.IN_PROGRESS;
+            game.status = status;
             gameRepository.persist(game);
             return game.id;
         });

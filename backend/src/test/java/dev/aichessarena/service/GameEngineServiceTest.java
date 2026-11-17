@@ -91,6 +91,8 @@ class GameEngineServiceTest {
         assertNull(lifecycleService.pausedGameId, "the loop pauses itself after its turn");
         assertNull(service.tryClaimLoop(game.id), "a resume must not start a second loop while the first one runs");
         assertThrows(WebApplicationException.class, () -> service.startGame(game.id));
+        game.status = GameStatus.PAUSED;
+        assertThrows(GameStateConflictException.class, () -> service.startGame(game.id));
     }
 
     @Test
@@ -297,6 +299,11 @@ class GameEngineServiceTest {
 
         @Override
         public Game findById(UUID id) {
+            return games.get(id);
+        }
+
+        @Override
+        public Game findByIdForUpdate(UUID id) {
             return games.get(id);
         }
 

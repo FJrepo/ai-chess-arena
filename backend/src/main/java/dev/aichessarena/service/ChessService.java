@@ -44,10 +44,11 @@ public class ChessService {
             if (legalMove == null) {
                 return new ValidMoveResult(false, san, null, "Illegal move in current position");
             }
+            String canonicalSan = encodeToSan(board, legalMove);
             if (!board.doMove(legalMove, true)) {
                 return new ValidMoveResult(false, san, null, "Illegal move in current position");
             }
-            return new ValidMoveResult(true, san, board.getFen(), null);
+            return new ValidMoveResult(true, canonicalSan, board.getFen(), null);
         } catch (Exception e) {
             return new ValidMoveResult(false, san, null, e.getMessage());
         }

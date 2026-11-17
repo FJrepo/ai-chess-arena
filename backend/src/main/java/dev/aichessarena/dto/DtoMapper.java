@@ -59,6 +59,10 @@ public final class DtoMapper {
 
     /** With {@code includeMoves}, the moves carry their quality and the game its per-side quality summary. */
     public static GameDto toDto(Game g, boolean includeMoves) {
+        return toDto(g, includeMoves, null);
+    }
+
+    public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity) {
         List<MoveDto> moves = List.of();
         GameQualitySummaryDto qualitySummary = null;
         ResignationDto resignation = null;
@@ -88,6 +92,8 @@ public final class DtoMapper {
                 g.result != null ? g.result.name() : null,
                 g.resultReason != null ? g.resultReason.name() : null,
                 g.statusDetail,
+                g.resumeRequestedAt,
+                runCapacity,
                 g.advancedParticipant != null ? g.advancedParticipant.playerName : null,
                 g.advancedParticipant != null ? g.advancedParticipant.id : null,
                 g.pgn, g.currentFen,

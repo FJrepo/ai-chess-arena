@@ -1,6 +1,7 @@
 package dev.aichessarena.dto;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,8 @@ public record GameDto(
         String result,
         String resultReason,
         String statusDetail,
+        Instant resumeRequestedAt,
+        RunCapacity runCapacity,
         String advancedPlayerName,
         UUID advancedParticipantId,
         String pgn,
@@ -53,4 +56,7 @@ public record GameDto(
         String openingId,
         String openingName,
         String openingEco
-) {}
+) {
+    /** Present on individual game reads and status changes while a resume is queued. */
+    public record RunCapacity(long runningGames, int maxConcurrentGames) {}
+}

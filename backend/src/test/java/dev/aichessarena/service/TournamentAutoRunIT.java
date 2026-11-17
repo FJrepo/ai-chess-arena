@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
@@ -26,6 +27,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -78,14 +80,17 @@ class TournamentAutoRunIT {
             @Override void tick() {}
         }, TournamentRunScheduler.class);
         QuarkusMock.installMockForType(new GameEngineService() {
-            @Override public GameDto startWaitingGame(UUID id) {
-                GameDto result = lifecycle.markGameStarted(id, true);
+            @Override public GameDto startScheduledGame(UUID id) {
+                GameDto result = lifecycle.markGameStarted(id, true, false, () -> true);
                 starts.add(id);
                 return result;
             }
             @Override public GameDto startGame(UUID id) {
-                GameDto result = lifecycle.markGameStarted(id);
-                starts.add(id);
+                return startGame(id, false);
+            }
+            @Override public GameDto startGame(UUID id, boolean queueIfFull) {
+                GameDto result = lifecycle.markGameStarted(id, false, queueIfFull, () -> true);
+                if (result.resumeRequestedAt() == null) starts.add(id);
                 return result;
             }
             @Override public void requestStop(UUID id) {}
@@ -236,6 +241,380 @@ class TournamentAutoRunIT {
         assertEquals(GameStatus.PAUSED, status(ids.get(3)));
         assertEquals(GameStatus.WAITING, status(ids.get(4)));
         assertEquals(GameStatus.WAITING, status(ids.get(5)));
+    }
+
+    @Test
+    void resumeWithAFreeSlotStartsImmediatelyAndClearsPauseReason() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.IN_PROGRESS);
+        UUID game = gameIds(id).getLast();
+        configure(id, "{\"maxConcurrentGames\":2}", true);
+        lifecycle.pauseWithReason(game, "Answer cut off");
+
+        var resumed = engine.startGame(game);
+
+        assertEquals(List.of(game), starts);
+        assertEquals("IN_PROGRESS", resumed.status());
+        assertNull(resumed.statusDetail());
+        assertNull(snapshot(game).resumeRequestedAt());
+    }
+
+    @Test
+    void fullRunQueuesIdempotentlyAndApiCancelClearsOnlyTheRequest() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.IN_PROGRESS);
+        UUID game = gameIds(id).getLast();
+        lifecycle.pauseWithReason(game, "Answer cut off");
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        List<String> announcements = new ArrayList<>();
+        QuarkusMock.installMockForType(new GameWebSocket() {
+            @Override public void broadcastStatusChange(UUID changed, String status, String result, String reason,
+                    int moves, BigDecimal cost, String detail, long revision, Instant requested, RunCapacity capacity) {
+                assertEquals(game, changed);
+                assertEquals(requested, snapshot(game).resumeRequestedAt());
+                assertEquals("PAUSED", status);
+                assertEquals("Answer cut off", detail);
+                if (requested != null) assertEquals(new RunCapacity(1, 1), capacity);
+                announcements.add(requested == null ? "cleared" : "queued");
+            }
+        }, GameWebSocket.class);
+
+        var queued = given().contentType("application/json").body("{}")
+                .queryParam("queueIfFull", true).post("/api/games/{id}/start", game).then().statusCode(200)
+                .body("status", equalTo("PAUSED"))
+                .body("statusDetail", equalTo("Answer cut off"))
+                .body("runCapacity.runningGames", equalTo(1))
+                .body("runCapacity.maxConcurrentGames", equalTo(1))
+                .extract().as(GameDto.class);
+        assertNotNull(queued.resumeRequestedAt());
+        assertEquals(queued.resumeRequestedAt(), snapshot(game).resumeRequestedAt());
+        given().contentType("application/json").body("{}")
+                .queryParam("queueIfFull", true).post("/api/games/{id}/start", game).then().statusCode(200)
+                .body("resumeRequestedAt", equalTo(queued.resumeRequestedAt().toString()))
+                .body("statusRevision", equalTo((int) queued.statusRevision()));
+        given().get("/api/games/{id}", game).then().statusCode(200)
+                .body("resumeRequestedAt", equalTo(queued.resumeRequestedAt().toString()));
+        given().queryParam("statusRevision", queued.statusRevision())
+                .delete("/api/games/{id}/resume-request", game).then().statusCode(200)
+                .body("resumeRequestedAt", nullValue())
+                .body("statusDetail", equalTo("Answer cut off"));
+        given().queryParam("statusRevision", queued.statusRevision())
+                .delete("/api/games/{id}/resume-request", game).then().statusCode(409);
+        given().queryParam("statusRevision", queued.statusRevision())
+                .delete("/api/games/{id}/resume-request", UUID.randomUUID()).then().statusCode(404);
+
+        assertEquals(List.of("queued", "cleared"), announcements);
+        assertNull(snapshot(game).resumeRequestedAt());
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
+    void startApiRequiresOptInToQueueAndStillStartsImmediatelyWhenThereIsRoom() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        List<UUID> ids = gameIds(id);
+        UUID paused = ids.getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused).then().statusCode(409)
+                .body("error", equalTo("Tournament concurrency limit reached"));
+        given().contentType("application/json").body("{}").queryParam("queueIfFull", false)
+                .post("/api/games/{id}/start", paused).then().statusCode(409);
+        given().contentType("application/json").body("{}").queryParam("queueIfFull", "yes")
+                .post("/api/games/{id}/start", paused).then().statusCode(400)
+                .body("error", equalTo("queueIfFull must be true or false"));
+        assertNull(snapshot(paused).resumeRequestedAt());
+
+        lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
+        given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused).then().statusCode(200)
+                .body("status", equalTo("IN_PROGRESS"))
+                .body("resumeRequestedAt", nullValue());
+        assertEquals(GameStatus.IN_PROGRESS, status(paused));
+    }
+
+    @Test
+    void staleCancelCannotDeleteAReplacementRequest() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        UUID game = gameIds(id).getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        GameDto first = engine.startGame(game, true);
+        given().delete("/api/games/{id}/resume-request", game).then().statusCode(400);
+        given().queryParam("statusRevision", -1).delete("/api/games/{id}/resume-request", game)
+                .then().statusCode(400);
+        given().queryParam("statusRevision", first.statusRevision()).delete("/api/games/{id}/resume-request", game)
+                .then().statusCode(200);
+
+        GameDto replacement = engine.startGame(game, true);
+        given().queryParam("statusRevision", first.statusRevision()).delete("/api/games/{id}/resume-request", game)
+                .then().statusCode(409)
+                .body("error", equalTo("The queued resume has changed; refresh and try again"));
+        assertEquals(replacement.statusRevision(), snapshot(game).statusRevision());
+        assertEquals(replacement.resumeRequestedAt(), snapshot(game).resumeRequestedAt());
+        given().queryParam("statusRevision", replacement.statusRevision())
+                .delete("/api/games/{id}/resume-request", game).then().statusCode(200);
+    }
+
+    @Test
+    void newerManualResumeQueuesBehindAnOlderRequestWhenTheOnlySlotFrees() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED, GameStatus.PAUSED);
+        List<UUID> ids = gameIds(id);
+        UUID older = ids.get(1);
+        UUID newer = ids.get(2);
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        assertNotNull(engine.startGame(older, true).resumeRequestedAt());
+        lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
+
+        given().contentType("application/json").body("{}").post("/api/games/{id}/start", newer).then().statusCode(409)
+                .body("error", equalTo("Available slots are reserved for queued resumes"));
+        GameDto queued = engine.startGame(newer, true);
+        assertEquals("PAUSED", queued.status());
+        assertNotNull(queued.resumeRequestedAt());
+        runs.schedule(id);
+        assertEquals(List.of(older), starts);
+        assertEquals(queued.resumeRequestedAt(), snapshot(newer).resumeRequestedAt());
+    }
+
+    @Test
+    void queuedResumesTakeSlotsBeforeNewGamesInRequestOrder() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.WAITING, GameStatus.PAUSED, GameStatus.PAUSED);
+        List<UUID> ids = gameIds(id);
+        UUID oldest = ids.get(3);
+        UUID newest = ids.get(2);
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        engine.startGame(oldest, true);
+        engine.startGame(newest, true);
+        lifecycle.pauseWithReason(ids.getFirst(), "Provider paused");
+
+        var conflict = assertThrows(WebApplicationException.class, () -> engine.startGame(ids.get(1)));
+        assertEquals(409, conflict.getResponse().getStatus());
+        runs.schedule(id);
+        assertEquals(List.of(oldest), starts);
+        assertNull(snapshot(oldest).resumeRequestedAt());
+        assertNotNull(snapshot(newest).resumeRequestedAt());
+        lifecycle.pauseWithReason(oldest, "Paused again");
+        runs.schedule(id);
+        assertEquals(List.of(oldest, newest), starts);
+        assertNull(snapshot(newest).resumeRequestedAt());
+        lifecycle.pauseWithReason(newest, "Paused again");
+        runs.schedule(id);
+        assertEquals(List.of(oldest, newest, ids.get(1)), starts);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void pausedRunRetainsItsQueueAndServesItWhenResumed(boolean budget) {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.WAITING, GameStatus.PAUSED);
+        List<UUID> ids = gameIds(id);
+        UUID game = ids.getLast();
+        configure(id, "{\"maxConcurrentGames\":1,\"budgetUsd\":1.00}", true);
+        Instant requested = engine.startGame(game, true).resumeRequestedAt();
+        assertNotNull(requested);
+        if (budget) {
+            QuarkusTransaction.requiringNew().run(
+                    () -> games.findByIdForUpdate(ids.getFirst()).totalCostUsd = BigDecimal.ONE);
+            runs.schedule(id);
+            assertTrue(runReason(id).contains("Budget"));
+        } else {
+            runs.pause(id);
+        }
+        assertEquals(AutoRunStatus.PAUSED, runStatus(id));
+        runs.schedule(id);
+        assertTrue(starts.isEmpty());
+        assertEquals(requested, snapshot(game).resumeRequestedAt());
+        assertEquals(requested, engine.startGame(game, true).resumeRequestedAt());
+
+        configure(id, "{\"budgetUsd\":2.00}", true);
+        runs.schedule(id);
+        assertEquals(List.of(game), starts);
+        assertNull(snapshot(game).resumeRequestedAt());
+        assertEquals(GameStatus.WAITING, status(ids.get(1)));
+    }
+
+    @Test
+    void queuedRequestsClearWhenGameOrRunEnds() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED, GameStatus.PAUSED);
+        List<UUID> ids = gameIds(id);
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        assertNotNull(engine.startGame(ids.get(1), true).resumeRequestedAt());
+        assertNotNull(engine.startGame(ids.get(2), true).resumeRequestedAt());
+        var end = new ChessService.GameEndInfo("WHITE_WINS", "CHECKMATE");
+        lifecycle.completeGame(ids.get(1), end);
+        assertNull(snapshot(ids.get(1)).resumeRequestedAt());
+        assertNotNull(snapshot(ids.get(2)).resumeRequestedAt());
+        QuarkusTransaction.requiringNew().run(() -> games.findByIdForUpdate(ids.getFirst()).bracketRound = "Final");
+        lifecycle.completeGame(ids.getFirst(), end);
+        assertEquals(AutoRunStatus.FINISHED, runStatus(id));
+        assertNull(snapshot(ids.get(2)).resumeRequestedAt());
+
+        UUID cancelled = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        configure(cancelled, "{\"maxConcurrentGames\":1}", true);
+        UUID queued = gameIds(cancelled).getLast();
+        assertNotNull(engine.startGame(queued, true).resumeRequestedAt());
+        tournamentService.cancelTournament(cancelled);
+        assertEquals(AutoRunStatus.OFF, runStatus(cancelled));
+        assertEquals(GameStatus.CANCELLED, status(queued));
+        assertNull(snapshot(queued).resumeRequestedAt());
+        given().contentType("application/json").body("{}")
+                .post("/api/games/{id}/start", queued).then().statusCode(409)
+                .body("error", equalTo("Tournament has been cancelled"));
+    }
+
+    @Test
+    void concurrentResumesAndSchedulerShareTheCapAndStartOnlyOneLoop() throws Exception {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.WAITING, GameStatus.PAUSED);
+        List<UUID> ids = gameIds(id);
+        UUID queued = ids.getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        QuarkusMock.installMockForType(realEngine, GameEngineService.class);
+        CountDownLatch turnEntered = new CountDownLatch(1);
+        CountDownLatch releaseTurn = new CountDownLatch(1);
+        List<UUID> played = Collections.synchronizedList(new ArrayList<>());
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest request) {
+                played.add(request.gameId());
+                turnEntered.countDown();
+                await(releaseTurn);
+                lifecycle.pauseWithReason(request.gameId(), "Test turn finished");
+                return TurnResult.paused();
+            }
+        }, GameTurnService.class);
+
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            CountDownLatch click = new CountDownLatch(1);
+            var first = pool.submit(() -> { await(click); return engine.startGame(queued, true); });
+            var second = pool.submit(() -> { await(click); return engine.startGame(queued, true); });
+            click.countDown();
+            Instant request = first.get(10, TimeUnit.SECONDS).resumeRequestedAt();
+            assertNotNull(request);
+            assertEquals(request, second.get(10, TimeUnit.SECONDS).resumeRequestedAt());
+            assertEquals(1, snapshot(queued).statusRevision());
+            assertEquals(1, ids.stream().filter(g -> status(g) == GameStatus.IN_PROGRESS).count());
+
+            // A queued request survives a previous loop still owning the game as a slot opens.
+            var previousLoop = realEngine.tryClaimLoop(queued);
+            assertNotNull(previousLoop);
+            try {
+                lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
+                runs.schedule(id);
+                assertEquals(GameStatus.WAITING, status(ids.get(1)));
+                assertEquals(request, snapshot(queued).resumeRequestedAt());
+            } finally {
+                realEngine.releaseLoop(queued, previousLoop);
+            }
+            CountDownLatch schedule = new CountDownLatch(1);
+            var retry = pool.submit(() -> {
+                await(schedule);
+                try {
+                    assertEquals(request, engine.startGame(queued, true).resumeRequestedAt());
+                } catch (WebApplicationException e) {
+                    assertEquals(409, e.getResponse().getStatus());
+                    assertEquals("Game is already in progress", e.getMessage());
+                }
+            });
+            var scheduler = pool.submit(() -> { await(schedule); runs.schedule(id); });
+            schedule.countDown();
+            retry.get(10, TimeUnit.SECONDS);
+            scheduler.get(10, TimeUnit.SECONDS);
+            await(turnEntered);
+            assertEquals(List.of(queued), played);
+            assertEquals(GameStatus.IN_PROGRESS, status(queued));
+            assertEquals(1, ids.stream().filter(g -> status(g) == GameStatus.IN_PROGRESS).count());
+            assertNull(snapshot(queued).resumeRequestedAt());
+        } finally {
+            releaseTurn.countDown();
+            for (UUID game : ids) awaitReleased(game);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aStoppingLoopReservesOneSlotAndLeavesTheOtherForQueuedOrWaitingGames(boolean secondQueued)
+            throws InterruptedException {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.IN_PROGRESS, GameStatus.IN_PROGRESS,
+                GameStatus.PAUSED, GameStatus.PAUSED, GameStatus.WAITING);
+        List<UUID> ids = gameIds(id);
+        UUID oldest = ids.get(3);
+        UUID later = ids.get(4);
+        UUID waiting = ids.getLast();
+        configure(id, "{\"maxConcurrentGames\":3}", true);
+        QuarkusMock.installMockForType(realEngine, GameEngineService.class);
+        Instant request = engine.startGame(oldest, true).resumeRequestedAt();
+        assertNotNull(request);
+        if (secondQueued) assertNotNull(engine.startGame(later, true).resumeRequestedAt());
+        var previousLoop = realEngine.tryClaimLoop(oldest);
+        assertNotNull(previousLoop);
+        previousLoop.requestStop();
+        CountDownLatch releaseTurn = new CountDownLatch(1);
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest turn) {
+                await(releaseTurn);
+                return TurnResult.paused();
+            }
+        }, GameTurnService.class);
+        try {
+            lifecycle.pauseWithReason(ids.get(1), "Slot freed");
+            lifecycle.pauseWithReason(ids.get(2), "Slot freed");
+            runs.schedule(id);
+            assertEquals(request, snapshot(oldest).resumeRequestedAt());
+            assertEquals(GameStatus.IN_PROGRESS, status(ids.getFirst()));
+            assertEquals(secondQueued ? GameStatus.IN_PROGRESS : GameStatus.PAUSED, status(later));
+            assertEquals(secondQueued ? GameStatus.WAITING : GameStatus.IN_PROGRESS, status(waiting));
+            assertNull(snapshot(later).resumeRequestedAt());
+        } finally {
+            releaseTurn.countDown();
+            realEngine.releaseLoop(oldest, previousLoop);
+            awaitReleased(later);
+            awaitReleased(waiting);
+        }
+    }
+
+    @Test
+    void delayedConcurrencyPauseCannotStopTheLoopThatServesAQueuedResume() throws Exception {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.IN_PROGRESS);
+        List<UUID> ids = gameIds(id);
+        UUID humanGame = ids.getLast();
+        QuarkusTransaction.requiringNew().run(() -> games.findByIdForUpdate(humanGame)
+                .whiteParticipant.controlType = TournamentParticipant.ControlType.HUMAN);
+        configure(id, "{\"maxConcurrentGames\":2}", true);
+        QuarkusMock.installMockForType(realEngine, GameEngineService.class);
+        assertFalse(engine.isRunning(humanGame));
+
+        CountDownLatch pauseCommitted = new CountDownLatch(1);
+        CountDownLatch releasePauseCallback = new CountDownLatch(1);
+        CountDownLatch humanTurnReady = new CountDownLatch(1);
+        CountDownLatch releaseHumanTurn = new CountDownLatch(1);
+        QuarkusMock.installMockForType(new GameWebSocket() {
+            @Override public void broadcastStatusChange(UUID game, String status, String result, String reason,
+                    int moves, BigDecimal cost, String detail, long revision, Instant requested, RunCapacity capacity) {
+                if (game.equals(humanGame) && "Concurrency limit reduced to 1".equals(detail) && requested == null) {
+                    pauseCommitted.countDown();
+                    await(releasePauseCallback);
+                }
+            }
+        }, GameWebSocket.class);
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public void broadcastHumanTurnReady(UUID game, BigDecimal cost, String color) {
+                assertEquals(humanGame, game);
+                humanTurnReady.countDown();
+                await(releaseHumanTurn);
+            }
+        }, GameTurnService.class);
+
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var reduction = pool.submit(() -> configure(id, "{\"maxConcurrentGames\":1}", false));
+            try {
+                await(pauseCommitted);
+                assertNotNull(engine.startGame(humanGame, true).resumeRequestedAt());
+                lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
+                runs.schedule(id);
+                await(humanTurnReady);
+                releasePauseCallback.countDown();
+                reduction.get(10, TimeUnit.SECONDS);
+                assertTrue(engine.isRunning(humanGame), "the delayed pause targeted the replacement loop");
+            } finally {
+                releasePauseCallback.countDown();
+                releaseHumanTurn.countDown();
+                awaitReleased(humanGame);
+            }
+        }
+        assertEquals(GameStatus.IN_PROGRESS, status(humanGame));
+        assertNull(snapshot(humanGame).resumeRequestedAt());
     }
 
     @Test
@@ -609,7 +988,8 @@ class TournamentAutoRunIT {
                     dev.aichessarena.dto.GameQualitySummaryDto qualitySummary) {}
 
             @Override public void broadcastStatusChange(UUID changedId, String status, String announcedResult,
-                    String announcedReason, int totalMoves, BigDecimal cost, String detail, long revision) {
+                    String announcedReason, int totalMoves, BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 // Separate transactions must see completed state and progression before any budget pause.
                 GameDto stored = snapshot(gameId);
                 assertEquals("COMPLETED", stored.status());
@@ -644,11 +1024,14 @@ class TournamentAutoRunIT {
 
     @Test
     void manualGamesWithoutARunIgnoreStoredBudget() {
-        UUID id = seed(GameStatus.IN_PROGRESS);
-        configure(id, "{\"budgetUsd\":0.01}", false);
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        configure(id, "{\"maxConcurrentGames\":1,\"budgetUsd\":0.01}", false);
         UUID gameId = gameIds(id).getFirst();
         QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).totalCostUsd = BigDecimal.TEN);
         assertTrue(runs.beforeRequest(gameId));
+        var resumed = engine.startGame(gameIds(id).getLast());
+        assertEquals("IN_PROGRESS", resumed.status());
+        assertNull(resumed.resumeRequestedAt());
         assertEquals(AutoRunStatus.OFF, runStatus(id));
     }
 

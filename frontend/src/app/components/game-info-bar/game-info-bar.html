@@ -120,7 +120,9 @@
         <mat-icon class="pause-icon" aria-hidden="true">pause_circle</mat-icon>
         <div class="pause-copy">
           <span class="pause-title">{{
-            showRaiseLimit() ? 'Game paused' : 'Paused. Fix the problem, then resume the game.'
+            game.resumeRequestedAt || showRaiseLimit()
+              ? 'Game paused'
+              : 'Paused. Fix the problem, then resume the game.'
           }}</span>
           <span class="pause-detail">{{ game.statusDetail }}</span>
         </div>

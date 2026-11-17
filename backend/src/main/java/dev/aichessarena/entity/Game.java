@@ -3,6 +3,7 @@ package dev.aichessarena.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,7 +46,7 @@ public class Game extends PanacheEntityBase {
     public GameStatus status = GameStatus.WAITING;
 
     /**
-     * Grows by one with every status change made by GameLifecycleService (start, pause, game over), in the same
+     * Grows by one with every status or resume request change made by GameLifecycleService, in the same
      * transaction and under the row lock. Live status updates carry it so clients can ignore an older update that
      * arrives after a newer one.
      */
@@ -61,6 +62,9 @@ public class Game extends PanacheEntityBase {
 
     @Column(name = "status_detail", length = 500)
     public String statusDetail;
+
+    @Column(name = "resume_requested_at")
+    public Instant resumeRequestedAt;
 
     /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
     @ManyToOne(fetch = FetchType.LAZY)

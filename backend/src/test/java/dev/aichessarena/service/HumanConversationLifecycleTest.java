@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.bhlangonijr.chesslib.Board;
 import com.sun.net.httpserver.HttpServer;
 import dev.aichessarena.config.OpenRouterKeyStoreFixture;
+import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.ChatMode;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,7 +51,7 @@ class HumanConversationLifecycleTest {
     void twoHumanContinuationsKeepThePreviousModelExchangesAndReloadTheBoard() throws Exception {
         Fixture f = new Fixture();
         f.engine.startGame(f.game.id);
-        f.human("e5");
+        f.human("e5+");
         f.human("Nc6");
 
         assertEquals(List.of(2, 4, 6), f.messageCounts());
@@ -191,9 +193,10 @@ class HumanConversationLifecycleTest {
         };
         private final GameLifecycleService lifecycle = new GameLifecycleService() {
             @Override
-            public GameDto markGameStarted(UUID id) {
+            GameDto markGameStarted(UUID id, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
+                assertTrue(claimLoop.getAsBoolean());
                 game.status = Game.GameStatus.IN_PROGRESS;
-                return null;
+                return DtoMapper.toDto(game, false);
             }
 
             @Override

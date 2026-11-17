@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -23,6 +24,7 @@ import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -303,7 +305,8 @@ class ResignationIT {
             @Override
             public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
                                               int totalMoves, java.math.BigDecimal totalCostUsd, String detail,
-                                              long statusRevision) {
+                                              long statusRevision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 seenAtBroadcast.add(status + " announced, stored "
                         + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));
             }

@@ -391,6 +391,7 @@ public class TournamentService {
             if (completedGame.tournament.autoRunStatus != Tournament.AutoRunStatus.OFF) {
                 completedGame.tournament.autoRunStatus = Tournament.AutoRunStatus.FINISHED;
                 completedGame.tournament.autoRunPauseReason = null;
+                gameLifecycleService.clearResumeRequests(completedGame.tournament.id);
             }
             return;
         }

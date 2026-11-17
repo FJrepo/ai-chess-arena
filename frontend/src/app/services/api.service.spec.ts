@@ -40,6 +40,28 @@ describe('ApiService bracket draw', () => {
     expect(received).toHaveBeenCalledWith('[Event "Arena"]\n\n*');
   });
 
+  it('opts in to queuing only when requested by the caller', () => {
+    api.startGame('game').subscribe();
+    const immediate = http.expectOne('/api/games/game/start');
+    expect(immediate.request.method).toBe('POST');
+    immediate.flush({ status: 'IN_PROGRESS' });
+
+    api.startGame('game', true).subscribe();
+    const optIn = http.expectOne('/api/games/game/start?queueIfFull=true');
+    expect(optIn.request.method).toBe('POST');
+    optIn.flush({ status: 'PAUSED', resumeRequestedAt: '2026-11-17T20:00:00Z' });
+  });
+
+  it('deletes the displayed revision of a queued resume and returns the current game', () => {
+    const received = vi.fn();
+    api.cancelResumeRequest('game', 5).subscribe(received);
+    const request = http.expectOne('/api/games/game/resume-request?statusRevision=5');
+    expect(request.request.method).toBe('DELETE');
+    const response = { status: 'PAUSED', statusDetail: 'Answer cut off' };
+    request.flush(response);
+    expect(received).toHaveBeenCalledWith(response);
+  });
+
   it.each([true, false])('loads leaderboard with includeForfeits=%s', (includeForfeits) => {
     const received = vi.fn();
     api.getLeaderboard(includeForfeits).subscribe(received);

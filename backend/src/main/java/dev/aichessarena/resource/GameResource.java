@@ -7,6 +7,7 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameEngineService;
+import dev.aichessarena.service.GameLifecycleService;
 import dev.aichessarena.service.ExportService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -34,6 +35,9 @@ public class GameResource {
     GameEngineService gameEngineService;
 
     @Inject
+    GameLifecycleService lifecycle;
+
+    @Inject
     ExportService exports;
 
     @GET
@@ -41,12 +45,16 @@ public class GameResource {
     public Response getGame(@PathParam("id") UUID id) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
-        return Response.ok(DtoMapper.toDto(game, true)).build();
+        return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game))).build();
     }
 
     @POST
     @Path("/{id}/start")
-    public Response startGame(@PathParam("id") UUID id) {
+    public Response startGame(@PathParam("id") UUID id,
+                              @QueryParam("queueIfFull") @DefaultValue("false") String queueIfFull) {
+        if (!"true".equals(queueIfFull) && !"false".equals(queueIfFull)) {
+            throw new IllegalArgumentException("queueIfFull must be true or false");
+        }
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         if (game.tournament != null
@@ -57,7 +65,21 @@ public class GameResource {
                 || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
             throw new IllegalArgumentException("Both players must be set");
         }
-        return Response.ok(gameEngineService.startGame(id)).build();
+        return Response.ok("true".equals(queueIfFull)
+                ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id)).build();
+    }
+
+    @DELETE
+    @Path("/{id}/resume-request")
+    public GameDto cancelResumeRequest(@PathParam("id") UUID id, @QueryParam("statusRevision") String revision) {
+        long statusRevision;
+        try {
+            statusRevision = Long.parseLong(revision);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("statusRevision must be a non-negative integer");
+        }
+        if (statusRevision < 0) throw new IllegalArgumentException("statusRevision must be a non-negative integer");
+        return lifecycle.cancelResumeRequest(id, statusRevision);
     }
 
     @POST

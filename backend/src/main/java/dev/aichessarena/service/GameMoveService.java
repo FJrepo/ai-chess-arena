@@ -6,6 +6,7 @@ import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Move;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
@@ -51,7 +52,7 @@ public class GameMoveService {
     @Inject
     Event<MoveEvaluationRequested> moveEvaluationEvents;
 
-    /** Null outside CDI (unit tests): then evaluation updates go out at once. */
+    /** Null outside CDI (unit tests), where live updates go out immediately. */
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
@@ -81,7 +82,7 @@ public class GameMoveService {
             throw new GameStateConflictException("Position changed while the model was thinking");
         }
 
-        dev.aichessarena.entity.Move move = new dev.aichessarena.entity.Move();
+        Move move = new Move();
         move.game = game;
         move.moveNumber = moveNumber;
         move.color = color;
@@ -101,28 +102,7 @@ public class GameMoveService {
         move.rawResponse = llmResponse.rawResponse();
         // The mode that applied to this move; with a message it also has a chat message (see AnalyticsService).
         move.chatMode = chatMode;
-        moveRepository.persistAndFlush(move);
-
-        updateGameState(game, fen, san, moveNumber, color);
-        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
-
-        if (message != null && !message.isBlank()) {
-            persistChatMessage(game, moveNumber, modelId, color, message);
-            gameWebSocket.broadcastChat(gameId, moveNumber, color, modelId, playerName, message);
-        }
-
-        gameWebSocket.broadcastMove(
-                gameId,
-                moveNumber,
-                color,
-                san,
-                fen,
-                game.pgn,
-                modelId,
-                llmResponse.responseTimeMs(),
-                retryCount,
-                false
-        );
+        persistMove(move, playerName, message);
     }
 
     @Transactional
@@ -145,7 +125,7 @@ public class GameMoveService {
             throw new GameStateConflictException("The position changed; reload the game and try again");
         }
 
-        dev.aichessarena.entity.Move move = new dev.aichessarena.entity.Move();
+        Move move = new Move();
         move.game = game;
         move.moveNumber = moveNumber;
         move.color = color;
@@ -154,23 +134,13 @@ public class GameMoveService {
         move.promptVersion = "human";
         move.promptHash = null;
         move.retryCount = 0;
-        moveRepository.persistAndFlush(move);
-
-        updateGameState(game, fen, san, moveNumber, color);
-        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
-
-        if (message != null && !message.isBlank()) {
-            persistChatMessage(game, moveNumber, null, color, message);
-            gameWebSocket.broadcastChat(gameId, moveNumber, color, null, playerName, message);
-        }
-
-        gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, game.pgn, null, 0, 0, false);
+        persistMove(move, playerName, message);
     }
 
     @Transactional
     public void updateMoveEvaluation(UUID moveId, StockfishService.EvalResult result) {
         LOG.debugf("Updating move %s with evaluation: cp=%d, mate=%d", moveId, result.cp(), result.mate());
-        dev.aichessarena.entity.Move move = moveRepository.findById(moveId);
+        Move move = moveRepository.findById(moveId);
         if (move != null) {
             move.evaluationCp = result.cp();
             move.evaluationMate = result.mate();
@@ -186,8 +156,8 @@ public class GameMoveService {
      * and the next move's (this evaluation is its "before"; evaluations may finish out of order), plus the game's
      * updated summary. Quality is derived from the stored evaluations, so a reload shows the same.
      */
-    private void broadcastEvaluation(dev.aichessarena.entity.Move move) {
-        List<dev.aichessarena.entity.Move> moves = CanonicalPlies.of(moveRepository.findByGameId(move.game.id));
+    private void broadcastEvaluation(Move move) {
+        List<Move> moves = CanonicalPlies.of(moveRepository.findByGameId(move.game.id));
         int index = -1;
         for (int i = 0; i < moves.size(); i++) {
             if (moves.get(i).id != null && moves.get(i).id.equals(move.id)) {
@@ -202,7 +172,7 @@ public class GameMoveService {
         List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
         List<PlyQualityDto> changed = new ArrayList<>();
         for (int i = index; i <= Math.min(index + 1, moves.size() - 1); i++) {
-            dev.aichessarena.entity.Move affected = moves.get(i);
+            Move affected = moves.get(i);
             changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i))));
         }
         GameQualitySummaryDto summary = DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities));
@@ -237,27 +207,51 @@ public class GameMoveService {
         String sideToMove = chessService.getSideToMove(board);
         int moveNumber = chessService.getMoveNumber(board);
 
-        String normalizedSan = san.trim();
-        ChessService.ValidMoveResult result = chessService.validateAndApply(board, normalizedSan);
+        ChessService.ValidMoveResult result = chessService.validateAndApply(board, san.trim());
         if (!result.valid()) {
             throw new IllegalArgumentException("Invalid move: " + result.error());
         }
 
-        dev.aichessarena.entity.Move move = new dev.aichessarena.entity.Move();
+        Move move = new Move();
         move.game = game;
         move.moveNumber = moveNumber;
         move.color = sideToMove;
-        move.san = normalizedSan;
+        move.san = result.san();
         move.fen = result.fen();
         move.promptVersion = "admin-override";
         move.promptHash = null;
         move.isOverride = true;
-        moveRepository.persistAndFlush(move);
+        persistMove(move, null, null);
+    }
 
-        updateGameState(game, result.fen(), normalizedSan, moveNumber, sideToMove);
-        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, sideToMove, result.fen()));
-        gameWebSocket.broadcastMove(gameId, moveNumber, sideToMove, normalizedSan, result.fen(), game.pgn,
-                "admin-override", 0, 0, true);
+    private void persistMove(Move move, String playerName, String message) {
+        moveRepository.persistAndFlush(move);
+        Game game = move.game;
+        UUID gameId = game.id;
+        int moveNumber = move.moveNumber;
+        String color = move.color;
+        String san = move.san;
+        String fen = move.fen;
+        updateGameState(game, fen, san, moveNumber, color);
+        boolean hasChat = message != null && !message.isBlank();
+        if (hasChat) {
+            persistChatMessage(game, moveNumber, move.modelId, color, message);
+        }
+
+        // Capture this ply's scoresheet while attached. Chat and move share one ordered callback.
+        String pgn = game.pgn;
+        boolean isOverride = move.isOverride;
+        String modelId = isOverride ? "admin-override" : move.modelId;
+        long responseTimeMs = move.responseTimeMs == null ? 0 : move.responseTimeMs;
+        int retryCount = move.retryCount;
+        AfterCommit.run(transactionRegistry, () -> {
+            if (hasChat) {
+                gameWebSocket.broadcastChat(gameId, moveNumber, color, modelId, playerName, message);
+            }
+            gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, pgn, modelId,
+                    responseTimeMs, retryCount, isOverride);
+        });
+        moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
     }
 
     /** Compares piece placement, side to move and castling rights; ignores clocks and en-passant formatting. */
