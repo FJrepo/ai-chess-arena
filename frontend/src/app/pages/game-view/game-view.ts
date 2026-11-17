@@ -543,6 +543,7 @@ export class GameView implements OnInit, OnDestroy {
             const legacyDowngrade = game.liveRevision == null && displayed?.liveRevision != null;
             if (streamChanged || legacyUpgrade || legacyDowngrade) {
               if (!this.snapshotFallback) {
+                this.retireGameActions();
                 this.scheduleSnapshotRetry();
                 return;
               }
@@ -595,16 +596,21 @@ export class GameView implements OnInit, OnDestroy {
     this.loadSub?.unsubscribe();
     this.attemptsSub?.unsubscribe();
     this.pauseSettingsSub?.unsubscribe();
-    this.gameActions.unsubscribe();
-    this.gameActions = new Subscription();
-    this.gameActionsAvailable.set(false);
-    this.savingLimit.set(false);
-    this.humanMoveSubmitting.set(false);
+    this.retireGameActions();
     this.loadInFlight = false;
     this.snapshotQueued = false;
     clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
     this.retryDelay = 500;
+  }
+
+  private retireGameActions(): void {
+    this.gameActions.unsubscribe();
+    this.gameActions = new Subscription();
+    this.gameActionsAvailable.set(false);
+    this.savingLimit.set(false);
+    this.humanMoveSubmitting.set(false);
+    this.pendingPromotion.set(null);
   }
 
   private scheduleSnapshotRetry(): void {
@@ -1166,11 +1172,9 @@ export class GameView implements OnInit, OnDestroy {
   private withCurrentGameKey(action: () => void): void {
     const owner = this.gameActions;
     if (!this.gameActionsAvailable()) return;
-    const run = () => {
-      if (!owner.closed && this.gameActionsAvailable()) action();
-    };
-    if (this.connection) this.connection.withKey(run);
-    else run();
+    const isCurrent = () => !owner.closed && this.gameActionsAvailable();
+    if (this.connection) this.connection.withKey(action, isCurrent);
+    else action();
   }
 
   /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */

@@ -1759,7 +1759,12 @@ describe('GameView', () => {
     const startGame = vi.fn(() => EMPTY);
     Object.assign(api, { startGame });
     Object.assign(component, {
-      connection: { withKey: (action: () => void) => callbacks.push(action) },
+      connection: {
+        withKey: (action: () => void, isCurrent: () => boolean) =>
+          callbacks.push(() => {
+            if (isCurrent()) action();
+          }),
+      },
     });
     component.ngOnInit();
     messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
@@ -1773,6 +1778,64 @@ describe('GameView', () => {
     component.ngOnDestroy();
     callbacks[1]();
     expect(startGame).not.toHaveBeenCalled();
+  });
+
+  it('retires game writes when polling disagrees with a still-subscribed socket', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const retired = new Subject<Game>();
+    const startGame = vi.fn(() => retired);
+    const cancelResumeRequest = vi.fn(() => EMPTY);
+    Object.assign(api, { startGame, cancelResumeRequest });
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    const queued = gameWith({
+      liveRevision: 25,
+      statusRevision: 9,
+      status: 'PAUSED',
+      streamId: 'first',
+      resumeRequestedAt: '2026-11-17T23:00:00',
+    });
+    gameLoad.next(queued);
+    component.resumeGame();
+    component.loadGame(true);
+    gameLoad.next(gameWith({ liveRevision: 3, status: 'PAUSED', streamId: 'restored' }));
+
+    expect(component.gameActionsAvailable()).toBe(false);
+    expect(component.game()?.liveRevision).toBe(25);
+    retired.next(gameWith({ liveRevision: 26, status: 'IN_PROGRESS', streamId: 'first' }));
+    expect(component.game()?.status).toBe('PAUSED');
+    component.resumeGame();
+    expect(startGame).toHaveBeenCalledOnce();
+    component.cancelResumeRequest(queued);
+    expect(cancelResumeRequest).not.toHaveBeenCalled();
+
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3, streamId: 'restored' });
+    gameLoad.next(gameWith({ liveRevision: 3, status: 'PAUSED', streamId: 'restored' }));
+    component.resumeGame();
+    expect(startGame).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+  });
+
+  it('retires a pending promotion when the replacement board is still on a human turn', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const submit = vi.fn(() => of(void 0));
+    Object.assign(api, { submitHumanMoveCoordinates: submit });
+    const humanTurn = { whiteControlType: 'HUMAN' as const, activeColor: 'WHITE' as const };
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(gameWith({ ...humanTurn, liveRevision: 25, streamId: 'first' }));
+    component.onBoardMoveAttempt({ from: 'a7', to: 'a8', promotionRequired: true });
+    expect(component.pendingPromotion()).not.toBeNull();
+
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3, streamId: 'restored' });
+    expect(component.pendingPromotion()).toBeNull();
+    gameLoad.next(gameWith({ ...humanTurn, liveRevision: 3, streamId: 'restored' }));
+    component.selectPromotion('Q');
+    expect(submit).not.toHaveBeenCalled();
+    component.onBoardMoveAttempt({ from: 'b7', to: 'b8', promotionRequired: true });
+    component.selectPromotion('Q');
+    expect(submit).toHaveBeenCalledExactlyOnceWith('g-1', 'b7', 'b8', 'Q', null);
+    component.ngOnDestroy();
   });
 
   it('keeps the human move draft but blocks writes until a restored snapshot arrives', () => {
