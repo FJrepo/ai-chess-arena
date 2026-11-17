@@ -16,7 +16,7 @@ The Maven and Node build stages run on the builder's native platform. Only runti
 
 ## Prerequisites
 - Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Docker Compose support; the included Engine must be 28.0+
-- An OpenRouter API key
+- An OpenRouter account for model play; connecting or pasting a key can wait until after startup
 - Access to public GHCR images for this repository
 
 Make is optional and used only by source-checkout helpers such as `make setup` and `make doctor`.
@@ -73,7 +73,7 @@ Rebuild/recreate the backend and frontend when deploying this feature. Opening s
 
 ### 5-minute start
 
-You need Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Compose, and an [OpenRouter API key](https://openrouter.ai/keys). The Docker Engine must be 28.0+ for localhost isolation.
+You need Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Compose, and an OpenRouter account for model play. The Docker Engine must be 28.0+ for localhost isolation.
 
 On macOS/Linux, download the two assets into a new directory and create the credential file with mode `0600` before editing:
 
@@ -100,7 +100,7 @@ Copy-Item env.example .env
 
 #### Configure and start
 
-Set your `OPENROUTER_API_KEY` in `.env`, or use `OPENROUTER_API_KEY_FILE` with a read-only mount as described under [Secrets](#secrets). New installs need no database password: it is generated on first start. **Upgrades must keep their existing `DB_PASSWORD` unchanged.**
+Leave OpenRouter credentials empty and connect in **System → OpenRouter** after opening the app. The [manual environment or file route](#secrets) remains available. New installs need no database password: it is generated on first start. **Upgrades must keep their existing `DB_PASSWORD` unchanged.**
 
 All other production variables are optional with release assets:
 
@@ -112,6 +112,7 @@ All other production variables are optional with release assets:
 | `DB_NAME` | `chess_tournament`; keep unchanged for existing volumes |
 | `DB_USER` | `chess`; keep unchanged for existing volumes |
 | `FRONTEND_PORT` | `4200`; change if that host port is already in use |
+| `APP_ORIGIN` | Optional browser origin for the logged setup link behind TLS or a reverse proxy |
 | `ALLOWED_HOSTS` | Empty; localhost names are always allowed, see [host names](#host-names-allowed_hosts) |
 
 Start the stack; Docker pulls any missing images automatically:
@@ -122,7 +123,7 @@ docker compose ps
 docker compose logs --tail=120 backend frontend
 ```
 
-Open **http://localhost:4200** (or your `FRONTEND_PORT`), create a tournament, generate the bracket and start the first game. The API is under `/api`; only the frontend is exposed on loopback.
+Open **http://localhost:4200** (or your `FRONTEND_PORT`), connect OpenRouter in System, then create a tournament and start the first game. The API is under `/api`; only the frontend is exposed on loopback.
 
 Pin a version: replace `latest/download` with `download/vX.Y.Z` in both download URLs. Do not overwrite an existing `.env` during upgrades.
 
@@ -186,7 +187,7 @@ curl http://127.0.0.1:8081/q/health/ready
 
 The frontend image proxies `/api` and `/ws` to the backend service on the internal Compose network, so no separate frontend API URL configuration is required in the default deployment layout.
 
-The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default: widening a bind address requires an operator-provided authentication boundary, TLS, authorization for mutations, and appropriate firewall/rate-limit controls.
+The source-build Compose file also binds PostgreSQL, backend, and frontend ports to loopback. Private-network or public access is not a supported default. LAN key management has a browser-claim gate, but widening a bind address still needs an operator-provided authentication boundary, TLS and appropriate firewall/rate-limit controls for the other application routes.
 
 ### Host names (`ALLOWED_HOSTS`)
 The frontend answers only to the host names `localhost`, `127.0.0.1` and `[::1]`, on any port. Requests for any other name (static files, `/api` and `/ws` alike) get `421 Misdirected Request`. This blocks DNS rebinding: a web page whose domain is made to resolve to `127.0.0.1` cannot use the app as a same-origin client, for example to start games that spend OpenRouter credits.
@@ -199,13 +200,25 @@ ALLOWED_HOSTS="chess-server 192.168.1.20"
 
 Entries are space-separated, without scheme or port: host names and IPv4 addresses, bracketed IPv6 addresses in hex-group notation (`[fd00::1]`), or a wildcard at the start or end of a name (`*.lan`, `chess.*`). The frontend container refuses to start on anything else, including `*` on its own, a wildcard in the middle (`foo.*.lan`) and nginx's `.example.lan` shorthand. A request whose `Host` header names a different host than its request line (an absolute-form request such as `GET http://localhost/api/... HTTP/1.1` with a foreign `Host`) also gets 421. Loopback names stay allowed. Recreate the frontend afterwards (`docker compose -f docker-compose.prod.yml up -d`). The source-build `docker-compose.yml` reads the same variable.
 
-The allowlist lives in the frontend's nginx. The backend's own port (the source-build stack's `127.0.0.1:8081`, the debug override above, `mvn quarkus:dev`) does not check host names, so publish it only while you need it.
+nginx enforces this allowlist for every route. The backend also checks it for credential endpoints and validates their mutation Origin against the request authority, without trusting forwarded headers. Keep the backend port private: other API routes still rely on the frontend/network boundary. Recreate both services after changing the allowlist. Native development must set the same `ALLOWED_HOSTS` for its backend.
+
+## Instance claim and threat model
+
+The default is **loopback only**, for one operator, with no user accounts. On first app visit the backend sets a random HttpOnly, SameSite=Lax browser cookie and persists only its SHA-256 hash in `instance_claim`; no secret is stored in that claim file. In local-only mode, loopback browsers are trusted to manage the instance. The host allowlist blocks browser DNS rebinding, and credential mutations also require a matching Origin. This does not protect against untrusted processes or users on the same machine who can read local files or forge HTTP requests.
+
+Adding any non-loopback entry to `ALLOWED_HOSTS` enables the LAN claim requirement, even when visiting localhost. On an unclaimed installation the backend prints **Claim this instance: `http://<allowed-host>:<port>/setup?token=…`**. It uses the first concrete non-loopback allowed host and `FRONTEND_PORT` (otherwise localhost); set `APP_ORIGIN=https://your-host` for a reverse proxy or a different scheme/port. Open the ready-made link in the browser that should manage credentials. The frontend removes the token from history and posts it to claim that browser. The token is random, stored privately in `setup_token` until redeemed, and survives unclaimed restarts. Successful claiming deletes it and persists the browser hash. Replays fail. Previously claimed local browsers remain authorized when LAN hosts are added; other browsers need the operator reset procedure below.
+
+Treat the setup link like a password. Access to backend logs permits claiming an unclaimed instance. Keep logs private, avoid logging query strings at any external reverse proxy, and use TLS on untrusted networks. nginx suppresses access logs for `/setup` and `/connect/callback`; the frontend removes their query strings immediately and sends no referrer. Cookies are Secure when the credential endpoint sees HTTPS. Behind TLS termination, prevent HTTP access to the app and configure the proxy to protect cookies; forwarded headers are deliberately not trusted for callback origins or authorization.
+
+LAN browsers without the claim can read masked status but cannot connect, paste, delete or test keys. This gate **does not authorize other tournament/game API actions**; anyone with network access can still view tournament data and invoke those APIs. A claimed cookie is a browser credential, not an account or a general login. Use network isolation and an authenticated proxy for shared deployments; public internet exposure remains unsupported.
+
+If the claiming browser loses its cookie, an operator must stop only their installation, remove `instance_claim` (and any stale `setup_token`) from its secrets volume, and restart the backend to obtain a new setup link. Preserve `db_password`, `instance_key`, `openrouter_key` and the database volume. Resetting the claim does not revoke an existing OpenRouter key or change stored games. In source development the same filenames live in `SECRETS_DIR` / `instance_config`. Clearing cookies on a LAN installation without this reset cannot grant access.
 
 ## Secrets
 
-Production Compose runs `secrets-init` (`busybox:1.37.0`) before the database and backend. It generates `db_password` and `instance_key` in the named `secrets_prod` volume, each from 32 random bytes encoded as 64 hexadecimal characters. Atomic publication never overwrites existing files; empty files, directories or symlinks fail initialization. Restarts and container recreation retain both secrets. The directory is mode `0700`; files are `0600`, owned by backend UID/GID `10001:10001`. The PostgreSQL Alpine entrypoint starts as root, reads the password, then switches to postgres UID/GID `70:70`; do not override its container user. Both consumers mount the volume read-only. `INSTANCE_KEY_FILE=/run/secrets/instance_key` reserves the key for a later release; it is not used for encryption or signing yet.
+Production Compose runs `secrets-init` (`busybox:1.37.0`) before the database and backend. It generates `db_password` and `instance_key` in the named `secrets_prod` volume, each from 32 random bytes encoded as 64 hexadecimal characters. Atomic publication never overwrites existing files; empty files, directories or symlinks fail initialization. Restarts and container recreation retain both secrets. The directory is mode `0700`; files are `0600`, owned by backend UID/GID `10001:10001`. The PostgreSQL Alpine entrypoint starts as root, reads the password, then switches to postgres UID/GID `70:70`; do not override its container user. The database mounts the volume read-only; the backend mounts it writable to atomically publish UI credentials and claim state. `INSTANCE_KEY_FILE=/run/secrets/instance_key` reserves the key for a later release; it is not used for encryption or signing yet.
 
-Backend precedence is **non-empty explicit env value > `*_FILE` > generated default**. `DB_PASSWORD` and `OPENROUTER_API_KEY` continue to work unchanged; empty env values permit file fallback. File contents are UTF-8 and trimmed; an explicitly configured unreadable or empty file fails startup with a sanitized error. When `DB_PASSWORD_FILE` is unset, Compose selects the generated default `/run/secrets/db_password`. There is no generated OpenRouter key. Native backend runs can also set either file variable; they must provide their own files/DB credentials. Direct Quarkus property overrides remain supported. Secret changes require recreating/restarting the backend.
+Database precedence is **non-empty explicit env value > `*_FILE` > generated default**. OpenRouter precedence is **non-empty explicit env/property value > explicit `OPENROUTER_API_KEY_FILE` > UI-managed `openrouter_key` > none**; environment values take precedence over files. `DB_PASSWORD` and `OPENROUTER_API_KEY` continue to work unchanged; empty env values permit file fallback. File contents are UTF-8 and trimmed; an explicitly configured unreadable or empty file fails startup with a sanitized error. When `DB_PASSWORD_FILE` is unset, Compose selects the generated default `/run/secrets/db_password`. There is no generated OpenRouter key. Native backend runs can also set either file variable; they must provide their own files/DB credentials. Direct Quarkus property overrides remain supported. Environment changes require recreating the backend. OpenRouter file content and UI key changes are read dynamically on the next request; the database password still requires the existing rotation procedure.
 
 For PostgreSQL, Compose selects the same path via `POSTGRES_PASSWORD_FILE`. If `DB_PASSWORD` is non-empty, the wrapper removes `POSTGRES_PASSWORD_FILE` before invoking the official entrypoint, so the explicit password wins for both services. **Do not remove `DB_PASSWORD` from an existing `.env`.** PostgreSQL never changes the stored role password merely because a file or environment value changes. The newly generated file is unused for DB authentication on such upgrades. Retain the existing password, project name, DB name/user and database volume. To rotate credentials, use the existing [password rotation steps](#upgrading-volumes-created-before-db_password-was-required); do not delete the secrets volume to rotate them.
 
@@ -220,7 +233,7 @@ services:
 
 Use `docker compose -f docker-compose.prod.yml -f docker-compose.secrets.yml up -d --wait` for that override (use `docker-compose.yml` for downloaded release assets). Docker bind mounts preserve Linux ownership; Docker Desktop operators should verify readability by the backend user. For a custom DB file, set `DB_PASSWORD_FILE` to its container path in `.env` and mount the file read-only at that path in both db and backend. Use a single-line DB password without surrounding whitespace (a final newline is fine), because the official PostgreSQL image does not trim spaces. Never commit secret files. The backend does not log or export resolved secrets. The official PostgreSQL entrypoint internally uses the password during initialization; `*_FILE` keeps it out of Docker's configured environment.
 
-Compose interpolation permits empty OpenRouter credentials, but this part still requires a key from env or file before backend startup (`openrouter.api-key` is required); there is no setup UI yet. No real OpenRouter call is needed to initialize the database. Release assets include this same init service and default their application images to the release tag; repository Compose still requires `IMAGE_TAG`.
+OpenRouter is optional: Compose and the backend start with no key, and no OpenRouter call is required to initialize the database. Connect or paste a key in System after startup. UI keys are validated before atomic replacement, stored mode `0600` as `/run/secrets/openrouter_key`, and never exported, logged or returned by the API. An operator-managed key disables UI replacement/deletion with HTTP 409. Native development uses `SECRETS_DIR` (default `.local/secrets` relative to the backend working directory); source-build Compose persists `/app/.local/secrets` in `instance_config`. Keep these private and back them up. Release assets include this same init service and default their application images to the release tag; repository Compose still requires `IMAGE_TAG`.
 
 Back up `secrets_prod` securely alongside the database, preserving numeric ownership and modes. Never publish its contents or include them in diagnostics. Losing the generated DB password while retaining `pgdata_prod` requires restoring the secret backup or deliberately resetting the role password; a newly generated password cannot unlock the old database. `docker compose down` preserves both volumes; `down -v` destroys both the database and secrets. No schema migration or backfill is introduced. Existing persisted games and credentials remain unchanged when upgrading correctly.
 

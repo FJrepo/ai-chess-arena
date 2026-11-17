@@ -25,8 +25,14 @@ services:
       DB_NAME: ${DB_NAME:-chess_tournament}
       DB_USER: ${DB_USER:-chess}
       DB_PASSWORD: ${DB_PASSWORD:-chess}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_API_KEY_FILE: ${OPENROUTER_API_KEY_FILE:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      APP_ORIGIN: ${APP_ORIGIN:-}
+      FRONTEND_PORT: ${FRONTEND_PORT:-4200}
       HTTP_PORT: 8080
+    volumes:
+      - instance_config:/app/.local/secrets
     ports:
       - "127.0.0.1:8081:8080"
     depends_on:
@@ -46,7 +52,7 @@ services:
       # Extra host names or IPs the UI may be opened on (space-separated, no port); loopback always works.
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
     ports:
-      - "127.0.0.1:4200:8080"
+      - "127.0.0.1:${FRONTEND_PORT:-4200}:8080"
     healthcheck:
       # 127.0.0.1 (IPv4: nginx does not listen on ::1) is always on the frontend's host allowlist.
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
@@ -59,3 +65,4 @@ services:
 
 volumes:
   pgdata:
+  instance_config:

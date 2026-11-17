@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
 import { CurrencyPipe } from '@angular/common';
 import {
   AfterViewInit,
@@ -349,6 +350,7 @@ Your opponent is %s (%s).`;
     private api: ApiService,
     private router: Router,
     private route: ActivatedRoute,
+    private connection: OpenRouterAccess = null!,
   ) {}
 
   ngOnInit(): void {
@@ -593,6 +595,11 @@ Your opponent is %s (%s).`;
   private pendingSubmission: { key: string; requestId: string } | null = null;
 
   create() {
+    if (this.connection) this.connection.withKey(() => this.createWithKey());
+    else this.createWithKey();
+  }
+
+  private createWithKey() {
     if (this.creating() || !this.openingValid()) {
       return;
     }

@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { EMPTY, Subject, of, throwError } from 'rxjs';
@@ -197,6 +198,7 @@ describe('GameView', () => {
     TestBed.configureTestingModule({
       imports: [GameView],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -2185,6 +2187,7 @@ describe('GameView resume while saving', () => {
     const startGame = vi.fn(() => of(void 0));
     TestBed.configureTestingModule({
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         {
           provide: ActivatedRoute,
@@ -2256,6 +2259,7 @@ describe('GameView piece images', () => {
   function renderGame(currentFen = START_FEN) {
     TestBed.configureTestingModule({
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         {
           provide: ApiService,

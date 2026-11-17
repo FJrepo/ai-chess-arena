@@ -193,7 +193,7 @@ class OpenRouterPromptCachingTest {
         OpenRouterService cold = new OpenRouterService();
         cold.objectMapper = JSON;
         cold.baseUrl = service.baseUrl;
-        cold.apiKey = "test-key";
+        cold.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
         assertPlain(send(cold, "anthropic/claude-sonnet", messages), messages);
         assertEquals(1, catalogRequests.get());
     }
@@ -421,7 +421,7 @@ class OpenRouterPromptCachingTest {
         OpenRouterService service = new OpenRouterService();
         service.objectMapper = JSON;
         service.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        service.apiKey = "test-key";
+        service.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
         service.defaultMaxTokens = 100;
         service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
         return service;

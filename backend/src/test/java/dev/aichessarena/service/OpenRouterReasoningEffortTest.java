@@ -226,7 +226,7 @@ class OpenRouterReasoningEffortTest {
     private OpenRouterService service() {
         OpenRouterService service = new OpenRouterService();
         service.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        service.apiKey = "test-key";
+        service.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
         service.objectMapper = new ObjectMapper();
         service.defaultTemperature = 0.7;
         service.defaultMaxTokens = 100;

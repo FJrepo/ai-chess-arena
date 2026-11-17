@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { MatSelectHarness } from '@angular/material/select/testing';
@@ -29,6 +30,7 @@ describe('TournamentBracket', () => {
   function render(t: Tournament): HTMLElement {
     TestBed.configureTestingModule({
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         {
           provide: ApiService,
@@ -77,6 +79,7 @@ describe('TournamentBracket', () => {
     };
     TestBed.configureTestingModule({
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         { provide: ApiService, useValue: api },
         {
@@ -523,6 +526,7 @@ describe('TournamentBracket', () => {
     };
     TestBed.configureTestingModule({
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         { provide: ApiService, useValue: api },
         {
@@ -675,6 +679,7 @@ describe('TournamentBracket', () => {
     };
     TestBed.configureTestingModule({
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         provideRouter([]),
         { provide: ApiService, useValue: api },
         {

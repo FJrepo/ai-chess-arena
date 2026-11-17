@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from '../../services/openrouter-access';
 import { By } from '@angular/platform-browser';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { MatSelectHarness } from '@angular/material/select/testing';
@@ -170,6 +171,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -270,6 +272,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -486,6 +489,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1310,6 +1314,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1388,6 +1393,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1489,6 +1495,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: createApiService() },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1645,6 +1652,7 @@ describe('TournamentSetup', () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
         { provide: ApiService, useValue: api },
         { provide: Router, useValue: createRouter() },
         { provide: ActivatedRoute, useValue: createRoute() },
@@ -1780,6 +1788,7 @@ async function renderSetup(api = createApiService()) {
   TestBed.configureTestingModule({
     imports: [TournamentSetup],
     providers: [
+      { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
       { provide: ApiService, useValue: api },
       { provide: Router, useValue: createRouter() },
       { provide: ActivatedRoute, useValue: createRoute() },

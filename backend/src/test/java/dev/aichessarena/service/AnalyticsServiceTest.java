@@ -789,7 +789,7 @@ class AnalyticsServiceTest {
                 }
             };
             catalog.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-            catalog.apiKey = "test-key";
+            catalog.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
             catalog.objectMapper = new ObjectMapper();
             catalog.modelsClock = now::get;
             if (stale) {

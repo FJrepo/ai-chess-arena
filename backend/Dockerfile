@@ -64,6 +64,7 @@ RUN set -eux; \
 RUN groupadd --gid 10001 app && \
     useradd --uid 10001 --gid 10001 --create-home --home-dir /home/app --shell /usr/sbin/nologin app
 
+RUN install -d -m 0700 -o app -g app /app/.local/secrets
 RUN mkdir -p /usr/share/licenses/stockfish
 COPY licenses/stockfish/ /usr/share/licenses/stockfish/
 COPY --from=build --chown=app:app /app/target/quarkus-app/ ./quarkus-app/

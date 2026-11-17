@@ -4,6 +4,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 
 ## Contents
 
+- [Connecting OpenRouter](#connecting-openrouter)
 - [Tournament formats and draw policies](#tournament-formats-and-draw-policies)
 - [Auto-run](#auto-run)
 - [Opening variety](#opening-variety)
@@ -24,6 +25,20 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Leaderboard](#leaderboard)
 - [Live settings](#live-settings)
 - [Scope and interpretation](#scope-and-interpretation)
+
+## Connecting OpenRouter
+
+The app starts without an OpenRouter key. Browse tournaments, analytics and setup first; the public model catalog needs no key. Creating a tournament, running a bracket, starting a battle or resuming a game checks the current key and opens the same **Connect OpenRouter** dialog when none is configured. After connecting, repeat the action; setup drafts stay intact when you close a manual-paste dialog.
+
+In **System → OpenRouter**, choose **Connect OpenRouter**. OpenRouter asks you to approve a key: **set a credit limit and expiration for this key on OpenRouter**. The backend exchanges the authorization code using [PKCE S256](https://openrouter.ai/docs/guides/overview/auth/oauth), validates it with the free [current-key endpoint](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key), and stores it privately. The callback uses the browser's current origin and port. State lasts ten minutes, is single-use and is bound to that browser's HttpOnly cookie and origin. Expired, cancelled or failed connections require starting again. Neither the key nor OpenRouter user ID is returned to the browser; user IDs are discarded.
+
+Alternatively paste a key into the password field and choose **Validate and save**. It is write-only and cleared immediately after submitting, including on failure. Invalid keys and provider outages leave the previous key untouched. Settings show only the source (`env`, `file`, `ui`, `none`), a masked four-character suffix, last check time and validation result. Status reads do not contact OpenRouter; **Test key** checks the effective key. Validation time/results are process-local and reset on backend restart or a change of effective key.
+
+**Delete local key** removes the UI-managed file, without revoking the key at OpenRouter. Revoke it there separately. New model requests use a replacement immediately; requests already sent finish with their original key. A missing/deleted credential during play is a provider problem and pauses play rather than causing a model forfeit. The public model catalog retains its existing five-minute cache and failure backoff independently of key changes.
+
+Environment/explicit secret-file keys are operator-managed and cannot be replaced or deleted in the UI (HTTP 409). For LAN setups, key management first requires the setup-token link from the backend log in the claiming browser; other browsers can view status but cannot test or change credentials. See [claiming and the threat model](deployment.md#instance-claim-and-threat-model).
+
+Credential API under `/api/config/openrouter`: `GET` status; `POST /connect` returns `authUrl`; `POST /complete` takes `{code,state}`; `POST /key` takes `{key}`; `DELETE /key`; `POST /test`; `POST /claim` takes `{token}`. Mutations require a same-origin browser request and an authorized browser cookie. Unknown/missing body fields fail with HTTP 400. Failed authorization or claiming returns 403, foreign hosts 421, and upstream failures 502. Status and mutations return `{key:{source,maskedSuffix,lastValidatedAt,validation},canManage}` (unset metadata may be omitted); `validation` is `none`, `unknown`, `valid`, `invalid` or `unavailable`. All responses use `Cache-Control: no-store`.
 
 ## Tournament formats and draw policies
 
@@ -540,7 +555,7 @@ Tournament settings changed with `PUT /api/tournaments/{id}` while a game is run
 
 ## Scope and interpretation
 
-- Built for **one operator on localhost**: no authentication, no user accounts. Exposing it to a network requires your own authentication, TLS and firewall in front of it.
+- Built for **one operator on localhost**: browser claiming protects key settings; there is no general login or user account. Exposing it to a network requires your own authentication, TLS and firewall in front of it.
 - A TLS-terminating reverse proxy in front of the frontend is not supported: the backend sees plain HTTP and rejects the browser's `https://` origin with 403.
 - One human participant per tournament; single elimination only.
 - Not a public chess site, a hosted service, or an engine-research suite.

@@ -1,3 +1,4 @@
+import { OpenRouterSettings } from '../../components/openrouter-settings/openrouter-settings';
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -15,6 +16,7 @@ export type StatusTone = 'healthy' | 'degraded' | 'unknown';
   selector: 'app-system-status',
   standalone: true,
   imports: [
+    OpenRouterSettings,
     MatButtonModule,
     MatCardModule,
     MatChipsModule,

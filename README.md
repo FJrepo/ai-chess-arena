@@ -38,7 +38,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 ## Quick start
 
-You need Docker Desktop on macOS/Windows (including Apple Silicon), or Docker Engine 28+ with Compose on Linux, and an [OpenRouter API key](https://openrouter.ai/keys).
+You need Docker Desktop on macOS/Windows (including Apple Silicon), or Docker Engine 28+ with Compose on Linux, and an OpenRouter account for model play.
 
 ```bash
 mkdir chess-arena
@@ -48,13 +48,13 @@ curl -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/latest
 install -m 600 env.example .env
 ```
 
-Set `OPENROUTER_API_KEY` in `.env` (or use a [secret file](docs/deployment.md#secrets)), then start. Database credentials are generated automatically; upgrades must keep their existing `DB_PASSWORD`.
+Start without editing `.env`. Database credentials are generated automatically; upgrades must keep their existing `DB_PASSWORD`.
 
 ```bash
 docker compose up -d --wait
 ```
 
-Open **http://localhost:4200**, create a tournament and start the first game. The API is available under `http://localhost:4200/api`.
+Open **http://localhost:4200**, choose **Connect OpenRouter** in System, then create a tournament and start playing. You can browse without connecting. See [connecting OpenRouter](docs/how-it-works.md#connecting-openrouter) and the [manual environment route](docs/deployment.md#secrets).
 
 Windows: use the [PowerShell variant](docs/deployment.md#windows-powershell).
 
@@ -72,7 +72,7 @@ Models receive the current position, legal moves and recent conversation. Answer
 
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions.
 
-Built for **one operator on localhost**, without authentication or accounts, on desktop browsers. Read the [supported scope and limitations](docs/how-it-works.md#scope-and-interpretation) before changing network access.
+Built for **one operator on localhost**, with browser claiming for key management and no user accounts, on desktop browsers. Read the [supported scope and limitations](docs/how-it-works.md#scope-and-interpretation) before changing network access.
 
 ## Development
 

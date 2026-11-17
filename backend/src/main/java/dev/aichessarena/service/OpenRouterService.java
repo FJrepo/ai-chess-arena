@@ -62,8 +62,11 @@ public class OpenRouterService {
     private static final long MODELS_CACHE_TTL_MS = 5 * 60 * 1000L;
     private static final long MODELS_FAILURE_BACKOFF_MS = 60_000L;
 
-    @ConfigProperty(name = "openrouter.api-key")
-    String apiKey;
+    @Inject
+    OpenRouterKeyStore keyStore;
+
+    @Inject
+    OpenRouterConnection connection;
 
     @ConfigProperty(name = "openrouter.base-url")
     String baseUrl;
@@ -182,6 +185,9 @@ public class OpenRouterService {
 
     private LlmResponse chatRequest(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                                     int maxOutputTokens, ReasoningEffort reasoningEffort) {
+        if (effectiveKey().isBlank()) {
+            return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0, "Connect OpenRouter to run games", 0, null);
+        }
         long startNanos = nanoClock.getAsLong();
         AnswerDeadline safetyDeadline = AnswerDeadline.after(requestSafetyCap, startNanos);
         boolean limitedByMoveTime = answerDeadline != null && answerDeadline.isBefore(safetyDeadline);
@@ -234,9 +240,13 @@ public class OpenRouterService {
             }
             // The request timeout only bounds the time until the response headers arrive, and OpenRouter starts
             // long answers early: the deadline for the complete body is enforced by waiting on the future below.
+            String requestKey = effectiveKey();
+            if (requestKey.isBlank()) {
+                return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0, "Connect OpenRouter to run games", 0, null);
+            }
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/chat/completions"))
-                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Authorization", "Bearer " + requestKey)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .timeout(Duration.ofNanos(sendBudgetNanos))
@@ -250,7 +260,7 @@ public class OpenRouterService {
                 return HttpResponse.BodySubscribers.mapping(HttpResponse.BodyHandlers.ofString().apply(info),
                         responseBody -> {
                             completedAtNanos.set(nanoClock.getAsLong());
-                            return responseBody;
+                            return responseBody.replace(requestKey, "[redacted]");
                         });
             });
             sendObserver.accept(pending);
@@ -296,9 +306,9 @@ public class OpenRouterService {
             if (pending != null) {
                 pending.cancel(true);
             }
-            LOG.error("OpenRouter API call failed", e);
+            LOG.error("OpenRouter API call failed");
             return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
-                    "OpenRouter request failed: " + abbreviate(String.valueOf(e.getMessage())), 0, null);
+                    "OpenRouter request failed", 0, null);
         }
     }
 
@@ -393,7 +403,7 @@ public class OpenRouterService {
     }
 
     private void refreshModelsInBackground(ModelsSnapshot snapshot) {
-        if (apiKey == null || apiKey.isBlank() || objectMapper == null
+        if (objectMapper == null
                 || !snapshot.needsRefresh(modelsClock.getAsLong())
                 || !modelsRefreshScheduled.compareAndSet(false, true)) {
             return;
@@ -419,7 +429,7 @@ public class OpenRouterService {
     private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime,
                                          int responseStatus, long elapsed, CacheRejection cacheRejection) {
         if (cause instanceof HttpConnectTimeoutException) {
-            LOG.warnf("Could not connect to OpenRouter for model %s: %s", modelId, cause.getMessage());
+            LOG.warnf("Could not connect to OpenRouter for model %s", modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
                     "Could not connect to OpenRouter (connection timed out)", 0, null);
         }
@@ -428,14 +438,13 @@ public class OpenRouterService {
             return deadlineExceeded(modelId, limitedByMoveTime, responseStatus, elapsed, cacheRejection);
         }
         if (cause instanceof IOException) {
-            LOG.warnf("OpenRouter request failed for model %s: %s", modelId, cause.toString());
+            LOG.warnf("OpenRouter request failed for model %s", modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
-                    "Could not reach OpenRouter: " + abbreviate(String.valueOf(cause.getMessage())), 0, null);
+                    "Could not reach OpenRouter", 0, null);
         }
-        LOG.error("OpenRouter API call failed", cause);
-        String detail = cause == null ? null : cause.getMessage();
+        LOG.error("OpenRouter API call failed");
         return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
-                "OpenRouter request failed: " + abbreviate(String.valueOf(detail)), 0, null);
+                "OpenRouter request failed", 0, null);
     }
 
     /**
@@ -626,7 +635,7 @@ public class OpenRouterService {
 
     /** The model's raw catalog entry; null when the catalog is unavailable or does not list the model. */
     private JsonNode catalogEntry(String modelId) {
-        if (modelId == null || apiKey == null || apiKey.isBlank() || objectMapper == null) {
+        if (modelId == null || objectMapper == null) {
             return null;
         }
         try {
@@ -702,30 +711,17 @@ public class OpenRouterService {
         return new EffortDecision(requested, "supported by the model");
     }
 
-    public boolean checkApiKey() {
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/models"))
-                    .header("Authorization", "Bearer " + apiKey)
-                    .GET()
-                    .timeout(Duration.ofSeconds(10))
-                    .build();
+    private String effectiveKey() {
+        return keyStore == null ? "" : keyStore.key();
+    }
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() == 200;
-        } catch (Exception e) {
-            return false;
-        }
+    public boolean checkApiKey() {
+        return connection != null && "valid".equals(connection.test().validation());
     }
 
     private JsonNode fetchRawModels() {
         ObjectNode fallback = objectMapper.createObjectNode();
         fallback.putArray("data");
-
-        if (apiKey == null || apiKey.isBlank()) {
-            fallback.put("error", "OPENROUTER_API_KEY is not configured");
-            return fallback;
-        }
 
         long now = modelsClock.getAsLong();
         ModelsSnapshot snapshot = modelsSnapshot;
@@ -746,7 +742,6 @@ public class OpenRouterService {
             try {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/models"))
-                        .header("Authorization", "Bearer " + apiKey)
                         .GET()
                         .timeout(Duration.ofSeconds(30))
                         .build();

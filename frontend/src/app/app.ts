@@ -1,3 +1,4 @@
+import { OpenRouterAccess } from './services/openrouter-access';
 import { Component, OnInit, signal } from '@angular/core';
 import { RouterOutlet, RouterLink } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -13,7 +14,10 @@ import { MatIconModule } from '@angular/material/icon';
 export class App implements OnInit {
   darkMode = signal(true);
 
+  constructor(private connection: OpenRouterAccess = null!) {}
+
   ngOnInit(): void {
+    this.connection?.initialize();
     this.applyTheme(this.resolveInitialTheme());
   }
 

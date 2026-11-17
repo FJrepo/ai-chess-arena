@@ -1,6 +1,11 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
+  ...['setup', 'connect/callback'].map((path) => ({
+    path,
+    loadComponent: () =>
+      import('./pages/connect-callback/connect-callback').then((m) => m.ConnectCallback),
+  })),
   { path: '', redirectTo: '/tournaments', pathMatch: 'full' },
   {
     path: 'tournaments',

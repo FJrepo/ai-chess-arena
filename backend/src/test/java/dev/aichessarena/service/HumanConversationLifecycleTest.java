@@ -248,7 +248,7 @@ class HumanConversationLifecycleTest {
             server.start();
             router.objectMapper = JSON;
             router.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-            router.apiKey = "test-key";
+            router.keyStore = new OpenRouterKeyStore("test-key", java.nio.file.Path.of("target/test-keys"), name -> null);
             engine = buildEngine();
         }
 
