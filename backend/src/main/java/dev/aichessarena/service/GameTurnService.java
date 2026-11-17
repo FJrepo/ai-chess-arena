@@ -125,9 +125,13 @@ public class GameTurnService {
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
                 request.tournamentChatMode(), request.tournamentBanterLevel());
 
+        int maxAttempts = Math.max(1, request.maxRetries());
+        if (request.maxRetries() < 1) {
+            LOG.warnf("Game %s: invalid stored maxRetries %d, allowing one attempt", request.gameId(), request.maxRetries());
+        }
         int providerFailures = 0;
         String lastProviderFailure = null;
-        for (int attempt = 1; attempt <= request.maxRetries(); attempt++) {
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             if (!request.shouldContinue().getAsBoolean()) {
                 return TurnResult.stopped();
             }
@@ -186,17 +190,14 @@ public class GameTurnService {
             }
 
             if (llmResponse.timedOut()) {
+                if (lastProviderFailure != null || moveTimeoutSeconds == null) {
+                    String detail = lastProviderFailure != null
+                            ? "Move time ran out after OpenRouter problems earlier in this turn (" + lastProviderFailure + ")"
+                            : "The OpenRouter request timed out although the tournament has no move time limit";
+                    recordAttempt(request, effort, attempt, Outcome.PROVIDER_RETRYABLE, null, detail, llmResponse);
+                    return pauseForProvider(request, detail);
+                }
                 recordAttempt(request, effort, attempt, Outcome.TIMEOUT, null, "No answer within the move time", llmResponse);
-                if (lastProviderFailure != null) {
-                    // Outages earlier in this turn ate part of the move time; don't score that as a model timeout.
-                    return pauseForProvider(request,
-                            "Move time ran out after OpenRouter problems earlier in this turn (" + lastProviderFailure + ")");
-                }
-                if (moveTimeoutSeconds == null) {
-                    // Without a move time limit the model cannot run out of time: this timeout is technical.
-                    return pauseForProvider(request, "The OpenRouter request timed out although the tournament has "
-                            + "no move time limit");
-                }
                 LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
                 gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
                 return TurnResult.terminal();
@@ -210,7 +211,7 @@ public class GameTurnService {
                 recordAttempt(request, effort, attempt, Outcome.EMPTY_RESPONSE, null, "Model returned an empty response", llmResponse);
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Model returned an empty response",
                         Outcome.EMPTY_RESPONSE, null);
-                if (attempt < request.maxRetries()) {
+                if (attempt < maxAttempts) {
                     request.history().add(new OpenRouterService.ChatMsg(
                             "user",
                             promptService.buildRetryPrompt(
@@ -218,7 +219,7 @@ public class GameTurnService {
                                     request.fen(),
                                     request.legalMoves(),
                                     attempt + 1,
-                                    request.maxRetries()
+                                    maxAttempts
                             )
                     ));
                 }
@@ -235,7 +236,7 @@ public class GameTurnService {
                 recordAttempt(request, effort, attempt, Outcome.PARSE_FAILURE, null, parseResult.message(), llmResponse);
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Failed to parse response as JSON",
                         Outcome.PARSE_FAILURE, null);
-                if (attempt < request.maxRetries()) {
+                if (attempt < maxAttempts) {
                     request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
                     request.history().add(new OpenRouterService.ChatMsg(
                             "user",
@@ -244,7 +245,7 @@ public class GameTurnService {
                                     request.fen(),
                                     request.legalMoves(),
                                     attempt + 1,
-                                    request.maxRetries()
+                                    maxAttempts
                             )
                     ));
                 }
@@ -267,7 +268,7 @@ public class GameTurnService {
                     recordAttempt(request, effort, attempt, Outcome.RESIGN_NOT_ALLOWED, null, error, llmResponse);
                     broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Tried to resign: " + error,
                             Outcome.RESIGN_NOT_ALLOWED, null);
-                    if (attempt < request.maxRetries()) {
+                    if (attempt < maxAttempts) {
                         request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
                         request.history().add(new OpenRouterService.ChatMsg(
                                 "user",
@@ -276,7 +277,7 @@ public class GameTurnService {
                                         request.fen(),
                                         request.legalMoves(),
                                         attempt + 1,
-                                        request.maxRetries()
+                                        maxAttempts
                                 )
                         ));
                     }
@@ -302,7 +303,7 @@ public class GameTurnService {
                         Outcome.ILLEGAL_MOVE,
                         parseResult.move()
                 );
-                if (attempt < request.maxRetries()) {
+                if (attempt < maxAttempts) {
                     request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
                     request.history().add(new OpenRouterService.ChatMsg(
                             "user",
@@ -311,7 +312,7 @@ public class GameTurnService {
                                     request.fen(),
                                     request.legalMoves(),
                                     attempt + 1,
-                                    request.maxRetries()
+                                    maxAttempts
                             )
                     ));
                 }
@@ -363,7 +364,7 @@ public class GameTurnService {
         }
 
         if (autoRuns != null && !autoRuns.beforeRequest(request.gameId())) return TurnResult.paused();
-        gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), request.maxRetries());
+        gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), maxAttempts);
         return TurnResult.terminal();
     }
 

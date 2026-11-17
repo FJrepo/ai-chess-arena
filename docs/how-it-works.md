@@ -178,7 +178,7 @@ API: `GET /api/models?featuredOnly=false&limit=0` returns the whole catalog (`li
 
 Models are asked to answer in JSON, but the parser also extracts a move from other formats; the move must be legal and, if the tournament has a time limit per move, arrive within it.
 
-*Max attempts per move* (API field `maxRetries`) is the total number of attempts per move (3 means up to two retries); after that the model forfeits, and a model that runs out of time forfeits on time.
+*Max attempts per move* (API field `maxRetries`) accepts whole numbers from 1 to 20 and defaults to 3, which allows two retries. A model forfeits if it exhausts its attempts or its move time. Games with a stored attempt limit below 1 get one attempt.
 
 Each model gets its system prompt, an append-only chunk of its own prior exchanges and the current turn. Every new turn prompt contains the moves so far (PGN, including book moves) and the full position (FEN, board, legal moves), plus the opponent's latest move/message when present. New position and opponent data go only in that newest user message; earlier messages are replayed verbatim.
 
@@ -448,6 +448,8 @@ Only finished games count as games played; byes and games that are waiting, runn
 A time window selects finished games by when they finished and unfinished ones by when they were created; moves and attempts follow their games.
 
 The reliability score (0–100) is based on finished games: 50% first-try legal moves (moves played without a retry, out of all moves plus turns lost to an invalid-move forfeit and resigned turns that needed retries), 30% games not forfeited and 20% few retries (100 minus 50 per average retry).
+
+Reliability and comparison use the earliest stored move for each ply, with the row ID breaking timestamp ties. Reported spend includes paid duplicate rows. When provider retries consume the move deadline, the game pauses and the timed-out attempt is recorded as a retryable provider failure.
 
 With fewer than 60 moves it is pulled toward 60 in proportion to the moves played, and below 3 games it is marked *Insufficient data*.
 

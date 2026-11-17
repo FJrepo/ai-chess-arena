@@ -141,7 +141,13 @@ Your opponent is %s (%s).`;
   readonly typicalMoveSeconds = TYPICAL_MOVE_SECONDS;
   /** Seconds per move (10-3600) while limitMoveTime is on. */
   moveTimeout = 120;
-  maxRetries = 3;
+  readonly maxRetries = signal<number | null>(3);
+  private readonly validMaxRetries = computed(() => {
+    const attempts = this.maxRetries();
+    return attempts !== null && Number.isInteger(attempts) && attempts >= 1 && attempts <= 20
+      ? attempts
+      : null;
+  });
   /** Cap on generated tokens per answer (128-262144); includes reasoning tokens. */
   maxOutputTokens = 16384;
   /**
@@ -592,7 +598,12 @@ Your opponent is %s (%s).`;
       count,
       participantsOk,
       creating,
-      canCreate: named && participantsOk && !creating && this.openingValid(),
+      canCreate:
+        named &&
+        participantsOk &&
+        !creating &&
+        this.openingValid() &&
+        this.validMaxRetries() !== null,
     };
   });
   /**
@@ -607,7 +618,8 @@ Your opponent is %s (%s).`;
   }
 
   private createWithKey() {
-    if (this.creating() || !this.openingValid()) {
+    const maxRetries = this.validMaxRetries();
+    if (this.creating() || !this.openingValid() || maxRetries === null) {
       return;
     }
     this.creating.set(true);
@@ -618,7 +630,7 @@ Your opponent is %s (%s).`;
       sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
       // 0 means no time limit per move.
       moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : 0,
-      maxRetries: this.maxRetries,
+      maxRetries,
       maxOutputTokens: this.maxOutputTokens,
       matchupBestOf: this.matchupBestOf,
       finalsBestOf: this.finalsBestOf,
@@ -836,7 +848,7 @@ Your opponent is %s (%s).`;
     this.name = preset.name;
     this.limitMoveTime = false;
     this.moveTimeout = preset.moveTimeout;
-    this.maxRetries = preset.maxRetries;
+    this.maxRetries.set(preset.maxRetries);
     this.maxOutputTokens = preset.maxOutputTokens;
     this.drawPolicy = preset.drawPolicy;
     this.matchupBestOf = preset.matchupBestOf;

@@ -22,6 +22,8 @@ import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class GameTurnServiceTest {
 
@@ -29,6 +31,27 @@ class GameTurnServiceTest {
 
     private static final LlmResponse VALID_MOVE =
             new LlmResponse("{\"move\":\"e4\",\"message\":\"Hi\"}", 10, 6, null, 400, "{}", false, null);
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1})
+    void legacyAttemptLimitStillGivesTheModelOneAttempt(int limit) {
+        Fixture fixture = new Fixture(VALID_MOVE);
+
+        assertTrue(fixture.service.playTurn(request(new ArrayList<>(), limit, 30)).moveRecorded());
+        assertEquals(1, fixture.openRouter.calls);
+        assertEquals(List.of(Outcome.ACCEPTED), fixture.attempts.outcomes());
+        assertFalse(fixture.lifecycle.invalidMovesForfeited);
+    }
+
+    @Test
+    void legacyAttemptLimitForfeitsOnlyAfterOneInvalidAnswer() {
+        Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+
+        assertTrue(fixture.service.playTurn(request(new ArrayList<>(), 0, 30)).isTerminal());
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE), fixture.attempts.outcomes());
+        assertEquals(1, fixture.openRouter.calls);
+        assertEquals(1, fixture.lifecycle.forfeitAttempts);
+    }
 
     @Test
     void timedOutModelResponseForfeitsTheTurn() {
@@ -137,14 +160,18 @@ class GameTurnServiceTest {
     void timeoutAfterAnOutageInTheSameTurnPausesInsteadOfForfeiting() {
         Fixture fixture = new Fixture(
                 failure(ProviderOutcome.RETRYABLE, 503, "OpenRouter server error (HTTP 503)"),
-                new LlmResponse(null, 0, 0, null, 0, null, true, "Request timed out")
+                VALID_MOVE
         );
+        fixture.openRouter.callDurationsMs.addAll(List.of(29_000L, 1_000L));
 
         GameTurnService.TurnResult result = fixture.service.playTurn(request(new ArrayList<>(), 3, 30));
 
         assertTrue(result.pausedGame());
         assertTrue(fixture.lifecycle.pauseDetail.contains("OpenRouter server error (HTTP 503)"));
         assertNull(fixture.lifecycle.lastForfeitColor);
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_RETRYABLE), fixture.attempts.outcomes());
+        assertEquals(fixture.lifecycle.pauseDetail, fixture.attempts.recorded.getLast().errorMessage());
+        assertTrue(fixture.attempts.outcomes().stream().noneMatch(Outcome::isModelFailure));
     }
 
     @Test
@@ -677,6 +704,7 @@ class GameTurnServiceTest {
 
         assertTrue(result.pausedGame());
         assertNull(fixture.lifecycle.lastForfeitColor);
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), fixture.attempts.outcomes());
     }
 
     @Test
@@ -1095,6 +1123,7 @@ class GameTurnServiceTest {
         private String lastForfeitColor;
         private Integer lastTimeoutSeconds;
         private boolean invalidMovesForfeited;
+        private Integer forfeitAttempts;
         private String pauseDetail;
 
         @Override
@@ -1111,6 +1140,7 @@ class GameTurnServiceTest {
         @Override
         public void forfeitInvalidMoves(UUID gameId, String forfeitColor, int maxRetries) {
             invalidMovesForfeited = true;
+            forfeitAttempts = maxRetries;
         }
 
         @Override

@@ -64,7 +64,7 @@ public class TournamentResource {
         t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
         // null keeps the default of 60 seconds; 0 means no time limit per move.
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());
-        if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
+        t.maxRetries = parseMaxRetries(req.maxRetries(), t.maxRetries);
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
@@ -132,7 +132,7 @@ public class TournamentResource {
         }
         // null leaves the move time limit unchanged; 0 removes it.
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());
-        if (req.maxRetries() != null) t.maxRetries = req.maxRetries();
+        t.maxRetries = parseMaxRetries(req.maxRetries(), t.maxRetries);
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
@@ -308,6 +308,14 @@ public class TournamentResource {
                     .formatted(Tournament.MIN_MOVE_TIMEOUT_SECONDS, Tournament.MAX_MOVE_TIMEOUT_SECONDS));
         }
         return value;
+    }
+
+    private static int parseMaxRetries(JsonNode value, int current) {
+        if (value == null || value.isNull()) return current;
+        if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < 1 || value.intValue() > 20) {
+            throw new IllegalArgumentException("maxRetries must be a whole number from 1 to 20");
+        }
+        return value.intValue();
     }
 
     private int parseMaxOutputTokens(int value) {

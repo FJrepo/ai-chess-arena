@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- Tournament setup and the API accept 1–20 attempts per move. Games with older zero or negative limits get one attempt.
+- Attempt history attributes timeouts caused by provider retries to the provider, so they do not count against the model.
+- Reliability and comparison count each played ply once, even in older games with duplicate moves. Spend includes every paid answer.
+
 ## [1.7.0] - 2026-11-17
 
 Zero-config start: download two files, start with generated secrets, then connect OpenRouter via OAuth in the app instead of adding a key to `.env`. The Club Scoresheet theme brings a new look and board colours, while analytics are organised into four tabs. Choose a banter level, get a bracket when creating a tournament, and use the more compact setup page (round 3).
