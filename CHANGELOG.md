@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 - Set up from Docker and two downloaded release assets: the README now gives a 5-minute start with only an OpenRouter key and a user-chosen database password to configure. The production image namespace defaults to `fjrepo`; explicit namespace/tag overrides and existing database volumes remain supported. The repository's `docker-compose.prod.yml` still requires an explicit image tag.
+- Tournament setup page: the add-participant form comes first, and the tournament name, seeded lineup, readiness checklist and Create button sit together in the right column, with the estimate below it. The column stays sticky only when its measured height fits the window with space above and below; without ResizeObserver support, it uses normal page scrolling. Below 1200px, settings precede the lineup to match keyboard navigation. Participant reasoning-effort overrides remain visible in roster rows. Participant and shared custom instructions and the system rules are collapsed by default; collapsing participant instructions preserves the draft when adding. Long helper texts are now one line with details in a "?" tooltip. The estimate reads as a rough heuristic ("Tournament Estimate", "about $X", "can be higher with reasoning models"), and the risk bands are Low risk / Moderate risk / High cost.
 
 ## [1.5.0] - 2026-11-17
 
