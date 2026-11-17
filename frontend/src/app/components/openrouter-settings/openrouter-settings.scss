@@ -16,7 +16,8 @@ p {
 }
 
 h2 {
-  font: var(--mat-sys-title-large);
+  font-size: var(--mat-sys-title-large-size);
+  line-height: var(--mat-sys-title-large-line-height);
 }
 
 .connection-status,
@@ -29,6 +30,7 @@ h2 {
 .hint {
   color: var(--mat-sys-on-surface-variant);
   font: var(--mat-sys-body-small);
+  font-size: var(--app-text-secondary-size);
 }
 
 .error {
@@ -50,4 +52,15 @@ form button {
 mat-form-field {
   width: 100%;
   min-width: 0;
+}
+
+section {
+  padding: var(--app-page-gap);
+  border: var(--app-surface-border);
+  border-radius: var(--app-surface-radius-md);
+  background: var(--app-card-bg);
+}
+
+.connect-primary .hint {
+  color: var(--app-accent-info);
 }

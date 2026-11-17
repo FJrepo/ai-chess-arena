@@ -10,14 +10,9 @@
   align-items: center;
   padding: 14px 20px;
   border-radius: 14px;
-  background:
-    radial-gradient(
-      130% 200% at 0% 0%,
-      color-mix(in srgb, var(--mat-sys-primary) 12%, transparent),
-      transparent 60%
-    ),
-    color-mix(in srgb, var(--mat-sys-surface-container-low) 92%, transparent);
+  background: var(--app-surface-bg);
   border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 20%, transparent);
+  border-left: var(--app-hero-bar-width) solid var(--app-hero-bar);
   backdrop-filter: blur(10px);
 
   .header-left {
@@ -40,7 +35,6 @@
 
     h2 {
       margin: 0;
-      font-family: 'Roboto', sans-serif;
       font-size: 1.6rem;
       font-weight: 800;
       letter-spacing: 0.04em;
@@ -136,13 +130,12 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.06em;
-        color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+        color: var(--mat-sys-on-surface-variant);
       }
 
       .value {
         font-size: 1.4rem;
         font-weight: 800;
-        font-family: 'Roboto', sans-serif;
         color: var(--mat-sys-primary);
       }
     }
@@ -185,7 +178,7 @@
     font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 50%, transparent);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   .stat-value {
@@ -237,7 +230,7 @@
       font-weight: 600;
 
       .model-name {
-        color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+        color: var(--mat-sys-on-surface-variant);
       }
       .model-price {
         color: var(--mat-sys-primary);
@@ -267,7 +260,7 @@
   p {
     font-size: 1.1rem;
     font-weight: 500;
-    color: color-mix(in srgb, var(--mat-sys-on-surface) 70%, transparent);
+    color: var(--mat-sys-on-surface-variant);
     max-width: 400px;
   }
 

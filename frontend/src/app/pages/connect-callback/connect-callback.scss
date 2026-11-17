@@ -8,7 +8,8 @@
   margin: 0 auto;
   border: var(--app-surface-border);
   border-radius: var(--app-surface-radius-md);
-  background: var(--app-surface-bg);
+  background: var(--app-card-bg);
+  border-top: var(--app-rule-width) solid var(--app-accent-info);
   box-shadow: var(--app-surface-shadow);
 }
 
@@ -25,7 +26,8 @@ p {
 }
 
 h1 {
-  font: var(--mat-sys-headline-small);
+  font-size: var(--mat-sys-headline-small-size);
+  line-height: var(--mat-sys-headline-small-line-height);
 }
 
 .error {
@@ -36,4 +38,8 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+p:not(.error) {
+  color: var(--app-accent-info);
 }

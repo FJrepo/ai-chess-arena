@@ -73,7 +73,7 @@
               <tbody>
                 @for (row of data.models; track row.modelId; let index = $index) {
                   <tr>
-                    <td class="rank">{{ index + 1 }}</td>
+                    <td class="rank num">{{ index + 1 }}</td>
                     <th scope="row" class="model">
                       <div class="model-name">
                         <app-provider-logo [modelId]="row.modelId.replace('~', '')" />

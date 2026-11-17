@@ -21,6 +21,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Move quality](#move-quality) and [missed mates](#missed-mates)
 - [Conversion metrics](#conversion-metrics)
 - [Analytics and reliability](#analytics-and-reliability)
+- [Board colours](#board-colours)
 - [Export](#export)
 - [Leaderboard](#leaderboard)
 - [Live settings](#live-settings)
@@ -509,6 +510,10 @@ Comparison API rows carry `resignations`, `resignationsEvaluated`, `resignations
 OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; so does an answer that is cut off at the output-token limit. Games interrupted by a restart can be resumed.
 
 Recognized OpenRouter failures (rate limits, server or network errors, invalid key, no credits) are retried or pause the game with the reason, and the game can be resumed. A request that simply exceeds the time limit per move still counts as the model's timeout; one that exceeds the technical 10-minute safety cap does not.
+
+## Board colours
+
+In the game view, use **Board** beside the flip and export controls to choose **Green** (default), **Blue-grey** or **Wood**. The choice is saved in this browser, applies to boards and captured-piece trays, and stays independent of light/dark mode; unavailable storage keeps it for the current session. See the [design system](design-system.md#board-themes) for the shared visual rules.
 
 ## Export
 

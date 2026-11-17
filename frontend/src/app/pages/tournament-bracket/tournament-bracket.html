@@ -59,7 +59,7 @@
         @if (costSummary(); as summary) {
           <div class="quick-cost">
             <span class="label">Total Spend</span>
-            <span class="value">{{ summary.totalCostUsd | currency: 'USD' }}</span>
+            <span class="value num">{{ summary.totalCostUsd | currency: 'USD' }}</span>
           </div>
         }
         <button mat-icon-button (click)="loadCostSummary()" [disabled]="costSummaryLoading()">
@@ -196,11 +196,15 @@
         <div class="cost-details-grid">
           <div class="cost-stat">
             <span class="stat-label">Avg / Game</span>
-            <span class="stat-value">{{ summary.averageCostPerGameUsd | currency: 'USD' }}</span>
+            <span class="stat-value num">{{
+              summary.averageCostPerGameUsd | currency: 'USD'
+            }}</span>
           </div>
           <div class="cost-stat">
             <span class="stat-label">Avg / Move</span>
-            <span class="stat-value">{{ summary.averageCostPerMoveUsd | currency: 'USD' }}</span>
+            <span class="stat-value num">{{
+              summary.averageCostPerMoveUsd | currency: 'USD'
+            }}</span>
           </div>
 
           @if (summary.highestCostGame; as highestCostGame) {
@@ -223,7 +227,7 @@
               @for (model of summary.topModels; track model.modelId) {
                 <div class="model-cost-tag">
                   <span class="model-name">{{ model.modelId }}</span>
-                  <span class="model-price">{{ model.totalCostUsd | currency: 'USD' }}</span>
+                  <span class="model-price num">{{ model.totalCostUsd | currency: 'USD' }}</span>
                 </div>
               }
             </div>

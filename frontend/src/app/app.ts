@@ -1,3 +1,4 @@
+import { BoardThemeService } from './services/board-theme.service';
 import { OpenRouterAccess } from './services/openrouter-access';
 import { Component, OnInit, signal } from '@angular/core';
 import { RouterOutlet, RouterLink } from '@angular/router';
@@ -14,10 +15,14 @@ import { MatIconModule } from '@angular/material/icon';
 export class App implements OnInit {
   darkMode = signal(true);
 
-  constructor(private connection: OpenRouterAccess = null!) {}
+  constructor(
+    private boardTheme: BoardThemeService,
+    private connection: OpenRouterAccess = null!,
+  ) {}
 
   ngOnInit(): void {
     this.connection?.initialize();
+    this.boardTheme.apply();
     this.applyTheme(this.resolveInitialTheme());
   }
 

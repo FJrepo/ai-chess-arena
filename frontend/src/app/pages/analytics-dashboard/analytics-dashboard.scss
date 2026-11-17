@@ -1,48 +1,5 @@
-@use 'sass:map';
-@use '@angular/material' as mat;
-
-// Card surfaces and grade tones follow the system status page: theme surface tokens for
-// the cards, Material's tonal palettes for the success and warning tones (M3 has no
-// success role). Dark is the app default; the light values sit under :host-context.
-$success: mat.$green-palette;
-$warning: mat.$orange-palette;
-
 :host {
-  --analytics-card-bg: var(--mat-sys-surface-container);
-  --analytics-card-border: var(--mat-sys-outline-variant);
-  --analytics-card-shadow: none;
-  --analytics-divider: color-mix(in srgb, var(--mat-sys-outline-variant) 70%, transparent);
-  --analytics-caption: var(--mat-sys-on-surface-variant);
-
-  --analytics-success-text: color-mix(
-    in srgb,
-    #{map.get($success, 80)} 55%,
-    var(--mat-sys-on-surface)
-  );
-  --analytics-success-border: color-mix(in srgb, var(--analytics-success-text) 60%, transparent);
-  --analytics-success-fill: color-mix(in srgb, var(--analytics-success-text) 14%, transparent);
-
-  --analytics-warning-text: #{map.get($warning, 80)};
-  --analytics-warning-border: color-mix(in srgb, var(--analytics-warning-text) 60%, transparent);
-  --analytics-warning-fill: color-mix(in srgb, var(--analytics-warning-text) 14%, transparent);
-
   display: block;
-}
-
-:host-context([data-theme='light']) {
-  --analytics-card-bg: var(--mat-sys-surface-container-lowest);
-  --analytics-card-border: color-mix(in srgb, var(--mat-sys-outline-variant) 80%, transparent);
-  --analytics-card-shadow:
-    0 1px 2px color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent),
-    0 4px 14px color-mix(in srgb, var(--mat-sys-shadow) 4%, transparent);
-
-  --analytics-success-text: #{map.get($success, 30)};
-  --analytics-success-border: #{map.get($success, 40)};
-  --analytics-success-fill: color-mix(in srgb, #{map.get($success, 40)} 8%, transparent);
-
-  --analytics-warning-text: #{map.get($warning, 30)};
-  --analytics-warning-border: #{map.get($warning, 40)};
-  --analytics-warning-fill: color-mix(in srgb, #{map.get($warning, 40)} 8%, transparent);
 }
 
 .analytics-page {
@@ -63,12 +20,12 @@ $warning: mat.$orange-palette;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 4px 4px 0;
+  padding: 4px 4px 0 var(--app-page-gap);
 
   h1 {
     margin: 2px 0 4px;
-    font: var(--mat-sys-headline-small);
-    font-weight: 500;
+    font-size: var(--mat-sys-headline-small-size);
+    line-height: var(--mat-sys-headline-small-line-height);
   }
 
   p {
@@ -77,7 +34,8 @@ $warning: mat.$orange-palette;
 }
 
 .analytics-kicker {
-  font: var(--mat-sys-label-medium);
+  font-size: var(--app-text-secondary-size);
+  line-height: var(--mat-sys-label-medium-line-height);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--mat-sys-primary);
@@ -94,13 +52,14 @@ $warning: mat.$orange-palette;
   align-items: center;
   gap: 8px;
   font: var(--mat-sys-label-medium);
+  font-size: var(--app-text-secondary-size);
 
   &::before {
     content: '';
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--analytics-success-border);
+    background: var(--app-success-border);
   }
 }
 
@@ -110,11 +69,11 @@ $warning: mat.$orange-palette;
 .breakdown-card,
 .kpi-card,
 .table-card {
-  border: 1px solid var(--analytics-card-border);
+  border: 1px solid var(--app-card-border);
   border-radius: var(--app-surface-radius-md);
   padding: 20px;
-  background: var(--analytics-card-bg);
-  box-shadow: var(--analytics-card-shadow);
+  background: var(--app-card-bg);
+  box-shadow: var(--app-card-shadow);
 }
 
 // Muted helper text, readable in both themes.
@@ -130,7 +89,7 @@ $warning: mat.$orange-palette;
 .breakdown-card p,
 .tab-intro,
 .loading-state {
-  color: var(--analytics-caption);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .leader-sub,
@@ -146,6 +105,7 @@ $warning: mat.$orange-palette;
 .leader-label,
 .kpi-card .label {
   font: var(--mat-sys-label-medium);
+  font-size: var(--app-text-secondary-size);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -260,14 +220,14 @@ $warning: mat.$orange-palette;
 
 // A leader picked from too small a sample is a caveat, not a winner highlight.
 .low-sample .leader-value {
-  color: var(--analytics-caption);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .leader-caveat {
   display: flex;
   gap: 6px;
   margin: 10px 0 0;
-  font-size: 0.8125rem;
+  font-size: var(--app-text-secondary-size);
 
   mat-icon {
     flex: none;
@@ -285,8 +245,8 @@ $warning: mat.$orange-palette;
 .table-card h2,
 .breakdown-card h2 {
   margin: 0 0 16px;
-  font: var(--mat-sys-title-medium);
-  font-weight: 600;
+  font-size: var(--mat-sys-title-medium-size);
+  line-height: var(--mat-sys-title-medium-line-height);
 }
 
 .section-header {
@@ -330,7 +290,7 @@ $warning: mat.$orange-palette;
     min-width: 0;
     overflow-wrap: anywhere;
     padding-top: 12px;
-    border-top: 1px solid var(--analytics-divider);
+    border-top: 1px solid var(--app-divider);
 
     &:first-child {
       border-top: none;
@@ -342,9 +302,9 @@ $warning: mat.$orange-palette;
 .table-wrap {
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--mat-sys-outline) var(--analytics-card-bg);
+  scrollbar-color: var(--mat-sys-outline) var(--app-card-bg);
   border-radius: 12px;
-  border: 1px solid var(--analytics-divider);
+  border: 1px solid var(--app-divider);
 }
 
 .analytics-table {
@@ -357,10 +317,10 @@ $warning: mat.$orange-palette;
   td {
     text-align: left;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--analytics-divider);
   }
 
   td {
+    border-bottom: 1px solid var(--app-divider);
     white-space: nowrap;
     vertical-align: middle;
   }
@@ -370,11 +330,9 @@ $warning: mat.$orange-palette;
     vertical-align: bottom;
     background: color-mix(in srgb, var(--mat-sys-on-surface) 4%, transparent);
     font-weight: 700;
-    font-size: 0.72rem;
     line-height: 1.3;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--analytics-caption);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   .num {
@@ -416,8 +374,8 @@ $warning: mat.$orange-palette;
   // Annotations sit on their own line under the number, so they never widen the column.
   .table-note {
     display: block;
-    font-size: 0.8125rem;
-    color: var(--analytics-caption);
+    font-size: var(--app-text-secondary-size);
+    color: var(--mat-sys-on-surface-variant);
   }
 
   tr:last-child td {
@@ -425,12 +383,12 @@ $warning: mat.$orange-palette;
   }
 
   tbody tr:hover td {
-    background: color-mix(in srgb, var(--mat-sys-primary) 4%, transparent);
+    background: var(--app-row-hover);
   }
 
   .empty {
     text-align: center;
-    color: var(--analytics-caption);
+    color: var(--mat-sys-on-surface-variant);
     padding: 40px;
     font-style: italic;
   }
@@ -439,7 +397,7 @@ $warning: mat.$orange-palette;
 // Talkativeness: the chat-mode group headers sit centred over their two columns.
 .talk-table th.group-head {
   text-align: center;
-  border-left: 1px solid var(--analytics-divider);
+  border-left: 1px solid var(--app-divider);
 }
 
 // ?! / ? / ?? markers in the move-quality header, in the game view's tones.
@@ -450,9 +408,9 @@ $warning: mat.$orange-palette;
 
 .table-footnote {
   margin: 12px 0 0;
-  font-size: 0.8125rem;
+  font-size: var(--app-text-secondary-size);
   line-height: 1.45;
-  color: var(--analytics-caption);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 // Reliability grade badges: A success-tinted, B neutral, C/D warning, too-small samples
@@ -466,16 +424,16 @@ mat-chip.grade-chip {
   vertical-align: middle;
 
   &[data-grade='A'] {
-    --mat-chip-elevated-container-color: var(--analytics-success-fill);
-    --mat-chip-label-text-color: var(--analytics-success-text);
-    --mat-chip-outline-color: var(--analytics-success-border);
+    --mat-chip-elevated-container-color: var(--app-success-fill);
+    --mat-chip-label-text-color: var(--app-success-text);
+    --mat-chip-outline-color: var(--app-success-border);
   }
 
   &[data-grade='C'],
   &[data-grade='D'] {
-    --mat-chip-elevated-container-color: var(--analytics-warning-fill);
-    --mat-chip-label-text-color: var(--analytics-warning-text);
-    --mat-chip-outline-color: var(--analytics-warning-border);
+    --mat-chip-elevated-container-color: var(--app-warning-fill);
+    --mat-chip-label-text-color: var(--app-warning-text);
+    --mat-chip-outline-color: var(--app-warning-border);
   }
 
   &[data-grade='Insufficient data'] {

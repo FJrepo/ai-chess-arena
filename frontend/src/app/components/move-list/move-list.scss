@@ -13,7 +13,8 @@
   min-height: 0;
 
   mat-card-title {
-    font: var(--mat-sys-title-medium);
+    font-size: var(--mat-sys-title-medium-size);
+    line-height: var(--mat-sys-title-medium-line-height);
   }
 
   mat-card-content {
@@ -59,16 +60,13 @@
   padding: 3px 8px;
   border-radius: 6px;
   cursor: pointer;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
   font-size: 0.875rem;
   font-weight: 600;
   min-width: 0;
   white-space: nowrap;
 
   &:hover {
-    background-color: color-mix(in srgb, var(--mat-sys-on-surface) 8%, transparent);
+    background-color: var(--app-row-hover);
   }
 
   &.active {
@@ -149,7 +147,7 @@
 }
 
 .book-move {
-  color: var(--mat-sys-on-surface-variant, #777);
+  color: var(--mat-sys-on-surface-variant);
 }
 .book-badge {
   font-size: 0.65rem;

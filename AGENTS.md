@@ -45,6 +45,7 @@ These rules each come from a real bug. Keep them when touching the related code 
 - **Analytics scope:** model metrics (comparison, reliability, move quality, talkativeness, conversion, leaderboard) count finished, non-bye games and model sides only, with one canonical move per ply (earliest row wins; legacy duplicates are allowed by V8); book moves and cancelled games never count toward them. Operational views keep their own scope: health counts unfinished games, and spend summaries include every paid answer, also from unfinished and cancelled games.
 
 ### 4. Documentation guardrails
+- UI changes follow docs/design-system.md; new colours, fonts or spacing only as tokens.
 - `README.md` is the front page: keep it under ~1,100 words.
 - Keep Features to at most 10 one-line bullets, ordered by importance. A feature gets at most one short bullet (~20 words), describing the user benefit and linking to the matching `docs/how-it-works.md` section.
 - Keep implementation details, edge cases, status codes, configuration internals and UI measurements out of README feature bullets. Minor features belong in the "…and more" line; never add paragraphs under Features.

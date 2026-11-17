@@ -16,7 +16,7 @@
       </div>
     }
     @if (validation() === 'invalid') {
-      <p class="error" role="alert">
+      <p class="openrouter-status warn" role="alert">
         OpenRouter key failed its last validation.
         {{ managed() ? 'Test it or ask the operator to replace it.' : 'Test or replace it.' }}
       </p>
@@ -54,7 +54,7 @@
         }
       </div>
     } @else if (current.canManage) {
-      <div class="connect-primary">
+      <div class="connect-primary openrouter-status info">
         <button mat-flat-button (click)="connect()" [disabled]="busy()">Connect OpenRouter</button>
         <p class="hint">
           You approve on OpenRouter and can set a credit limit and expiration there.

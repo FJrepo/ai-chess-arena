@@ -20,8 +20,8 @@
 
   h1 {
     margin: 2px 0 4px;
-    font: var(--mat-sys-headline-small);
-    font-weight: 500;
+    font-size: var(--mat-sys-headline-small-size);
+    line-height: var(--mat-sys-headline-small-line-height);
   }
 
   p {
@@ -40,7 +40,7 @@
 .explanation,
 caption {
   color: var(--mat-sys-on-surface-variant);
-  font-size: 12px;
+  font-size: var(--app-text-secondary-size);
   line-height: 1.6;
 }
 
@@ -67,7 +67,10 @@ th,
 td {
   padding: 12px 8px;
   text-align: left;
-  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+tbody :is(th, td) {
+  border-bottom: 1px solid var(--app-divider);
 }
 
 thead th {
@@ -101,7 +104,7 @@ thead th {
 .model-id {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--app-text-secondary-size);
   color: var(--mat-sys-on-surface-variant);
 }
 
@@ -115,7 +118,7 @@ thead th {
   margin-top: 5px;
   border-radius: 6px;
   padding: 2px 6px;
-  font-size: 10px;
+  font-size: var(--app-text-secondary-size);
   background: var(--mat-sys-secondary-container);
   color: var(--mat-sys-on-secondary-container);
 }

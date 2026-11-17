@@ -36,19 +36,19 @@
       <div class="move-timer" [class.warning]="moveTimerWarning()">
         <mat-icon>timer</mat-icon>
         <span class="timer-label">{{ activeColor() === 'BLACK' ? 'Black' : 'White' }} to move</span>
-        <span class="timer-value">{{ moveTimerDisplay() }}</span>
+        <span class="timer-value num">{{ moveTimerDisplay() }}</span>
       </div>
     } @else if (isAwaitingHumanMove()) {
       <div class="move-timer waiting-human">
         <mat-icon>person</mat-icon>
         <span class="timer-label">{{ activeHumanPlayerLabel() }} to move</span>
-        <span class="timer-value">Your turn</span>
+        <span class="timer-value num">Your turn</span>
       </div>
     } @else if (isLive() && activeColor() && noMoveTimeLimit()) {
       <div class="move-timer no-time-limit">
         <mat-icon>timer_off</mat-icon>
         <span class="timer-label">{{ activeColor() === 'BLACK' ? 'Black' : 'White' }} to move</span>
-        <span class="timer-value">No time limit</span>
+        <span class="timer-value num">No time limit</span>
       </div>
     }
   </div>
@@ -133,7 +133,7 @@
             }
           </div>
           @if (whiteMaterialEdge() > 0) {
-            <span class="material-edge">+{{ whiteMaterialEdge() }}</span>
+            <span class="material-edge num">+{{ whiteMaterialEdge() }}</span>
           }
         </div>
 
@@ -256,6 +256,30 @@
           >
             <mat-icon>swap_vert</mat-icon>
           </button>
+          <button mat-button [matMenuTriggerFor]="boardMenu" aria-label="Board colours">
+            <mat-icon>palette</mat-icon>
+            Board
+          </button>
+          <mat-menu #boardMenu="matMenu">
+            @for (option of boardTheme.options; track option.value) {
+              <button
+                mat-menu-item
+                role="menuitemradio"
+                [attr.aria-checked]="boardTheme.theme() === option.value"
+                (click)="boardTheme.select(option.value)"
+              >
+                <mat-icon aria-hidden="true">{{
+                  boardTheme.theme() === option.value ? 'check' : ''
+                }}</mat-icon>
+                <span
+                  class="board-swatch"
+                  [attr.data-board]="option.value"
+                  aria-hidden="true"
+                ></span>
+                {{ option.label }}
+              </button>
+            }
+          </mat-menu>
           <button
             mat-icon-button
             (click)="exportPgn()"
@@ -284,7 +308,7 @@
             }
           </div>
           @if (blackMaterialEdge() > 0) {
-            <span class="material-edge">+{{ blackMaterialEdge() }}</span>
+            <span class="material-edge num">+{{ blackMaterialEdge() }}</span>
           }
         </div>
       </div>

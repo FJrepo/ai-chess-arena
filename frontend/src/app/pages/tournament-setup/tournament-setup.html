@@ -733,12 +733,12 @@
             <div class="confidence-grid">
               <div class="confidence-metric">
                 <span class="metric-label">Series</span>
-                <strong>{{ summary.totalSeries }}</strong>
+                <strong class="num">{{ summary.totalSeries }}</strong>
                 <span>{{ summary.participantCount }} participants</span>
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Projected Games</span>
-                <strong>{{ summary.likelyGames }}</strong>
+                <strong class="num">{{ summary.likelyGames }}</strong>
                 <span
                   >{{ summary.minGames }} min · {{ summary.maxGames
                   }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
@@ -746,7 +746,9 @@
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Estimated Runtime</span>
-                <strong>about {{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
+                <strong class="num"
+                  >about {{ formatDuration(summary.likelyRuntimeMinutes) }}</strong
+                >
                 <span>
                   @if (summary.maxRuntimeMinutes !== null) {
                     {{ summary.drawCanExtendSeries ? 'at least about' : 'up to about' }}
@@ -758,12 +760,12 @@
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Move Pace</span>
-                <strong>{{ summary.paceLabel }}</strong>
+                <strong class="num">{{ summary.paceLabel }}</strong>
                 <span>{{ limitMoveTime ? moveTimeout + 's timeout' : 'no time limit' }}</span>
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Estimated Spend</span>
-                <strong>
+                <strong class="num">
                   @if (summary.likelyCostUsd !== null) {
                     about {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
                   } @else {
@@ -787,7 +789,7 @@
               </div>
               <div class="confidence-metric">
                 <span class="metric-label">Pricing Coverage</span>
-                <strong>{{ pricingCoverageLabel(summary) }}</strong>
+                <strong class="num">{{ pricingCoverageLabel(summary) }}</strong>
                 <span>based on OpenRouter list prices</span>
               </div>
             </div>
