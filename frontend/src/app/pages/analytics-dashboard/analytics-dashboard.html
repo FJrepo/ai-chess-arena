@@ -130,7 +130,9 @@
             <div class="section-header">
               <div>
                 <h2>Model Comparison Table</h2>
-                <p>{{ c.gamesCount }} terminal games in scope.</p>
+                <p>
+                  {{ c.gamesCount }} terminal {{ c.gamesCount === 1 ? 'game' : 'games' }} in scope.
+                </p>
               </div>
               <mat-form-field appearance="outline" subscriptSizing="dynamic" class="sort-field">
                 <mat-label>Sort by</mat-label>
@@ -226,7 +228,10 @@
                 @for (row of failureWatch(); track row.modelId) {
                   <li>
                     <strong>{{ row.modelId }}</strong>
-                    <span>{{ row.forfeits }} forfeits across {{ row.gamesPlayed }} games</span>
+                    <span
+                      >{{ row.forfeits }} {{ row.forfeits === 1 ? 'forfeit' : 'forfeits' }} across
+                      {{ row.gamesPlayed }} {{ row.gamesPlayed === 1 ? 'game' : 'games' }}</span
+                    >
                   </li>
                 } @empty {
                   <li>No failure data yet.</li>

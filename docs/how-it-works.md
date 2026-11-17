@@ -37,6 +37,8 @@ In **System → OpenRouter**, choose **Connect OpenRouter**. OpenRouter asks you
 
 Alternatively expand **Use an existing API key instead** (or **Use a different API key** when connected), paste a key into the outlined password field and choose **Validate and save** below it. The field stays collapsed until you expand it. Connected UI keys show **Test key**, **Replace connection** and **Delete local key** together; **Test key** is hidden when no key exists. Operator-managed keys show only status, the operator explanation and **Test key**. The password field is write-only and cleared immediately after submitting, including on failure. Collapsing manual entry, switching to OAuth or leaving settings also clears unsaved input; reopening the field starts empty. Invalid keys and provider outages leave the previous key untouched. Settings show only the source (`env`, `file`, `ui`, `none`), a masked four-character suffix, last check time and validation result. Status reads do not contact OpenRouter; **Test key** checks the effective key through the claimed, same-origin `POST /api/config/openrouter/test` endpoint. Validation time/results are process-local and reset on backend restart or a change of effective key.
 
+A configured key with no validation result appears as **Key configured** with a neutral **validation unknown** badge on System Status. In a claimed browser, **Test key** updates the badge as soon as the check finishes. Use **Refresh** to reload both system health and OpenRouter settings after a backend outage. The OpenRouter card can show a fresh credential check while system health is unavailable.
+
 The legacy `GET /api/config/openrouter-status` and `GET /api/config/system-status` are passive too: each includes `key:{source,maskedSuffix,lastValidatedAt,validation}`. Their existing `valid` / `openRouterValid` booleans are true only when the stored result for the current key is `valid`; an untested operator key reports `unknown` and false. System `checkedAt` is the status response time, not a provider validation time. Both GETs use `Cache-Control: no-store`.
 
 Connection and validation are separate: a key with source `env`, `file` or `ui` is **connected**, including after a restart before it has been tested. Only source `none` shows a connection prompt. The UI treats validation as **valid**, **invalid**, or **unknown**; an untested key has unknown validity and shows no warning. An explicit `invalid` result shows a failed-validation hint while the key stays connected. Raw `unavailable` check outcomes also mean unknown validity, never an invalid-key warning; `none` means no key to validate. Setup, onboarding, settings and system status follow these rules. Create/Run/Battle/Resume preflights check key presence, without requiring a successful prior test. An unavailable status response cannot establish that a key is missing. API clients must use `key.source` for connection and `key.validation` for validation, rather than interpreting either legacy boolean as connection state.
@@ -441,13 +443,15 @@ The analytics page shares its analysis window, tournament and minimum-games filt
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 
-Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries. Shared filters and the refresh schedule stay in place.
+
+Changing a shared filter clears the previous results and cancels pending report requests. Each report loads the new selection independently. Every 15 seconds, the dashboard refreshes each report that has no request in progress. A request still pending after 60 seconds times out and becomes eligible for the next poll. **Sync Data** replaces any pending requests immediately.
 
 Every model answer is stored, including rejected ones: the game feed lists failed attempts per move (for example "2 failed attempts: illegal Qxh7, unparseable answer") and, separately, answers cut off at the token limit, which are not counted as the model's failures, and `GET /api/games/{id}/attempts` returns them with tokens, cost and finish reason.
 
 Game, tournament and per-model costs include rejected answers. Costs are as reported by OpenRouter.
 
-Health, reliability and comparison each cache up to 64 filter combinations for 15 seconds. Applying a filter clears expired entries from that view's cache. At capacity, a new combination replaces the least recently used one.
+Health, reliability and comparison each cache up to 64 filter combinations for 30 seconds after a successful load. Concurrent requests for the same view and filters share one load. A failed load can be retried on the next request. Health reads games, moves and rejected-attempt spend, including unfinished games in the selected window.
 
 ### Finished games and reliability score
 
@@ -499,7 +503,7 @@ OpenRouter's `usage.prompt_tokens_details.cached_tokens` and `cache_write_tokens
 
 Estimated savings are `cached tokens × (pricing.prompt − pricing.input_cache_read)` using the **current** OpenRouter catalog's USD **per-token** prices. Missing, invalid, variable or unavailable prices mean **n/a**; a reported price of zero is valid. This is an estimate of the cache-read discount, not a historical billing reconstruction or net savings after cache-write charges. Cache writes are measured separately.
 
-Each comparison uses one cached catalog price snapshot for every model row and never waits for catalog I/O. With an empty or expired cache, a single background refresh updates prices for later comparisons; an existing stale snapshot remains usable. Failed refreshes wait 60 seconds after failure before another attempt, including when there is no cached catalog. A cold-cache comparison shows **n/a** for savings until prices become available and the comparison cache (15 seconds) expires.
+Each comparison uses one cached catalog price snapshot for every model row and never waits for catalog I/O. With an empty or expired cache, a single background refresh updates prices for later comparisons; an existing stale snapshot remains usable. Failed refreshes wait 60 seconds after failure before another attempt, including when there is no cached catalog. A cold-cache comparison shows **n/a** for savings until prices become available and the comparison cache (30 seconds) expires.
 
 All existing costs continue to use OpenRouter's returned `usage.cost`, which already reflects provider billing (including cache reads and writes); the app does not recalculate billed costs from catalog list prices. Comparison API rows add `promptCaching` with `promptTokens`, `cachedPromptTokens`, `cacheHitRate`, `cacheWriteTokens` and `estimatedSavingsUsd`; unknown values may be omitted. These metrics also measure the [append-only prompt window and cache breakpoints](#prompt-caching); older attempts and their recorded counters remain unchanged.
 
@@ -570,7 +574,7 @@ API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true`
 
 ## Live settings
 
-Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
+Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar. Scores longer than six characters use scientific notation on the bar. The tooltip and screen-reader label show the full score.
 
 ### Live game synchronization
 
@@ -581,6 +585,8 @@ A committed game update advances that game's revision once, including when the t
 The browser applies consecutive revisions in order. If an update is missing, or the server reports a newer revision after reconnecting, the browser fetches a consistent snapshot that is at least as recent as the displayed revision. If an update overtakes that read, the browser keeps fetching until the newest observed revision is shown. Failed requests retry with increasing delays capped at eight seconds. Refreshes preserve form drafts and the selected historical position. A viewer following the latest move continues following the game. Queued views periodically refresh capacity because other games can claim or free slots.
 
 WebSocket clients opt in with `{"type":"subscribe","gameId":"…","protocol":2}` on `/ws/games`. After registering the subscription, the server sends `subscribed` with the current `revision` and `streamId`; the client can then read its initial snapshot. The backend process changes its stream ID on restart, so a restored database can safely start from an earlier revision. Each `gameRevision` contains `gameId`, `revision` and `changes`. Send `{"type":"heartbeat","gameId":"…"}` to check the current revision without retrieving history. The game view checks every 15 seconds and falls back to snapshot polling when the socket or revision handshake is unavailable. With an older backend, the countdown is unavailable because the snapshot has no saved deadline. Clients that omit `protocol` still receive the legacy move, chat, status, retry, attempt invalidation and evaluation events. The separate moves and attempts endpoints are still available.
+
+Opening a finished game selects the final ply. When you navigate the board, the move list highlights and scrolls to the selected ply.
 
 Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, banter level, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode, active banter and resignation changes rebuild affected system prompts; unchanged prompts retain their prefix.
 

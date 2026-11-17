@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -44,10 +45,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.IntStream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
@@ -57,17 +62,120 @@ class AnalyticsServiceTest {
     private static final LocalDateTime YESTERDAY = LocalDateTime.now().minusDays(1);
 
     @Test
-    void analyticsCacheEvictsLeastRecentlyUsedFilters() {
-        AnalyticsService service = service(List.of(), List.of(), List.of());
-        var first = service.getHealth(1, null);
-        var second = service.getHealth(2, null);
-        for (int days = 3; days <= 64; days++) {
-            service.getHealth(days, null);
+    void analyticsCacheBoundsFilterCombinations() {
+        var cache = new AnalyticsResponseCache<Object>();
+        List<Object> initial = new ArrayList<>();
+        for (int days = 1; days <= 65; days++) {
+            initial.add(cache.get(Integer.toString(days), Object::new));
         }
-        assertSame(first, service.getHealth(1, null));
-        service.getHealth(65, null);
-        assertSame(first, service.getHealth(1, null));
-        assertNotSame(second, service.getHealth(2, null));
+        assertTrue(IntStream.rangeClosed(1, 65).anyMatch(days ->
+                initial.get(days - 1) != cache.get(Integer.toString(days), Object::new)));
+    }
+
+    @Test
+    void analyticsCacheExpiresThirtySecondsAfterSuccessfulWrite() {
+        var now = new AtomicLong();
+        var cache = new AnalyticsResponseCache<Object>(now::get);
+        Object first = cache.get("filter", () -> {
+            now.set(Duration.ofSeconds(10).toNanos());
+            return new Object();
+        });
+        for (int seconds : List.of(15, 30, 39)) {
+            now.set(Duration.ofSeconds(seconds).toNanos());
+            assertSame(first, cache.get("filter", Object::new));
+        }
+        now.set(Duration.ofSeconds(40).toNanos());
+        assertNotSame(first, cache.get("filter", Object::new));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void sameHealthFilterSharesTheLoadAndFailedLoadsCanBeRetried(boolean failFirstLoad) throws Exception {
+        AnalyticsService service = service(List.of(), List.of(), List.of());
+        var loadStarted = new CountDownLatch(1);
+        var releaseLoad = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        var failure = new CompletionException(new IllegalStateException("analytics database unavailable"));
+        service.windowLoader.gameRepository = new GameRepository() {
+            @Override
+            public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+                if (tournamentId == null && calls.incrementAndGet() == 1) {
+                    loadStarted.countDown();
+                    try {
+                        assertTrue(releaseLoad.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(interrupted);
+                    }
+                    if (failFirstLoad) {
+                        throw failure;
+                    }
+                }
+                return List.of();
+            }
+        };
+
+        var first = new FutureTask<>(() -> service.getHealth(30, null));
+        var second = new FutureTask<>(() -> service.getHealth(30, null));
+        Thread.ofVirtual().start(first);
+        try {
+            assertTrue(loadStarted.await(5, TimeUnit.SECONDS));
+            Thread follower = Thread.ofVirtual().start(second);
+            assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+                while (follower.getState() != Thread.State.WAITING && !second.isDone()) {
+                    Thread.sleep(1);
+                }
+                // A different key can load while the first key is blocked.
+                assertEquals(0, service.getHealth(30, UUID.randomUUID()).gamesCount());
+            });
+            assertFalse(second.isDone());
+            assertEquals(1, calls.get());
+        } finally {
+            releaseLoad.countDown();
+        }
+
+        if (failFirstLoad) {
+            assertSame(failure, assertThrows(ExecutionException.class,
+                    () -> first.get(5, TimeUnit.SECONDS)).getCause());
+            assertSame(failure, assertThrows(ExecutionException.class,
+                    () -> second.get(5, TimeUnit.SECONDS)).getCause());
+            var retried = service.getHealth(30, null);
+            assertSame(retried, service.getHealth(30, null));
+            assertEquals(2, calls.get());
+        } else {
+            assertSame(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS));
+            assertEquals(1, calls.get());
+        }
+    }
+
+    @Test
+    void healthSkipsQueriesUsedOnlyByModelAnalytics() {
+        AnalyticsService service = service(List.of(), List.of(), List.of());
+        service.windowLoader.chatMessageRepository = new ChatMessageRepository() {
+            @Override
+            public List<PlyMessage> findPlyMessagesInWindow(LocalDateTime cutoff, UUID tournamentId) {
+                throw new AssertionError("health does not use chat projections");
+            }
+        };
+        service.windowLoader.moveAttemptRepository = new MoveAttemptRepository() {
+            @Override
+            public List<RejectedAttemptCost> findRejectedCostsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+                return List.of();
+            }
+
+            @Override
+            public List<ResignationTurnAttempt> findResignationTurnAttemptsInWindow(
+                    LocalDateTime cutoff, UUID tournamentId) {
+                throw new AssertionError("health does not use resignation retries");
+            }
+
+            @Override
+            public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+                throw new AssertionError("health does not use attempt token projections");
+            }
+        };
+
+        assertEquals(0, service.getHealth(30, null).movesCount());
     }
 
     @Test

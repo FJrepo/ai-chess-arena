@@ -16,6 +16,7 @@ const missing: OpenRouterStatus = {
 function client() {
   return {
     status: vi.fn(() => of(status)),
+    keyStatus: vi.fn(() => null),
     start: vi.fn(() => of({ authUrl: 'https://openrouter.ai/auth?fixture' })),
     manual: vi.fn(() => of(status)),
     delete: vi.fn(() => of(missing)),
