@@ -394,7 +394,7 @@ Both surrounding evaluations must be available. Operator overrides and forced mo
 
 Analysis includes a bracket overview with series scores and the champion, PGN export, and analytics on results, move quality (ACPL, blunders per game), talkativeness (how often each model talks, per chat mode), resignations (including resignations while not losing), reliability (first-try legal moves, retries, timeouts, forfeits) and reported cost.
 
-The analytics page shares its analysis window, tournament and minimum-games filters across four tabs:
+The analytics page shares its analysis window, tournament and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
 
 - **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
 - **Play quality:** Move Quality and Conversion.
