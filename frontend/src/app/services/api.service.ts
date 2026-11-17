@@ -9,6 +9,7 @@ import {
   Game,
   CreateTournamentRequest,
   MoveAttempt,
+  Opening,
 } from '../models/tournament.model';
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import { ReasoningEffort } from '../utils/reasoning-effort';
@@ -45,6 +46,10 @@ export class ApiService {
   private baseUrl = '/api';
 
   constructor(private http: HttpClient) {}
+
+  getOpenings(): Observable<Opening[]> {
+    return this.http.get<Opening[]>(`${this.baseUrl}/openings`);
+  }
 
   // Tournaments
   getTournaments(): Observable<Tournament[]> {

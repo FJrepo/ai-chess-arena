@@ -67,6 +67,16 @@ public class Game extends PanacheEntityBase {
     @JoinColumn(name = "advanced_participant_id")
     public TournamentParticipant advancedParticipant;
 
+    /** Immutable book metadata copied at game creation; null for standard games and legacy rows. */
+    @Column(name = "opening_id", length = 64)
+    public String openingId;
+
+    @Column(name = "opening_name", length = 120)
+    public String openingName;
+
+    @Column(name = "opening_eco", length = 3)
+    public String openingEco;
+
     @Column(columnDefinition = "TEXT")
     public String pgn;
 

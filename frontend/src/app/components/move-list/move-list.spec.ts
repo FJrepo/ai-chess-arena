@@ -36,6 +36,25 @@ function render(moves: Move[]): HTMLElement {
 }
 
 describe('MoveListComponent quality annotations', () => {
+  it('marks book moves, suppresses quality markers and keeps them selectable for board replay', () => {
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', [
+      { ...move(1, 'WHITE', 'e4'), isBook: true },
+      { ...move(1, 'BLACK', 'e5'), isBook: true },
+      move(2, 'WHITE', 'Nf3'),
+    ]);
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.querySelectorAll('.book-badge')).toHaveLength(2);
+    expect(element.querySelectorAll('.book-move')).toHaveLength(2);
+    expect(element.querySelector('.book-move')?.getAttribute('title')).toContain('excluded');
+    element.querySelector<HTMLElement>('.book-move')!.click();
+    expect(selected).toHaveBeenCalledWith(0);
+    expect(element.querySelectorAll('.quality-badge')).toHaveLength(0);
+  });
+
   it('annotates errors with ?? / ? / ?! in their tone, right after the SAN', () => {
     const element = render([
       move(1, 'WHITE', 'e4', {

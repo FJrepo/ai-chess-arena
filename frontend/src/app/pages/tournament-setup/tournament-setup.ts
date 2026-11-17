@@ -12,7 +12,13 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
-import { ChatMode, Participant, Tournament } from '../../models/tournament.model';
+import {
+  ChatMode,
+  Opening,
+  OpeningMode,
+  Participant,
+  Tournament,
+} from '../../models/tournament.model';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
@@ -159,6 +165,40 @@ Your opponent is %s (%s).`;
    */
   resignationAllowed = false;
   adjudicationEnabled = false;
+  openingMode = signal<OpeningMode>('STANDARD');
+  openingId = signal<string | null>(null);
+  openings = signal<Opening[]>([]);
+  openingsError = signal<string | null>(null);
+
+  openingHint(): string {
+    switch (this.openingMode()) {
+      case 'STANDARD':
+        return 'Start from the standard position.';
+      case 'RANDOM_BOOK':
+        return 'A random book line per pairing; color-reversed partners share it.';
+      case 'FIXED':
+        return 'Every new game starts with the selected book line.';
+    }
+  }
+
+  loadOpenings(): void {
+    this.openingsError.set(null);
+    this.api.getOpenings().subscribe({
+      next: (lines) => this.openings.set(lines),
+      error: () => {
+        this.openings.set([]);
+        this.openingsError.set('Could not load the opening book. Retry or use Standard.');
+      },
+    });
+  }
+
+  readonly openingValid = computed(
+    () =>
+      this.openingMode() === 'STANDARD' ||
+      (this.openings().length > 0 &&
+        (this.openingMode() !== 'FIXED' ||
+          this.openings().some((line) => line.id === this.openingId()))),
+  );
   drawPolicy: Tournament['drawPolicy'] = 'WHITE_ADVANCES';
   matchupBestOf: Tournament['matchupBestOf'] = 1;
   finalsBestOf: Tournament['finalsBestOf'] = null;
@@ -250,6 +290,7 @@ Your opponent is %s (%s).`;
     this.loadPromptTemplate();
     this.loadOpenRouterStatus();
     this.loadModels();
+    this.loadOpenings();
   }
 
   private loadOpenRouterStatus(): void {
@@ -453,7 +494,7 @@ Your opponent is %s (%s).`;
       count,
       participantsOk,
       creating,
-      canCreate: named && participantsOk && !creating,
+      canCreate: named && participantsOk && !creating && this.openingValid(),
     };
   });
   /**
@@ -463,7 +504,7 @@ Your opponent is %s (%s).`;
   private pendingSubmission: { key: string; requestId: string } | null = null;
 
   create() {
-    if (this.creating()) {
+    if (this.creating() || !this.openingValid()) {
       return;
     }
     this.creating.set(true);
@@ -481,6 +522,8 @@ Your opponent is %s (%s).`;
       chatMode: this.chatMode,
       resignationAllowed: this.resignationAllowed,
       adjudicationEnabled: this.adjudicationEnabled,
+      openingMode: this.openingMode(),
+      ...(this.openingMode() === 'FIXED' ? { openingId: this.openingId() } : {}),
       // Left out for the model default, so nothing is sent to OpenRouter.
       ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
       drawPolicy: this.drawPolicy,
@@ -695,6 +738,8 @@ Your opponent is %s (%s).`;
     // Presets play every game to the end, with each model's default reasoning effort.
     this.resignationAllowed = false;
     this.adjudicationEnabled = false;
+    this.openingMode.set('STANDARD');
+    this.openingId.set(null);
     this.reasoningEffort = null;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
   }

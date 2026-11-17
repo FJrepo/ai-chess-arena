@@ -76,7 +76,7 @@ public class AnalyticsService {
 
     public TournamentCostSummaryDto getTournamentCostSummary(UUID tournamentId) {
         List<Game> games = gameRepository.findByTournamentId(tournamentId);
-        List<Move> moves = moveRepository.findByTournamentId(tournamentId);
+        List<Move> moves = moveRepository.findByTournamentId(tournamentId).stream().filter(move -> !move.isBook).toList();
         Map<String, BigDecimal> rejectedCostByModel =
                 rejectedCostByModel(moveAttemptRepository.findRejectedCostsByTournamentId(tournamentId));
 
@@ -110,7 +110,7 @@ public class AnalyticsService {
 
         Map<String, CostAccumulator> byModel = new HashMap<>();
         for (Move move : moves) {
-            if (!hasTrackedModelId(move.modelId)) {
+            if (move.isBook || !hasTrackedModelId(move.modelId)) {
                 continue;
             }
             String modelId = normalizeModelId(move.modelId);
@@ -206,7 +206,7 @@ public class AnalyticsService {
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId);
         List<Game> games = scope.games();
-        List<Move> moves = scope.moves();
+        List<Move> moves = scope.moves().stream().filter(move -> !move.isBook).toList();
 
         long activeGamesCount = games.stream().filter(outcomeClassifier::isActive).count();
         long completedGamesCount = games.stream().filter(game -> game.status == GameStatus.COMPLETED).count();
@@ -245,7 +245,7 @@ public class AnalyticsService {
 
         Map<String, HealthAccumulator> byModel = new HashMap<>();
         for (Move move : moves) {
-            if (!hasTrackedModelId(move.modelId)) {
+            if (move.isBook || !hasTrackedModelId(move.modelId)) {
                 continue;
             }
             String modelId = normalizeModelId(move.modelId);
@@ -317,7 +317,7 @@ public class AnalyticsService {
     private ModelReliabilityResponseDto buildReliability(int days, UUID tournamentId, int minGames) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
         List<Game> games = scope.games();
-        List<Move> moves = scope.moves();
+        List<Move> moves = scope.moves().stream().filter(move -> !move.isBook).toList();
 
         Map<String, ReliabilityAccumulator> byModel = new HashMap<>();
 
@@ -327,7 +327,7 @@ public class AnalyticsService {
         }
 
         for (Move move : moves) {
-            if (!hasTrackedModelId(move.modelId)) {
+            if (move.isBook || !hasTrackedModelId(move.modelId)) {
                 continue;
             }
             String modelId = normalizeModelId(move.modelId);
@@ -433,7 +433,7 @@ public class AnalyticsService {
         }
 
         for (Move move : moves) {
-            if (!hasTrackedModelId(move.modelId)) {
+            if (move.isBook || !hasTrackedModelId(move.modelId)) {
                 continue;
             }
             String modelId = normalizeModelId(move.modelId);
@@ -708,6 +708,9 @@ public class AnalyticsService {
     private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
         Map<UUID, List<MoveQualityClassifier.Score>> scoresByGame = new HashMap<>();
         for (Move move : CanonicalPlies.of(moves)) {
+            if (move.isBook) {
+                continue;
+            }
             MoveQualityClassifier.Score score = MoveQualityClassifier.score(
                     move.evaluationCp, move.evaluationMate, move.color);
             if (score != null && move.game != null) {
@@ -763,7 +766,7 @@ public class AnalyticsService {
             }
         }
         for (Move move : CanonicalPlies.of(moves)) {
-            if (move.game == null || move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
+            if (move.isBook || move.game == null || move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
                     || !hasTrackedModelId(move.modelId)) {
                 continue;
             }

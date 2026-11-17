@@ -1,0 +1,44 @@
+# Original short lines authored from standard opening theory; distributed under this repository's MIT license.
+# id	ECO	name	SAN plies
+ruy-lopez	C60	Ruy Lopez	e4 e5 Nf3 Nc6 Bb5
+ruy-lopez-morphy	C70	Ruy Lopez: Morphy Defense	e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6
+ruy-lopez-berlin	C65	Ruy Lopez: Berlin Defense	e4 e5 Nf3 Nc6 Bb5 Nf6
+italian	C50	Italian Game	e4 e5 Nf3 Nc6 Bc4 Bc5
+two-knights	C55	Italian: Two Knights Defense	e4 e5 Nf3 Nc6 Bc4 Nf6
+scotch	C45	Scotch Game	e4 e5 Nf3 Nc6 d4 exd4 Nxd4
+four-knights	C47	Four Knights Game	e4 e5 Nf3 Nc6 Nc3 Nf6
+petroff	C42	Petroff Defense	e4 e5 Nf3 Nf6
+vienna	C26	Vienna Game	e4 e5 Nc3 Nf6
+bishops-opening	C24	Bishop's Opening	e4 e5 Bc4 Nf6 d3
+philidor	C41	Philidor Defense	e4 e5 Nf3 d6 d4 Nf6
+sicilian-open	B50	Sicilian: Open Game approach	e4 c5 Nf3 d6 d4 cxd4 Nxd4
+sicilian-closed	B24	Closed Sicilian	e4 c5 Nc3 Nc6 g3 g6
+sicilian-alapin	B22	Sicilian: Alapin Variation	e4 c5 c3 Nf6
+sicilian-rossolimo	B30	Sicilian: Rossolimo Variation	e4 c5 Nf3 Nc6 Bb5
+sicilian-kan	B41	Sicilian: Kan approach	e4 c5 Nf3 e6 d4 cxd4 Nxd4 a6
+french	C00	French Defense	e4 e6 d4 d5
+french-advance	C02	French: Advance Variation	e4 e6 d4 d5 e5 c5
+french-exchange	C01	French: Exchange Variation	e4 e6 d4 d5 exd5 exd5
+french-winawer	C15	French: Winawer Variation	e4 e6 d4 d5 Nc3 Bb4
+french-tarrasch	C03	French: Tarrasch Variation	e4 e6 d4 d5 Nd2
+caro-kann	B12	Caro-Kann Defense	e4 c6 d4 d5
+caro-kann-advance	B12	Caro-Kann: Advance Variation	e4 c6 d4 d5 e5 Bf5
+caro-kann-classical	B18	Caro-Kann: Classical Variation	e4 c6 d4 d5 Nc3 dxe4 Nxe4 Bf5
+scandinavian	B01	Scandinavian Defense	e4 d5 exd5 Qxd5 Nc3 Qa5
+pirc	B07	Pirc Defense	e4 d6 d4 Nf6 Nc3 g6
+modern	B06	Modern Defense	e4 g6 d4 Bg7
+alekhine	B03	Alekhine Defense	e4 Nf6 e5 Nd5 d4 d6
+queens-gambit-declined	D35	Queen's Gambit Declined	d4 d5 c4 e6 Nc3 Nf6
+queens-gambit-accepted	D23	Queen's Gambit Accepted	d4 d5 c4 dxc4 Nf3 Nf6
+slav	D10	Slav Defense	d4 d5 c4 c6
+semi-slav	D43	Semi-Slav Defense	d4 d5 c4 c6 Nf3 Nf6 Nc3 e6
+kings-indian	E61	King's Indian Defense	d4 Nf6 c4 g6 Nc3 Bg7
+nimzo-indian	E20	Nimzo-Indian Defense	d4 Nf6 c4 e6 Nc3 Bb4
+queens-indian	E12	Queen's Indian Defense	d4 Nf6 c4 e6 Nf3 b6 a3
+grunfeld	D80	Grunfeld Defense	d4 Nf6 c4 g6 Nc3 d5
+catalan	E01	Catalan Opening	d4 Nf6 c4 e6 g3 d5 Bg2
+london	D02	London System	d4 d5 Nf3 Nf6 Bf4 e6 e3
+english-symmetrical	A35	English: Symmetrical Variation	c4 c5 Nf3 Nf6 Nc3 Nc6
+english-reversed-sicilian	A22	English: Reversed Sicilian	c4 e5 Nc3 Nf6
+reti	A09	Reti Opening	Nf3 d5 c4 e6
+dutch	A81	Dutch Defense	d4 f5 g3 Nf6 Bg2 g6

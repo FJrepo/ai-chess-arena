@@ -7,6 +7,80 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
+  it('defaults to Standard, sends fixed book selection, and omits stale ids in other modes', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.create();
+    expect(api.createTournamentPayload?.['openingMode']).toBe('STANDARD');
+    expect(api.createTournamentPayload?.['openingId']).toBeUndefined();
+    component.loadOpenings();
+    component.openingMode.set('FIXED');
+    component.create();
+    expect(api.createTournamentPayload?.['openingMode']).toBe('STANDARD');
+    component.openingId.set('ruy-lopez');
+    component.create();
+    expect(api.createTournamentPayload?.['openingMode']).toBe('FIXED');
+    expect(api.createTournamentPayload?.['openingId']).toBe('ruy-lopez');
+    component.openingMode.set('RANDOM_BOOK');
+    component.create();
+    expect(api.createTournamentPayload?.['openingMode']).toBe('RANDOM_BOOK');
+    expect(api.createTournamentPayload?.['openingId']).toBeUndefined();
+  });
+
+  it('keeps Standard available after catalog failure and supports retry', () => {
+    const api = createApiService();
+    const getOpenings = api.getOpenings;
+    api.getOpenings = () => throwError(() => new Error('offline'));
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.loadOpenings();
+    expect(component.openingsError()).toContain('Retry or use Standard');
+    expect(component.openingValid()).toBe(true);
+    component.openingMode.set('RANDOM_BOOK');
+    expect(component.openingValid()).toBe(false);
+    api.getOpenings = getOpenings;
+    component.loadOpenings();
+    expect(component.openingValid()).toBe(true);
+    expect(component.openingsError()).toBeNull();
+  });
+
+  it('renders mode hints and requires a known fixed line through the setup control', async () => {
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: createApiService() },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.querySelector('#opening-hint')?.textContent).toContain('standard position');
+    element.querySelector<HTMLElement>('.opening-controls mat-select')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    Array.from(document.querySelectorAll<HTMLElement>('mat-option'))
+      .find((option) => option.textContent?.includes('Fixed book line'))!
+      .click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.openingMode()).toBe('FIXED');
+    expect(component.openingValid()).toBe(false);
+    expect(element.querySelector('#opening-hint')?.textContent).toContain('selected book line');
+    element.querySelectorAll<HTMLElement>('.opening-controls mat-select')[1].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    Array.from(document.querySelectorAll<HTMLElement>('mat-option'))
+      .find((option) => option.textContent?.includes('C60 · Ruy Lopez'))!
+      .click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.openingId()).toBe('ruy-lopez');
+    expect(component.openingValid()).toBe(true);
+  });
+
   it('adds participant-specific custom instructions when provided', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
     component.newPlayerName = 'Alpha';
@@ -1068,6 +1142,15 @@ function createApiService(): FakeTournamentSetupApi {
   const api = {
     addedParticipants: [] as Array<Record<string, unknown>>,
     createTournamentPayload: null as Record<string, unknown> | null,
+    getOpenings: () =>
+      of([
+        {
+          id: 'ruy-lopez',
+          eco: 'C60',
+          name: 'Ruy Lopez',
+          moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'],
+        },
+      ]),
     getPromptTemplate: () => of({ template: 'Rules', version: 'v2', hash: 'hash' }),
     checkOpenRouterStatus: () => of({ valid: true }),
     getModels: () => of({ data: [], totalMatched: 0, featuredCount: 0, error: null }),

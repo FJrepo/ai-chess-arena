@@ -10,6 +10,7 @@ import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.TournamentRepository;
 import dev.aichessarena.service.AnalyticsService;
+import dev.aichessarena.service.OpeningBookService;
 import dev.aichessarena.service.TournamentCreationService;
 import dev.aichessarena.service.TournamentService;
 import jakarta.inject.Inject;
@@ -48,6 +49,9 @@ public class TournamentResource {
     @Inject
     AnalyticsService analyticsService;
 
+    @Inject
+    OpeningBookService openingBook;
+
     @POST
     public Response create(CreateTournamentRequest req) {
         if (req == null) {
@@ -69,6 +73,10 @@ public class TournamentResource {
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         // null (omitted) keeps the model default.
         if (req.reasoningEffort() != null) t.reasoningEffort = parseTournamentReasoningEffort(req.reasoningEffort());
+
+        if (req.openingMode() != null || req.openingId() != null) {
+            openingBook.configure(t, req.openingMode(), req.openingId());
+        }
 
         List<TournamentParticipant> participants = new ArrayList<>();
         if (req.participants() != null) {
@@ -109,6 +117,9 @@ public class TournamentResource {
         Tournament t = tournamentRepository.findByIdForUpdate(id);
         if (t == null) return Response.status(404).build();
         TournamentService.requireEditableSettings(t);
+        if (req.openingMode() != null || req.openingId() != null) {
+            openingBook.configure(t, req.openingMode(), req.openingId());
+        }
         if (req.name() != null) t.name = req.name();
         if (req.sharedCustomInstructions() != null) {
             t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());

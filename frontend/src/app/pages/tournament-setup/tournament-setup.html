@@ -117,6 +117,38 @@
             </div>
           </section>
 
+          <section class="field-group" aria-labelledby="setup-opening-heading">
+            <h3 class="group-heading" id="setup-opening-heading">Opening</h3>
+            <div class="settings-grid opening-controls">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Opening mode</mat-label>
+                <mat-select [(ngModel)]="openingMode" aria-describedby="opening-hint">
+                  <mat-option value="STANDARD">Standard</mat-option>
+                  <mat-option value="RANDOM_BOOK">Random book</mat-option>
+                  <mat-option value="FIXED">Fixed book line</mat-option>
+                </mat-select>
+                <mat-hint id="opening-hint">{{ openingHint() }}</mat-hint>
+              </mat-form-field>
+              @if (openingMode() === 'FIXED') {
+                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                  <mat-label>Book line</mat-label>
+                  <mat-select [(ngModel)]="openingId" required>
+                    @for (line of openings(); track line.id) {
+                      <mat-option [value]="line.id">{{ line.eco }} · {{ line.name }}</mat-option>
+                    }
+                  </mat-select>
+                  <mat-hint>Choose a line before creating the tournament.</mat-hint>
+                </mat-form-field>
+              }
+            </div>
+            @if (openingsError()) {
+              <p class="caption" role="status">
+                {{ openingsError() }}
+                <button mat-button (click)="loadOpenings()">Retry opening book</button>
+              </p>
+            }
+          </section>
+
           <section class="field-group" aria-labelledby="setup-chat-heading">
             <h3 class="group-heading" id="setup-chat-heading">Chat</h3>
             <div class="chat-mode-row">

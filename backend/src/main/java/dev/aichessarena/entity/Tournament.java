@@ -81,6 +81,13 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "adjudication_enabled", nullable = false)
     public boolean adjudicationEnabled;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "opening_mode", nullable = false, length = 16)
+    public OpeningMode openingMode = OpeningMode.STANDARD;
+
+    @Column(name = "opening_id", length = 64)
+    public String openingId;
+
     /** The first move number at which a side may resign: a game cannot end on move 3 because a model gives up. */
     public static final int MIN_RESIGNATION_MOVE = 10;
 

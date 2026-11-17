@@ -18,6 +18,23 @@ describe('ApiService bracket draw', () => {
 
   afterEach(() => http.verify());
 
+  it('loads the authored opening catalog', () => {
+    const lines = [
+      {
+        id: 'italian',
+        name: 'Italian Game',
+        eco: 'C50',
+        moves: ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5'],
+      },
+    ];
+    const received = vi.fn();
+    api.getOpenings().subscribe(received);
+    const request = http.expectOne('/api/openings');
+    expect(request.request.method).toBe('GET');
+    request.flush(lines);
+    expect(received).toHaveBeenCalledWith(lines);
+  });
+
   it.each([undefined, 'ORDER', 'RANDOM'] as const)(
     'sends drawMode %s, defaulting to ORDER for existing callers',
     (mode: BracketDrawMode | undefined) => {

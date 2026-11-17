@@ -25,5 +25,6 @@ public record MoveDto(
         /** Null when the move is not judged (an evaluation is missing) or outside a full game view. */
         MoveQualityDto quality,
         /** The chat mode that applied to a model move (OFF, OPTIONAL, MANDATORY); omitted for human moves and overrides. */
-        String chatMode
+        String chatMode,
+        boolean isBook
 ) {}

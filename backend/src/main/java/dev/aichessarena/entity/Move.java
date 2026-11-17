@@ -57,6 +57,10 @@ public class Move extends PanacheEntityBase {
     @Column(name = "raw_response", columnDefinition = "TEXT")
     public String rawResponse;
 
+    /** Authored opening ply: no model, prompt, chat, usage or attempt is associated with it. */
+    @Column(name = "is_book", nullable = false)
+    public boolean isBook;
+
     @Column(name = "is_override", nullable = false)
     public boolean isOverride = false;
 

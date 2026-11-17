@@ -10,6 +10,14 @@ export const DEFAULT_MOVE_TIMEOUT_SECONDS: number | null = null;
 export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
 
 export type BracketDrawMode = 'ORDER' | 'RANDOM';
+export type OpeningMode = 'STANDARD' | 'RANDOM_BOOK' | 'FIXED';
+
+export interface Opening {
+  id: string;
+  eco: string;
+  name: string;
+  moves: string[];
+}
 
 export interface Tournament {
   /** Champion of a completed tournament. */
@@ -44,6 +52,10 @@ export interface Tournament {
   resignationAllowed?: boolean;
   /** Default-off decisive-position adjudication; model-vs-model only, applied from the next turn. */
   adjudicationEnabled?: boolean;
+  /** Applies only to games created after a change; paired regular games reuse their partner's opening. */
+  openingMode?: OpeningMode;
+  /** Required only with FIXED; stable id from GET /api/openings. */
+  openingId?: string | null;
   /**
    * Cap on generated tokens per model answer (includes reasoning tokens); cut-off answers pause the game.
    * Always sent by the backend (default 16384); optional only so existing test fixtures stay valid.
@@ -72,6 +84,10 @@ export interface Participant {
 }
 
 export interface Game {
+  /** Immutable opening snapshot; absent for STANDARD and pre-feature games. */
+  openingId?: string | null;
+  openingName?: string | null;
+  openingEco?: string | null;
   id: string;
   tournamentId: string | null;
   whitePlayerName: string | null;
@@ -202,6 +218,8 @@ export interface Move {
   responseTimeMs: number | null;
   retryCount: number;
   isOverride: boolean;
+  /** Authored opening move, excluded from model metrics. */
+  isBook?: boolean;
   evaluationCp?: number | null;
   evaluationMate?: number | null;
   createdAt: string;

@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.OpeningMode;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
@@ -9,6 +10,7 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
@@ -50,6 +52,12 @@ public class TournamentService {
 
     @Inject
     GameRepository gameRepository;
+
+    @Inject
+    OpeningBookService openingBook;
+
+    @Inject
+    Event<MoveEvaluationRequested> moveEvaluationEvents;
 
     @Inject
     OpenRouterService openRouterService;
@@ -301,7 +309,10 @@ public class TournamentService {
                 }
             }
 
-            gameRepository.persist(game);
+            if (white != null && black != null) {
+                prepareOpening(game);
+            }
+            persistGameWithOpening(game);
             games.add(game);
         }
 
@@ -311,7 +322,8 @@ public class TournamentService {
             gamesInRound /= 2;
             for (int pos = 0; pos < gamesInRound; pos++) {
                 Game game = createBracketGame(tournament, roundNames[r], pos, bestOfForRound(tournament, roundNames[r]));
-                gameRepository.persist(game);
+                prepareOpening(game);
+                persistGameWithOpening(game);
                 games.add(game);
             }
         }
@@ -548,7 +560,32 @@ public class TournamentService {
             nextGame.blackModelId = black.modelId;
         }
 
-        gameRepository.persist(nextGame);
+        if (nextGameNumber <= nextGame.seriesBestOf && nextGameNumber % 2 == 0) {
+            Game partner = seriesGames.stream().filter(g -> g.seriesGameNumber == nextGameNumber - 1)
+                    .findFirst().orElseThrow();
+            if (partner.openingId != null) {
+                openingBook.reuse(nextGame, partner);
+            }
+        } else {
+            prepareOpening(nextGame);
+        }
+        persistGameWithOpening(nextGame);
+    }
+
+    private void prepareOpening(Game game) {
+        if (game.tournament.openingMode != OpeningMode.STANDARD) {
+            openingBook.prepare(game);
+        }
+    }
+
+    private void persistGameWithOpening(Game game) {
+        gameRepository.persist(game);
+        if (!game.moves.isEmpty()) {
+            // Only the final book position needs an evaluation: baseline for the first model move.
+            var last = game.moves.getLast();
+            moveEvaluationEvents.fire(new MoveEvaluationRequested(last.id, game.id,
+                    last.moveNumber, last.color, last.fen));
+        }
     }
 
     private TournamentParticipant chooseHigherSeed(TournamentParticipant white, TournamentParticipant black) {
