@@ -14,15 +14,196 @@ import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.service.ChessService;
+import dev.aichessarena.service.ExportService;
+import io.quarkus.hibernate.orm.PersistenceUnitExtension;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import jakarta.inject.Inject;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
+import org.hibernate.Session;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ExportIT {
+    @Inject
+    ExportService exports;
+
+    @Inject
+    @PersistenceUnitExtension
+    ExportSqlCapture sql;
+
+    @Inject
+    Session session;
+
+    @Test
+    void bulkProjectionsUseConstantStatementsAndNeverSelectProviderPayloadsOrLoadEntities() {
+        UUID twenty = largeFixture(20);
+        UUID forty = largeFixture(40);
+        for (String format : new String[]{"pgn", "csv", "json"}) {
+            List<String> smaller = exportStatements(twenty, format, 20);
+            List<String> larger = exportStatements(forty, format, 40);
+            int expected = switch (format) {
+                case "json" -> 6;
+                case "pgn" -> 5;
+                default -> 4;
+            };
+            assertEquals(expected, smaller.size(), format + " SQL: " + smaller);
+            assertEquals(smaller, larger, format + " must use the same SQL for 20 and 40 games");
+            assertEquals(1, larger.stream().filter(q -> q.contains(" from moves ")).count());
+            if ("json".equals(format)) {
+                assertEquals(1, larger.stream().filter(q -> q.contains(" from move_attempts ")).count());
+            }
+        }
+    }
+
+    private List<String> exportStatements(UUID tournamentId, String format, int gameCount) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            sql.start();
+            List<String> statements;
+            try {
+                switch (format) {
+                    case "json" -> {
+                        var json = exports.tournamentJson(tournamentId);
+                        assertEquals(gameCount, json.games().size());
+                        for (var game : json.games()) {
+                            assertEquals(8, game.moves().size());
+                            assertEquals(4, game.attempts().size());
+                            assertEquals(1, game.chatMessages().size());
+                        }
+                    }
+                    case "pgn" -> {
+                        PgnHolder parsed = new PgnHolder();
+                        parsed.loadPgn(exports.tournamentPgn(tournamentId, true));
+                        assertEquals(gameCount, parsed.getGames().size());
+                        assertTrue(parsed.getGames().stream().allMatch(g -> g.getHalfMoves().size() == 8));
+                    }
+                    default -> assertEquals(gameCount + 1, exports.tournamentCsv(tournamentId).lines().count());
+                }
+                assertEquals(0, session.getStatistics().getEntityCount(), "Export must not retain managed entities");
+                assertEquals(0, session.getStatistics().getCollectionCount());
+            } finally {
+                statements = sql.finish();
+            }
+            for (String query : statements) {
+                for (String forbidden : new String[]{"raw_response", "error_message", "status_detail",
+                        "default_system_prompt", "shared_custom_instructions", "custom_system_prompt",
+                        "custom_instructions", "client_request_id"}) {
+                    assertFalse(query.toLowerCase(Locale.ROOT).contains(forbidden), query);
+                }
+            }
+            return statements;
+        });
+    }
+
+    @Test
+    void singleGameExportAlsoUsesLeanProjectionsAndHandlesGamesOutsideTournaments() {
+        Fixture f = fixture();
+        QuarkusTransaction.requiringNew().run(() -> {
+            sql.start();
+            List<String> statements;
+            try {
+                String pgn = exports.gamePgn(f.gameId, true);
+                assertTrue(pgn.contains("{Chat:"));
+                assertEquals(0, session.getStatistics().getEntityCount());
+            } finally {
+                statements = sql.finish();
+            }
+            assertEquals(5, statements.size());
+            assertTrue(statements.stream().noneMatch(q -> q.contains("raw_response")));
+            String moves = statements.stream().filter(q -> q.contains(" from moves ")).findFirst().orElseThrow();
+            assertFalse(moves.contains("join games"), "Single-game child queries must be scoped directly by game ID");
+        });
+        UUID standalone = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.persist();
+            return game.id;
+        });
+        given().get("/api/games/{id}/pgn", standalone).then().statusCode(200)
+                .body(containsString("[Event \"AI Chess Arena\"]"))
+                .body(containsString("[Round \"?\"]"));
+    }
+
+    @Test
+    void singleGameAndTournamentRoundsAgreeWithBracketAndSeriesMetadata() {
+        Fixture f = fixture();
+        QuarkusTransaction.requiringNew().run(() -> {
+            Tournament t = Tournament.findById(f.tournamentId);
+            for (int i = 2; i < 8; i++) participant(t, "Player " + i, "test/model", i);
+            Game game = Game.findById(f.gameId);
+            game.seriesGameNumber = 2;
+            game.seriesBestOf = 3;
+            t.moveTimeoutSeconds = 120;
+        });
+        for (String endpoint : new String[]{"/api/games/" + f.gameId + "/pgn",
+                "/api/tournaments/" + f.tournamentId + "/export.pgn"}) {
+            String pgn = given().get(endpoint).then().statusCode(200)
+                    .body(containsString("[Round \"3\"]"))
+                    .body(containsString("[TimeControl \"1/120\"]"))
+                    .body(containsString("[SeriesGame \"2\"]"))
+                    .extract().asString();
+            PgnHolder parsed = new PgnHolder();
+            parsed.loadPgn(pgn);
+            assertEquals(3, parsed.getGames().getFirst().getRound().getNumber());
+            assertEquals("Final", parsed.getGames().getFirst().getProperty().get("BracketRound"));
+        }
+    }
+
+    private UUID largeFixture(int gameCount) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Tournament t = new Tournament();
+            t.name = "Bulk export";
+            t.persist();
+            TournamentParticipant white = participant(t, "Alpha", "test/alpha", 0);
+            TournamentParticipant black = participant(t, "Beta", "test/beta", 1);
+            for (int i = 0; i < gameCount; i++) {
+                Game game = new Game();
+                game.tournament = t;
+                game.whiteParticipant = white;
+                game.blackParticipant = black;
+                game.whitePlayerName = white.playerName;
+                game.blackPlayerName = black.playerName;
+                game.bracketRound = "Final";
+                game.persist();
+                Board board = new Board();
+                ChessService chess = new ChessService();
+                String[] sans = {"e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6"};
+                for (int ply = 0; ply < sans.length; ply++) {
+                    Move move = new Move();
+                    move.game = game;
+                    move.moveNumber = ply / 2 + 1;
+                    move.color = ply % 2 == 0 ? "WHITE" : "BLACK";
+                    move.san = sans[ply];
+                    assertTrue(chess.validateAndApply(board, move.san).valid());
+                    move.fen = board.getFen();
+                    move.rawResponse = "RAW_RESPONSE_SENTINEL".repeat(512);
+                    move.persist();
+                }
+                game.currentFen = board.getFen();
+                for (int n = 1; n <= 4; n++) {
+                    MoveAttempt attempt = new MoveAttempt();
+                    attempt.game = game;
+                    attempt.moveNumber = 1;
+                    attempt.color = "WHITE";
+                    attempt.attemptNumber = n;
+                    attempt.outcome = MoveAttempt.Outcome.DISCARDED;
+                    attempt.rawResponse = "RAW_RESPONSE_SENTINEL".repeat(512);
+                    attempt.persist();
+                }
+                ChatMessage chat = new ChatMessage();
+                chat.game = game;
+                chat.moveNumber = 1;
+                chat.senderColor = "WHITE";
+                chat.message = "Long chat ".repeat(30);
+                chat.persist();
+            }
+            return t.id;
+        });
+    }
+
     @Test
     void tournamentAndGamePgnAreUtf8AttachmentsWithChatOnlyWhenRequested() {
         Fixture f = fixture();

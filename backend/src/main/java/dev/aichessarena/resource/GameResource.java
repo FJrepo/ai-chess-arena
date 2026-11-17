@@ -118,9 +118,7 @@ public class GameResource {
     @Transactional
     public Response getPgn(@PathParam("id") UUID id,
                            @QueryParam("includeChat") @DefaultValue("false") boolean includeChat) {
-        Game game = gameRepository.findById(id);
-        if (game == null) return Response.status(404).build();
-        return TournamentExportResource.attachment(exports.gamePgn(game, includeChat), "text/plain",
+        return TournamentExportResource.attachment(exports.gamePgn(id, includeChat), "text/plain",
                 ExportService.filename("game", id, "pgn"));
     }
 

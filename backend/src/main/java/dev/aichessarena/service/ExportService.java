@@ -7,7 +7,7 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
-import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.ExportRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -24,7 +25,24 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class ExportService {
     @Inject
-    MoveAttemptRepository attempts;
+    ExportRepository repository;
+
+    public String tournamentPgn(UUID id, boolean includeChat) {
+        return tournamentPgn(repository.read(id, false, includeChat, false).tournament(), includeChat);
+    }
+
+    public String gamePgn(UUID id, boolean includeChat) {
+        return gamePgn(repository.read(id, true, includeChat, false).games().getFirst(), includeChat);
+    }
+
+    public String tournamentCsv(UUID id) {
+        return tournamentCsv(repository.read(id, false, false, false).tournament());
+    }
+
+    public TournamentExportDto tournamentJson(UUID id) {
+        var snapshot = repository.read(id, false, true, true);
+        return tournamentJson(snapshot.tournament(), snapshot.attempts());
+    }
 
     private static final Comparator<Game> GAME_ORDER = Comparator
             .comparing((Game g) -> g.createdAt, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -34,20 +52,27 @@ public class ExportService {
             .thenComparing(g -> g.id, Comparator.nullsLast(Comparator.naturalOrder()));
 
     public String tournamentPgn(Tournament tournament, boolean includeChat) {
+        int openingSize = openingRoundSize(tournament);
         return games(tournament).stream().filter(g -> !isBye(g))
-                .map(g -> gamePgn(g, includeChat)).collect(Collectors.joining("\n"));
+                .map(g -> gamePgn(g, includeChat, openingSize)).collect(Collectors.joining("\n"));
     }
 
     public String gamePgn(Game game, boolean includeChat) {
+        return gamePgn(game, includeChat, game.tournament == null ? 2 : openingRoundSize(game.tournament));
+    }
+
+    private String gamePgn(Game game, boolean includeChat, int openingSize) {
         StringBuilder out = new StringBuilder();
         tag(out, "Event", game.tournament == null ? "AI Chess Arena" : game.tournament.name);
         tag(out, "Site", "AI Chess Arena");
         var date = game.startedAt != null ? game.startedAt : game.createdAt;
         tag(out, "Date", date == null ? "????.??.??" : date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd")));
-        tag(out, "Round", round(game));
+        tag(out, "Round", round(game, openingSize));
         tag(out, "White", game.whitePlayerName);
         tag(out, "Black", game.blackPlayerName);
         tag(out, "Result", result(game));
+        if (game.bracketRound != null) tag(out, "BracketRound", game.bracketRound);
+        tag(out, "SeriesGame", Integer.toString(game.seriesGameNumber));
         if (game.whiteModelId != null) tag(out, "WhiteModel", game.whiteModelId);
         if (game.blackModelId != null) tag(out, "BlackModel", game.blackModelId);
         tag(out, "Termination", termination(game));
@@ -61,36 +86,39 @@ public class ExportService {
         if (game.openingName != null) tag(out, "Opening", game.openingName);
         if (game.openingEco != null) tag(out, "ECO", game.openingEco);
         Integer seconds = game.tournament == null ? null : game.tournament.moveTimeoutSeconds;
-        tag(out, "TimeControl", seconds == null ? "-" : "*" + seconds);
+        tag(out, "TimeControl", seconds == null ? "-" : "1/" + seconds);
         out.append('\n');
+        Movetext text = new Movetext(out);
         List<Move> plies = CanonicalPlies.of(game.moves);
         for (Move move : plies) {
-            out.append(move.moveNumber).append("WHITE".equals(move.color) ? ". " : "... ")
-                    .append(move.san);
+            text.token(move.moveNumber + ("WHITE".equals(move.color) ? "." : "..."));
+            text.token(move.san);
             if (move.evaluationMate != null) {
                 String mate = move.evaluationMate == 0 && "BLACK".equals(move.color)
                         ? "-0" : move.evaluationMate.toString();
-                out.append(" {[%eval #").append(mate).append("]}");
+                text.annotation("[%eval #" + mate + "]");
             } else if (move.evaluationCp != null) {
-                out.append(" {[%eval ").append(BigDecimal.valueOf(move.evaluationCp, 2).toPlainString())
-                        .append("]}");
+                text.annotation("[%eval " + BigDecimal.valueOf(move.evaluationCp, 2).toPlainString() + "]");
             }
-            if (move.isBook) out.append(" {book}");
+            if (move.isBook) text.annotation("book");
             if (includeChat) {
                 game.chatMessages.stream()
                         .filter(c -> c.moveNumber == move.moveNumber && Objects.equals(c.senderColor, move.color))
-                        .forEach(c -> out.append(" {Chat: ").append(comment(c.message)).append('}'));
+                        .forEach(c -> text.comment("Chat: " + comment(c.message)));
             }
-            out.append('\n');
+            text.newline();
         }
         if (includeChat) {
             // Resignations have last words but no move; retain those and other unmatched messages too.
             game.chatMessages.stream().filter(c -> plies.stream()
                             .noneMatch(m -> m.moveNumber == c.moveNumber && Objects.equals(m.color, c.senderColor)))
-                    .forEach(c -> out.append("{Chat ").append(c.moveNumber).append(' ')
-                            .append(comment(c.senderColor)).append(": ").append(comment(c.message)).append("}\n"));
+                    .forEach(c -> {
+                        text.comment("Chat " + c.moveNumber + " " + comment(c.senderColor) + ": " + comment(c.message));
+                        text.newline();
+                    });
         }
-        out.append(result(game)).append('\n');
+        text.token(result(game));
+        text.newline();
         return out.toString();
     }
 
@@ -111,7 +139,7 @@ public class ExportService {
         return out.toString();
     }
 
-    public TournamentExportDto tournamentJson(Tournament t) {
+    private TournamentExportDto tournamentJson(Tournament t, Map<UUID, List<TournamentExportDto.Attempt>> attempts) {
         var settings = new TournamentExportDto.Settings(t.format.name(), t.drawPolicy.name(),
                 t.moveTimeoutSeconds, t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.chatMode.name(),
                 t.resignationAllowed, t.adjudicationEnabled, t.maxOutputTokens, effort(t.reasoningEffort),
@@ -129,12 +157,7 @@ public class ExportService {
             for (int i = 0; i < plies.size(); i++) {
                 moves.add(DtoMapper.toDto(plies.get(i), qualities.get(i)));
             }
-            var attemptSummaries = attempts.findByGameId(game.id).stream()
-                    .map(a -> new TournamentExportDto.Attempt(a.id, a.moveNumber, a.color, a.attemptNumber,
-                            a.modelId, a.outcome.name(), a.promptTokens, a.cachedPromptTokens, a.cacheWriteTokens,
-                            a.completionTokens, a.reasoningTokens, a.effectiveMaxOutputTokens,
-                            a.modelMaxCompletionTokens, effort(a.reasoningEffort), a.responseTimeMs,
-                            a.costUsd, a.createdAt)).toList();
+            var attemptSummaries = attempts.getOrDefault(game.id, List.of());
             exportedGames.add(new TournamentExportDto.ExportGame(game.id, game.bracketRound, game.bracketPosition,
                     game.seriesId, game.seriesGameNumber, game.seriesBestOf,
                     game.whiteParticipant == null ? null : game.whiteParticipant.id,
@@ -180,8 +203,32 @@ public class ExportService {
         return "normal";
     }
 
-    private static String round(Game game) {
-        return (game.bracketRound == null ? "?" : game.bracketRound) + "." + game.seriesGameNumber;
+    private static String round(Game game, int openingSize) {
+        int size = roundSize(game.bracketRound);
+        if (size < 2) return "?";
+        int number = 1;
+        while (openingSize > size) {
+            openingSize /= 2;
+            number++;
+        }
+        // chesslib accepts only an integer Round; SeriesGame preserves the series component separately.
+        return Integer.toString(number);
+    }
+
+    private static int openingRoundSize(Tournament tournament) {
+        int size = 2;
+        while (size < tournament.participants.size()) size *= 2;
+        for (Game game : tournament.games) size = Math.max(size, roundSize(game.bracketRound));
+        return size;
+    }
+
+    private static int roundSize(String label) {
+        try {
+            int size = TournamentService.roundSizeForName(label);
+            return size >= 2 && (size & (size - 1)) == 0 ? size : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
     }
 
     private static List<Game> games(Tournament tournament) {
@@ -205,7 +252,68 @@ public class ExportService {
     }
 
     private static String comment(String text) {
-        return text == null ? "" : text.replace('{', '(').replace('}', ')').replaceAll("[\\p{Cntrl}]", " ");
+        return text == null ? "" : text.replace('{', '(').replace('}', ')')
+                .replaceAll("[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]", " ").replace("[%", "[ %");
+    }
+
+    /** Wrap only movetext/comment content. Tag values and SAN/annotation tokens stay intact. */
+    private static final class Movetext {
+        private static final int WIDTH = 79;
+        private final StringBuilder out;
+        private int column;
+
+        Movetext(StringBuilder out) {
+            this.out = out;
+        }
+
+        void token(String token) {
+            token(token, false);
+        }
+
+        private void token(String token, boolean insideComment) {
+            int width = token.codePointCount(0, token.length());
+            boolean separator = column > 0 && out.charAt(out.length() - 1) != ' ';
+            if (column + (separator ? 1 : 0) + width > WIDTH) {
+                if (insideComment) continuation();
+                else newline();
+                separator = false;
+            }
+            if (separator) {
+                out.append(' ');
+                column++;
+            }
+            out.append(token);
+            column += width;
+        }
+
+        void annotation(String annotation) {
+            token("{" + annotation + "}");
+        }
+
+        void comment(String comment) {
+            for (String word : ("{" + comment + "}").split("\\s+")) {
+                // Chat can contain an unbroken word longer than a line. Splits remain inside braces.
+                while (word.codePointCount(0, word.length()) > WIDTH - 1) {
+                    int end = word.offsetByCodePoints(0, WIDTH - 1);
+                    token(word.substring(0, end), true);
+                    continuation();
+                    word = word.substring(end);
+                }
+                token(word, true);
+            }
+        }
+
+        private void continuation() {
+            newline();
+            // PGN treats '%' in column one as an escape line, even inside a comment.
+            out.append(' ');
+            column = 1;
+        }
+
+        void newline() {
+            if (column > 0) out.append('\n');
+            column = 0;
+        }
     }
 
     private static void row(StringBuilder out, Object... cells) {

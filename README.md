@@ -38,7 +38,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Cancellation](docs/how-it-works.md#cancelling-a-tournament):** end unfinished games without a result and keep finished games and spend. Cancelled and completed tournaments reject settings and participant reasoning-effort changes (409). Late paid answers still update attempts and spend in open game views.
 - **[Resumable games](docs/how-it-works.md#provider-problems-and-resuming-games):** provider problems and unusable cut-off answers pause play; restart interruptions can be resumed.
 - **[Analysis](docs/how-it-works.md#analytics-and-reliability):** series scores, PGN export, reliability, stored attempts, prompt caching metrics and reported costs.
-- **[Export](docs/how-it-works.md#export):** annotated game PGN and tournament downloads in PGN, CSV or JSON.
+- **[Export](docs/how-it-works.md#export):** annotated game PGN and tournament downloads in PGN, CSV or JSON. PGN uses numeric bracket rounds, repeating per-move time controls (`1/N` for one move per N-second period; `-` without a limit), and safely wrapped opt-in chat comments. Bulk exports exclude raw provider payloads from database reads.
 - **[Leaderboard](docs/how-it-works.md#leaderboard):** all-time Elo across tournaments, provisional ratings, recent form and an option to exclude forfeits.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimated games, runtime and spend before starting.
 

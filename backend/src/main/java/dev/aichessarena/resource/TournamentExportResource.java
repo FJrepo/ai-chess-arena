@@ -1,13 +1,10 @@
 package dev.aichessarena.resource;
 
-import dev.aichessarena.entity.Tournament;
-import dev.aichessarena.repository.TournamentRepository;
 import dev.aichessarena.service.ExportService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -19,9 +16,6 @@ import java.util.UUID;
 @Transactional
 public class TournamentExportResource {
     @Inject
-    TournamentRepository tournaments;
-
-    @Inject
     ExportService exports;
 
     @GET
@@ -29,7 +23,7 @@ public class TournamentExportResource {
     @Produces("application/x-chess-pgn; charset=utf-8")
     public Response pgn(@PathParam("id") UUID id,
                         @QueryParam("includeChat") @DefaultValue("false") boolean includeChat) {
-        return attachment(exports.tournamentPgn(tournament(id), includeChat), "application/x-chess-pgn",
+        return attachment(exports.tournamentPgn(id, includeChat), "application/x-chess-pgn",
                 ExportService.filename("tournament", id, "pgn"));
     }
 
@@ -37,7 +31,7 @@ public class TournamentExportResource {
     @Path("/export.csv")
     @Produces("text/csv; charset=utf-8")
     public Response csv(@PathParam("id") UUID id) {
-        return attachment(exports.tournamentCsv(tournament(id)), "text/csv",
+        return attachment(exports.tournamentCsv(id), "text/csv",
                 ExportService.filename("tournament", id, "csv"));
     }
 
@@ -45,14 +39,8 @@ public class TournamentExportResource {
     @Path("/export.json")
     @Produces("application/json; charset=utf-8")
     public Response json(@PathParam("id") UUID id) {
-        return attachment(exports.tournamentJson(tournament(id)), "application/json",
+        return attachment(exports.tournamentJson(id), "application/json",
                 ExportService.filename("tournament", id, "json"));
-    }
-
-    private Tournament tournament(UUID id) {
-        Tournament tournament = tournaments.findById(id);
-        if (tournament == null) throw new NotFoundException();
-        return tournament;
     }
 
     static Response attachment(Object body, String type, String filename) {
