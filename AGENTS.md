@@ -34,21 +34,15 @@ If the feature spec is missing decisions that affect implementation, resolve the
 - Update backend DTOs, API contracts, and frontend types together.
 - If persistence changes, add a Flyway migration.
 
-### 3. README updates are required when applicable
-Update `README.md` when a change affects:
-- user-visible behavior
-- feature limits or defaults
-- setup or configuration
-- runtime expectations
-- admin workflow
-- deployment or operational behavior
-
-If a feature does not affect any of those, say so in the final summary.
-
-Also update related docs when applicable:
-- `docs/deployment.md` for deployment, release, or runtime-operability changes
-- `CHANGELOG.md` for release-facing changes
-- `THIRD_PARTY_NOTICES.md` when bundled/distributed third-party software changes
+### 3. Documentation guardrails
+- `README.md` is the front page: keep it under ~1,100 words.
+- Keep Features to at most 10 one-line bullets, ordered by importance. A feature gets at most one short bullet (~20 words), describing the user benefit and linking to the matching `docs/how-it-works.md` section.
+- Keep implementation details, edge cases, status codes, configuration internals and UI measurements out of README feature bullets. Minor features belong in the "…and more" line; never add paragraphs under Features.
+- Put details, behavior rules, edge cases and API specifics in `docs/how-it-works.md`.
+- Put operations, upgrades, configuration and troubleshooting in `docs/deployment.md`.
+- Put what changed per release in `CHANGELOG.md`; update `THIRD_PARTY_NOTICES.md` when bundled/distributed third-party software changes.
+- Update the appropriate docs when behavior, limits, defaults, setup, runtime expectations or admin workflows change. A README edit is only needed when the front-page overview or quick start needs to change.
+- Before finishing a task that touched `README.md`, check its word count and compliance with these guardrails. If no docs update is applicable, say so in the final summary.
 
 ### 4. Tests are part of feature work
 When behavior changes, add or adjust tests.
@@ -100,7 +94,7 @@ A feature is done when all of the following are true:
 - code changes are complete across backend/frontend/schema as needed
 - tests were added or adjusted for behavior changes
 - relevant validation commands passed
-- `README.md` was updated if applicable
+- docs updated per the documentation guardrails
 - migrations were added if applicable
 - deploy status is explicitly reported
 - residual limitations or deferred follow-up work are explicitly listed
