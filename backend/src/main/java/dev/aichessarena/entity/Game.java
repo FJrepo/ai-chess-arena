@@ -123,7 +123,7 @@ public class Game extends PanacheEntityBase {
     }
 
     public enum GameStatus {
-        WAITING, IN_PROGRESS, PAUSED, COMPLETED, FORFEIT
+        WAITING, IN_PROGRESS, PAUSED, COMPLETED, FORFEIT, CANCELLED
     }
 
     public enum GameResult {

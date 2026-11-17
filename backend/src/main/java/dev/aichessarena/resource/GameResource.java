@@ -2,6 +2,7 @@ package dev.aichessarena.resource;
 
 import dev.aichessarena.dto.*;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
@@ -43,6 +44,10 @@ public class GameResource {
     public Response startGame(@PathParam("id") UUID id) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
+        if (game.tournament != null
+                && game.tournament.status == TournamentStatus.CANCELLED) {
+            throw new WebApplicationException("Tournament has been cancelled", Response.Status.CONFLICT);
+        }
         if (!hasConfiguredPlayer(game.whiteParticipant, game.whitePlayerName, game.whiteModelId)
                 || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
             throw new IllegalArgumentException("Both players must be set");

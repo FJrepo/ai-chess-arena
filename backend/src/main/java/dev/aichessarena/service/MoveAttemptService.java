@@ -6,9 +6,11 @@ import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.transaction.TransactionSynchronizationRegistry;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -31,6 +33,12 @@ public class MoveAttemptService {
 
     @Inject
     MoveAttemptRepository moveAttemptRepository;
+
+    @Inject
+    GameWebSocket gameWebSocket;
+
+    @Inject
+    TransactionSynchronizationRegistry transactionRegistry;
 
     public record AttemptRecord(
             UUID gameId,
@@ -95,6 +103,9 @@ public class MoveAttemptService {
             if (!attempt.outcome().isCostedElsewhere() && row.costUsd != null) {
                 game.totalCostUsd = game.totalCostUsd.add(row.costUsd);
             }
+            // A paid answer can arrive after cancellation's status update. Invalidate only after the
+            // attempt and its cost are visible, without inventing another status change/revision.
+            AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));
         } catch (RuntimeException e) {
             LOG.warnf(e, "Could not record %s attempt for game %s", attempt.outcome(), attempt.gameId());
         }

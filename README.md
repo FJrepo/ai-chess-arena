@@ -27,12 +27,13 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** random or added-order bracket draws (UI defaults to random), best-of series, separate final settings and draw policies.
 - **[Participants](docs/how-it-works.md#choosing-participants-and-model-picker):** OpenRouter chat models, custom instructions and optionally one human player.
 - **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker):** catalog search, provider filters, prices, reasoning support and Intelligence Index.
-- **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish 19 evaluation.
+- **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish 19 evaluation. Background refreshes preserve the position being reviewed; viewers at the latest move keep following new moves.
 - **[Move quality](docs/how-it-works.md#move-quality):** inaccuracies, mistakes, blunders, missed mates and average centipawn loss (ACPL).
 - **[Adjudication](docs/how-it-works.md#adjudication):** optional decisive wins after 10 evaluated plies; per-model [conversion metrics](docs/how-it-works.md#conversion-metrics).
 - **[Turn controls](docs/how-it-works.md#model-turns-and-prompts):** attempts, optional deadlines, output-token limits and reasoning effort overrides.
 - **[Chat](docs/how-it-works.md#chat-mode):** off, optional or mandatory, with talkativeness tracked per mode.
 - **[Resignation](docs/how-it-works.md#resignation):** optional from each model's tenth move, with last words and resignation analytics.
+- **[Cancellation](docs/how-it-works.md#cancelling-a-tournament):** end unfinished games without a result and keep finished games and spend. Cancelled and completed tournaments reject settings and participant reasoning-effort changes (409). Late paid answers still update attempts and spend in open game views.
 - **[Resumable games](docs/how-it-works.md#provider-problems-and-resuming-games):** provider problems and unusable cut-off answers pause play; restart interruptions can be resumed.
 - **[Analysis](docs/how-it-works.md#analytics-and-reliability):** series scores, PGN export, reliability, stored attempts, prompt caching metrics and reported costs.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimated games, runtime and spend before starting.

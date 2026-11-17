@@ -347,6 +347,7 @@ class TournamentServiceFlowTest {
 
         TournamentService service = new TournamentService();
         service.participantRepository = new SingleParticipantRepository(participant);
+        service.tournamentRepository = new FakeTournamentRepository(tournament);
         service.gameRepository = new CountingGameRepository(1);
 
         assertThrows(WebApplicationException.class, () -> service.removeParticipant(tournamentId, participant.id));
@@ -437,6 +438,11 @@ class TournamentServiceFlowTest {
                 entity.id = UUID.randomUUID();
             }
             games.put(entity.id, entity);
+        }
+
+        @Override
+        public Game findByIdForUpdate(UUID id) {
+            return games.get(id);
         }
 
         @Override

@@ -32,6 +32,16 @@ describe('TournamentList', () => {
     expect(component.statusLabel('IN_PROGRESS')).toBe('In progress');
   });
 
+  it('shows and filters cancelled tournaments by the existing status label', () => {
+    const component = new TournamentList({} as any);
+    component.tournaments.set([
+      tournament('Stopped', 'CANCELLED', 1, 4, 2, '2026-03-01T10:00:00Z'),
+    ]);
+    component.statusFilter.set('CANCELLED');
+    expect(component.filteredTournaments().map((t) => t.name)).toEqual(['Stopped']);
+    expect(component.statusLabel('CANCELLED')).toBe('Cancelled');
+  });
+
   it('sorts tournaments by participant count when requested', () => {
     const component = new TournamentList({} as any);
     component.tournaments.set([

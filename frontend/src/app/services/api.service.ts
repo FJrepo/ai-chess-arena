@@ -71,6 +71,10 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/tournaments/${id}`);
   }
 
+  cancelTournament(id: string): Observable<Tournament> {
+    return this.http.post<Tournament>(`${this.baseUrl}/tournaments/${id}/cancel`, {});
+  }
+
   addParticipant(tournamentId: string, data: Partial<Participant>): Observable<Participant> {
     return this.http.post<Participant>(
       `${this.baseUrl}/tournaments/${tournamentId}/participants`,

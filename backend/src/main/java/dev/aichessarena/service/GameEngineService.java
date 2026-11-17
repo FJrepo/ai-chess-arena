@@ -162,6 +162,14 @@ public class GameEngineService {
         return loop != null && loop.shouldContinue();
     }
 
+    /** Flags the current owner without releasing its claim; only that loop can release it. */
+    public void requestStop(UUID gameId) {
+        GameLoop loop = runningGames.get(gameId);
+        if (loop != null) {
+            loop.requestStop();
+        }
+    }
+
     /**
      * The time limit per move for a game: the tournament's (null when it has no limit), or
      * {@link Tournament#DEFAULT_MOVE_TIMEOUT_SECONDS} (null: no limit) for a game outside a tournament.
@@ -194,6 +202,10 @@ public class GameEngineService {
             // game and tournament it loaded first, so every turn starts from an empty session and reads them anew.
             gameRepository.detachAll();
             Game game = gameRepository.findById(gameId);
+            if (game == null || game.status != GameStatus.IN_PROGRESS
+                    || GameLifecycleService.isTournamentCancelled(game)) {
+                return;
+            }
             if (WinAdjudication.enabledFor(game) && gameLifecycleService.adjudicateIfEligible(gameId, fen)) {
                 return;
             }
@@ -282,6 +294,7 @@ public class GameEngineService {
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
+        GameLifecycleService.requireActiveTournament(game);
         if (game.status != GameStatus.PAUSED || runningGames.containsKey(gameId)) {
             throw new GameStateConflictException("Pause the game before overriding moves");
         }
@@ -293,6 +306,7 @@ public class GameEngineService {
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
+        GameLifecycleService.requireActiveTournament(game);
         if (game.status != GameStatus.IN_PROGRESS) {
             throw new WebApplicationException("Game is not awaiting a human move", Response.Status.CONFLICT);
         }

@@ -227,6 +227,11 @@ class TournamentResourceTest {
     private static TournamentRepository repositoryHolding(Tournament tournament) {
         return new TournamentRepository() {
             @Override
+            public Tournament findByIdForUpdate(UUID id) {
+                return tournament;
+            }
+
+            @Override
             public Tournament findById(UUID id) {
                 return tournament;
             }
