@@ -2,6 +2,7 @@ package dev.aichessarena.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.node.IntNode;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,7 +38,8 @@ public record CreateTournamentRequest(
         String name,
         String sharedCustomInstructions,
         Integer moveTimeoutSeconds,
-        Integer maxRetries,
+        // Keep the JSON type so fractional or empty input cannot be coerced to an integer or null.
+        JsonNode maxRetries,
         Integer matchupBestOf,
         Integer finalsBestOf,
         Boolean trashTalkEnabled,
@@ -64,8 +66,8 @@ public record CreateTournamentRequest(
                                    Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
                                    String reasoningEffort, Boolean adjudicationEnabled,
                                    String openingMode, String openingId) {
-        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
-                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
+        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries == null ? null : IntNode.valueOf(maxRetries),
+                matchupBestOf, finalsBestOf, trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
                 resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null);
     }
 

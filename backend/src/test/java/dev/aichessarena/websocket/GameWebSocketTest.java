@@ -308,8 +308,8 @@ class GameWebSocketTest {
         WebSocketConnection spectator = recordingConnection("spectator", sent);
         endpoint.onMessage(spectator, subscribeMessage(gameId));
 
-        endpoint.broadcastMove(gameId, 1, "WHITE", "e4", "fen-1", "1. e4", "model-a", 120, 0, false);
-        endpoint.broadcastMove(gameId, 1, "BLACK", "e5", "fen-2", "1. e4 e5", "admin-override", 0, 0, true);
+        endpoint.broadcastMove(gameId, 1, "WHITE", "e4", "fen-1", "1. e4", "model-a", 120, 0, false, 4);
+        endpoint.broadcastMove(gameId, 1, "BLACK", "e5", "fen-2", "1. e4 e5", "admin-override", 0, 0, true, 5);
 
         ObjectMapper mapper = new ObjectMapper();
         java.util.List<com.fasterxml.jackson.databind.JsonNode> moves = new java.util.ArrayList<>();
@@ -320,6 +320,12 @@ class GameWebSocketTest {
             }
         }
         assertEquals(2, moves.size());
+        assertEquals(1, moves.get(0).get("moveNumber").asInt());
+        assertEquals("WHITE", moves.get(0).get("color").asText());
+        assertEquals(4, moves.get(0).get("statusRevision").asLong());
+        assertEquals(1, moves.get(1).get("moveNumber").asInt());
+        assertEquals("BLACK", moves.get(1).get("color").asText());
+        assertEquals(5, moves.get(1).get("statusRevision").asLong());
         assertTrue(moves.get(0).has("isOverride"));
         assertFalse(moves.get(0).get("isOverride").asBoolean());
         assertTrue(moves.get(1).get("isOverride").asBoolean());

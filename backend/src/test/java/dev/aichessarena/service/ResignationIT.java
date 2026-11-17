@@ -312,7 +312,7 @@ class ResignationIT {
             }
 
             @Override
-            public void broadcastChat(UUID id, int moveNumber, String senderColor, String senderModel,
+            public void broadcastChat(UUID id, UUID chatId, int moveNumber, String senderColor, String senderModel,
                                       String senderName, String message) {
                 seenAtBroadcast.add("chat announced, stored "
                         + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));

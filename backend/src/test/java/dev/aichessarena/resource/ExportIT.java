@@ -41,6 +41,22 @@ class ExportIT {
     Session session;
 
     @Test
+    void overrideWithFalseMateIsRecordedAndExportedAsTheMovePlayed() {
+        UUID id = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.status = Game.GameStatus.PAUSED;
+            game.persist();
+            return game.id;
+        });
+        given().contentType("application/json").body("{\"move\":\"e4#\"}")
+                .post("/api/games/{id}/override-move", id).then().statusCode(200);
+        given().get("/api/games/{id}", id).then().statusCode(200)
+                .body("moves[0].san", equalTo("e4")).body("pgn", equalTo("1. e4"));
+        String pgn = given().get("/api/games/{id}/pgn", id).then().statusCode(200).extract().asString();
+        assertTrue(pgn.lines().anyMatch(line -> line.equals("1. e4") || line.startsWith("1. e4 ")), pgn);
+    }
+
+    @Test
     void bulkProjectionsUseConstantStatementsAndNeverSelectProviderPayloadsOrLoadEntities() {
         UUID twenty = largeFixture(20);
         UUID forty = largeFixture(40);

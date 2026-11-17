@@ -251,7 +251,16 @@
 
               <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Max attempts per move</mat-label>
-                <input matInput type="number" [(ngModel)]="maxRetries" />
+                <input
+                  matInput
+                  type="number"
+                  required
+                  min="1"
+                  max="20"
+                  pattern="[0-9]+"
+                  [(ngModel)]="maxRetries"
+                />
+                <mat-error>Enter a whole number from 1 to 20.</mat-error>
                 <mat-hint
                   >Attempts for invalid
                   <span class="hint-tail"

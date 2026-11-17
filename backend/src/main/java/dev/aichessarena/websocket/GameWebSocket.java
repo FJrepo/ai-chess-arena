@@ -102,7 +102,7 @@ public class GameWebSocket {
     /**
      * Context for the callbacks of a send or close. They run later, on the connection's event loop, and Quarkus
      * propagates every context into them by default, the JTA transaction included: a send made inside a transaction
-     * (a move is announced in the transaction that records it) would make the event loop join that transaction. If
+     * would make the event loop join that transaction. If
      * such a callback runs while the transaction commits, Narayana finds two threads in it and disassociates the
      * committing thread before the one-phase commit; Agroal then refuses to commit the enlisted connection
      * ("Enlisted connection used without active transaction") and the transaction rolls back. The callbacks only
@@ -241,9 +241,10 @@ public class GameWebSocket {
 
     public void broadcastMove(UUID gameId, int moveNumber, String color, String san,
                                String fen, String pgn, String modelId,
-                               long responseTimeMs, int retryCount, boolean isOverride) {
+                               long responseTimeMs, int retryCount, boolean isOverride, long statusRevision) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "move");
+        msg.put("statusRevision", statusRevision);
         msg.put("gameId", gameId.toString());
         msg.put("moveNumber", moveNumber);
         msg.put("color", color);
@@ -261,10 +262,11 @@ public class GameWebSocket {
         broadcast(gameId, msg.toString());
     }
 
-    public void broadcastChat(UUID gameId, int moveNumber, String senderColor,
+    public void broadcastChat(UUID gameId, UUID chatId, int moveNumber, String senderColor,
                                String senderModel, String senderName, String message) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "chat");
+        msg.put("id", chatId.toString());
         msg.put("gameId", gameId.toString());
         msg.put("moveNumber", moveNumber);
         msg.put("senderColor", senderColor);

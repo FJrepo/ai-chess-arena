@@ -14,8 +14,10 @@ public class ResponseParserService {
     private static final Pattern JSON_OBJECT = Pattern.compile("\\{[^{}]*\"move\"\\s*:\\s*\"[^\"]+\"[^{}]*}");
     /** Any flat JSON object with a "resign" field; its value is judged by {@link #isResignation}. */
     private static final Pattern RESIGN_OBJECT = Pattern.compile("\\{[^{}]*\"resign\"\\s*:[^{}]*}");
+    // Neither end may fall inside a longer run of hyphenated O's.
+    private static final String CASTLING = "(?<!O-)O-O(?:-O)?(?!-O)";
     private static final Pattern MOVE_PATTERN = Pattern.compile(
-            "\\b([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?)\\b"
+            "\\b(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?|" + CASTLING + ")(?:\\+{1,2}|#)?(?![\\w+#])"
     );
 
     @Inject
@@ -55,7 +57,7 @@ public class ResponseParserService {
         // 4. Try extracting a move from plain text
         Matcher moveMatcher = MOVE_PATTERN.matcher(rawResponse);
         if (moveMatcher.find()) {
-            return new ParseResult(moveMatcher.group(1), null, "PLAIN_TEXT_EXTRACTION");
+            return new ParseResult(moveMatcher.group(), null, "PLAIN_TEXT_EXTRACTION");
         }
 
         return ParseResult.failure("Could not extract a move from the response");

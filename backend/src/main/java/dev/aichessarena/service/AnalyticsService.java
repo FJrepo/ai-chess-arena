@@ -31,16 +31,18 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 @ApplicationScoped
@@ -48,7 +50,6 @@ public class AnalyticsService {
 
     private static final int DEFAULT_DAYS = 30;
     private static final int MAX_DAYS = 3650;
-    private static final long CACHE_TTL_MS = 15_000L;
 
     @Inject
     GameRepository gameRepository;
@@ -70,9 +71,9 @@ public class AnalyticsService {
 
     private final AnalyticsReliabilityScorer reliabilityScorer = new AnalyticsReliabilityScorer();
 
-    private final Map<String, CacheEntry<AnalyticsHealthDto>> healthCache = new ConcurrentHashMap<>();
-    private final Map<String, CacheEntry<ModelReliabilityResponseDto>> reliabilityCache = new ConcurrentHashMap<>();
-    private final Map<String, CacheEntry<AnalyticsModelComparisonDto>> comparisonCache = new ConcurrentHashMap<>();
+    private final ResponseCache<AnalyticsHealthDto> healthCache = new ResponseCache<>();
+    private final ResponseCache<ModelReliabilityResponseDto> reliabilityCache = new ResponseCache<>();
+    private final ResponseCache<AnalyticsModelComparisonDto> comparisonCache = new ResponseCache<>();
 
     public TournamentCostSummaryDto getTournamentCostSummary(UUID tournamentId) {
         List<Game> games = gameRepository.findByTournamentId(tournamentId);
@@ -150,14 +151,14 @@ public class AnalyticsService {
     public AnalyticsHealthDto getHealth(int requestedDays, UUID tournamentId) {
         int days = normalizeDays(requestedDays);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all");
-        return getCached(healthCache, key, () -> buildHealth(days, tournamentId));
+        return healthCache.get(key, () -> buildHealth(days, tournamentId));
     }
 
     public ModelReliabilityResponseDto getReliability(int requestedDays, UUID tournamentId, int requestedMinGames) {
         int days = normalizeDays(requestedDays);
         int minGames = normalizeMinGames(requestedMinGames);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return getCached(reliabilityCache, key, () -> buildReliability(days, tournamentId, minGames));
+        return reliabilityCache.get(key, () -> buildReliability(days, tournamentId, minGames));
     }
 
     public ModelReliabilityDetailDto getReliabilityForModel(String modelId, int requestedDays, UUID tournamentId) {
@@ -200,7 +201,7 @@ public class AnalyticsService {
         int days = normalizeDays(requestedDays);
         int minGames = normalizeMinGames(requestedMinGames);
         String key = days + "|" + (tournamentId != null ? tournamentId : "all") + "|" + minGames;
-        return getCached(comparisonCache, key, () -> buildComparison(days, tournamentId, minGames));
+        return comparisonCache.get(key, () -> buildComparison(days, tournamentId, minGames));
     }
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
@@ -317,7 +318,7 @@ public class AnalyticsService {
     private ModelReliabilityResponseDto buildReliability(int days, UUID tournamentId, int minGames) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
         List<Game> games = scope.games();
-        List<Move> moves = scope.moves().stream().filter(move -> !move.isBook).toList();
+        List<Move> plies = CanonicalPlies.of(scope.moves());
 
         Map<String, ReliabilityAccumulator> byModel = new HashMap<>();
 
@@ -326,32 +327,7 @@ public class AnalyticsService {
             registerGame(byModel, game.blackModelId, game, false);
         }
 
-        for (Move move : moves) {
-            if (move.isBook || !hasTrackedModelId(move.modelId)) {
-                continue;
-            }
-            String modelId = normalizeModelId(move.modelId);
-            ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
-            accumulator.movesSampled++;
-            accumulator.retriesTotal += Math.max(move.retryCount, 0);
-            if (move.retryCount <= 0) {
-                accumulator.firstTryMoves++;
-            }
-
-            if (move.responseTimeMs != null) {
-                accumulator.responseTimeTotal += move.responseTimeMs;
-                accumulator.responseTimeCount++;
-            }
-
-            if (move.costUsd != null) {
-                accumulator.costTotalUsd = accumulator.costTotalUsd.add(move.costUsd);
-                accumulator.pricedMoves++;
-            }
-        }
-        rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
-            ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
-            accumulator.costTotalUsd = accumulator.costTotalUsd.add(cost);
-        });
+        registerModelMoves(scope, plies, id -> byModel.computeIfAbsent(id, ignored -> new ReliabilityAccumulator()));
         resignedTurnFailures(scope.resignationAttempts()).forEach((modelId, failures) -> {
             ReliabilityAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ReliabilityAccumulator());
             accumulator.resignedTurnsWithFailures += failures.turns();
@@ -384,7 +360,6 @@ public class AnalyticsService {
             Long avgResponseTimeMs = accumulator.responseTimeCount == 0
                     ? null
                     : Math.round((double) accumulator.responseTimeTotal / (double) accumulator.responseTimeCount);
-            BigDecimal avgCostPerMove = divide(accumulator.costTotalUsd, accumulator.pricedMoves);
             AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
                     accumulator.gamesPlayed,
                     accumulator.movesSampled,
@@ -403,7 +378,7 @@ public class AnalyticsService {
                     decimal(avgRetriesPerMove, 4),
                     decimal(firstTryLegalRate, 4),
                     avgResponseTimeMs,
-                    avgCostPerMove,
+                    averageCostPerPly(accumulator),
                     accumulator.movesSampled,
                     decimal(score.finalScore(), 2),
                     score.band(),
@@ -424,7 +399,7 @@ public class AnalyticsService {
     private AnalyticsModelComparisonDto buildComparison(int days, UUID tournamentId, int minGames) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadTerminalScope(days, tournamentId);
         List<Game> terminalGames = scope.games();
-        List<Move> moves = scope.moves();
+        List<Move> plies = CanonicalPlies.of(scope.moves());
 
         Map<String, ComparisonAccumulator> byModel = new HashMap<>();
         for (Game game : terminalGames) {
@@ -432,35 +407,11 @@ public class AnalyticsService {
             registerComparisonGame(byModel, game.blackModelId, game, false);
         }
 
-        for (Move move : moves) {
-            if (move.isBook || !hasTrackedModelId(move.modelId)) {
-                continue;
-            }
-            String modelId = normalizeModelId(move.modelId);
-            ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
-            accumulator.movesSampled++;
-            accumulator.retriesTotal += Math.max(move.retryCount, 0);
-            if (move.retryCount <= 0) {
-                accumulator.firstTryMoves++;
-            }
-            if (move.responseTimeMs != null) {
-                accumulator.responseTimeTotal += move.responseTimeMs;
-                accumulator.responseTimeCount++;
-            }
-            if (move.costUsd != null) {
-                accumulator.totalCostUsd = accumulator.totalCostUsd.add(move.costUsd);
-                accumulator.pricedMoves++;
-            }
-        }
-        rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
-            ComparisonAccumulator accumulator = byModel.computeIfAbsent(modelId, ignored -> new ComparisonAccumulator());
-            accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
-            accumulator.rejectedAttemptsCosted = true;
-        });
-        registerMoveQuality(byModel, moves);
-        registerConversion(byModel, terminalGames, moves);
-        registerTalkativeness(byModel, moves, scope.messages());
-        registerResignations(byModel, terminalGames, moves);
+        registerModelMoves(scope, plies, id -> byModel.computeIfAbsent(id, ignored -> new ComparisonAccumulator()));
+        registerMoveQuality(byModel, plies);
+        registerConversion(byModel, terminalGames, plies);
+        registerTalkativeness(byModel, plies, scope.messages());
+        registerResignations(byModel, terminalGames, plies);
         for (AttemptUsage usage : scope.attemptUsage()) {
             if (hasTrackedModelId(usage.modelId())) {
                 byModel.computeIfAbsent(normalizeModelId(usage.modelId()), ignored -> new ComparisonAccumulator())
@@ -497,11 +448,6 @@ public class AnalyticsService {
 
             BigDecimal forfeitRate = divide(accumulator.forfeits, accumulator.gamesPlayed);
             BigDecimal timeoutForfeitRate = divide(accumulator.timeoutForfeits, accumulator.gamesPlayed);
-            // The total is known even without moves (e.g. only rejected answers, then a forfeit); the average per
-            // move needs at least one move.
-            BigDecimal averageCostPerMoveUsd = pricingAvailable(accumulator) && accumulator.movesSampled > 0
-                    ? divide(accumulator.totalCostUsd, accumulator.pricedMoves)
-                    : null;
             BigDecimal totalCostUsd = pricingAvailable(accumulator)
                     ? scale(accumulator.totalCostUsd, 6)
                     : null;
@@ -544,7 +490,7 @@ public class AnalyticsService {
                     averageRetriesPerMove,
                     decimal(firstTryLegalRate, 4),
                     totalCostUsd,
-                    averageCostPerMoveUsd,
+                    averageCostPerPly(accumulator),
                     costPerWinUsd,
                     pricingAvailable(accumulator),
                     decimal(score.finalScore(), 2),
@@ -584,6 +530,38 @@ public class AnalyticsService {
         );
 
         return new AnalyticsModelComparisonDto(days, tournamentId, minGames, terminalGames.size(), rows);
+    }
+
+    /** Score each played ply once, but count every priced answer in the selected games. */
+    private void registerModelMoves(AnalyticsWindowLoader.AnalyticsScope scope, List<Move> plies,
+                                    Function<String, ModelMoveAccumulator> forModel) {
+        for (Move move : plies) {
+            if (move.isBook || !hasTrackedModelId(move.modelId)) continue;
+            ModelMoveAccumulator accumulator = forModel.apply(normalizeModelId(move.modelId));
+            accumulator.movesSampled++;
+            accumulator.retriesTotal += Math.max(move.retryCount, 0);
+            if (move.retryCount <= 0) accumulator.firstTryMoves++;
+            if (move.costUsd != null) accumulator.pricedPlies++;
+            if (move.responseTimeMs != null) {
+                accumulator.responseTimeTotal += move.responseTimeMs;
+                accumulator.responseTimeCount++;
+            }
+        }
+        for (Move move : scope.moves()) {
+            if (move.isBook || !hasTrackedModelId(move.modelId)) continue;
+            ModelMoveAccumulator accumulator = forModel.apply(normalizeModelId(move.modelId));
+            if (move.costUsd == null) {
+                accumulator.missingMovePrice = true;
+            } else {
+                accumulator.totalCostUsd = accumulator.totalCostUsd.add(move.costUsd);
+                accumulator.hasReportedCost = true;
+            }
+        }
+        rejectedCostByModel(scope.rejectedAttemptCosts()).forEach((modelId, cost) -> {
+            ModelMoveAccumulator accumulator = forModel.apply(modelId);
+            accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
+            accumulator.hasReportedCost = true;
+        });
     }
 
     /** Counts a finished, non-bye game; unfinished games are not games played yet and are ignored. */
@@ -705,9 +683,9 @@ public class AnalyticsService {
      * Each model side/game counts once if any evaluated position (including the opponent's moves, overrides and
      * forced moves) reached 90% winning chances. Missing evaluations give no evidence, never an assumed zero.
      */
-    private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves) {
+    private void registerConversion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> plies) {
         Map<UUID, List<MoveQualityClassifier.Score>> scoresByGame = new HashMap<>();
-        for (Move move : CanonicalPlies.of(moves)) {
+        for (Move move : plies) {
             if (move.isBook) {
                 continue;
             }
@@ -756,7 +734,7 @@ public class AnalyticsService {
      * for one ply; each ply counts once, with its first stored move and first non-empty message (the duplicates are
      * the later rows, see docs/deployment.md).
      */
-    private void registerTalkativeness(Map<String, ComparisonAccumulator> byModel, List<Move> moves,
+    private void registerTalkativeness(Map<String, ComparisonAccumulator> byModel, List<Move> plies,
                                        List<PlyMessage> messages) {
         Map<PlyKey, Integer> messageLengths = new HashMap<>();
         for (PlyMessage message : messages) {
@@ -765,7 +743,7 @@ public class AnalyticsService {
                         message.length());
             }
         }
-        for (Move move : CanonicalPlies.of(moves)) {
+        for (Move move : plies) {
             if (move.isBook || move.game == null || move.chatMode == null || !move.chatMode.allowsMessages() || move.isOverride
                     || !hasTrackedModelId(move.modelId)) {
                 continue;
@@ -958,9 +936,14 @@ public class AnalyticsService {
      * Whether the model's total cost is known: every move is priced and there is at least one priced answer
      * (a move, or a rejected attempt with a reported cost).
      */
-    private boolean pricingAvailable(ComparisonAccumulator accumulator) {
-        boolean anyCost = accumulator.movesSampled > 0 || accumulator.rejectedAttemptsCosted;
-        return anyCost && accumulator.pricedMoves == accumulator.movesSampled;
+    private boolean pricingAvailable(ModelMoveAccumulator accumulator) {
+        return accumulator.hasReportedCost && !accumulator.missingMovePrice;
+    }
+
+    private BigDecimal averageCostPerPly(ModelMoveAccumulator accumulator) {
+        return pricingAvailable(accumulator) && accumulator.pricedPlies > 0
+                ? divide(accumulator.totalCostUsd, accumulator.pricedPlies)
+                : null;
     }
 
     private BigDecimal divide(long numerator, long denominator) {
@@ -986,25 +969,30 @@ public class AnalyticsService {
         return BigDecimal.valueOf(value).setScale(scale, RoundingMode.HALF_UP);
     }
 
-    private <T> T getCached(Map<String, CacheEntry<T>> cache, String key, Supplier<T> supplier) {
-        long now = System.currentTimeMillis();
-        CacheEntry<T> cached = cache.get(key);
-        if (cached != null && cached.expiresAtMs > now) {
-            return cached.value;
-        }
+    private static final class ResponseCache<T> {
+        private static final int MAX_FILTERS = 64;
+        private static final long TTL_NANOS = Duration.ofSeconds(15).toNanos();
+        private final LinkedHashMap<String, Entry<T>> entries = new LinkedHashMap<>(16, 0.75f, true);
 
-        T value = supplier.get();
-        cache.put(key, new CacheEntry<>(value, now + CACHE_TTL_MS));
-        return value;
-    }
+        private record Entry<T>(T value, long startedAt) {}
 
-    private static final class CacheEntry<T> {
-        private final T value;
-        private final long expiresAtMs;
+        T get(String key, Supplier<T> load) {
+            long startedAt = System.nanoTime();
+            synchronized (entries) {
+                entries.values().removeIf(entry -> startedAt - entry.startedAt() >= TTL_NANOS);
+                Entry<T> cached = entries.get(key);
+                if (cached != null) return cached.value();
+            }
 
-        private CacheEntry(T value, long expiresAtMs) {
-            this.value = value;
-            this.expiresAtMs = expiresAtMs;
+            // Database reads for independent filters can proceed concurrently.
+            T value = load.get();
+            synchronized (entries) {
+                if (System.nanoTime() - startedAt < TTL_NANOS) {
+                    entries.putIfAbsent(key, new Entry<>(value, startedAt));
+                    if (entries.size() > MAX_FILTERS) entries.pollFirstEntry();
+                }
+            }
+            return value;
         }
     }
 
@@ -1025,7 +1013,19 @@ public class AnalyticsService {
         private long pricedMoves;
     }
 
-    private static final class ComparisonAccumulator {
+    private static class ModelMoveAccumulator {
+        long movesSampled;
+        long firstTryMoves;
+        long retriesTotal;
+        long responseTimeCount;
+        long responseTimeTotal;
+        BigDecimal totalCostUsd = BigDecimal.ZERO;
+        long pricedPlies;
+        boolean hasReportedCost;
+        boolean missingMovePrice;
+    }
+
+    private static final class ComparisonAccumulator extends ModelMoveAccumulator {
         private long gamesPlayed;
         private long invalidMoveForfeits;
         private long wins;
@@ -1037,14 +1037,6 @@ public class AnalyticsService {
         private long whiteWins;
         private long blackGames;
         private long blackWins;
-        private long movesSampled;
-        private long firstTryMoves;
-        private long retriesTotal;
-        private long responseTimeCount;
-        private long responseTimeTotal;
-        private BigDecimal totalCostUsd = BigDecimal.ZERO;
-        private long pricedMoves;
-        private boolean rejectedAttemptsCosted;
         private long analyzedMoves;
         private final Set<UUID> analyzedGameIds = new HashSet<>();
         private long centipawnLossTotal;
@@ -1074,7 +1066,7 @@ public class AnalyticsService {
         private long messageLengthTotal;
     }
 
-    private static final class ReliabilityAccumulator {
+    private static final class ReliabilityAccumulator extends ModelMoveAccumulator {
         private long gamesPlayed;
         private long gamesCompleted;
         private long forfeitCount;
@@ -1082,13 +1074,5 @@ public class AnalyticsService {
         private long invalidMoveForfeitCount;
         private long resignedTurnsWithFailures;
         private long resignedTurnFailures;
-
-        private long movesSampled;
-        private long firstTryMoves;
-        private long retriesTotal;
-        private long responseTimeCount;
-        private long responseTimeTotal;
-        private BigDecimal costTotalUsd = BigDecimal.ZERO;
-        private long pricedMoves;
     }
 }

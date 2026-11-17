@@ -3,7 +3,9 @@ package dev.aichessarena.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +42,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +55,20 @@ import org.junit.jupiter.api.Test;
 class AnalyticsServiceTest {
 
     private static final LocalDateTime YESTERDAY = LocalDateTime.now().minusDays(1);
+
+    @Test
+    void analyticsCacheEvictsLeastRecentlyUsedFilters() {
+        AnalyticsService service = service(List.of(), List.of(), List.of());
+        var first = service.getHealth(1, null);
+        var second = service.getHealth(2, null);
+        for (int days = 3; days <= 64; days++) {
+            service.getHealth(days, null);
+        }
+        assertSame(first, service.getHealth(1, null));
+        service.getHealth(65, null);
+        assertSame(first, service.getHealth(1, null));
+        assertNotSame(second, service.getHealth(2, null));
+    }
 
     @Test
     void bookMovesNeverCountForModelHealthReliabilityCostChatQualityOrConversion() {
@@ -248,6 +265,48 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    void duplicatePliesCountOnceForBothScoresAndKeepAllReportedCosts() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Move first = move(game, "model.alpha", 1000L, "0.010", 0);
+        Move duplicate = move(game, "model.alpha", 3000L, "0.020", 1);
+        duplicate.createdAt = first.createdAt.plusSeconds(1);
+        AnalyticsService service = service(List.of(game), List.of(duplicate, first),
+                List.of(new RejectedAttemptCost(game.id, "model.alpha", new BigDecimal("0.005"))));
+
+        ModelReliabilityDto reliability = reliabilityRow(service.getReliability(30, null, 0), "model.alpha");
+        assertEquals(1, reliability.movesSampled());
+        assertEquals(1.0, reliability.firstTryLegalRate().doubleValue());
+        assertEquals(0.0, reliability.averageRetriesPerMove().doubleValue());
+        assertEquals(1000L, reliability.averageResponseTimeMs());
+        AnalyticsModelComparisonRowDto comparison = row(service.getComparison(30, null, 0), "model.alpha");
+        assertEquals(1, comparison.movesSampled());
+        assertEquals(reliability.firstTryLegalRate(), comparison.firstTryLegalRate());
+        assertEquals(0.0, comparison.averageRetriesPerMove().doubleValue());
+        assertEquals(1000L, comparison.averageResponseTimeMs());
+        assertEquals(reliability.finalScore(), comparison.reliabilityScore());
+        assertEquals(new BigDecimal("0.035000"), comparison.totalCostUsd());
+        assertEquals(comparison.totalCostUsd(), comparison.averageCostPerMoveUsd());
+        assertEquals(comparison.averageCostPerMoveUsd(), reliability.averageCostPerMoveUsd());
+    }
+
+    @Test
+    void pricedDuplicateContributesSpendButCannotPriceAnUnpricedPly() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Move first = move(game, "model.alpha", 1000L, null);
+        Move duplicate = move(game, "model.alpha", 3000L, "0.02");
+        duplicate.createdAt = first.createdAt.plusSeconds(1);
+        AnalyticsService service = service(List.of(game), List.of(duplicate, first), List.of());
+
+        ModelReliabilityDto reliability = reliabilityRow(service.getReliability(30, null, 0), "model.alpha");
+        AnalyticsModelComparisonRowDto comparison = row(service.getComparison(30, null, 0), "model.alpha");
+        assertEquals(1, reliability.movesSampled());
+        assertEquals(1, comparison.movesSampled());
+        assertEquals(new BigDecimal("0.020000"), service.getHealth(30, null).costTotalUsd());
+        assertNull(comparison.averageCostPerMoveUsd());
+        assertNull(reliability.averageCostPerMoveUsd());
+    }
+
+    @Test
     void firstTryLegalRateCountsRetriedMovesAndInvalidMoveForfeits() {
         Game won = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
         Game forfeited = finishedGame(
@@ -262,8 +321,8 @@ class AnalyticsServiceTest {
                 List.of(won, forfeited),
                 List.of(
                         move(won, "model.alpha", 1000L, "0.010000", 0),
-                        move(won, "model.alpha", 1000L, "0.010000", 0),
-                        move(won, "model.alpha", 1000L, "0.010000", 2),
+                        move(won, "model.alpha", 1000L, "0.010000", 0, 2),
+                        move(won, "model.alpha", 1000L, "0.010000", 2, 3),
                         move(forfeited, "model.alpha", 1000L, "0.010000", 0),
                         move(won, "model.beta", 1000L, "0.010000", 0)
                 ),
@@ -300,7 +359,7 @@ class AnalyticsServiceTest {
                 List.of(game, outside),
                 List.of(
                         move(game, "model.alpha", 1000L, "0.010000"),
-                        move(game, "model.alpha", 1000L, "0.020000"),
+                        move(game, "model.alpha", 1000L, "0.020000", 0, 2),
                         move(game, "model.beta", 1000L, "0.004000")
                 ),
                 List.of(
@@ -639,6 +698,7 @@ class AnalyticsServiceTest {
                 resignationAttempt(game, "model.alpha", MoveAttempt.Outcome.RESIGN_NOT_ALLOWED),
                 resignationAttempt(game, "model.alpha", MoveAttempt.Outcome.RESIGNED),
                 // gamma resigned on its first try: nothing to count.
+                resignationAttempt(clean, "model.gamma", MoveAttempt.Outcome.PROVIDER_RETRYABLE),
                 resignationAttempt(clean, "model.gamma", MoveAttempt.Outcome.RESIGNED),
                 // Failures of a ply that did not end in a resignation are already on a move (or a forfeit).
                 new MoveAttemptRepository.ResignationTurnAttempt(game.id, 3, "WHITE", "model.alpha",
@@ -1107,9 +1167,15 @@ class AnalyticsServiceTest {
     }
 
     private Move move(Game game, String modelId, long responseTimeMs, String costUsd, int retryCount) {
+        return move(game, modelId, responseTimeMs, costUsd, retryCount, 1);
+    }
+
+    private Move move(Game game, String modelId, long responseTimeMs, String costUsd, int retryCount, int number) {
         Move move = new Move();
         move.id = UUID.randomUUID();
         move.game = game;
+        move.color = Objects.equals(modelId, game.whiteModelId) ? "WHITE" : "BLACK";
+        move.moveNumber = number;
         move.modelId = modelId;
         move.createdAt = game.createdAt.plusMinutes(1);
         move.responseTimeMs = responseTimeMs;

@@ -10,10 +10,31 @@ import com.github.bhlangonijr.chesslib.Piece;
 import com.github.bhlangonijr.chesslib.Side;
 import com.github.bhlangonijr.chesslib.Square;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class ChessServiceTest {
 
     private final ChessService chessService = new ChessService();
+
+    @ParameterizedTest
+    @CsvSource({
+            "4k3/8/8/8/8/8/8/R3K3 w - - 0 1, Ra8, Ra8+",
+            "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1, Qg7+, Qg7#",
+            "7k/P7/8/8/8/8/8/4K3 w - - 0 1, a8=R, a8=R+",
+            "4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1, Nbd2#, Nbd2",
+            "5k2/8/8/8/8/8/8/4K2R w K - 0 1, O-O, O-O+"
+    })
+    void canonicalSanReplaysToTheSamePosition(String fen, String proposed, String expected) {
+        Board board = chessService.boardFromFen(fen);
+        var played = chessService.validateAndApply(board, proposed);
+        assertTrue(played.valid(), played.error());
+        assertEquals(expected, played.san());
+
+        var replay = chessService.validateAndApply(chessService.boardFromFen(fen), played.san());
+        assertTrue(replay.valid(), replay.error());
+        assertEquals(board.getFen(), replay.fen());
+    }
 
     @Test
     void rejectsPawnForwardCaptureIntoOccupiedSquare() {

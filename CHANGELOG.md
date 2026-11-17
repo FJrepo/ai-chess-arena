@@ -19,6 +19,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Resume actions queue while auto-run slots are occupied or reserved. Older requests reserve slots first, and a stopping loop leaves surplus slots available. API clients can opt in with `queueIfFull=true` on `/start`.
 - Cancel queued resumes by revision from the bracket or game view. The bracket keeps newer queue updates when saving run limits, and game polling refreshes the board and move history when a queued game resumes or finishes.
+- Tournament setup and the API accept 1–20 attempts per move. The game loop also enforces both bounds for older tournaments.
+- Attempt history attributes timeouts after provider retries to the provider. This includes a cache-marker rejection followed by a successful plain fallback and a timeout later in the turn.
+- Reliability and comparison count each played ply once, even in older games with duplicate moves. Both return a null average cost per move when pricing is incomplete. Reported spend includes every paid answer.
+- Viewers receive moves and accompanying chat only after the move is saved, with chat sent first. Chat events carry the stored message ID and move events carry their ply and game status revision.
+- New scoresheet and PGN entries use the board's move notation, including accurate check and mate markers. Attempt history keeps the model's original move, including check and mate suffixes extracted from plain text. A plain-text `O-O-O++` now plays queenside castling when legal.
+- Switching among many analytics filters now uses bounded cache memory.
 
 ## [1.7.0] - 2026-11-17
 

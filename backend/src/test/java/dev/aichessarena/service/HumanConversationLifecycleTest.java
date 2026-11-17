@@ -51,7 +51,7 @@ class HumanConversationLifecycleTest {
     void twoHumanContinuationsKeepThePreviousModelExchangesAndReloadTheBoard() throws Exception {
         Fixture f = new Fixture();
         f.engine.startGame(f.game.id);
-        f.human("e5");
+        f.human("e5+");
         f.human("Nc6");
 
         assertEquals(List.of(2, 4, 6), f.messageCounts());

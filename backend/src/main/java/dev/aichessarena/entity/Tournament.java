@@ -62,6 +62,9 @@ public class Tournament extends PanacheEntityBase {
     public static final int MIN_MOVE_TIMEOUT_SECONDS = 10;
     public static final int MAX_MOVE_TIMEOUT_SECONDS = 3600;
 
+    public static final int MIN_MOVE_ATTEMPTS = 1;
+    public static final int MAX_MOVE_ATTEMPTS = 20;
+
     @Column(name = "max_retries", nullable = false)
     public int maxRetries = 3;
 

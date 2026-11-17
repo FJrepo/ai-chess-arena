@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ResponseParserServiceTest {
 
@@ -47,14 +49,40 @@ class ResponseParserServiceTest {
         assertEquals("JSON", result.parseMethod());
     }
 
-    @Test
-    void parseFallsBackToPlainTextMoveExtraction() {
-        String content = "I will play Qh5+ now.";
+    @ParameterizedTest
+    @ValueSource(strings = {"Qh5+", "e4#", "O-O", "O-O+", "O-O-O", "O-O-O+", "O-O-O#"})
+    void parseFallsBackToPlainTextMoveExtraction(String proposed) {
+        String content = "My move is " + proposed + ".";
         ResponseParserService.ParseResult result = parser.parse(content);
 
         assertFalse(result.isFailure());
-        assertEquals("Qh5", result.move());
+        assertEquals(proposed, result.move());
         assertEquals("PLAIN_TEXT_EXTRACTION", result.parseMethod());
+    }
+
+    @Test
+    void plainTextQueensideCastleWithDoublePlusPlaysTheMatingMove() {
+        ChessService chess = new ChessService();
+        var board = chess.boardFromFen("2rkr3/2p1p3/8/8/8/8/8/R3K2R w KQ - 0 1");
+        assertTrue(chess.getLegalMovesAsSan(board).contains("O-O"));
+
+        var result = parser.parse("My move is O-O-O++.");
+        assertEquals("O-O-O++", result.move());
+        var played = chess.validateAndApply(board, result.move());
+        assertEquals("O-O-O#", played.san());
+        assertTrue(board.isMated());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"O-O-O+++", "O-O-O-O"})
+    void plainTextExtractionSkipsMalformedCastlingTokens(String malformed) {
+        assertTrue(parser.parse("My move is " + malformed + ".").isFailure());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0-0-0", "0-0-0+", "0-0-0#", "0-0-0++"})
+    void jsonPreservesZeroSpelledCastling(String proposed) {
+        assertEquals(proposed, parser.parse("{\"move\":\"" + proposed + "\"}").move());
     }
 
     @Test

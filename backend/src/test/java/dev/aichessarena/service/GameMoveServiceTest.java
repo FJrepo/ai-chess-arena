@@ -367,6 +367,7 @@ class GameMoveServiceTest {
 
         @Override
         public void persist(ChatMessage entity) {
+            entity.id = UUID.randomUUID();
             persistedMessages.add(entity);
         }
     }
@@ -419,6 +420,7 @@ class GameMoveServiceTest {
         @Override
         public void broadcastChat(
                 UUID gameId,
+                UUID chatId,
                 int moveNumber,
                 String senderColor,
                 String senderModel,
@@ -439,7 +441,8 @@ class GameMoveServiceTest {
                 String modelId,
                 long responseTimeMs,
                 int retryCount,
-                boolean isOverride
+                boolean isOverride,
+                long statusRevision
         ) {
             lastMoveSan = san;
             lastMoveOverride = isOverride;

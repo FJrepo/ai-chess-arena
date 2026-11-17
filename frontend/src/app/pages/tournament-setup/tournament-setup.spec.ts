@@ -347,6 +347,42 @@ describe('TournamentSetup', () => {
     expect(api.createTournamentPayload?.['maxOutputTokens']).toBe(16384);
   });
 
+  it('blocks invalid attempt limits and accepts both boundaries', async () => {
+    const api = createApiService();
+    const fixture = await renderSetup(api);
+    const component = fixture.componentInstance;
+    component.name = 'Attempts';
+    component.participants.set([
+      pricedParticipant('Alpha', 'a/model', 0, 0),
+      pricedParticipant('Beta', 'b/model', 0, 0),
+    ]);
+    const field = fixture.nativeElement
+      .querySelector('[aria-label="About move attempts"]')
+      .closest('mat-form-field') as HTMLElement;
+    const input = field.querySelector('input')!;
+    const createButton = fixture.nativeElement.querySelector('.create-button') as HTMLButtonElement;
+    expect(input.min).toBe('1');
+    expect(input.max).toBe('20');
+    for (const value of ['0', '-1', '21', '1.5', '', '1', '20']) {
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      input.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const valid = value === '1' || value === '20';
+      expect(createButton.disabled).toBe(!valid);
+      if (valid) {
+        expect(field.textContent).not.toContain('Enter a whole number');
+      } else {
+        expect(field.textContent).toContain('Enter a whole number from 1 to 20');
+        component.create();
+        expect(api.createTournamentPayload).toBeNull();
+      }
+    }
+    createButton.click();
+    expect(api.createTournamentPayload?.['maxRetries']).toBe(20);
+  });
+
   it('renders the token bounds and credit-balance hint and validates the boundaries', async () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
