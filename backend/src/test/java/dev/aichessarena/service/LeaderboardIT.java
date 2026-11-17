@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.aichessarena.entity.Game;
@@ -11,6 +12,7 @@ import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import java.time.LocalDateTime;
@@ -20,6 +22,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Real HTTP, Hibernate and PostgreSQL; no external model or engine calls. */
 @QuarkusTest
@@ -85,9 +89,24 @@ class LeaderboardIT {
         assertEquals("2000-01-02T12:00:00", value(response, alpha, "lastPlayed"));
     }
 
-    @Test
-    void excludingForfeitsReplaysTheEntireSample() {
-        Response response = leaderboard(false);
+    @ParameterizedTest
+    @ValueSource(strings = {"true", "TRUE", "TrUe"})
+    void explicitlyIncludingForfeitsKeepsForfeitLosses(String includeForfeits) {
+        Response response = given().queryParam("includeForfeits", includeForfeits)
+                .when().get("/api/analytics/leaderboard")
+                .then().statusCode(200).extract().response();
+        assertEquals(Boolean.TRUE, response.path("includeForfeits"));
+        assertEquals(2, value(response, alpha, "games"));
+        assertEquals(1499, value(response, alpha, "rating"));
+        assertEquals(1, value(response, alpha, "forfeits"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"false", "FALSE", "FaLsE"})
+    void excludingForfeitsReplaysTheEntireSample(String includeForfeits) {
+        Response response = given().queryParam("includeForfeits", includeForfeits)
+                .when().get("/api/analytics/leaderboard")
+                .then().statusCode(200).extract().response();
         assertEquals(Boolean.FALSE, response.path("includeForfeits"));
         assertEquals(1, value(response, alpha, "games"));
         assertEquals(1516, value(response, alpha, "rating"));
@@ -95,6 +114,16 @@ class LeaderboardIT {
         assertEquals(0, value(response, alpha, "forfeits"));
         assertEquals(1, value(response, alpha, "ratingHistory.size()"));
         assertEquals("2000-01-01T12:00:00", value(response, alpha, "lastPlayed"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"garbage", "1", "", "0", " true", "false "})
+    void invalidIncludeForfeitsIsRejected(String includeForfeits) {
+        given().queryParam("includeForfeits", includeForfeits)
+                .when().get("/api/analytics/leaderboard")
+                .then().statusCode(400)
+                .contentType(ContentType.JSON)
+                .body("error", equalTo("includeForfeits must be true or false"));
     }
 
     @Test

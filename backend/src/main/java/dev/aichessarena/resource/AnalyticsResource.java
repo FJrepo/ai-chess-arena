@@ -10,8 +10,10 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import java.util.UUID;
 
 @Path("/api/analytics")
@@ -26,8 +28,14 @@ public class AnalyticsResource {
 
     @GET
     @Path("/leaderboard")
-    public Response getLeaderboard(@QueryParam("includeForfeits") @DefaultValue("true") boolean includeForfeits) {
-        return Response.ok(leaderboardService.getLeaderboard(includeForfeits)).build();
+    public Response getLeaderboard(@Context UriInfo uriInfo) {
+        // Read the query map to distinguish an omitted parameter from an explicitly empty one.
+        var query = uriInfo.getQueryParameters();
+        String includeForfeits = query.containsKey("includeForfeits") ? query.getFirst("includeForfeits") : "true";
+        if (!"true".equalsIgnoreCase(includeForfeits) && !"false".equalsIgnoreCase(includeForfeits)) {
+            throw new IllegalArgumentException("includeForfeits must be true or false");
+        }
+        return Response.ok(leaderboardService.getLeaderboard(Boolean.parseBoolean(includeForfeits))).build();
     }
 
     @GET
