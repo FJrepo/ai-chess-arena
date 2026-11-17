@@ -31,6 +31,7 @@ Variety and robustness: opening variety (standard, random book line or a fixed o
 - Bundle Stockfish 19 (`sf_19`) using checksum-pinned universal `.tar.gz` assets selected by Docker target architecture (amd64 or arm64). The local installer now defaults to Stockfish 19 on Linux and macOS. Existing stored evaluations are unchanged; no migration or backfill is required.
 
 ### Fixed
+- Preserve the backend Dockerfile's `MIT, GPL-3.0-or-later` licence label in release images instead of overriding it with the repository's MIT licence, so Stockfish licence checks pass. Frontend and other generated OCI labels are unchanged.
 - Start/resume model prompts name the final persisted move, including the last book ply, and restore only that ply's message; missing move context no longer prints `null`. Resignation eligibility and its prompt hint count each side's completed non-book moves, first allowing resignation on its own tenth played move. No migration or backfill is needed.
 - Keep repository-relative documentation links and images working in GitHub Release notes by pinning them to the released tag. Preserve used Markdown reference definitions from anywhere in the changelog and keep fenced examples intact when extracting and demoting headings.
 - Replace font-dependent Unicode chess pieces with Cburnett SVG images on the board, capture strips and promotion picker. Board images announce piece colour, name and square; captured pieces and promotion buttons retain accessible names. Vendored images include the BSD licence notice.

@@ -122,6 +122,9 @@ jobs:
           images: ghcr.io/${{ needs.validate-tag.outputs.namespace }}/chess-${{ matrix.component }}
           tags: |
             type=raw,value=${{ needs.validate-tag.outputs.candidate_tag }}
+          # Repository metadata only covers MIT; the backend also bundles GPL Stockfish.
+          labels: |
+            ${{ matrix.component == 'backend' && 'org.opencontainers.image.licenses=MIT, GPL-3.0-or-later' || '' }}
 
       - name: Build and push candidate image
         uses: docker/build-push-action@v7
