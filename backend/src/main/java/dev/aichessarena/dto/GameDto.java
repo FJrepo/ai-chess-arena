@@ -60,6 +60,8 @@ public record GameDto(
         String activeColor,
         Instant turnStartedAt,
         Instant turnDeadlineAt,
+        String turnChatMode,
+        String turnBanterLevel,
         List<MoveAttemptDto> attempts,
         String streamId
 ) {

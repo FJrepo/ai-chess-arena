@@ -117,7 +117,10 @@ public final class DtoMapper {
                 apiValue(g.requestedReasoningEffort("WHITE")),
                 apiValue(g.requestedReasoningEffort("BLACK")),
                 g.openingId, g.openingName, g.openingEco, g.liveRevision, g.activeColor(),
-                g.turnStartedAt, g.turnDeadlineAt, attempts, streamId
+                g.turnStartedAt, g.turnDeadlineAt,
+                g.turnChatMode != null ? g.turnChatMode.name() : null,
+                g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
+                attempts, streamId
         );
     }
 

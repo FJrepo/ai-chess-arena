@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
@@ -54,9 +55,11 @@ class GameTurnTiming {
         game.turnDeadlineAt = timing.deadlineAt();
         String chatMode = request.tournamentChatMode() == null ? null : request.tournamentChatMode().name();
         String banter = request.tournamentBanterLevel() == null ? null : request.tournamentBanterLevel().name();
-        var metadata = updates.change("turnSettings", game.id);
-        if (chatMode != null) metadata.put("tournamentChatMode", chatMode).put("tournamentBanterLevel", banter);
-        updates.changed(game, metadata);
+        game.turnChatMode = request.chatMode() == null ? ChatMode.OPTIONAL : request.chatMode();
+        boolean appliesTone = game.turnChatMode.allowsMessages()
+                && !PromptService.LEGACY_CUSTOM_TEMPLATE_VERSION.equals(request.promptVersion());
+        game.turnBanterLevel = appliesTone ? request.tournamentBanterLevel() : null;
+        updates.changed(game);
         AfterCommit.run(registry, () -> socket.broadcastGameStatus(id, "IN_PROGRESS", null, null, totalMoves,
                 cost, color, timing.startedAt(), timing.deadlineAt(), null, chatMode, banter));
         return timing;

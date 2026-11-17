@@ -106,6 +106,8 @@ function gameState(fields: Partial<Extract<GameChange, { type: 'gameState' }>> =
     activeColor: null,
     turnStartedAt: null,
     turnDeadlineAt: null,
+    turnChatMode: null,
+    turnBanterLevel: null,
     totalCostUsd: 0,
     ...fields,
   };
@@ -1809,6 +1811,7 @@ describe('GameView', () => {
     gameLoad.next(gameWith({ tournamentId: 't-1', startedAt: '2026-01-01T00:00:00' }));
     expect(component.activeColor()).toBe('WHITE');
     expect(component.moveTimerSeconds()).toBeNull();
+    expect(component.displayedChatMode()).toBeNull();
     component.ngOnDestroy();
   });
 
@@ -1918,27 +1921,34 @@ describe('GameView', () => {
     component.ngOnDestroy();
   });
 
-  it('keeps chat settings from the live turn when an older tournament request answers', () => {
+  it('shows the active turn’s captured chat mode and tone through settings edits and recovery', () => {
     const { component, gameLoad, messages, api } = createSpectator();
     const tournament = new Subject<{ chatMode: string; banterLevel: string }>();
+    const turnStartedAt = new Date().toISOString();
     Object.assign(api, { getTournament: () => tournament });
     component.ngOnInit();
     gameLoad.next(gameWith({ liveRevision: 1, tournamentId: 't-1' }));
     messages.next(
-      revision(
-        2,
-        {
-          type: 'turnSettings',
-          gameId: 'g-1',
-          tournamentChatMode: 'OFF',
-          tournamentBanterLevel: null,
-        },
-        gameState({ activeColor: 'WHITE' }),
-      ),
+      revision(2, gameState({ activeColor: 'WHITE', turnStartedAt, turnChatMode: 'OFF' })),
     );
-    tournament.next({ chatMode: 'OPTIONAL', banterLevel: 'PLAYFUL' });
-    expect(component.tournamentChatMode()).toBe('OFF');
-    expect(component.tournamentBanterLevel()).toBeNull();
+    tournament.next({ chatMode: 'MANDATORY', banterLevel: 'PLAYFUL' });
+    expect(component.displayedChatMode()).toBe('OFF');
+    expect(component.displayedBanterLevel()).toBeNull();
+
+    messages.next({ type: 'heartbeat', gameId: 'g-1', revision: 3 });
+    gameLoad.next(
+      gameWith({
+        liveRevision: 3,
+        tournamentId: 't-1',
+        activeColor: 'WHITE',
+        turnStartedAt,
+        turnChatMode: 'OPTIONAL',
+        turnBanterLevel: 'POLITE',
+      }),
+    );
+    tournament.next({ chatMode: 'MANDATORY', banterLevel: 'PLAYFUL' });
+    expect(component.displayedChatMode()).toBe('OPTIONAL');
+    expect(component.displayedBanterLevel()).toBe('POLITE');
     component.ngOnDestroy();
   });
 

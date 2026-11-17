@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.dto.GameDto;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.Tournament;
@@ -52,6 +53,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Live updates are sent without blocking: the send finishes later on another thread (the Vert.x event loop in
@@ -298,18 +300,25 @@ class LiveUpdateTransactionIT {
                 gameMoveService.recordHumanMove(id, 1, "WHITE", "e4", AFTER_E4, "White", "Hello", START));
     }
 
-    @Test
-    void modelTimingAndEvaluationUseTheSameSequenceAndStaleTurnCannotRestoreAnExpiredDeadline() {
+    @ParameterizedTest
+    @ValueSource(strings = {"v2", "legacy-custom-template"})
+    void modelTimingAndEvaluationUseTheSameSequenceAndStaleTurnCannotRestoreAnExpiredDeadline(String promptVersion) {
         UUID id = game(GameStatus.IN_PROGRESS);
         gameWebSocket.onMessage(viewer,
                 "{\"type\":\"subscribe\",\"gameId\":\"%s\",\"protocol\":2}".formatted(id));
         var turn = new GameTurnService.TurnRequest(id, null, START, null, "WHITE", 1, List.of(), "test/white",
-                "White", "Black", new ArrayList<>(), null, null, true, 1, 30, "v2", "hash",
-                BigDecimal.ZERO, () -> true, 1024, ChatMode.OPTIONAL, ChatMode.OPTIONAL, false, null, null, 7L);
+                "White", "Black", new ArrayList<>(), null, null, true, 1, 30, promptVersion, "hash",
+                BigDecimal.ZERO, () -> true, 1024, ChatMode.OPTIONAL, ChatMode.MANDATORY, false, null, BanterLevel.POLITE, 7L);
         timing.record(turn);
         GameDto timed = gameSnapshot(id);
         assertEquals(1, timed.liveRevision());
         assertEquals("WHITE", timed.activeColor());
+        assertEquals("OPTIONAL", timed.turnChatMode());
+        String expectedTone = PromptService.LEGACY_CUSTOM_TEMPLATE_VERSION.equals(promptVersion) ? null : "POLITE";
+        assertEquals(expectedTone, timed.turnBanterLevel());
+        JsonNode turnState = revisionEvents.getLast().path("changes").get(0);
+        assertEquals("OPTIONAL", turnState.path("turnChatMode").asText());
+        assertEquals(expectedTone, turnState.path("turnBanterLevel").asText(null));
         assertEquals(Duration.ofSeconds(30), Duration.between(timed.turnStartedAt(), timed.turnDeadlineAt()));
 
         lifecycle.markGamePaused(id);
@@ -319,6 +328,8 @@ class LiveUpdateTransactionIT {
         assertEquals(3, resumed.liveRevision());
         assertEquals("WHITE", resumed.activeColor());
         assertEquals(null, resumed.turnDeadlineAt());
+        assertEquals(null, resumed.turnChatMode());
+        assertEquals(null, resumed.turnBanterLevel());
 
         gameMoveService.recordHumanMove(id, 1, "WHITE", "e4", AFTER_E4, "White", null, START);
         GameDto moved = gameSnapshot(id);

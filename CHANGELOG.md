@@ -9,7 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 
-- Flyway `V24__live_game_revision.sql` adds a revision counter, nullable turn timestamps and an optional originating status revision for attempts. Back up before upgrading and recreate backend and frontend together. Existing moves, attempts, chat, results and spend are retained.
+- Flyway `V24__live_game_revision.sql` adds game revisions, nullable model-turn metadata and an optional originating status revision for attempts. Back up before upgrading and recreate backend and frontend together. Existing moves, attempts, chat, results and spend are retained.
 
 ### Added
 

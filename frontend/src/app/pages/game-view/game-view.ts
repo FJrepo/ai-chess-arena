@@ -130,6 +130,16 @@ export class GameView implements OnInit, OnDestroy {
   /** The tournament's chat mode, once loaded (shown in the chat panel). */
   tournamentChatMode = signal<ChatMode | null>(null);
   tournamentBanterLevel = signal<BanterLevel | null>(null);
+  readonly displayedChatMode = computed(() => {
+    const game = this.game();
+    if (this.turnState.snapshotOnly()) return null;
+    return game?.turnStartedAt ? (game.turnChatMode ?? null) : this.tournamentChatMode();
+  });
+  readonly displayedBanterLevel = computed(() => {
+    const game = this.game();
+    if (this.turnState.snapshotOnly()) return null;
+    return game?.turnStartedAt ? (game.turnBanterLevel ?? null) : this.tournamentBanterLevel();
+  });
   /** The tournament's reasoning effort, once loaded; null for each model's default. */
   tournamentReasoningEffort = signal<ReasoningEffort | null>(null);
   /**
@@ -234,7 +244,6 @@ export class GameView implements OnInit, OnDestroy {
   private snapshotFallback = false;
   private waitingForSubscription = false;
   private snapshotQueued = false;
-  private turnSettingsGeneration = 0;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private retryDelay = 500;
   private attemptsGeneration = 0;
@@ -649,7 +658,6 @@ export class GameView implements OnInit, OnDestroy {
 
   private refreshSnapshotSettings(game: Game): void {
     const generation = ++this.settingsGeneration;
-    const turnSettingsGeneration = this.turnSettingsGeneration;
     this.pauseSettingsSub?.unsubscribe();
     this.refreshingPauseSettings.set(!!game.tournamentId);
     if (!game.tournamentId) {
@@ -661,12 +669,10 @@ export class GameView implements OnInit, OnDestroy {
         if (generation !== this.settingsGeneration) return;
         this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
         this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
-        if (turnSettingsGeneration === this.turnSettingsGeneration) {
-          this.tournamentChatMode.set(
-            tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
-          );
-          this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
-        }
+        this.tournamentChatMode.set(
+          tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
+        );
+        this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
         this.tournamentReasoningEffort.set(
           isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
         );
@@ -745,6 +751,8 @@ export class GameView implements OnInit, OnDestroy {
                 activeColor: change.activeColor,
                 turnStartedAt: change.turnStartedAt,
                 turnDeadlineAt: change.turnDeadlineAt,
+                turnChatMode: change.turnChatMode,
+                turnBanterLevel: change.turnBanterLevel,
                 totalCostUsd: change.totalCostUsd,
                 liveRevision: revision,
               },
@@ -771,12 +779,6 @@ export class GameView implements OnInit, OnDestroy {
         case 'committedAttempt':
           this.attempts.update((attempts) => [...attempts, change.attempt]);
           this.lookUpTruncatedModelEfforts();
-          break;
-        case 'turnSettings':
-          ++this.turnSettingsGeneration;
-          if (change.tournamentChatMode) this.tournamentChatMode.set(change.tournamentChatMode);
-          if (change.tournamentBanterLevel !== undefined)
-            this.tournamentBanterLevel.set(change.tournamentBanterLevel);
           break;
         case 'gameDetailsChanged':
           needsDetails = true;

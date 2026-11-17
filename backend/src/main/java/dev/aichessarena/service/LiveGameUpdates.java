@@ -89,7 +89,9 @@ public class LiveGameUpdates {
                 .put("totalCostUsd", game.totalCostUsd)
                 .put("activeColor", game.activeColor())
                 .put("turnStartedAt", asText(game.turnStartedAt))
-                .put("turnDeadlineAt", asText(game.turnDeadlineAt));
+                .put("turnDeadlineAt", asText(game.turnDeadlineAt))
+                .put("turnChatMode", game.turnChatMode == null ? null : game.turnChatMode.name())
+                .put("turnBanterLevel", game.turnBanterLevel == null ? null : game.turnBanterLevel.name());
     }
 
     private static String asText(Instant instant) {

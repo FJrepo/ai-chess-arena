@@ -227,7 +227,6 @@ function isChangeList(changes: unknown, gameId: string): boolean {
       case 'gameDetailsChanged':
       case 'gameStatus':
       case 'evaluationUpdate':
-      case 'turnSettings':
         return true;
       default:
         return false;

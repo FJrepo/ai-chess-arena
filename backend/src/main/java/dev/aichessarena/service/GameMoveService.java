@@ -251,8 +251,7 @@ public class GameMoveService {
         String san = move.san;
         String fen = move.fen;
         updateGameState(game, fen, san, moveNumber, color);
-        game.turnStartedAt = null;
-        game.turnDeadlineAt = null;
+        game.clearTurn();
         ChatMessage storedChat = chatMessageRepository.persistMessage(game, moveNumber, color, move.modelId, message);
         UUID chatId = storedChat == null ? null : storedChat.id;
 

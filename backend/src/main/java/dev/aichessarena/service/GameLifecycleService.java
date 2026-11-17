@@ -184,7 +184,8 @@ public class GameLifecycleService {
     public void pauseGamesOrphanedByRestart() {
         int paused = gameRepository.update(
                 "status = ?1, statusDetail = ?2, statusRevision = statusRevision + 1, " +
-                        "liveRevision = liveRevision + 1, turnStartedAt = null, turnDeadlineAt = null where status = ?3",
+                        "liveRevision = liveRevision + 1, turnStartedAt = null, turnDeadlineAt = null, " +
+                        "turnChatMode = null, turnBanterLevel = null where status = ?3",
                 GameStatus.PAUSED, RESTART_DETAIL, GameStatus.IN_PROGRESS
         );
         if (paused > 0) {
@@ -387,8 +388,7 @@ public class GameLifecycleService {
         int moves = totalMoves(gameId);
         BigDecimal cost = game.totalCostUsd;
         boolean terminal = isTerminal(game);
-        game.turnStartedAt = null;
-        game.turnDeadlineAt = null;
+        game.clearTurn();
         if (liveUpdates != null) {
             liveUpdates.changed(game, liveUpdates.statusChange(gameId, status, result, resultReason, moves,
                     cost, detail, revision, resumeRequestedAt, capacity));

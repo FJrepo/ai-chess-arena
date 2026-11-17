@@ -165,6 +165,8 @@ export interface Game {
   activeColor?: 'WHITE' | 'BLACK' | null;
   turnStartedAt?: string | null;
   turnDeadlineAt?: string | null;
+  turnChatMode?: ChatMode | null;
+  turnBanterLevel?: BanterLevel | null;
   attempts?: MoveAttempt[] | null;
   /**
    * The reasoning effort each side asks for (participant override, else the tournament's); null or absent for
@@ -418,12 +420,8 @@ export type GameChange =
       activeColor: 'WHITE' | 'BLACK' | null;
       turnStartedAt: string | null;
       turnDeadlineAt: string | null;
-    }
-  | {
-      type: 'turnSettings';
-      gameId: string;
-      tournamentChatMode?: ChatMode;
-      tournamentBanterLevel?: BanterLevel | null;
+      turnChatMode: ChatMode | null;
+      turnBanterLevel: BanterLevel | null;
     }
   | { type: 'gameDetailsChanged'; gameId: string }
   | { type: 'committedMove'; gameId: string; move: Move; pgn: string }
