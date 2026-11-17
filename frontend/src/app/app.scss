@@ -4,14 +4,7 @@
   z-index: 100;
   height: 72px;
   backdrop-filter: blur(8px);
-  background:
-    radial-gradient(
-      140% 260% at 4% -180%,
-      color-mix(in srgb, var(--mat-sys-primary) 26%, transparent),
-      transparent 60%
-    ),
-    color-mix(in srgb, var(--mat-sys-surface) 95%, white);
-  border-bottom: 1px solid color-mix(in srgb, var(--mat-sys-outline) 24%, transparent);
+  background: var(--mat-sys-surface);
 }
 
 .brand {
@@ -25,42 +18,32 @@
 
 // The mark follows the app theme (light/dark), not the system colour scheme.
 .brand-logo {
-  --brand-logo-knight: #0f2a5c;
-  --brand-logo-detail: #ffffff;
-  --brand-logo-node: #2563eb;
   width: 38px;
   height: 44px;
   flex: none;
 }
 
-:host-context(.dark-theme) .brand-logo {
-  --brand-logo-knight: #f1f5f9;
-  --brand-logo-detail: #0f172a;
-  --brand-logo-node: #60a5fa;
-}
-
 .brand-logo-knight {
-  fill: var(--brand-logo-knight);
+  fill: var(--app-brand-knight);
 }
 
 .brand-logo-detail {
-  fill: var(--brand-logo-detail);
+  fill: var(--app-brand-detail);
 }
 
 .brand-logo-trace {
   fill: none;
-  stroke: var(--brand-logo-detail);
+  stroke: var(--app-brand-detail);
   stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .brand-logo-node {
-  fill: var(--brand-logo-node);
+  fill: var(--app-brand-node);
 }
 
 .toolbar-title {
-  font-weight: 700;
   letter-spacing: 0.005em;
 }
 

@@ -11,7 +11,6 @@ $warning: mat.$orange-palette;
   // Column rhythm: the connector midpoints and the champion stub both use this gap.
   --bracket-gap: clamp(48px, 4.5vw, 96px);
 
-  --bracket-shell-wash: 18%;
   --bracket-card-bg: linear-gradient(
     140deg,
     var(--mat-sys-surface-container-high),
@@ -42,7 +41,6 @@ $warning: mat.$orange-palette;
 }
 
 :host-context([data-theme='light']) {
-  --bracket-shell-wash: 8%;
   --bracket-card-bg: var(--mat-sys-surface-container-lowest);
   --bracket-card-border: color-mix(in srgb, var(--mat-sys-outline-variant) 90%, transparent);
   --bracket-card-shadow:
@@ -64,18 +62,7 @@ $warning: mat.$orange-palette;
 .bracket-shell {
   border-radius: 22px;
   border: 1px solid color-mix(in srgb, var(--mat-sys-outline) 30%, transparent);
-  background:
-    radial-gradient(
-      140% 120% at 10% 0%,
-      color-mix(in srgb, var(--mat-sys-primary) var(--bracket-shell-wash), transparent),
-      transparent 58%
-    ),
-    radial-gradient(
-      120% 130% at 90% 10%,
-      color-mix(in srgb, var(--mat-sys-tertiary) var(--bracket-shell-wash), transparent),
-      transparent 62%
-    ),
-    var(--mat-sys-surface-container-low);
+  background: var(--mat-sys-surface-container-low);
   box-shadow: var(--app-surface-shadow);
 }
 
@@ -139,8 +126,6 @@ $warning: mat.$orange-palette;
 .round-title {
   margin: 0 0 14px;
   text-align: center;
-  font-family: 'Roboto', 'Trebuchet MS', sans-serif;
-  font-weight: 700;
   color: var(--mat-sys-on-surface-variant);
   text-transform: uppercase;
   font-size: 0.85rem;
@@ -281,7 +266,7 @@ $warning: mat.$orange-palette;
   &.loser {
     background: transparent;
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mat-sys-outline-variant) 70%, transparent);
-    color: color-mix(in srgb, var(--mat-sys-on-surface-variant) 80%, transparent);
+    color: var(--mat-sys-on-surface-variant);
 
     app-provider-logo {
       opacity: 0.7;

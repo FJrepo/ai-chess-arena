@@ -1,4 +1,5 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
+import { BoardThemeService } from '../../services/board-theme.service';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { EMPTY, Subject, of, throwError } from 'rxjs';
@@ -113,6 +114,7 @@ function createSpectator() {
     { navigate: vi.fn() } as any,
     { open: vi.fn() } as any,
     turnState,
+    new BoardThemeService(document),
   );
   return { component, gameLoad, messages, reconnected, getGame, api };
 }
@@ -140,6 +142,7 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
       { navigate: vi.fn() } as any,
       snackbar as any,
       new GameTurnStateService(),
+      new BoardThemeService(document),
     ),
     api,
     snackbar,
@@ -2290,6 +2293,53 @@ describe('GameView piece images', () => {
     fixture.detectChanges();
     return fixture;
   }
+
+  it('lists the three board colours and applies each selection to html', async () => {
+    const previousBoard = document.documentElement.getAttribute('data-board');
+    const previousSaved = localStorage.getItem('boardTheme');
+    localStorage.setItem('boardTheme', 'green');
+    const fixture = renderGame();
+    try {
+      const trigger: HTMLButtonElement = fixture.nativeElement.querySelector(
+        '[aria-label="Board colours"]',
+      );
+      expect(trigger.textContent).toContain('Board');
+      expect(trigger.querySelector('mat-icon')?.textContent).toBe('palette');
+      for (const [value, label] of [
+        ['blue-grey', 'Blue-grey'],
+        ['wood', 'Wood'],
+        ['green', 'Green'],
+      ]) {
+        trigger.click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        const options = Array.from(
+          document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+        );
+        expect(options.map((option) => option.textContent?.replace('check', '').trim())).toEqual([
+          'Green',
+          'Blue-grey',
+          'Wood',
+        ]);
+        expect(options.map((option) => option.getAttribute('aria-checked'))).toEqual(
+          fixture.componentInstance.boardTheme.options.map((option) =>
+            String(option.value === fixture.componentInstance.boardTheme.theme()),
+          ),
+        );
+        options.find((option) => option.textContent?.includes(label))!.click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(document.documentElement.getAttribute('data-board')).toBe(value);
+        expect(localStorage.getItem('boardTheme')).toBe(value);
+      }
+    } finally {
+      fixture.destroy();
+      if (previousBoard === null) document.documentElement.removeAttribute('data-board');
+      else document.documentElement.setAttribute('data-board', previousBoard);
+      if (previousSaved === null) localStorage.removeItem('boardTheme');
+      else localStorage.setItem('boardTheme', previousSaved);
+    }
+  });
 
   function renderPicker(currentFen: string) {
     const fixture = renderGame(currentFen);

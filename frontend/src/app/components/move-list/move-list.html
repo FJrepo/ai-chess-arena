@@ -3,7 +3,7 @@
     <mat-card-title>Moves</mat-card-title>
   </mat-card-header>
   <mat-card-content>
-    <div class="move-list-scroll" #scrollContainer>
+    <div class="move-list-scroll num" #scrollContainer>
       @for (pair of movePairs(); track pair.number) {
         <div class="move-row">
           <span class="move-number">{{ pair.number }}.</span>

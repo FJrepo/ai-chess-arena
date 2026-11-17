@@ -24,17 +24,7 @@
 .onboarding-intro {
   text-align: left;
   padding: 0;
-  background:
-    radial-gradient(
-      140% 140% at 0% 0%,
-      color-mix(in srgb, var(--mat-sys-primary) 18%, transparent),
-      transparent 58%
-    ),
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--mat-sys-surface-container) 92%, white),
-      color-mix(in srgb, var(--mat-sys-surface-container-high) 94%, white)
-    );
+  background: var(--app-surface-bg);
 
   mat-card-content {
     display: grid;
@@ -59,22 +49,6 @@
   color: var(--mat-sys-primary);
 }
 
-.openrouter-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: var(--mat-sys-primary-container);
-  color: var(--mat-sys-on-primary-container);
-
-  &.warn {
-    background: color-mix(in srgb, var(--mat-sys-tertiary-container) 70%, transparent);
-    color: var(--mat-sys-on-tertiary-container);
-  }
-}
-
 .onboarding-chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -87,7 +61,7 @@
   align-items: center;
   gap: 8px;
   font-size: 0.88rem;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 68%, transparent);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .onboarding-actions {
@@ -131,7 +105,7 @@
 .starter-card p,
 .starter-detail {
   margin: 0;
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 72%, transparent);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .step-index {
@@ -207,7 +181,7 @@
   border-radius: 24px;
   background: color-mix(in srgb, var(--mat-sys-surface-container-low) 60%, transparent);
   border: 2px dashed color-mix(in srgb, var(--mat-sys-outline) 20%, transparent);
-  color: color-mix(in srgb, var(--mat-sys-on-surface) 60%, transparent);
+  color: var(--mat-sys-on-surface-variant);
 
   p {
     font-size: 1.2rem;
@@ -293,7 +267,7 @@
   }
 
   &:focus-visible::after {
-    outline: 2px solid var(--mat-sys-primary);
+    outline: var(--app-rule-width) solid var(--app-accent-info);
     outline-offset: -2px;
   }
 }

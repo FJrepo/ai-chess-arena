@@ -1,4 +1,6 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
+import { BoardThemeService } from '../../services/board-theme.service';
+import { MatMenuModule } from '@angular/material/menu';
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -94,6 +96,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
     MatCardModule,
     MatButtonModule,
     MatIconModule,
+    MatMenuModule,
     MatChipsModule,
     MatFormFieldModule,
     MatInputModule,
@@ -456,6 +459,7 @@ export class GameView implements OnInit, OnDestroy {
     private router: Router,
     private snackbar: MatSnackBar,
     private turnState: GameTurnStateService,
+    public boardTheme: BoardThemeService,
     private connection: OpenRouterAccess = null!,
   ) {
     this.isLive = this.turnState.isLive;

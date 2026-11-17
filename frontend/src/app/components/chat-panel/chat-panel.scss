@@ -6,7 +6,8 @@
   }
 
   mat-card-title {
-    font: var(--mat-sys-title-medium);
+    font-size: var(--mat-sys-title-medium-size);
+    line-height: var(--mat-sys-title-medium-line-height);
   }
 
   mat-card-subtitle {

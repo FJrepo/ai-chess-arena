@@ -105,7 +105,7 @@
                 </div>
                 @if (card.row) {
                   <div class="leader-model">{{ card.row.modelId }}</div>
-                  <div class="leader-value">{{ card.value(card.row) }}</div>
+                  <div class="leader-value num">{{ card.value(card.row) }}</div>
                   <div class="leader-sub">{{ card.detail(card.row) }}</div>
                   @if (card.row.insufficientData) {
                     <p class="leader-caveat">
@@ -119,7 +119,7 @@
                   }
                 } @else {
                   <div class="leader-model">No qualifying model</div>
-                  <div class="leader-value">N/A</div>
+                  <div class="leader-value num">N/A</div>
                   <div class="leader-sub">Adjust filters or reduce the min games threshold.</div>
                 }
                 <p class="leader-description">{{ card.description }}</p>
@@ -171,7 +171,7 @@
                       <td class="num">{{ row.wins }}-{{ row.draws }}-{{ row.losses }}</td>
                       <td class="num">{{ percent(row.winRate) }}</td>
                       <td class="col-score">
-                        <span class="score">{{ formatScore(row.reliabilityScore) }}</span>
+                        <span class="score num">{{ formatScore(row.reliabilityScore) }}</span>
                         <mat-chip class="grade-chip" [attr.data-grade]="row.reliabilityBand">
                           {{ row.insufficientData ? 'Low sample' : row.reliabilityBand }}
                         </mat-chip>
@@ -509,7 +509,7 @@
           respond.
         </p>
         <ng-template #healthKpiEmpty>
-          <div class="value">—</div>
+          <div class="value num">—</div>
           <div class="sub">
             {{
               healthError()
@@ -521,7 +521,7 @@
           </div>
         </ng-template>
         <ng-template #reliabilityKpiEmpty>
-          <div class="value">—</div>
+          <div class="value num">—</div>
           <div class="sub">
             {{
               reliabilityError()
@@ -536,7 +536,7 @@
           <div class="kpi-card">
             <div class="label">Total Cost</div>
             @if (health(); as h) {
-              <div class="value">{{ h.costTotalUsd | currency: 'USD' }}</div>
+              <div class="value num">{{ h.costTotalUsd | currency: 'USD' }}</div>
               <div class="sub">Across {{ h.gamesCount }} matches</div>
             } @else {
               <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
@@ -545,7 +545,7 @@
           <div class="kpi-card">
             <div class="label">Move Volume</div>
             @if (health(); as h) {
-              <div class="value">{{ h.movesCount | number }}</div>
+              <div class="value num">{{ h.movesCount | number }}</div>
               <div class="sub">{{ h.retriesTotal }} retries required</div>
             } @else {
               <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
@@ -554,7 +554,7 @@
           <div class="kpi-card">
             <div class="label">Avg Latency</div>
             @if (health(); as h) {
-              <div class="value">{{ formatMs(h.averageResponseTimeMs) }}</div>
+              <div class="value num">{{ formatMs(h.averageResponseTimeMs) }}</div>
               <div class="sub">P95: {{ formatMs(h.p95ResponseTimeMs) }}</div>
             } @else {
               <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
@@ -563,7 +563,9 @@
           <div class="kpi-card">
             <div class="label">Total Tokens</div>
             @if (health(); as h) {
-              <div class="value">{{ h.promptTokensTotal + h.completionTokensTotal | number }}</div>
+              <div class="value num">
+                {{ h.promptTokensTotal + h.completionTokensTotal | number }}
+              </div>
               <div class="sub">
                 In: {{ h.promptTokensTotal | number }} / Out: {{ h.completionTokensTotal | number }}
               </div>
@@ -574,7 +576,7 @@
           <div class="kpi-card">
             <div class="label">Trust Index</div>
             @if (reliability(); as r) {
-              <div class="value">{{ formatScore(reliabilityAverageScore()) }}</div>
+              <div class="value num">{{ formatScore(reliabilityAverageScore()) }}</div>
               <div class="sub">Average across {{ r.models.length }} models</div>
             } @else {
               <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
@@ -583,7 +585,7 @@
           <div class="kpi-card">
             <div class="label">Low Confidence</div>
             @if (reliability(); as r) {
-              <div class="value">{{ reliabilityLowConfidenceCount() }}</div>
+              <div class="value num">{{ reliabilityLowConfidenceCount() }}</div>
               <div class="sub">Models with insufficient data</div>
             } @else {
               <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
@@ -730,7 +732,7 @@
                         <strong class="model-id">{{ row.modelId }}</strong>
                       </td>
                       <td class="col-score">
-                        <span class="score">{{ formatScore(row.finalScore) }}</span>
+                        <span class="score num">{{ formatScore(row.finalScore) }}</span>
                         <mat-chip class="grade-chip" [attr.data-grade]="row.band">
                           {{ row.band }}
                         </mat-chip>

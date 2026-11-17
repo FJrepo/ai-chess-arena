@@ -1,25 +1,5 @@
-@use 'sass:map';
-@use '@angular/material' as mat;
-
-// Status tones come from Material's tonal palettes (M3 has no success or warning role), as on
-// the system page; surfaces and text use the theme's system tokens. Dark is the app default.
-$success: mat.$green-palette;
-$warning: mat.$orange-palette;
-
 :host {
-  --game-success-text: color-mix(in srgb, #{map.get($success, 80)} 55%, var(--mat-sys-on-surface));
-  --game-warning-text: #{map.get($warning, 80)};
-  --game-warning-border: color-mix(in srgb, var(--game-warning-text) 60%, transparent);
-  --game-warning-fill: color-mix(in srgb, var(--game-warning-text) 10%, transparent);
-
   display: block;
-}
-
-:host-context([data-theme='light']) {
-  --game-success-text: #{map.get($success, 30)};
-  --game-warning-text: #{map.get($warning, 30)};
-  --game-warning-border: #{map.get($warning, 40)};
-  --game-warning-fill: color-mix(in srgb, #{map.get($warning, 40)} 7%, transparent);
 }
 
 .view-actions {
@@ -48,11 +28,11 @@ $warning: mat.$orange-palette;
   }
 
   &.online mat-icon {
-    color: var(--game-success-text);
+    color: var(--app-success-text);
   }
 
   &.offline mat-icon {
-    color: var(--game-warning-text);
+    color: var(--app-warning-text);
   }
 }
 
@@ -79,9 +59,6 @@ $warning: mat.$orange-palette;
 }
 
 .timer-value {
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
   font-size: 0.875rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -89,12 +66,12 @@ $warning: mat.$orange-palette;
 }
 
 .move-timer.warning {
-  border-color: var(--game-warning-border);
-  background: var(--game-warning-fill);
+  border-color: var(--app-warning-border);
+  background: var(--app-warning-fill);
 
   mat-icon,
   .timer-value {
-    color: var(--game-warning-text);
+    color: var(--app-warning-text);
   }
 }
 
@@ -167,7 +144,8 @@ $warning: mat.$orange-palette;
 
   mat-card-title {
     margin: 0;
-    font: var(--mat-sys-title-medium);
+    font-size: var(--mat-sys-title-medium-size);
+    line-height: var(--mat-sys-title-medium-line-height);
   }
 
   mat-card-content {
@@ -236,21 +214,21 @@ $warning: mat.$orange-palette;
   }
 
   &:focus-visible {
-    outline: 2px solid var(--mat-sys-primary);
+    outline: var(--app-rule-width) solid var(--app-accent-info);
     outline-offset: -2px;
   }
 
   &.warning-event {
-    background: var(--game-warning-fill);
-    box-shadow: inset 3px 0 0 var(--game-warning-border);
+    background: var(--app-warning-fill);
+    box-shadow: inset 3px 0 0 var(--app-warning-border);
 
     .timeline-icon {
-      color: var(--game-warning-text);
+      color: var(--app-warning-text);
     }
   }
 
   &.success-event .timeline-icon {
-    color: var(--game-success-text);
+    color: var(--app-success-text);
   }
 }
 
@@ -290,7 +268,7 @@ $warning: mat.$orange-palette;
 
 // Failed-attempt summary: same quiet size as the detail line, set apart by the warning tone.
 .feed-attempts {
-  color: var(--game-warning-text);
+  color: var(--app-warning-text);
 }
 
 .timeline-time {
@@ -424,8 +402,8 @@ app-advantage-bar {
   gap: 8px;
   padding: 10px 14px;
   border-radius: 14px;
-  border: 1px solid var(--game-warning-border);
-  background: var(--game-warning-fill);
+  border: 1px solid var(--app-warning-border);
+  background: var(--app-warning-fill);
   flex-wrap: wrap;
   justify-content: center;
   // Takes the board block's width instead of widening it (the frame sizes to max-content);
@@ -462,8 +440,11 @@ app-advantage-bar {
 
 .board-controls {
   display: flex;
+  align-items: center;
+  --mat-icon-button-state-layer-size: var(--app-board-control-size);
+  --mat-icon-button-touch-target-display: none;
   justify-content: center;
-  gap: 4px;
+  gap: 0;
 }
 
 .human-move-card {

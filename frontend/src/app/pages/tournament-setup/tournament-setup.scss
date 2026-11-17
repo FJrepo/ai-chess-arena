@@ -23,7 +23,7 @@
   // Placeholders and disabled labels: clearly quieter than values, still 4.5:1 on the card
   // in both themes (every label floats, so placeholders stay visible).
   --setup-muted: var(--mat-sys-on-surface-variant);
-  --setup-mono: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
+  --setup-mono: var(--app-font-numeric);
   @include mat.form-field-overrides(
     (
       outlined-input-text-placeholder-color: var(--setup-muted),
@@ -39,14 +39,8 @@
   display: block;
 }
 
-// The global kicker tint drops below 4.5:1 on the light hero; the primary role clears it
-// on the hero surface in both themes.
 .setup-hero {
   padding: 22px 28px;
-
-  .page-kicker {
-    color: var(--mat-sys-primary);
-  }
 
   .page-subtitle {
     color: var(--setup-caption);
@@ -101,7 +95,6 @@
       elevated-container-color: var(--setup-card-bg),
       elevated-container-shape: var(--app-surface-radius-md),
       elevated-container-elevation: none,
-      title-text-weight: 500,
     )
   );
   border: 1px solid var(--setup-line);
@@ -129,7 +122,7 @@
 .setup-aside:focus-visible,
 .rules-toggle:focus-visible,
 .advanced-summary:focus-visible {
-  outline: 2px solid var(--mat-sys-primary);
+  outline: var(--app-rule-width) solid var(--app-accent-info);
   outline-offset: -2px;
 }
 
@@ -153,6 +146,7 @@ mat-hint,
 .confidence-metric span:not(.metric-label),
 .confidence-footnotes p {
   font: var(--mat-sys-body-small);
+  font-size: var(--app-text-secondary-size);
   color: var(--setup-caption);
 }
 
@@ -178,7 +172,8 @@ mat-hint,
 .participant-name,
 .confidence-empty strong {
   margin: 0;
-  font: var(--mat-sys-title-small);
+  font-size: var(--mat-sys-title-small-size);
+  line-height: var(--mat-sys-title-small-line-height);
   letter-spacing: var(--mat-sys-title-small-tracking);
 }
 
@@ -228,7 +223,6 @@ mat-hint,
 }
 
 .toggle-row,
-.openrouter-status,
 .add-row,
 .add-action,
 .confidence-band-row,
@@ -358,7 +352,7 @@ mat-hint,
   list-style: none;
   font: var(--mat-sys-label-large);
   letter-spacing: var(--mat-sys-label-large-tracking);
-  color: var(--mat-sys-primary);
+  color: var(--app-accent-info);
 
   &::-webkit-details-marker {
     display: none;
@@ -383,25 +377,6 @@ mat-hint,
 }
 
 // ----- Participants -----
-
-.openrouter-status {
-  flex-wrap: wrap;
-  gap: 10px;
-  border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 16px;
-  background: var(--setup-inset-bg);
-
-  &.info {
-    background: var(--mat-sys-primary-container);
-    color: var(--mat-sys-on-primary-container);
-  }
-
-  &.warn {
-    background: color-mix(in srgb, var(--mat-sys-tertiary-container) 70%, transparent);
-    color: var(--mat-sys-on-tertiary-container);
-  }
-}
 
 .retry-button {
   margin-left: auto;
@@ -669,4 +644,8 @@ mat-hint,
   .settings-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.openrouter-status {
+  margin-bottom: 16px;
 }

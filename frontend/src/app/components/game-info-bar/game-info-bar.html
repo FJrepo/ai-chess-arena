@@ -21,7 +21,7 @@
             }
           </span>
           @if (sideQuality('WHITE'); as q) {
-            <span class="quality-summary" [attr.title]="sideQualityTooltip(q)">
+            <span class="quality-summary num" [attr.title]="sideQualityTooltip(q)">
               <span class="acpl">ACPL {{ q.averageCentipawnLoss }}</span>
               @for (entry of qualityCounts(q); track entry.glyph) {
                 <span
@@ -57,7 +57,7 @@
             }
           </span>
           @if (sideQuality('BLACK'); as q) {
-            <span class="quality-summary" [attr.title]="sideQualityTooltip(q)">
+            <span class="quality-summary num" [attr.title]="sideQualityTooltip(q)">
               <span class="acpl">ACPL {{ q.averageCentipawnLoss }}</span>
               @for (entry of qualityCounts(q); track entry.glyph) {
                 <span
@@ -82,7 +82,7 @@
       @if (game.result) {
         <span class="result">{{ getResultText() }}</span>
       }
-      <span class="cost" title="Model cost for this game">
+      <span class="cost num" title="Model cost for this game">
         <mat-icon class="cost-icon" aria-hidden="true">payments</mat-icon>
         {{ game.totalCostUsd | currency: 'USD' }}
       </span>
