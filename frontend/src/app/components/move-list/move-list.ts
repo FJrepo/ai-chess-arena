@@ -63,9 +63,11 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
   });
 
   ngOnChanges(changes: SimpleChanges<MoveListComponent>) {
-    if (changes.currentIndex) {
-      this.shouldScroll = this.currentIndex >= 0;
-    }
+    if (changes.currentIndex) this.revealSelectedMove();
+  }
+
+  revealSelectedMove() {
+    this.shouldScroll = this.currentIndex >= 0;
   }
 
   ngAfterViewChecked() {

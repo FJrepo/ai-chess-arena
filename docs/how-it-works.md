@@ -37,7 +37,7 @@ In **System → OpenRouter**, choose **Connect OpenRouter**. OpenRouter asks you
 
 Alternatively expand **Use an existing API key instead** (or **Use a different API key** when connected), paste a key into the outlined password field and choose **Validate and save** below it. The field stays collapsed until you expand it. Connected UI keys show **Test key**, **Replace connection** and **Delete local key** together; **Test key** is hidden when no key exists. Operator-managed keys show only status, the operator explanation and **Test key**. The password field is write-only and cleared immediately after submitting, including on failure. Collapsing manual entry, switching to OAuth or leaving settings also clears unsaved input; reopening the field starts empty. Invalid keys and provider outages leave the previous key untouched. Settings show only the source (`env`, `file`, `ui`, `none`), a masked four-character suffix, last check time and validation result. Status reads do not contact OpenRouter; **Test key** checks the effective key through the claimed, same-origin `POST /api/config/openrouter/test` endpoint. Validation time/results are process-local and reset on backend restart or a change of effective key.
 
-A configured key with no validation result appears as **Key configured** with a neutral **validation unknown** badge on System Status. In a claimed browser, **Test key** updates the badge as soon as the check finishes.
+A configured key with no validation result appears as **Key configured** with a neutral **validation unknown** badge on System Status. In a claimed browser, **Test key** updates the badge as soon as the check finishes. Use **Refresh** to reload both system health and OpenRouter settings after a backend outage.
 
 The legacy `GET /api/config/openrouter-status` and `GET /api/config/system-status` are passive too: each includes `key:{source,maskedSuffix,lastValidatedAt,validation}`. Their existing `valid` / `openRouterValid` booleans are true only when the stored result for the current key is `valid`; an untested operator key reports `unknown` and false. System `checkedAt` is the status response time, not a provider validation time. Both GETs use `Cache-Control: no-store`.
 
@@ -572,7 +572,7 @@ API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true`
 
 ## Live settings
 
-Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
+Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar. Scores longer than six characters use scientific notation on the bar. The tooltip and screen-reader label show the full score.
 
 Viewers receive a move after its database transaction commits, with any accompanying chat delivered first. A rollback suppresses both updates. Each `chat` event carries the persisted message UUID in `id`, matching the game's chat snapshot, including a resigning player's last words. Each `move` event identifies its ply by `moveNumber` and `color` and carries the game's `statusRevision` at the move. Several plies can share a status revision.
 

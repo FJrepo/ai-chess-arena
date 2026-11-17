@@ -11,7 +11,7 @@ import { ApiService, SystemStatusResponse } from '../../services/api.service';
 import { OpenRouterClient } from '../../services/openrouter-client';
 import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 
-/** Health of a dependency; `unknown` when the backend could not be asked. */
+/** Health of a dependency given the latest check, if available. */
 export type StatusTone = 'healthy' | 'degraded' | 'unknown';
 
 @Component({

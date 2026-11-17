@@ -30,7 +30,10 @@ export class OpenRouterSettings implements OnInit, OnDestroy {
     private router: Router,
   ) {}
   ngOnInit() {
-    this.update(this.client.status());
+    this.refresh();
+  }
+  refresh() {
+    if (!this.busy()) this.update(this.client.status());
   }
   ngOnDestroy() {
     this.clearManualEntry();

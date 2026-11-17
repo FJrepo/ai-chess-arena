@@ -1,3 +1,7 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import { SystemStatus } from './system-status';
@@ -80,6 +84,51 @@ describe('SystemStatus', () => {
     expect(component.openRouterTone()).toBe('healthy');
     expect(component.openRouterSummary()).toContain('validated successfully');
     expect(getSystemStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes settings after an outage and respects the recovered browser claim', () => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    });
+    const fixture = TestBed.createComponent(SystemStatus);
+    const http = TestBed.inject(HttpTestingController);
+    const element: HTMLElement = fixture.nativeElement;
+    const refresh = element.querySelector<HTMLButtonElement>('.system-header-actions button')!;
+    const testKey = () => element.querySelector<HTMLButtonElement>('.connection-actions button');
+    const status = healthyStatus();
+    status.key = { ...status.key, source: 'env', validation: 'unknown', lastValidatedAt: null };
+    const systemUrl = '/api/config/system-status';
+    const settingsUrl = '/api/config/openrouter';
+
+    fixture.detectChanges();
+    const unavailable = { status: 503, statusText: 'Service Unavailable' };
+    http.expectOne(systemUrl).flush(null, unavailable);
+    http.expectOne(settingsUrl).flush(null, unavailable);
+    fixture.detectChanges();
+    expect(element.textContent).toContain('OpenRouter settings are unavailable');
+    expect(testKey()).toBeNull();
+
+    refresh.click();
+    http.expectOne(systemUrl).flush(status);
+    http.expectOne(settingsUrl).flush({ key: status.key, canManage: false });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('Key configured');
+    expect(testKey()?.disabled).toBe(true);
+    expect(element.textContent).toContain('claim this browser');
+
+    refresh.click();
+    http.expectOne(systemUrl).flush(status);
+    http.expectOne(settingsUrl).flush({ key: status.key, canManage: true });
+    fixture.detectChanges();
+    expect(testKey()?.disabled).toBe(false);
+    testKey()?.click();
+    const testRequest = http.expectOne(settingsUrl + '/test');
+    expect(testRequest.request.method).toBe('POST');
+    testRequest.flush({ key: { ...status.key, validation: 'valid' }, canManage: true });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.openRouterTone()).toBe('healthy');
+    expect(element.textContent).not.toContain('settings are unavailable');
+    http.verify();
   });
 
   it('reports no key as needing a connection', () => {

@@ -10,7 +10,12 @@
     </div>
 
     <div class="system-header-actions">
-      <button mat-flat-button color="primary" (click)="refresh()" [disabled]="loading()">
+      <button
+        mat-flat-button
+        color="primary"
+        (click)="refresh(); settings.refresh()"
+        [disabled]="loading()"
+      >
         <mat-icon>refresh</mat-icon>
         Refresh
       </button>
@@ -31,7 +36,7 @@
     </div>
   }
 
-  <app-openrouter-settings />
+  <app-openrouter-settings #settings />
 
   <section class="status-grid">
     <mat-card appearance="outlined" class="status-card">
