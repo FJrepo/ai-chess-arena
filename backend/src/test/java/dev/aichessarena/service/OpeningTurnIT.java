@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -137,7 +138,35 @@ class OpeningTurnIT {
         }
     }
 
+    @Test
+    void hintsOffReachesTheModelAndTheRecordedMove() throws InterruptedException {
+        UUID id = createGame("italian", GameStatus.WAITING, false, List.of(), false);
+        String legalSan = QuarkusTransaction.requiringNew().call(() ->
+                chess.getLegalMovesAsSan(chess.boardFromFen(games.findById(id).currentFen)).getFirst());
+        CapturingModel model = new CapturingModel("{\"move\":\"Ka9\"}", "{\"move\":\"" + legalSan + "\"}");
+        startAndAwait(id, model, GameStatus.PAUSED);
+
+        assertEquals(3, model.calls.size(), "initial turn, corrective retry and the opponent's turn");
+        assertTrue(model.calls.getFirst().getLast().content().contains("Current game state:"));
+        assertTrue(model.calls.get(1).getLast().content().contains("Your previous response was invalid."));
+        for (List<OpenRouterService.ChatMsg> messages : model.calls) {
+            assertTrue(messages.getFirst().content().contains(PromptService.NO_HINTS_RULE));
+            assertFalse(messages.stream().anyMatch(message -> message.content().contains("Legal moves:")));
+        }
+        QuarkusTransaction.requiringNew().run(() -> {
+            Move move = moves.findByGameId(id).stream().filter(entry -> !entry.isBook).findFirst().orElseThrow();
+            assertEquals("v2-resign-no-hints", move.promptVersion);
+            assertEquals(new PromptService().computePromptHash(model.calls.getFirst().getFirst().content()),
+                    move.promptHash);
+        });
+    }
+
     private UUID createGame(String openingId, GameStatus status, boolean humanOpponent, List<String> played) {
+        return createGame(openingId, status, humanOpponent, played, true);
+    }
+
+    private UUID createGame(String openingId, GameStatus status, boolean humanOpponent, List<String> played,
+                            boolean legalMoveHints) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Tournament tournament = new Tournament();
             tournament.name = "Opening turn regression";
@@ -145,6 +174,7 @@ class OpeningTurnIT {
             tournament.openingMode = OpeningMode.FIXED;
             tournament.openingId = openingId;
             tournament.resignationAllowed = true;
+            tournament.legalMoveHints = legalMoveHints;
             tournament.maxRetries = 3;
             for (String color : List.of("White", "Black")) {
                 TournamentParticipant participant = new TournamentParticipant();
