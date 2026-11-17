@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Open an editable rematch setup from an existing tournament, with its lineup, rules and run limits prefilled and a preview of changes before creation.
+
 ### Changed
 
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.

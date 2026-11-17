@@ -10,5 +10,6 @@ public record ParticipantDto(
         String modelId,
         String customInstructions,
         int seed,
-        String reasoningEffort
+        String reasoningEffort,
+        boolean legacySystemPrompt
 ) {}

@@ -29,9 +29,15 @@ export interface Tournament {
   autoRunStatus?: 'OFF' | 'RUNNING' | 'PAUSED' | 'FINISHED';
   maxConcurrentGames?: number;
   budgetUsd?: number | null;
+  /** Exact decimal spelling of a non-null budget, for clients that need to preserve cents. */
+  budgetUsdExact?: string;
   autoRunPauseReason?: string | null;
   /** Champion of a completed tournament. */
   winnerName?: string | null;
+  /** Known only for tournaments generated as part of creation. */
+  creationDrawMode?: BracketDrawMode | null;
+  /** A historical full system template that current setup cannot recreate. */
+  legacySystemPrompt?: boolean;
   id: string;
   name: string;
   status: 'CREATED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -91,6 +97,7 @@ export interface Participant {
   modelId: string | null;
   customInstructions: string | null;
   seed: number;
+  legacySystemPrompt?: boolean;
   /** Overrides the tournament's reasoning effort; null or absent uses the tournament's. */
   reasoningEffort?: ReasoningEffort | null;
 }
@@ -400,6 +407,7 @@ export interface CreateTournamentRequest extends Partial<
 > {
   participants?: Array<Partial<Participant>>;
   clientRequestId?: string;
+  runSettings?: { maxConcurrentGames: number; budgetUsd: string | number | null };
   /** Create-only draw choice; API default ORDER preserves seeds, setup defaults to RANDOM. */
   drawMode?: BracketDrawMode;
   /** Only true generates on create (requires >=2); omitted, null or false keeps a draft. */

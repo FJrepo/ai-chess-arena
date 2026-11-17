@@ -37,7 +37,10 @@ public final class DtoMapper {
                                 .orElse(null)
                         : null,
                 t.openingMode.name(), t.openingId,
-                t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd, t.autoRunPauseReason
+                t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd, t.autoRunPauseReason,
+                t.creationDrawMode != null ? t.creationDrawMode.name() : null,
+                t.defaultSystemPrompt != null && !t.defaultSystemPrompt.isBlank(),
+                t.budgetUsd == null ? null : t.budgetUsd.toPlainString()
         );
     }
 
@@ -49,7 +52,8 @@ public final class DtoMapper {
                 p.modelId,
                 p.customInstructions,
                 p.seed,
-                apiValue(p.reasoningEffort)
+                apiValue(p.reasoningEffort),
+                p.customSystemPrompt != null && !p.customSystemPrompt.isBlank()
         );
     }
 

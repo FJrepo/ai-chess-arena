@@ -38,5 +38,8 @@ public record TournamentDto(
         String autoRunStatus,
         int maxConcurrentGames,
         @JsonInclude(JsonInclude.Include.ALWAYS) BigDecimal budgetUsd,
-        String autoRunPauseReason
+        String autoRunPauseReason,
+        String creationDrawMode,
+        boolean legacySystemPrompt,
+        String budgetUsdExact
 ) {}

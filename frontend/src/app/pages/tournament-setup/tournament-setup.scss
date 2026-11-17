@@ -655,3 +655,26 @@ mat-hint,
 .openrouter-status {
   margin-bottom: 16px;
 }
+
+.setup-layout.rematch-hidden {
+  display: none;
+}
+
+.rematch-review {
+  padding-block: var(--app-space-3);
+}
+
+.rematch-diff {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: start;
+  overflow-wrap: anywhere;
+
+  th,
+  td {
+    text-align: start;
+    vertical-align: top;
+    padding: var(--app-space-2);
+    border-block-end: var(--app-rule-width) solid var(--app-table-rule);
+  }
+}
