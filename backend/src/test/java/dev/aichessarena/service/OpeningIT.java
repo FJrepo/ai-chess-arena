@@ -128,7 +128,9 @@ class OpeningIT {
                 .body("moves.size()", equalTo(5)).body("moves.isBook", everyItem(equalTo(true)))
                 .body("qualitySummary.white.analyzedMoves", equalTo(0));
         given().get("/api/games/{id}/pgn", id).then().statusCode(200)
-                .body(containsString("1. e4 e5 2. Nf3 Nc6 3. Bb5"));
+                .body(containsString("1. e4 {book}"))
+                .body(containsString("1... e5 {book}"))
+                .body(containsString("3. Bb5 {book}"));
         QuarkusTransaction.requiringNew().run(() -> lifecycle.markGameStarted(id));
         GameDto started = game(id);
         configure(started.tournamentId(), OpeningMode.FIXED, "italian");

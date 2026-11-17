@@ -7,7 +7,9 @@ import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameEngineService;
+import dev.aichessarena.service.ExportService;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -30,6 +32,9 @@ public class GameResource {
 
     @Inject
     GameEngineService gameEngineService;
+
+    @Inject
+    ExportService exports;
 
     @GET
     @Path("/{id}")
@@ -109,27 +114,14 @@ public class GameResource {
 
     @GET
     @Path("/{id}/pgn")
-    @Produces(MediaType.TEXT_PLAIN)
-    public Response getPgn(@PathParam("id") UUID id) {
+    @Produces("text/plain; charset=utf-8")
+    @Transactional
+    public Response getPgn(@PathParam("id") UUID id,
+                           @QueryParam("includeChat") @DefaultValue("false") boolean includeChat) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
-
-        String pgn = "[Event \"AI Chess Arena\"]\n"
-                + "[White \"" + game.whitePlayerName + "\"]\n"
-                + "[Black \"" + game.blackPlayerName + "\"]\n"
-                + (game.result != null ? "[Result \"" + pgnResult(game) + "\"]\n" : "")
-                + "\n"
-                + (game.pgn != null ? game.pgn : "")
-                + (game.result != null ? " " + pgnResult(game) : "");
-        return Response.ok(pgn).build();
-    }
-
-    private String pgnResult(Game game) {
-        return switch (game.result) {
-            case WHITE_WINS, BLACK_FORFEIT -> "1-0";
-            case BLACK_WINS, WHITE_FORFEIT -> "0-1";
-            case DRAW -> "1/2-1/2";
-        };
+        return TournamentExportResource.attachment(exports.gamePgn(game, includeChat), "text/plain",
+                ExportService.filename("game", id, "pgn"));
     }
 
     private boolean hasConfiguredPlayer(

@@ -61,6 +61,12 @@ export class ApiService {
     return this.http.get<Tournament>(`${this.baseUrl}/tournaments/${id}`);
   }
 
+  getTournamentExport(id: string, format: 'pgn' | 'csv' | 'json'): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/tournaments/${id}/export.${format}`, {
+      responseType: 'blob',
+    });
+  }
+
   /**
    * Creates the tournament and its participants in one request (stored together or not at all).
    * Reusing the same clientRequestId on a retry returns the tournament created by the first attempt.

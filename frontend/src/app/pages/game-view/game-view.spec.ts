@@ -146,6 +146,41 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
 }
 
 describe('GameView', () => {
+  it('downloads improved PGN as UTF-8 through the existing action', () => {
+    vi.useFakeTimers();
+    const createObjectURL = vi.fn().mockReturnValue('blob:export');
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const pgn = '[Event "Arena Ω"]\n\n1. e4 {[%eval 0.35]}\n*\n';
+    const getGamePgn = vi.fn().mockReturnValue(of(pgn));
+    const { component } = createComponent({ api: { getGamePgn } });
+    (component as any).gameId = 'g-1';
+    component.exportPgn();
+    expect(getGamePgn).toHaveBeenCalledWith('g-1');
+    expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe('game-g-1.pgn');
+    const blob = createObjectURL.mock.lastCall![0];
+    expect(blob.type).toBe('application/x-chess-pgn;charset=utf-8');
+    expect(blob.size).toBe(new TextEncoder().encode(pgn).length);
+    vi.runAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('reports PGN failures without downloading an empty file', () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+    const { component, snackbar } = createComponent({
+      api: { getGamePgn: () => throwError(() => new Error('offline')) },
+    });
+    component.exportPgn();
+    expect(click).not.toHaveBeenCalled();
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'Could not export game. Please try again.',
+      'OK',
+      expect.any(Object),
+    );
+    vi.restoreAllMocks();
+  });
   it('labels book moves in the feed without attributing them to a player', () => {
     const { component } = createComponent();
     component.game.set(gameWith({ openingName: 'Ruy Lopez', openingEco: 'C60' }));

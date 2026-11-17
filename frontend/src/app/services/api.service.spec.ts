@@ -18,6 +18,26 @@ describe('ApiService bracket draw', () => {
 
   afterEach(() => http.verify());
 
+  it.each(['pgn', 'csv', 'json'] as const)('downloads tournament %s as a blob', (format) => {
+    const received = vi.fn();
+    const blob = new Blob(['export'], { type: 'application/octet-stream' });
+    api.getTournamentExport('cup', format).subscribe(received);
+    const request = http.expectOne(`/api/tournaments/cup/export.${format}`);
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(blob);
+    expect(received).toHaveBeenCalledWith(blob);
+  });
+
+  it('keeps the single-game PGN endpoint and reads it as text', () => {
+    const received = vi.fn();
+    api.getGamePgn('game').subscribe(received);
+    const request = http.expectOne('/api/games/game/pgn');
+    expect(request.request.responseType).toBe('text');
+    request.flush('[Event "Arena"]\n\n*');
+    expect(received).toHaveBeenCalledWith('[Event "Arena"]\n\n*');
+  });
+
   it('sends the run, edit and pause API contracts', () => {
     const settings = { maxConcurrentGames: 3, budgetUsd: null };
     api.runTournament('cup', settings).subscribe();
