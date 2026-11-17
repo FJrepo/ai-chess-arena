@@ -40,11 +40,10 @@ export class SystemStatus implements OnInit {
   @ViewChild(OpenRouterSettings, { static: true }) private settings?: OpenRouterSettings;
 
   private openRouterKey = computed(() => {
-    // The credential endpoint has its own availability and may return while system health is loading.
-    const key = this.settings?.status()?.key;
-    if (key) return key;
-    const status = this.status();
-    return status ? (this.connection.keyStatus() ?? status.key) : null;
+    // A read on this visit establishes availability. Follow newer shared results, including a test
+    // that completes after the operator leaves and reopens the page.
+    const key = this.settings?.status()?.key ?? this.status()?.key;
+    return key ? (this.connection.keyStatus() ?? key) : null;
   });
   openRouterTone = computed<StatusTone>(() => {
     const key = this.openRouterKey();

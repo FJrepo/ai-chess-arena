@@ -207,6 +207,40 @@ describe('SystemStatus', () => {
     http.verify();
   });
 
+  it('uses the test result on a new visit while the test was already in flight', () => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    });
+    const http = TestBed.inject(HttpTestingController);
+    const systemUrl = '/api/config/system-status';
+    const settingsUrl = '/api/config/openrouter';
+    const unavailable = { status: 503, statusText: 'Service Unavailable' };
+    const key = { ...healthyStatus().key, source: 'env', validation: 'unknown' };
+    const firstVisit = TestBed.createComponent(SystemStatus);
+    firstVisit.detectChanges();
+    http.expectOne(systemUrl).flush(null, unavailable);
+    http.expectOne(settingsUrl).flush({ key, canManage: true });
+    firstVisit.detectChanges();
+
+    const firstPage: HTMLElement = firstVisit.nativeElement;
+    firstPage.querySelector<HTMLButtonElement>('.connection-actions button')!.click();
+    const testRequest = http.expectOne({ method: 'POST', url: settingsUrl + '/test' });
+    firstVisit.destroy();
+
+    const nextVisit = TestBed.createComponent(SystemStatus);
+    nextVisit.detectChanges();
+    http.expectOne(systemUrl).flush(null, unavailable);
+    http.expectOne(settingsUrl).flush({ key, canManage: true });
+    nextVisit.detectChanges();
+    expect(nextVisit.componentInstance.openRouterLabel()).toBe('Key configured');
+
+    testRequest.flush({ key: { ...key, validation: 'valid' }, canManage: true });
+    nextVisit.detectChanges();
+    expect(nextVisit.componentInstance.openRouterTone()).toBe('healthy');
+    expect(nextVisit.componentInstance.backendReachable()).toBe(false);
+    http.verify();
+  });
+
   it('reports no key as needing a connection', () => {
     const status = healthyStatus();
     status.openRouterValid = false;
