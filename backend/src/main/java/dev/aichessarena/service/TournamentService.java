@@ -54,8 +54,34 @@ public class TournamentService {
     @Inject
     OpenRouterService openRouterService;
 
+    @Inject
+    GameLifecycleService gameLifecycleService;
+
+    @Inject
+    GameEngineService gameEngineService;
+
     @ConfigProperty(name = "openrouter.validate-participant-models", defaultValue = "true")
     boolean validateParticipantModels;
+
+    /** Cancels once; terminal tournaments (including repeated cancellation) consistently return 409. */
+    @Transactional
+    public Tournament cancelTournament(UUID tournamentId) {
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament == null) {
+            throw new WebApplicationException("Tournament not found", Response.Status.NOT_FOUND);
+        }
+        if (tournament.status == Tournament.TournamentStatus.COMPLETED
+                || tournament.status == Tournament.TournamentStatus.CANCELLED) {
+            throw new WebApplicationException("Tournament has already finished", Response.Status.CONFLICT);
+        }
+        tournament.status = Tournament.TournamentStatus.CANCELLED;
+        tournament.updatedAt = LocalDateTime.now();
+        for (Game game : gameRepository.findByTournamentId(tournamentId)) {
+            UUID gameId = game.id;
+            gameLifecycleService.cancelGame(gameId, () -> gameEngineService.requestStop(gameId));
+        }
+        return tournament;
+    }
 
     @Transactional
     public Tournament create(Tournament tournament) {
@@ -155,24 +181,41 @@ public class TournamentService {
     }
 
     /**
-     * Sets or clears (null: use the tournament's) a participant's reasoning-effort override. Allowed in every
-     * tournament state, so a paused game can be fixed in place; running games pick it up from the participant's next
+     * Sets or clears (null: use the tournament's) a participant's reasoning-effort override until the tournament
+     * ends, so a paused game can be fixed in place; running games pick it up from the participant's next
      * turn.
      */
     @Transactional
     public TournamentParticipant updateParticipantReasoningEffort(UUID tournamentId, UUID participantId,
                                                                   ReasoningEffort effort) {
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament == null) {
+            throw new WebApplicationException("Tournament not found", Response.Status.NOT_FOUND);
+        }
+        requireEditableSettings(tournament);
         TournamentParticipant participant = findParticipant(tournamentId, participantId);
+        // This request may have cached the participant before obtaining the parent lock (e.g. before a draw).
+        participantRepository.getEntityManager().refresh(participant);
         if (participant.controlType == TournamentParticipant.ControlType.HUMAN && effort != null) {
             throw new IllegalArgumentException("Human participants have no reasoning effort");
         }
         participant.reasoningEffort = effort;
-        participant.tournament.updatedAt = LocalDateTime.now();
+        tournament.updatedAt = LocalDateTime.now();
         return participant;
+    }
+
+    /** Terminal tournaments retain their final settings as well as their results. Call with the row locked. */
+    public static void requireEditableSettings(Tournament tournament) {
+        if (tournament.status == Tournament.TournamentStatus.CANCELLED
+                || tournament.status == Tournament.TournamentStatus.COMPLETED) {
+            throw new WebApplicationException("Finished tournament settings cannot be changed", Response.Status.CONFLICT);
+        }
     }
 
     @Transactional
     public boolean removeParticipant(UUID tournamentId, UUID participantId) {
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament == null) return false;
         TournamentParticipant p = participantRepository.findById(participantId);
         if (p == null || !p.tournament.id.equals(tournamentId)) {
             return false;
@@ -180,7 +223,7 @@ public class TournamentService {
 
         long referencedGames = gameRepository.count("(whiteParticipant.id = ?1) or (blackParticipant.id = ?1)",
                 participantId);
-        if (p.tournament.status != Tournament.TournamentStatus.CREATED || referencedGames > 0) {
+        if (tournament.status != Tournament.TournamentStatus.CREATED || referencedGames > 0) {
             throw new WebApplicationException(
                     "Cannot remove participants after bracket generation has started",
                     Response.Status.CONFLICT
@@ -287,8 +330,11 @@ public class TournamentService {
 
     @Transactional
     public void advanceWinner(UUID gameId) {
-        Game completedGame = gameRepository.findById(gameId);
+        Game completedGame = gameRepository.findByIdForUpdate(gameId);
         if (completedGame == null || completedGame.tournament == null) return;
+        if (completedGame.tournament.status == Tournament.TournamentStatus.CANCELLED
+                || (completedGame.status != Game.GameStatus.COMPLETED
+                && completedGame.status != Game.GameStatus.FORFEIT)) return;
 
         List<Game> seriesGames = seriesGamesFor(completedGame);
         TournamentParticipant winner = resolveSeriesWinner(completedGame, seriesGames);
@@ -604,7 +650,7 @@ public class TournamentService {
 
     @Transactional
     public boolean deleteTournament(UUID tournamentId) {
-        Tournament tournament = tournamentRepository.findById(tournamentId);
+        Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
         if (tournament == null) {
             return false;
         }

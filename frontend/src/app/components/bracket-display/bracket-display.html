@@ -28,6 +28,7 @@
                 @let showDetail =
                   tone === 'live' ||
                   tone === 'paused' ||
+                  tone === 'cancelled' ||
                   tone === 'forfeit' ||
                   tone === 'bye' ||
                   (tone === 'ready' && series.currentGame.seriesGameNumber > 1) ||
@@ -126,6 +127,15 @@
                         series.currentGame.status === 'FORFEIT'
                       ) {
                         <button mat-flat-button color="primary" (click)="review(series)">
+                          <mat-icon>preview</mat-icon>
+                          Review
+                        </button>
+                      } @else if (series.currentGame.status === 'CANCELLED') {
+                        <button
+                          mat-flat-button
+                          color="primary"
+                          (click)="view.emit(series.currentGame)"
+                        >
                           <mat-icon>preview</mat-icon>
                           Review
                         </button>

@@ -131,6 +131,7 @@ function isWsMessage(message: unknown): message is WsMessage {
     candidate.type === 'gameStatus' ||
     candidate.type === 'retry' ||
     candidate.type === 'forfeit' ||
+    candidate.type === 'attemptsUpdated' ||
     candidate.type === 'evaluationUpdate'
   );
 }

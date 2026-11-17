@@ -398,7 +398,7 @@ export class GameView implements OnInit, OnDestroy {
       });
     });
 
-    if (game && (game.status === 'COMPLETED' || game.status === 'FORFEIT')) {
+    if (game && isFinishedStatus(game.status)) {
       const resignedColor = resigningColor(game);
       const resultLabel = resignedColor
         ? `${this.timelinePlayerName(resignedColor, null)} resigned`
@@ -409,11 +409,26 @@ export class GameView implements OnInit, OnDestroy {
         id: `result-${game.id}`,
         type: 'result',
         quality: null,
-        label: game.status === 'FORFEIT' ? 'Game Forfeit' : 'Game Complete',
+        label:
+          game.status === 'CANCELLED'
+            ? 'Cancelled'
+            : game.status === 'FORFEIT'
+              ? 'Game Forfeit'
+              : 'Game Complete',
         detail: resultLabel.charAt(0).toUpperCase() + resultLabel.slice(1),
-        tone: game.status === 'FORFEIT' ? 'warning' : 'success',
+        tone:
+          game.status === 'CANCELLED'
+            ? 'neutral'
+            : game.status === 'FORFEIT'
+              ? 'warning'
+              : 'success',
         attemptSummary: null,
-        icon: game.status === 'FORFEIT' ? 'gpp_bad' : 'emoji_events',
+        icon:
+          game.status === 'CANCELLED'
+            ? 'cancel'
+            : game.status === 'FORFEIT'
+              ? 'gpp_bad'
+              : 'emoji_events',
         createdAtMs: game.completedAt ? Date.parse(game.completedAt) : Date.now(),
         createdAtLabel: game.completedAt || new Date().toISOString(),
         moveIndex: moves.length > 0 ? moves.length - 1 : null,
@@ -487,6 +502,9 @@ export class GameView implements OnInit, OnDestroy {
           return;
         }
         this.loadInFlight = false;
+        // Respect navigation while the request was in flight; only a live-following viewer advances.
+        const selectedMoveIndex = this.currentMoveIndex();
+        const wasAtLatest = this.game() === null || selectedMoveIndex === this.moves().length - 1;
         const sorted = sortMovesInPlayOrder(game.moves || []);
         const moves = keepLiveEvaluations(sorted, this.moves());
         const keptLive = moves.some((move, index) => move !== sorted[index]);
@@ -504,11 +522,12 @@ export class GameView implements OnInit, OnDestroy {
         this.game.set(
           keptLive && liveSummary ? { ...reconciled, qualitySummary: liveSummary } : reconciled,
         );
+        if (isFinishedStatus(reconciled.status)) this.pendingPromotion.set(null);
         this.moves.set(moves);
         this.chatMessages.set(game.chatMessages || []);
-        if (moves.length) {
-          this.currentMoveIndex.set(moves.length - 1);
-        }
+        this.currentMoveIndex.set(
+          wasAtLatest ? moves.length - 1 : Math.min(selectedMoveIndex, moves.length - 1),
+        );
         // A status change announced before the first snapshot arrived is newer than the snapshot: the replay
         // below applies it, and the stored game is read again for the details that only it carries.
         const announced = highestStatusRevision(this.bufferedLiveMessages);
@@ -662,6 +681,12 @@ export class GameView implements OnInit, OnDestroy {
       return;
     }
     switch (msg.type) {
+      case 'attemptsUpdated':
+        // The attempt and any added cost are committed, including answers discarded after cancellation.
+        // loadGame also reloads attempts and supersedes any earlier snapshot still in flight.
+        this.loadGame();
+        break;
+
       case 'move':
         this.applyLiveMove(msg);
         break;
@@ -717,13 +742,14 @@ export class GameView implements OnInit, OnDestroy {
         }
         this.knownStatusRevision = msg.statusRevision;
         const status = msg.status;
+        if (status && isFinishedStatus(status)) this.pendingPromotion.set(null);
         this.game.update((g) =>
           g
             ? {
                 ...g,
                 status: status || g.status,
-                result: msg.result || g.result,
-                resultReason: msg.resultReason || g.resultReason,
+                result: status === 'CANCELLED' ? null : msg.result || g.result,
+                resultReason: status === 'CANCELLED' ? null : msg.resultReason || g.resultReason,
                 statusDetail: status
                   ? status === 'PAUSED'
                     ? (msg.detail ?? null)
@@ -754,7 +780,7 @@ export class GameView implements OnInit, OnDestroy {
         ) {
           // Result evidence is carried by the game details; reload it and the attempts.
           this.loadGame();
-        } else if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
+        } else if (status === 'PAUSED' || (status && isFinishedStatus(status))) {
           if (status === 'PAUSED') {
             this.refreshPauseSettings();
           }
@@ -767,6 +793,7 @@ export class GameView implements OnInit, OnDestroy {
         break;
 
       case 'forfeit':
+        this.pendingPromotion.set(null);
         this.turnState.clearServerTurnState();
         this.game.update((g) => (g ? { ...g, status: 'FORFEIT' } : g));
         this.loadAttempts();
@@ -1074,6 +1101,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   onBoardMoveAttempt(attempt: BoardMoveAttempt) {
+    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     if (attempt.promotionRequired) {
       this.pendingPromotion.set({ from: attempt.from, to: attempt.to });
       return;
@@ -1083,8 +1111,8 @@ export class GameView implements OnInit, OnDestroy {
 
   selectPromotion(piece: string) {
     const pending = this.pendingPromotion();
-    if (!pending) return;
     this.pendingPromotion.set(null);
+    if (!pending || !this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     this.submitCoordinateMove(pending.from, pending.to, piece);
   }
 
@@ -1093,7 +1121,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   private submitCoordinateMove(from: string, to: string, promotion: string | null) {
-    if (this.humanMoveSubmitting()) return;
+    if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     this.humanMoveSubmitting.set(true);
     this.api
       .submitHumanMoveCoordinates(
@@ -1243,7 +1271,7 @@ function highestStatusRevision(messages: WsMessage[]): number | null {
 }
 
 function isFinishedStatus(status: Game['status']): boolean {
-  return status === 'COMPLETED' || status === 'FORFEIT';
+  return status === 'COMPLETED' || status === 'FORFEIT' || status === 'CANCELLED';
 }
 
 /** The colour that resigned, from the result; null when the game did not end by resignation. */

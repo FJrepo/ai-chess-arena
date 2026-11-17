@@ -6,6 +6,7 @@ import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.persistence.LockModeType;
 import jakarta.transaction.Status;
 import java.time.LocalDateTime;
@@ -14,6 +15,9 @@ import java.util.UUID;
 
 @ApplicationScoped
 public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
+
+    @Inject
+    TournamentRepository tournamentRepository;
 
     private static final List<GameStatus> TERMINAL_STATUSES = List.of(GameStatus.COMPLETED, GameStatus.FORFEIT);
 
@@ -67,27 +71,27 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
         return tournamentId == null ? parameters : parameters.and("tournamentId", tournamentId);
     }
 
-    /** Loads the game with a row lock held until the surrounding transaction ends. */
+    /**
+     * Locks the tournament first, then the game, until the transaction ends. This order serializes
+     * cancellation with game writes and bracket advancement without a game/tournament lock inversion.
+     */
     public Game findByIdForUpdate(UUID id) {
-        return findById(id, LockModeType.PESSIMISTIC_WRITE);
+        UUID tournamentId = getEntityManager().createQuery(
+                "select g.tournament.id from Game g where g.id = :id and g.tournament is not null", UUID.class)
+                .setParameter("id", id).getResultStream().findFirst().orElse(null);
+        if (tournamentId != null) {
+            tournamentRepository.findByIdForUpdate(tournamentId);
+        }
+        Game game = findById(id);
+        if (game != null && getEntityManager().getLockMode(game) != LockModeType.PESSIMISTIC_WRITE) {
+            refreshForUpdate(game);
+        }
+        return game;
     }
 
     /** Re-reads a managed game from the database and locks its row until the transaction ends. */
     public void refreshForUpdate(Game game) {
         getEntityManager().refresh(game, LockModeType.PESSIMISTIC_WRITE);
-    }
-
-    /**
-     * Atomically moves a WAITING or PAUSED game to IN_PROGRESS and clears any pause detail.
-     *
-     * @return false when the game does not exist or is in any other state
-     */
-    public boolean markStartedIfStartable(UUID id, LocalDateTime now) {
-        return update(
-                "status = ?1, startedAt = coalesce(startedAt, ?2), statusDetail = null, "
-                        + "statusRevision = statusRevision + 1 where id = ?3 and status in ?4",
-                GameStatus.IN_PROGRESS, now, id, List.of(GameStatus.WAITING, GameStatus.PAUSED)
-        ) == 1;
     }
 
     public List<Game> findBySeriesId(UUID seriesId) {

@@ -58,4 +58,20 @@ describe('WebSocketService', () => {
       JSON.stringify({ type: 'subscribe', gameId: 'g-1' }),
     );
   });
+
+  it('delivers attempt/cost invalidations only to viewers of that game', () => {
+    const service = new WebSocketService({ open: vi.fn() } as any);
+    const viewer = vi.fn();
+    service.getMessages('g-1').subscribe(viewer);
+    service.connect();
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].onmessage?.({
+      data: JSON.stringify({ type: 'attemptsUpdated', gameId: 'g-1' }),
+    });
+    FakeSocket.instances[0].onmessage?.({
+      data: JSON.stringify({ type: 'attemptsUpdated', gameId: 'g-2' }),
+    });
+    expect(viewer).toHaveBeenCalledExactlyOnceWith({ type: 'attemptsUpdated', gameId: 'g-1' });
+    service.disconnect();
+  });
 });

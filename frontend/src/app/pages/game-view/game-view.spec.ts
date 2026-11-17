@@ -91,7 +91,7 @@ function createSpectator() {
   const api = {
     getGame,
     getSystemStatus: () => EMPTY,
-    getGameAttempts: () => of([]),
+    getGameAttempts: vi.fn(() => of([] as MoveAttempt[])),
     getModels: () => of({ data: [] }),
   };
   const ws = {
@@ -113,7 +113,7 @@ function createSpectator() {
     { open: vi.fn() } as any,
     turnState,
   );
-  return { component, gameLoad, messages, reconnected, getGame };
+  return { component, gameLoad, messages, reconnected, getGame, api };
 }
 
 function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<any> }) {
@@ -1317,6 +1317,121 @@ describe('GameView', () => {
 
     expect(getGame).toHaveBeenCalledTimes(2);
     expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+    expect(component.currentMoveIndex()).toBe(1);
+    expect(component.currentFen()).toBe(AFTER_E5);
+    component.ngOnDestroy();
+  });
+
+  it.each([-1, 0])(
+    'keeps reviewed position %s on attemptsUpdated with an unchanged snapshot',
+    (index) => {
+      const { component, gameLoad, messages, api } = createSpectator();
+      const snapshot = gameWith({
+        currentFen: AFTER_E5,
+        moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
+      });
+      component.ngOnInit();
+      gameLoad.next(snapshot);
+      component.goToMove(index);
+      const accepted = attemptFixture({ color: 'BLACK', outcome: 'ACCEPTED', proposedMove: 'e5' });
+      api.getGameAttempts.mockReturnValue(of([accepted]));
+
+      messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
+      gameLoad.next(snapshot);
+
+      expect(component.currentMoveIndex()).toBe(index);
+      expect(component.currentFen()).toBe(index === -1 ? START_FEN : AFTER_E4);
+      expect(component.attempts()).toEqual([accepted]);
+      component.ngOnDestroy();
+    },
+  );
+
+  it.each(['snapshot', 'buffered move'])(
+    'advances a live-following viewer on attemptsUpdated with a new %s',
+    (source) => {
+      const { component, gameLoad, messages } = createSpectator();
+      const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+      const second = storedMove(1, 'BLACK', 'e5', AFTER_E5);
+      component.ngOnInit();
+      gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
+      expect(component.currentMoveIndex()).toBe(0);
+
+      messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
+      if (source === 'buffered move') {
+        messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
+      }
+      gameLoad.next(
+        gameWith({
+          currentFen: source === 'snapshot' ? AFTER_E5 : AFTER_E4,
+          moves: source === 'snapshot' ? [first, second] : [first],
+        }),
+      );
+
+      expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+      expect(component.currentMoveIndex()).toBe(1);
+      expect(component.currentFen()).toBe(AFTER_E5);
+      component.ngOnDestroy();
+    },
+  );
+
+  it('keeps a position selected while an attemptsUpdated reload is in flight, including buffered moves', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+    component.ngOnInit();
+    gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
+
+    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
+    component.goFirst();
+    messages.next(liveMove(1, 'BLACK', 'e5', AFTER_E5));
+    gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
+
+    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5']);
+    expect(component.currentMoveIndex()).toBe(-1);
+    expect(component.currentFen()).toBe(START_FEN);
+    component.ngOnDestroy();
+  });
+
+  it('resumes live-following when the viewer selects the latest move during a reload', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+    component.ngOnInit();
+    gameLoad.next(gameWith({ currentFen: AFTER_E4, moves: [first] }));
+    component.goFirst();
+
+    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
+    component.goLast();
+    gameLoad.next(
+      gameWith({
+        currentFen: AFTER_E5,
+        moves: [first, storedMove(1, 'BLACK', 'e5', AFTER_E5)],
+      }),
+    );
+
+    expect(component.currentMoveIndex()).toBe(1);
+    expect(component.currentFen()).toBe(AFTER_E5);
+    component.ngOnDestroy();
+  });
+
+  it('keeps a reviewed move when a reconnect reload discovers more moves', () => {
+    const { component, gameLoad, reconnected } = createSpectator();
+    const first = storedMove(1, 'WHITE', 'e4', AFTER_E4);
+    const second = storedMove(1, 'BLACK', 'e5', AFTER_E5);
+    component.ngOnInit();
+    gameLoad.next(gameWith({ currentFen: AFTER_E5, moves: [first, second] }));
+    component.goToMove(0);
+
+    reconnected.next();
+    const afterNf3 = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2';
+    gameLoad.next(
+      gameWith({
+        currentFen: afterNf3,
+        moves: [first, second, storedMove(2, 'WHITE', 'Nf3', afterNf3)],
+      }),
+    );
+
+    expect(component.moves().map((move) => move.san)).toEqual(['e4', 'e5', 'Nf3']);
+    expect(component.currentMoveIndex()).toBe(0);
+    expect(component.currentFen()).toBe(AFTER_E4);
     component.ngOnDestroy();
   });
 
@@ -2041,7 +2156,7 @@ describe('GameView piece images', () => {
             getGame: () => of(gameWith({ currentFen })),
             getSystemStatus: () => EMPTY,
             getGameAttempts: () => of([]),
-            submitHumanMoveCoordinates: vi.fn(() => of(void 0)),
+            submitHumanMoveCoordinates: vi.fn(() => of({})),
           },
         },
         {
@@ -2065,12 +2180,24 @@ describe('GameView piece images', () => {
     return fixture;
   }
 
+  function renderPicker(currentFen: string) {
+    const fixture = renderGame(currentFen);
+    fixture.componentInstance.pendingPromotion.set({ from: 'e7', to: 'e8' });
+    fixture.detectChanges();
+    return fixture;
+  }
+
   it.each([
     ['WHITE', START_FEN, 'w'],
     ['BLACK', AFTER_E4, 'b'],
-  ])('shows %s promotion images with decorative alt and named buttons', (_color, fen, prefix) => {
-    const fixture = renderGame(fen);
-    fixture.componentInstance.pendingPromotion.set({ from: 'e7', to: 'e8' });
+  ])('shows %s promotion images with decorative alt and named buttons', (color, fen, prefix) => {
+    const fixture = renderPicker(fen);
+    fixture.componentInstance.game.set(
+      gameWith({
+        currentFen: fen,
+        [color === 'WHITE' ? 'whiteControlType' : 'blackControlType']: 'HUMAN',
+      }),
+    );
     fixture.detectChanges();
     const element: HTMLElement = fixture.nativeElement;
     const pieces = Array.from(element.querySelectorAll('.promotion-picker img.promotion-piece'));
@@ -2127,6 +2254,68 @@ describe('GameView piece images', () => {
     expect(
       Array.from(element.querySelectorAll('.capture-empty'), (el) => el.textContent?.trim()),
     ).toEqual(['None', 'None']);
+    fixture.destroy();
+  });
+
+  it.each(['CANCELLED', 'COMPLETED', 'FORFEIT'] as Game['status'][])(
+    'closes the open picker on live %s and prevents a stale promotion click',
+    (status) => {
+      const fixture = renderPicker(START_FEN);
+      const component = fixture.componentInstance;
+      component.game.set(gameWith({ whiteControlType: 'HUMAN' }));
+      component.onBoardMoveAttempt({ from: 'e7', to: 'e8', promotionRequired: true });
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.promotion-picker')).not.toBeNull();
+      component.handleWsMessage({ type: 'gameStatus', gameId: 'g-1', status, statusRevision: 1 });
+      fixture.detectChanges();
+      expect(component.pendingPromotion()).toBeNull();
+      expect(fixture.nativeElement.querySelector('.promotion-picker')).toBeNull();
+      component.selectPromotion('Q');
+      component.onBoardMoveAttempt({ from: 'e2', to: 'e4', promotionRequired: false });
+      expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).not.toHaveBeenCalled();
+      fixture.destroy();
+    },
+  );
+
+  it('closes an open picker when a reload discovers cancellation', () => {
+    const fixture = renderPicker(START_FEN);
+    vi.spyOn(TestBed.inject(ApiService), 'getGame').mockReturnValue(
+      of(gameWith({ status: 'CANCELLED', statusRevision: 1 })),
+    );
+    fixture.componentInstance.loadGame();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.pendingPromotion()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.promotion-picker')).toBeNull();
+    fixture.destroy();
+  });
+
+  it.each(['PAUSED', 'WAITING', 'IN_PROGRESS'] as Game['status'][])(
+    'guards promotion and coordinates outside an active human turn: %s',
+    (status) => {
+      const fixture = renderPicker(START_FEN);
+      const component = fixture.componentInstance;
+      component.game.set(gameWith({ status })); // AI to move, even if IN_PROGRESS
+      component.selectPromotion('Q');
+      component.onBoardMoveAttempt({ from: 'e2', to: 'e4', promotionRequired: false });
+      component.onBoardMoveAttempt({ from: 'e7', to: 'e8', promotionRequired: true });
+      expect(component.pendingPromotion()).toBeNull();
+      expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).not.toHaveBeenCalled();
+      fixture.destroy();
+    },
+  );
+
+  it('submits a selected promotion during an active human turn', () => {
+    const fixture = renderPicker(START_FEN);
+    const component = fixture.componentInstance;
+    component.game.set(gameWith({ whiteControlType: 'HUMAN' }));
+    component.selectPromotion('Q');
+    expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).toHaveBeenCalledExactlyOnceWith(
+      'g-1',
+      'e7',
+      'e8',
+      'Q',
+      null,
+    );
     fixture.destroy();
   });
 });
@@ -2186,5 +2375,78 @@ describe('GameView adjudication and missed mate updates', () => {
     });
     expect(component.moves()[0].quality?.missedMate).toBe(true);
     expect(component.moves()[0].quality?.missedMateIn).toBe(2);
+  });
+});
+
+describe('GameView cancellation', () => {
+  it('reloads late discarded attempts and spend on invalidation without changing the cancelled revision', () => {
+    const { component, gameLoad, messages, getGame, api } = createSpectator();
+    const history = {
+      currentFen: AFTER_E5,
+      moves: [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)],
+    };
+    component.ngOnInit();
+    gameLoad.next(gameWith({ ...history, statusRevision: 3, totalCostUsd: 1.25 }));
+    component.goToMove(0);
+    messages.next({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'CANCELLED',
+      statusRevision: 4,
+      totalCostUsd: 1.25,
+    });
+    expect(component.attempts()).toEqual([]);
+    const stale = new Subject<Game>();
+    getGame.mockReturnValueOnce(stale);
+    component.loadGame();
+    const refreshed = new Subject<Game>();
+    getGame.mockReturnValueOnce(refreshed);
+    const discarded = attemptFixture({ outcome: 'DISCARDED', costUsd: 0.25 });
+    api.getGameAttempts.mockReturnValue(of([discarded]));
+    messages.next({ type: 'attemptsUpdated', gameId: 'g-1' });
+    refreshed.next(
+      gameWith({ ...history, status: 'CANCELLED', statusRevision: 4, totalCostUsd: 1.5 }),
+    );
+    stale.next(
+      gameWith({ ...history, status: 'CANCELLED', statusRevision: 4, totalCostUsd: 1.25 }),
+    );
+    expect(getGame).toHaveBeenCalledTimes(3);
+    expect(component.game()?.status).toBe('CANCELLED');
+    expect(component.game()?.statusRevision).toBe(4);
+    expect(component.game()?.totalCostUsd).toBe(1.5);
+    expect(component.attempts()).toEqual([discarded]);
+    expect(component.currentMoveIndex()).toBe(0);
+    expect(component.currentFen()).toBe(AFTER_E4);
+    expect(component.isAwaitingHumanMove()).toBe(false);
+    expect(component.activeColor()).toBeNull();
+    component.ngOnDestroy();
+  });
+
+  it('applies the cancelled revision, clears turn controls and ignores a delayed running status or reload', () => {
+    const { component, gameLoad } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith({ statusRevision: 3 }));
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'CANCELLED',
+      statusRevision: 4,
+    });
+    expect(component.game()?.status).toBe('CANCELLED');
+    expect(component.activeColor()).toBeNull();
+    expect(component.feedEvents().find((event) => event.type === 'result')?.label).toBe(
+      'Cancelled',
+    );
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      statusRevision: 3,
+    });
+    component.loadGame();
+    gameLoad.next(gameWith({ statusRevision: 3 }));
+    expect(component.game()?.status).toBe('CANCELLED');
+    expect(component.game()?.result).toBeNull();
+    component.ngOnDestroy();
   });
 });

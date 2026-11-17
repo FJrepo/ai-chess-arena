@@ -41,8 +41,8 @@ public class TournamentParticipant extends PanacheEntityBase {
     public int seed = 0;
 
     /**
-     * Overrides the tournament's reasoning effort for this participant; null uses the tournament's. Can be changed at
-     * any time (also while its games run or are paused); it applies from the participant's next turn.
+     * Overrides the tournament's reasoning effort for this participant; null uses the tournament's. Can be changed
+     * before the tournament ends (also while its games run or are paused); it applies from the participant's next turn.
      */
     @Convert(converter = ReasoningEffortConverter.class)
     @Column(name = "reasoning_effort", length = 16)

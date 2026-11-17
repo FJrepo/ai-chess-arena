@@ -106,8 +106,9 @@ public class TournamentResource {
     @Path("/{id}")
     @Transactional
     public Response update(@PathParam("id") UUID id, CreateTournamentRequest req) {
-        Tournament t = tournamentRepository.findById(id);
+        Tournament t = tournamentRepository.findByIdForUpdate(id);
         if (t == null) return Response.status(404).build();
+        TournamentService.requireEditableSettings(t);
         if (req.name() != null) t.name = req.name();
         if (req.sharedCustomInstructions() != null) {
             t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
@@ -143,6 +144,14 @@ public class TournamentResource {
     }
 
     @POST
+    @Path("/{id}/cancel")
+    @Consumes(MediaType.WILDCARD)
+    @Transactional
+    public Response cancel(@PathParam("id") UUID id) {
+        return Response.ok(DtoMapper.toDto(tournamentService.cancelTournament(id))).build();
+    }
+
+    @POST
     @Path("/{id}/participants")
     public Response addParticipant(@PathParam("id") UUID id, AddParticipantRequest req) {
         TournamentParticipant saved = tournamentService.addParticipant(id, toParticipant(req));
@@ -150,7 +159,7 @@ public class TournamentResource {
     }
 
     /**
-     * Changes a participant's settings that may change at any time, also while its games run or are paused (a change
+     * Changes a participant's settings before the tournament ends, also while its games run or are paused (a change
      * applies from its next turn). Only {@code reasoningEffort} can be changed: a level, or null to use the
      * tournament's again; omitted keeps it. Other fields are rejected.
      */

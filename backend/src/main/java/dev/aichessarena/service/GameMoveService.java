@@ -76,6 +76,7 @@ public class GameMoveService {
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
             throw new GameStateConflictException("Game is no longer in progress");
         }
+        GameLifecycleService.requireActiveTournament(game);
         if (!samePosition(game.currentFen, expectedFen)) {
             throw new GameStateConflictException("Position changed while the model was thinking");
         }
@@ -139,6 +140,7 @@ public class GameMoveService {
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
             throw new GameStateConflictException("Game is not awaiting a human move");
         }
+        GameLifecycleService.requireActiveTournament(game);
         if (!game.currentFen.equals(expectedFen)) {
             throw new GameStateConflictException("The position changed; reload the game and try again");
         }
@@ -220,6 +222,7 @@ public class GameMoveService {
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
+        GameLifecycleService.requireActiveTournament(game);
         if (game.status != Game.GameStatus.PAUSED) {
             throw new GameStateConflictException("Pause the game before overriding moves");
         }

@@ -36,6 +36,14 @@
       </div>
 
       <div class="header-right">
+        <button
+          mat-stroked-button
+          class="cancel-tournament"
+          (click)="cancelTournament()"
+          [disabled]="!canCancel()"
+        >
+          {{ cancelling() ? 'Cancelling…' : 'Cancel tournament' }}
+        </button>
         @if (costSummary(); as summary) {
           <div class="quick-cost">
             <span class="label">Total Spend</span>

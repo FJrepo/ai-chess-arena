@@ -4,6 +4,8 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -17,11 +19,15 @@ import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import dev.aichessarena.service.OpenRouterService.LlmResponse;
 import dev.aichessarena.service.OpenRouterService.ProviderOutcome;
+import dev.aichessarena.websocket.GameWebSocket;
+import io.quarkus.arc.ClientProxy;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusMock;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +52,44 @@ class MoveAttemptIT {
 
     @Inject
     TournamentService tournaments;
+
+    @Test
+    void attemptInvalidationWaitsForCommitAndIsSuppressedOnRollback() {
+        UUID id = newGame(BigDecimal.ZERO);
+        List<UUID> invalidations = new ArrayList<>();
+        QuarkusMock.installMockForType(new GameWebSocket() {
+            @Override
+            public void broadcastAttemptsUpdated(UUID gameId) {
+                assertEquals(1, QuarkusTransaction.requiringNew().call(() -> attemptRepository.findByGameId(gameId).size()));
+                assertEquals(0, new BigDecimal("0.25").compareTo(
+                        QuarkusTransaction.requiringNew().call(() -> games.findById(gameId).totalCostUsd)));
+                invalidations.add(gameId);
+            }
+        }, GameWebSocket.class);
+        var record = new MoveAttemptService.AttemptRecord(id, 1, "WHITE", 1, "model-a", Outcome.DISCARDED,
+                "e4", null, new LlmResponse("e4", 10, 5, 0.25, 1, "{}", false, null));
+        // Invoke the real body in a controlled outer transaction so its commit/rollback can be observed.
+        MoveAttemptService injected = ClientProxy.unwrap(attempts);
+        MoveAttemptService realAttempts = new MoveAttemptService();
+        realAttempts.gameRepository = games;
+        realAttempts.moveAttemptRepository = attemptRepository;
+        realAttempts.gameWebSocket = injected.gameWebSocket;
+        realAttempts.transactionRegistry = injected.transactionRegistry;
+        assertThrows(IllegalStateException.class, () -> QuarkusTransaction.requiringNew().run(() -> {
+            realAttempts.record(record);
+            assertTrue(invalidations.isEmpty(), "no notification before commit");
+            throw new IllegalStateException("force rollback");
+        }));
+        assertTrue(invalidations.isEmpty(), "no notification after rollback");
+        assertTrue(QuarkusTransaction.requiringNew().call(() -> attemptRepository.findByGameId(id).isEmpty()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(
+                QuarkusTransaction.requiringNew().call(() -> games.findById(id).totalCostUsd)));
+        QuarkusTransaction.requiringNew().run(() -> {
+            realAttempts.record(record);
+            assertTrue(invalidations.isEmpty(), "still no notification before commit");
+        });
+        assertEquals(List.of(id), invalidations);
+    }
 
     @Test
     void failedAttemptIsPersistedAndCountsTowardsTheGameCost() {

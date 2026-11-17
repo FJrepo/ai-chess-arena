@@ -38,12 +38,18 @@ export class TournamentBracket implements OnInit, OnDestroy {
   costSummaryError = signal<string | null>(null);
   tournamentId = '';
   generating = signal(false);
+  cancelling = signal(false);
+  readonly canCancel = computed(() => {
+    const status = this.tournament()?.status;
+    return (status === 'CREATED' || status === 'IN_PROGRESS') && !this.cancelling();
+  });
   drawMode: BracketDrawMode = 'RANDOM';
   readonly drawnParticipants = computed(() =>
     [...(this.tournament()?.participants ?? [])].sort((a, b) => a.seed - b.seed),
   );
   readonly statusLabel = tournamentStatusLabel;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private loadGeneration = 0;
 
   constructor(
     private route: ActivatedRoute,
@@ -60,6 +66,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    ++this.loadGeneration;
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
@@ -67,9 +74,14 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   loadTournament() {
+    if (this.cancelling()) return;
+    const generation = ++this.loadGeneration;
     this.api.getTournament(this.tournamentId).subscribe({
-      next: (t) => this.tournament.set(t),
+      next: (t) => {
+        if (generation === this.loadGeneration) this.tournament.set(t);
+      },
       error: () => {
+        if (generation !== this.loadGeneration) return;
         this.snackBar.open('Failed to load tournament.', 'Dismiss', { duration: 4000 });
         this.router.navigate(['/tournaments']);
       },
@@ -110,6 +122,31 @@ export class TournamentBracket implements OnInit, OnDestroy {
       next: () => this.router.navigate(['/games', game.id]),
       error: (err) => {
         this.showError(err, 'Failed to start the game.');
+        this.loadTournament();
+      },
+    });
+  }
+
+  cancelTournament(): void {
+    if (!this.canCancel()) return;
+    if (
+      !window.confirm(
+        'Cancel this tournament? Unfinished games end without a result. Finished games, moves, chat and costs stay. This cannot be undone.',
+      )
+    )
+      return;
+    this.cancelling.set(true);
+    ++this.loadGeneration;
+    this.api.cancelTournament(this.tournamentId).subscribe({
+      next: (tournament) => {
+        ++this.loadGeneration;
+        this.tournament.set(tournament);
+        this.cancelling.set(false);
+        this.loadCostSummary();
+      },
+      error: (err) => {
+        this.cancelling.set(false);
+        this.showError(err, 'Failed to cancel the tournament.');
         this.loadTournament();
       },
     });

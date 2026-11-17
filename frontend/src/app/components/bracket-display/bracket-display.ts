@@ -59,7 +59,7 @@ interface SeriesCard {
   advancedParticipantId: string | null | undefined;
   isComplete: boolean;
   stateLabel: string;
-  stateTone: 'live' | 'paused' | 'ready' | 'pending' | 'complete' | 'forfeit' | 'bye';
+  stateTone: 'live' | 'paused' | 'ready' | 'pending' | 'complete' | 'forfeit' | 'bye' | 'cancelled';
   detailLabel: string;
 }
 
@@ -484,6 +484,12 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
     const sideToMove = this.sideToMoveLabel(currentGame.currentFen);
     const isDecidedFinal = card.isComplete && card.roundName === 'Final';
     switch (currentGame.status) {
+      case 'CANCELLED':
+        return {
+          stateLabel: gameStatusLabel(currentGame.status),
+          stateTone: 'cancelled',
+          detailLabel: 'Tournament cancelled. This game ended without a result.',
+        };
       case 'IN_PROGRESS':
         return {
           stateLabel: gameStatusLabel(currentGame.status),

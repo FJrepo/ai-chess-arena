@@ -373,6 +373,11 @@ class TournamentSeriesRulesTest {
         }
 
         @Override
+        public Game findByIdForUpdate(UUID id) {
+            return games.get(id);
+        }
+
+        @Override
         public Game findById(UUID id) {
             return games.get(id);
         }

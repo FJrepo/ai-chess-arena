@@ -110,7 +110,10 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "updated_at", nullable = false)
     public LocalDateTime updatedAt = LocalDateTime.now();
 
-    @OneToMany(mappedBy = "tournament", cascade = CascadeType.ALL, orphanRemoval = true)
+    // Locking refreshes this row only. Participant writers refresh their own row under the tournament
+    // lock; cascading REFRESH through an already loaded participant can re-enter this tournament's load.
+    @OneToMany(mappedBy = "tournament", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE,
+            CascadeType.DETACH}, orphanRemoval = true)
     public List<TournamentParticipant> participants = new ArrayList<>();
 
     @OneToMany(mappedBy = "tournament")

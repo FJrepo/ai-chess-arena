@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { MatSelectHarness } from '@angular/material/select/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { EMPTY, of, Subject, throwError } from 'rxjs';
 import { TournamentBracket } from './tournament-bracket';
 import { ApiService } from '../../services/api.service';
@@ -20,7 +20,10 @@ describe('TournamentBracket', () => {
     );
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   function render(t: Tournament): HTMLElement {
     TestBed.configureTestingModule({
@@ -72,6 +75,139 @@ describe('TournamentBracket', () => {
     expect(el.querySelector('.series-context')?.textContent).toContain(
       'Black wins the tournament on the draw policy\u00a0(0\u20110)',
     );
+  });
+
+  function cancelPage(
+    status: Tournament['status'],
+    result = of(
+      tournament(
+        'CANCELLED',
+        null,
+        finalGame({ status: 'CANCELLED', result: null, resultReason: null }),
+      ),
+    ),
+  ) {
+    const current = tournament(status, null, finalGame({ status: 'PAUSED', result: null }));
+    const api = {
+      getTournament: vi.fn().mockReturnValue(of(current)),
+      getTournamentCostSummary: () => EMPTY,
+      cancelTournament: vi.fn().mockReturnValue(result),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: api },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: current.id }) } },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentBracket);
+    fixture.detectChanges();
+    const button = () =>
+      fixture.nativeElement.querySelector('.cancel-tournament') as HTMLButtonElement;
+    return { fixture, api, button };
+  }
+
+  it.each(['CREATED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] as Tournament['status'][])(
+    'enables cancellation only for unfinished tournaments: %s',
+    (status) => {
+      const { button } = cancelPage(status);
+      expect(button().disabled).toBe(status === 'COMPLETED' || status === 'CANCELLED');
+    },
+  );
+
+  it('explains cancellation in the confirmation and preserves the tournament when declined', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { button, api } = cancelPage('IN_PROGRESS');
+    button().click();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm.mock.calls[0][0]).toContain('Unfinished games end without a result');
+    expect(confirm.mock.calls[0][0]).toContain('Finished games, moves, chat and costs stay');
+    expect(api.cancelTournament).not.toHaveBeenCalled();
+  });
+
+  it('confirms, blocks duplicate requests and shows the cancelled tournament and game', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const pending = new Subject<Tournament>();
+    const { fixture, button, api } = cancelPage('IN_PROGRESS', pending);
+    button().click();
+    fixture.componentInstance.cancelTournament();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+    expect(api.cancelTournament).toHaveBeenCalledExactlyOnceWith('t-1');
+    pending.next(
+      tournament(
+        'CANCELLED',
+        null,
+        finalGame({ status: 'CANCELLED', result: null, resultReason: null }),
+      ),
+    );
+    pending.complete();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('.status-badge').textContent).toContain('Cancelled');
+    expect(fixture.nativeElement.querySelector('.state-pill').textContent).toContain('Cancelled');
+    expect(fixture.nativeElement.querySelector('.series-context').textContent).toContain(
+      'without a result',
+    );
+    expect(fixture.nativeElement.querySelector('.card-footer').textContent).not.toContain('Resume');
+    expect(fixture.nativeElement.querySelector('.card-footer').textContent).toContain('Review');
+  });
+
+  it.each(['CREATED', 'IN_PROGRESS'] as Tournament['status'][])(
+    'ignores a delayed pre-cancel GET for %s and keeps cancelled controls',
+    (status) => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const cancellation = new Subject<Tournament>();
+      const stale = new Subject<Tournament>();
+      const { fixture, api, button } = cancelPage(status, cancellation);
+      const component = fixture.componentInstance;
+      api.getTournament.mockReturnValue(stale);
+      component.loadTournament();
+      component.cancelTournament();
+      component.loadTournament();
+      expect(api.getTournament).toHaveBeenCalledTimes(2); // no poll during cancellation
+      cancellation.next(
+        tournament('CANCELLED', null, finalGame({ status: 'CANCELLED', result: null })),
+      );
+      stale.next(tournament(status, null, finalGame({ status: 'PAUSED', result: null })));
+      fixture.detectChanges();
+      expect(component.tournament()?.status).toBe('CANCELLED');
+      expect(component.tournament()?.games[0].status).toBe('CANCELLED');
+      expect(button().disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.generate-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.card-footer').textContent).not.toContain(
+        'Resume',
+      );
+      fixture.destroy();
+    },
+  );
+
+  it('ignores an obsolete poll error after cancellation succeeds', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { fixture, api } = cancelPage('IN_PROGRESS');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    const stale = new Subject<Tournament>();
+    api.getTournament.mockReturnValue(stale);
+    fixture.componentInstance.loadTournament();
+    fixture.componentInstance.cancelTournament();
+    stale.error(new Error('obsolete request failed'));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.tournament()?.status).toBe('CANCELLED');
+    fixture.destroy();
+  });
+
+  it('clears pending cancellation and reloads after an API conflict', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { fixture, api } = cancelPage(
+      'IN_PROGRESS',
+      throwError(() => ({ status: 409 })),
+    );
+    fixture.componentInstance.cancelTournament();
+    expect(fixture.componentInstance.cancelling()).toBe(false);
+    expect(api.getTournament).toHaveBeenCalledTimes(2);
   });
 
   function drawPage(result = of([] as Game[])) {
