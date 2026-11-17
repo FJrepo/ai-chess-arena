@@ -124,7 +124,15 @@ Cancelled games are excluded from analytics, including their moves and attempts.
 
 Use **OpenRouter chat models** as participants (text-output models; embedding, vision, audio and similar models are filtered out by default), with shared or per-participant custom instructions; optionally **one human player** who moves from the live game view.
 
+### Setup layout
+
+Tournament setup starts with **Add participant**, with optional custom instructions revealed on demand; collapsing the field preserves its draft when adding a participant. The **Tournament lineup** groups the tournament name, roster, visible participant reasoning-effort overrides, readiness checklist and **Create Tournament** action before the rough runtime and spend estimate. At widths of at least 1200px, the sidebar stays sticky only when its measured height fits the window with an 88px top offset and a 24px bottom gap; otherwise it uses natural page scrolling. Without ResizeObserver support, it also uses natural page scrolling. Below 1200px, the order is add participant, settings, lineup, then estimate, matching keyboard navigation. Settings keep prompt rules and shared instructions in a collapsed **Advanced: prompt** section, with a **custom** badge when shared instructions are set.
+
+### Model catalog
+
 The setup page loads every text-output model from the OpenRouter catalog once (refreshed by the backend every 5 minutes).
+
+Concurrent catalog lookups use a consistent snapshot for freshness and model data, rechecking after acquiring the refresh lock. Model validation and reasoning-effort mapping can therefore use a catalog published by another caller during a refresh.
 
 Type into *Model*: every word must appear in the model's name, id or provider, in any order, so "anthropic sonnet", "sonnet 5.5" and "gpt 6" all work ("-", "." and spaces are interchangeable).
 
@@ -500,6 +508,8 @@ API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true`
 ## Live settings
 
 Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
+
+Background refreshes preserve the historical position being reviewed; viewers at the latest move keep following new moves.
 
 Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode and resignation changes rebuild both system prompts.
 
