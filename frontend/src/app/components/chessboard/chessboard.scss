@@ -9,7 +9,6 @@
 }
 
 .chessboard-container {
-  container-type: inline-size;
   width: 100%;
 }
 
@@ -92,8 +91,11 @@
 }
 
 .piece {
-  font-size: calc((100cqi - var(--board-label-size)) / 8 * 0.72);
-  line-height: 1;
+  display: block;
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+  user-select: none;
   cursor: default;
 
   &[draggable='true'] {

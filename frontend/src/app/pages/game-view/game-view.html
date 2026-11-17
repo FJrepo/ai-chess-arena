@@ -113,9 +113,17 @@
       <div class="board-frame">
         <div class="capture-strip top">
           <span class="capture-label">White captures</span>
-          <div class="capture-pieces" [class.has-pieces]="whiteCapturedGlyphs().length > 0">
-            @for (piece of whiteCapturedGlyphs(); track $index) {
-              <span class="captured-piece chess-piece black-piece">{{ piece }}</span>
+          <div
+            class="capture-pieces"
+            [class.has-pieces]="capturedMaterial().whiteCaptured.length > 0"
+          >
+            @for (piece of capturedMaterial().whiteCaptured; track $index) {
+              <img
+                class="captured-piece"
+                [src]="pieceImage('black', piece)"
+                [alt]="pieceName('black', piece)"
+                draggable="false"
+              />
             } @empty {
               <span class="capture-empty">None</span>
             }
@@ -153,40 +161,60 @@
         @if (pendingPromotion()) {
           <div class="promotion-picker">
             <span class="promotion-label">Promote to:</span>
-            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('Q')">
-              <span
-                class="promotion-piece chess-piece"
-                [class.white-piece]="activeColor() === 'WHITE'"
-                [class.black-piece]="activeColor() !== 'WHITE'"
-                >&#x265B;</span
-              >
+            <button
+              mat-raised-button
+              class="promotion-btn"
+              aria-label="Promote to queen"
+              (click)="selectPromotion('Q')"
+            >
+              <img
+                class="promotion-piece"
+                [src]="pieceImage(activeColor() === 'WHITE' ? 'white' : 'black', 'Q')"
+                alt=""
+                draggable="false"
+              />
               Queen
             </button>
-            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('R')">
-              <span
-                class="promotion-piece chess-piece"
-                [class.white-piece]="activeColor() === 'WHITE'"
-                [class.black-piece]="activeColor() !== 'WHITE'"
-                >&#x265C;</span
-              >
+            <button
+              mat-raised-button
+              class="promotion-btn"
+              aria-label="Promote to rook"
+              (click)="selectPromotion('R')"
+            >
+              <img
+                class="promotion-piece"
+                [src]="pieceImage(activeColor() === 'WHITE' ? 'white' : 'black', 'R')"
+                alt=""
+                draggable="false"
+              />
               Rook
             </button>
-            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('B')">
-              <span
-                class="promotion-piece chess-piece"
-                [class.white-piece]="activeColor() === 'WHITE'"
-                [class.black-piece]="activeColor() !== 'WHITE'"
-                >&#x265D;</span
-              >
+            <button
+              mat-raised-button
+              class="promotion-btn"
+              aria-label="Promote to bishop"
+              (click)="selectPromotion('B')"
+            >
+              <img
+                class="promotion-piece"
+                [src]="pieceImage(activeColor() === 'WHITE' ? 'white' : 'black', 'B')"
+                alt=""
+                draggable="false"
+              />
               Bishop
             </button>
-            <button mat-raised-button class="promotion-btn" (click)="selectPromotion('N')">
-              <span
-                class="promotion-piece chess-piece"
-                [class.white-piece]="activeColor() === 'WHITE'"
-                [class.black-piece]="activeColor() !== 'WHITE'"
-                >&#x265E;</span
-              >
+            <button
+              mat-raised-button
+              class="promotion-btn"
+              aria-label="Promote to knight"
+              (click)="selectPromotion('N')"
+            >
+              <img
+                class="promotion-piece"
+                [src]="pieceImage(activeColor() === 'WHITE' ? 'white' : 'black', 'N')"
+                alt=""
+                draggable="false"
+              />
               Knight
             </button>
             <button mat-button class="promotion-cancel" (click)="cancelPromotion()">Cancel</button>
@@ -236,9 +264,17 @@
 
         <div class="capture-strip bottom">
           <span class="capture-label">Black captures</span>
-          <div class="capture-pieces" [class.has-pieces]="blackCapturedGlyphs().length > 0">
-            @for (piece of blackCapturedGlyphs(); track $index) {
-              <span class="captured-piece chess-piece white-piece">{{ piece }}</span>
+          <div
+            class="capture-pieces"
+            [class.has-pieces]="capturedMaterial().blackCaptured.length > 0"
+          >
+            @for (piece of capturedMaterial().blackCaptured; track $index) {
+              <img
+                class="captured-piece"
+                [src]="pieceImage('white', piece)"
+                [alt]="pieceName('white', piece)"
+                draggable="false"
+              />
             } @empty {
               <span class="capture-empty">None</span>
             }

@@ -34,7 +34,8 @@ import {
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
 import { forkJoin, Observable, of, Subscription, switchMap, tap } from 'rxjs';
-import { CapturablePiece, deriveCapturedMaterial } from '../../utils/captured-material';
+import { deriveCapturedMaterial } from '../../utils/captured-material';
+import { pieceImage, pieceName } from '../../utils/piece-assets';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
@@ -80,16 +81,6 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
-
-// Solid glyphs for both colours; the stylesheet colours them (white pieces get a light fill
-// and a dark edge).
-const PIECE_GLYPHS: Record<CapturablePiece, string> = {
-  Q: '\u265B',
-  R: '\u265C',
-  B: '\u265D',
-  N: '\u265E',
-  P: '\u265F',
-};
 
 @Component({
   selector: 'app-game-view',
@@ -316,13 +307,8 @@ export class GameView implements OnInit, OnDestroy {
       : this.stockfishReason() || 'Stockfish evaluation is currently unavailable.',
   );
 
-  whiteCapturedGlyphs = computed(() =>
-    this.capturedMaterial().whiteCaptured.map((piece) => PIECE_GLYPHS[piece]),
-  );
-
-  blackCapturedGlyphs = computed(() =>
-    this.capturedMaterial().blackCaptured.map((piece) => PIECE_GLYPHS[piece]),
-  );
+  pieceImage = pieceImage;
+  pieceName = pieceName;
 
   whiteMaterialEdge = computed(() => Math.max(0, this.capturedMaterial().materialDelta));
   blackMaterialEdge = computed(() => Math.max(0, -this.capturedMaterial().materialDelta));
