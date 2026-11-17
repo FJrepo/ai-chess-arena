@@ -69,7 +69,7 @@ class LeaderboardServiceTest {
         service.ratings = new EloRatingService();
         service.repository = new LeaderboardRepository() {
             @Override
-            public List<Game> findFinishedModelGames() {
+            public List<Game> findFinishedModelGames(Boolean legalMoveHints) {
                 return List.of(finished, waiting);
             }
         };

@@ -52,8 +52,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Live updates are sent without blocking: the send finishes later on another thread (the Vert.x event loop in
@@ -301,8 +301,9 @@ class LiveUpdateTransactionIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"v2", "legacy-custom-template"})
-    void modelTimingAndEvaluationUseTheSameSequenceAndStaleTurnCannotRestoreAnExpiredDeadline(String promptVersion) {
+    @CsvSource({"v2, POLITE", "v2-no-hints, POLITE", "legacy-custom-template,", "legacy-custom-template-no-hints,"})
+    void modelTimingAndEvaluationUseTheSameSequenceAndStaleTurnCannotRestoreAnExpiredDeadline(
+            String promptVersion, String expectedTone) {
         UUID id = game(GameStatus.IN_PROGRESS);
         gameWebSocket.onMessage(viewer,
                 "{\"type\":\"subscribe\",\"gameId\":\"%s\",\"protocol\":2}".formatted(id));
@@ -314,7 +315,6 @@ class LiveUpdateTransactionIT {
         assertEquals(1, timed.liveRevision());
         assertEquals("WHITE", timed.activeColor());
         assertEquals("OPTIONAL", timed.turnChatMode());
-        String expectedTone = PromptService.LEGACY_CUSTOM_TEMPLATE_VERSION.equals(promptVersion) ? null : "POLITE";
         assertEquals(expectedTone, timed.turnBanterLevel());
         JsonNode turnState = revisionEvents.getLast().path("changes").get(0);
         assertEquals("OPTIONAL", turnState.path("turnChatMode").asText());

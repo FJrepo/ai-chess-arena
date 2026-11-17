@@ -33,7 +33,7 @@ public class Move extends PanacheEntityBase {
     @Column(name = "model_id")
     public String modelId;
 
-    @Column(name = "prompt_version", length = 64)
+    @Column(name = "prompt_version", length = 96)
     public String promptVersion;
 
     @Column(name = "prompt_hash", length = 128)

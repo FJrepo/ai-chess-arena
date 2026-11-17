@@ -71,6 +71,24 @@ describe('AnalyticsDashboard', () => {
     }
   });
 
+  it('uses the selected hint mode in every analytics request', async () => {
+    const { api, component, harness } = await renderDashboard('');
+    expect(harness.routeNativeElement?.querySelector('.filter-hints')?.textContent).toContain(
+      'On or off',
+    );
+    component.selectedLegalMoveHints = false;
+    component.onCommonFiltersChanged();
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legalMoveHints: false }),
+    );
+    expect(api.getAnalyticsHealth).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legalMoveHints: false }),
+    );
+    expect(api.getAnalyticsReliability).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legalMoveHints: false }),
+    );
+  });
+
   it('uses singular game counts in Overview for a one-game scope', async () => {
     const { harness } = await renderDashboard('?tab=overview', {
       comparison: of({

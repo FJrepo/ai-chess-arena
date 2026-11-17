@@ -143,7 +143,7 @@ public class ExportService {
         var settings = new TournamentExportDto.Settings(t.format.name(), t.drawPolicy.name(),
                 t.moveTimeoutSeconds, t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.chatMode.name(),
                 t.banterLevel != null ? t.banterLevel.name() : null,
-                t.resignationAllowed, t.adjudicationEnabled, t.maxOutputTokens, effort(t.reasoningEffort),
+                t.resignationAllowed, t.legalMoveHints, t.adjudicationEnabled, t.maxOutputTokens, effort(t.reasoningEffort),
                 t.openingMode.name(), t.openingId, t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd);
         var participants = t.participants.stream()
                 .sorted(Comparator.comparingInt((dev.aichessarena.entity.TournamentParticipant p) -> p.seed)

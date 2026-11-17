@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,6 +35,36 @@ class TournamentCreationIT {
 
     @Inject
     TournamentService service;
+
+    @Test
+    void legalMoveHintsDefaultOnAndSuppliedOffIsImmutableAcrossGamesAndCreationReplay() {
+        assertTrue(create(request(0), 201).legalMoveHints());
+        var body = request(2);
+        body.put("legalMoveHints", false);
+        body.put("generateBracket", true);
+        body.put("clientRequestId", UUID.randomUUID());
+        TournamentDto created = create(body, 201);
+
+        assertFalse(created.legalMoveHints());
+        assertFalse(get(created.id()).legalMoveHints());
+        given().get("/api/games/{id}", created.games().getFirst().id())
+                .then().statusCode(200).body("legalMoveHints", equalTo(false));
+        given().get("/api/tournaments/{id}/export.json", created.id())
+                .then().statusCode(200).body("settings.legalMoveHints", equalTo(false));
+        body.put("legalMoveHints", true);
+        assertFalse(create(body, 200).legalMoveHints());
+        given().contentType("application/json").body(Map.of("legalMoveHints", true))
+                .put("/api/tournaments/{id}", created.id()).then().statusCode(400);
+        assertFalse(get(created.id()).legalMoveHints());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "\"false\"", "0", "{}", "[]"})
+    void invalidLegalMoveHintsAreRejectedBeforeCreation(String value) {
+        given().contentType("application/json").body("{\"name\":\"Invalid hints\",\"legalMoveHints\":" + value + "}")
+                .post("/api/tournaments").then().statusCode(400)
+                .body("error", equalTo("legalMoveHints must be true or false"));
+    }
 
     @Test
     void explicitGenerationUsesApiSeedOrderByDefault() {

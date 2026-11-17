@@ -29,6 +29,10 @@
           <span class="count-tag">{{ t.games.length }} Games</span>
           <span class="dot-separator"></span>
           <span class="count-tag">Best of {{ t.matchupBestOf }}</span>
+          <span class="dot-separator"></span>
+          <span class="count-tag"
+            >Legal move hints {{ t.legalMoveHints === false ? 'off' : 'on' }}</span
+          >
           @if (t.finalsBestOf) {
             <span class="dot-separator"></span>
             <span class="count-tag">Final best of {{ t.finalsBestOf }}</span>

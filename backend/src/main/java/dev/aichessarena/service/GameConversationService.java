@@ -158,7 +158,8 @@ public class GameConversationService {
                 opponentModel,
                 chatMode,
                 resignationAllowed,
-                game.tournament.banterLevel
+                game.tournament.banterLevel,
+                game.hasLegalMoveHints()
         );
     }
 

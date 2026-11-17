@@ -35,10 +35,21 @@
       <mat-select [(ngModel)]="selectedTournamentId" (ngModelChange)="onCommonFiltersChanged()">
         <mat-option value="">All tournaments</mat-option>
         @for (tournament of tournaments(); track tournament.id) {
-          <mat-option [value]="tournament.id">{{ tournament.name }}</mat-option>
+          <mat-option [value]="tournament.id">
+            {{ tournament.name }} · hints {{ tournament.legalMoveHints === false ? 'off' : 'on' }}
+          </mat-option>
         }
       </mat-select>
       <mat-icon matPrefix>emoji_events</mat-icon>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-hints">
+      <mat-label>Legal move hints</mat-label>
+      <mat-select [(ngModel)]="selectedLegalMoveHints" (ngModelChange)="onCommonFiltersChanged()">
+        <mat-option value="all">On or off</mat-option>
+        <mat-option [value]="true">On only</mat-option>
+        <mat-option [value]="false">Off only</mat-option>
+      </mat-select>
     </mat-form-field>
 
     <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-min-games">

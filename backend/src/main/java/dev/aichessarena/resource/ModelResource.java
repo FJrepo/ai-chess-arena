@@ -71,7 +71,8 @@ public class ModelResource {
                 promptVariants(false),
                 promptVariants(true),
                 banterVariants(false),
-                banterVariants(true)
+                banterVariants(true),
+                new PromptTemplateDto.NoHintsVariant(PromptService.NO_HINTS_RULE, PromptService.NO_HINTS_VERSION_SUFFIX)
         );
         return Response.ok(dto).build();
     }
