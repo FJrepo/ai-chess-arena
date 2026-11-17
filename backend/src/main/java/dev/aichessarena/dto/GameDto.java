@@ -56,6 +56,7 @@ public record GameDto(
         String openingId,
         String openingName,
         String openingEco,
+        boolean legalMoveHints,
         long liveRevision,
         String activeColor,
         Instant turnStartedAt,

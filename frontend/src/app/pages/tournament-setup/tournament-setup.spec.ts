@@ -21,7 +21,7 @@ describe('TournamentSetup', () => {
   it('uses the saved lineup and settings for a new tournament only after Create', async () => {
     const api = createApiService();
     const create = vi.spyOn(api, 'createTournament');
-    const source = rematchSource();
+    const source = { ...rematchSource(), legalMoveHints: false };
     const getTournament = vi.fn(() => of(source));
     Object.assign(api, {
       getTournament,
@@ -31,6 +31,7 @@ describe('TournamentSetup', () => {
     const fixture = await renderSetup(api, 'old');
     const setup = fixture.componentInstance;
     expect(getTournament).toHaveBeenCalledWith('old');
+    expect(setup.legalMoveHints).toBe(false);
     expect(create).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Original');
     expect(setup.readiness().canCreate).toBe(true);
@@ -48,6 +49,7 @@ describe('TournamentSetup', () => {
         sharedCustomInstructions: 'Shared',
         resignationAllowed: true,
         adjudicationEnabled: true,
+        legalMoveHints: false,
         reasoningEffort: 'medium',
         maxOutputTokens: 8192,
         matchupBestOf: 3,
@@ -78,6 +80,32 @@ describe('TournamentSetup', () => {
     );
     expect(create.mock.calls[0][0]).not.toHaveProperty('autoRunStatus');
     expect(create.mock.calls[0][0]).not.toHaveProperty('games');
+  });
+
+  it('uses hints on for older sources and previews changes to the new draft', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(setup.legalMoveHints).toBe(true);
+    expect(
+      setup.rematchChanges(source).some((change) => change.setting === 'Legal move hints'),
+    ).toBe(false);
+
+    setup.legalMoveHints = false;
+    fixture.detectChanges();
+    expect(setup.rematchChanges(source)).toContainEqual({
+      setting: 'Legal move hints',
+      before: 'On',
+      after: 'Off',
+    });
+    setup.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(false);
+    expect(source.legalMoveHints).toBeUndefined();
   });
 
   it('keeps Create blocked when the rematch source cannot be read', async () => {
@@ -1935,6 +1963,31 @@ describe('TournamentSetup', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
+  });
+
+  it('sends the tournament hint setting and previews the matching prompt version', () => {
+    const api = createApiService();
+    api.getPromptTemplate = () =>
+      of({
+        template: 'Rules',
+        version: 'v2',
+        hash: 'hash',
+        noHints: { rule: 'Derive the move from the position.', versionSuffix: '-no-hints' },
+      });
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+    component.name = 'Hints Arena';
+
+    component.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(true);
+    expect(component.systemRulesTemplate).toBe('Rules');
+    expect(component.systemRulesVersion()).toBe('v2');
+
+    component.legalMoveHints = false;
+    component.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(false);
+    expect(component.systemRulesTemplate).toBe('Rules\n\nDerive the move from the position.');
+    expect(component.systemRulesVersion()).toBe('v2-no-hints');
   });
 
   it('sends adjudication off by default, on when chosen, and resets it in presets', () => {

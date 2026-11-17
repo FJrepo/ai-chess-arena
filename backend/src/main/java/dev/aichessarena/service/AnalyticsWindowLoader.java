@@ -38,12 +38,16 @@ public class AnalyticsWindowLoader {
     ChatMessageRepository chatMessageRepository;
 
     AnalyticsScope loadHealthScope(int days, UUID tournamentId) {
-        return loadScope(days, tournamentId, false);
+        return loadHealthScope(days, tournamentId, null);
     }
 
-    private AnalyticsScope loadScope(int days, UUID tournamentId, boolean includeModelAnalytics) {
+    AnalyticsScope loadHealthScope(int days, UUID tournamentId, Boolean legalMoveHints) {
+        return loadScope(days, tournamentId, legalMoveHints, false);
+    }
+
+    private AnalyticsScope loadScope(int days, UUID tournamentId, Boolean legalMoveHints, boolean includeModelAnalytics) {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
-        List<Game> games = gameRepository.findInWindow(cutoff, tournamentId).stream()
+        List<Game> games = gameRepository.findInWindow(cutoff, tournamentId, legalMoveHints).stream()
                 .filter(game -> !AnalyticsGameOutcomeClassifier.isBye(game))
                 .filter(game -> game.status != Game.GameStatus.CANCELLED)
                 .toList();
@@ -59,7 +63,11 @@ public class AnalyticsWindowLoader {
     }
 
     AnalyticsScope loadTerminalScope(int days, UUID tournamentId) {
-        AnalyticsScope scope = loadScope(days, tournamentId, true);
+        return loadTerminalScope(days, tournamentId, null);
+    }
+
+    AnalyticsScope loadTerminalScope(int days, UUID tournamentId, Boolean legalMoveHints) {
+        AnalyticsScope scope = loadScope(days, tournamentId, legalMoveHints, true);
         List<Game> terminalGames = scope.games().stream()
                 .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status))
                 .toList();

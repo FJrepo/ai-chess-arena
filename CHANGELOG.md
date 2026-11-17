@@ -10,9 +10,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Upgrade notes
 
 - Flyway `V24__live_game_revision.sql` adds game revisions, nullable model-turn metadata and an optional originating status revision for attempts. Back up before upgrading and recreate backend and frontend together. Existing moves, attempts, chat, results and spend are retained.
+- Flyway `V25__tournament_legal_move_hints.sql` defaults all existing tournaments to hints on and widens the stored prompt version column. Back up the database and rebuild/recreate the backend and frontend to use the new setting.
 
 ### Added
 
+- Tournament setup can hide legal move lists from models on every attempt. Games show the hint mode, and Analytics and Leaderboard can show either mode on its own.
 - Open an editable rematch setup from an existing tournament, with its lineup, rules and run limits prefilled and a preview of changes before creation.
 
 ### Changed

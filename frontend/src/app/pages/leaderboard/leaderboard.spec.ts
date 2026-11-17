@@ -112,6 +112,16 @@ describe('Leaderboard', () => {
     expect(getLeaderboard).toHaveBeenLastCalledWith(false);
   });
 
+  it('uses the selected hint mode for the displayed rating sample', async () => {
+    await render();
+    fixture.componentInstance.setLegalMoveHints(false);
+    const element = await render();
+    expect(getLeaderboard).toHaveBeenLastCalledWith(true, false);
+    expect(element.querySelector('caption')?.textContent).toContain('Legal move hints off');
+    fixture.componentInstance.setLegalMoveHints('all');
+    expect(getLeaderboard).toHaveBeenLastCalledWith(true);
+  });
+
   it('shows the empty state without a table', async () => {
     getLeaderboard.mockReturnValue(of(response([])));
     const element = await render();

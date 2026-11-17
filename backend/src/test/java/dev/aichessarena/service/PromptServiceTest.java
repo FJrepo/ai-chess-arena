@@ -34,6 +34,80 @@ class PromptServiceTest {
     }
 
     @Test
+    void legalMoveHintsPreserveLegacyTurnAndFinalRetryBytes() {
+        assertEquals("""
+                Current game state:
+
+                PGN: (starting position)
+
+                FEN: position
+
+                Board:
+                board
+
+                It is your turn (WHITE to move). Move 1.
+                Legal moves: e4, Nf3
+
+                You have the first move. Open the game.
+
+                Respond with your move as JSON: {"move": "<SAN>", "message": "<optional>"}""",
+                promptService.buildTurnPrompt(null, "position", "board", "WHITE", 1, List.of("e4", "Nf3"),
+                        "Opponent", null, null, true));
+        assertEquals("""
+                Your previous response was invalid.
+
+                Reason
+
+                Examples of valid responses:
+                  {"move": "e4", "message": "King's pawn opening!"}
+                  {"move": "Nf3"}
+
+                Current position FEN: position
+                Legal moves: e4, Nf3
+
+                Please respond with ONLY a JSON object containing your move.
+                Attempt 3 of 3.
+
+                LAST CHANCE: you already made 2 invalid attempts. This is your final chance. If this response is invalid, you lose by forfeit.""",
+                promptService.buildRetryPrompt("Reason", "position", List.of("e4", "Nf3"), 3, 3));
+    }
+
+    @Test
+    void absentHintsOmitTheListAndKeepPositionAndResponseInstructions() {
+        String turn = promptService.buildTurnPrompt(null, "position", "board", "WHITE", 10, null,
+                "Opponent", "c5", null, false, ChatMode.MANDATORY, true);
+        assertFalse(turn.contains("Legal moves:"));
+        assertTrue(turn.contains("FEN: position"));
+        assertTrue(turn.contains("You may resign"));
+        assertTrue(turn.contains(PromptService.REQUIRED_MESSAGE_ANSWER_LINE));
+
+        String retry = promptService.buildRetryPrompt("Reason", "position", null, 3, 3);
+        assertFalse(retry.contains("Legal moves:"));
+        assertTrue(retry.contains("Current position FEN: position"));
+        assertTrue(retry.contains("LAST CHANCE"));
+        assertTrue(retry.contains("{\"move\": \"<SAN>\"}"));
+    }
+
+    @Test
+    void systemPromptVersionDistinguishesNoHintsWithCustomInstructionsOrLegacyTemplates() {
+        var hinted = promptService.buildSystemPrompt(null, "Play sharp openings.", "WHITE", "Opponent", "model",
+                ChatMode.MANDATORY, true, BanterLevel.PLAYFUL);
+        var unhinted = promptService.buildSystemPrompt(null, "Play sharp openings.", "WHITE", "Opponent", "model",
+                ChatMode.MANDATORY, true, BanterLevel.PLAYFUL, false);
+        assertEquals(hinted.version() + "-no-hints", unhinted.version());
+        assertNotEquals(promptService.computePromptHash(hinted.prompt()), promptService.computePromptHash(unhinted.prompt()));
+        assertTrue(unhinted.prompt().contains(PromptService.NO_HINTS_RULE));
+        assertTrue(unhinted.prompt().contains("Play sharp openings."));
+        assertTrue(unhinted.resignationOffered());
+
+        String legacyTemplate = "You are %s. Opponent: %s (%s).";
+        var legacy = promptService.buildSystemPrompt(legacyTemplate, null, "WHITE", "Opponent", "model",
+                ChatMode.OPTIONAL, false, null, false);
+        assertEquals("legacy-custom-template-no-hints", legacy.version());
+        assertEquals("You are WHITE. Opponent: Opponent (model).", legacy.prompt());
+    }
+
+    @Test
     void buildRetryPromptUsesConfiguredMaxAttempts() {
         String prompt = promptService.buildRetryPrompt(
                 "Could not parse JSON",

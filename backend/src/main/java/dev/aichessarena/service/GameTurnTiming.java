@@ -57,7 +57,7 @@ class GameTurnTiming {
         String banter = request.tournamentBanterLevel() == null ? null : request.tournamentBanterLevel().name();
         game.turnChatMode = request.chatMode() == null ? ChatMode.OPTIONAL : request.chatMode();
         boolean appliesTone = game.turnChatMode.allowsMessages()
-                && !PromptService.LEGACY_CUSTOM_TEMPLATE_VERSION.equals(request.promptVersion());
+                && !PromptService.isLegacyTemplateVersion(request.promptVersion());
         game.turnBanterLevel = appliesTone ? request.tournamentBanterLevel() : null;
         updates.changed(game);
         AfterCommit.run(registry, () -> socket.broadcastGameStatus(id, "IN_PROGRESS", null, null, totalMoves,

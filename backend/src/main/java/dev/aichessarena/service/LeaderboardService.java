@@ -19,7 +19,11 @@ public class LeaderboardService {
 
     /** Recompute per request so finishing, deleting or correcting games cannot leave stale ratings. */
     public LeaderboardDto getLeaderboard(boolean includeForfeits) {
-        return ratings.calculate(repository.findFinishedModelGames().stream()
+        return getLeaderboard(includeForfeits, null);
+    }
+
+    public LeaderboardDto getLeaderboard(boolean includeForfeits, Boolean legalMoveHints) {
+        return ratings.calculate(repository.findFinishedModelGames(legalMoveHints).stream()
                 .filter(LeaderboardService::isRatedGame)
                 .map(game -> new RatedGame(game.id, game.completedAt, game.whiteModelId.trim(),
                         game.blackModelId.trim(), game.result))

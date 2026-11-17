@@ -59,6 +59,8 @@ public record CreateTournamentRequest(
         @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket,
         // Omitted retains the current tone on update; explicit JSON null clears it. Only strings/null are valid.
         JsonNode banterLevel,
+        // Omitted defaults to true on create. Explicit null and other non-boolean values are invalid.
+        JsonNode legalMoveHints,
         @JsonDeserialize(using = ExactDecimalTreeDeserializer.class) JsonNode runSettings
 ) {
     /** Compatibility constructor for callers without creation-time bracket or banter settings. */
@@ -71,7 +73,7 @@ public record CreateTournamentRequest(
                                    String openingMode, String openingId) {
         this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries == null ? null : IntNode.valueOf(maxRetries),
                 matchupBestOf, finalsBestOf, trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null, null);
+                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null, null, null);
     }
 
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,

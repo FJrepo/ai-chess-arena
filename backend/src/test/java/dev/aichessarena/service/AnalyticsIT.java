@@ -113,6 +113,16 @@ class AnalyticsIT {
     }
 
     @Test
+    void analyticsHintsFilterCombinesWithTheTournamentAndRejectsInvalidValues() {
+        given().queryParam("tournamentId", tournamentId).queryParam("legalMoveHints", true)
+                .get("/api/analytics/comparison").then().statusCode(200).body("gamesCount", equalTo(1));
+        given().queryParam("tournamentId", tournamentId).queryParam("legalMoveHints", false)
+                .get("/api/analytics/comparison").then().statusCode(200).body("gamesCount", equalTo(0));
+        given().queryParam("legalMoveHints", "").get("/api/analytics/health").then().statusCode(400);
+        given().queryParam("legalMoveHints", "both").get("/api/analytics/reliability").then().statusCode(400);
+    }
+
+    @Test
     void comparisonCountsFinishedGamesInTheWindowAndRejectedAttemptCost() {
         given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
                 .when().get("/api/analytics/comparison")

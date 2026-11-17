@@ -84,6 +84,9 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "banter_level", length = 16)
     public BanterLevel banterLevel;
 
+    @Column(name = "legal_move_hints", nullable = false, updatable = false)
+    public boolean legalMoveHints = true;
+
     /**
      * The pre-1.4 column {@code trash_talk_enabled}, kept in sync with {@link #chatMode} (false only for OFF). Not
      * read by this version; to be dropped in a later release. Rolling back to an older version requires restoring

@@ -54,7 +54,7 @@ class LeaderboardIT {
             Game old = game(first, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS,
                     LocalDateTime.of(2000, 1, 1, 12, 0));
             old.resultReason = Game.ResultReason.ADJUDICATION;
-            Tournament second = tournament();
+            Tournament second = tournament(false);
             Game forfeit = game(second, Game.GameStatus.FORFEIT, Game.GameResult.WHITE_FORFEIT,
                     LocalDateTime.of(2000, 1, 2, 12, 0));
             forfeit.resultReason = Game.ResultReason.TIMEOUT;
@@ -87,6 +87,19 @@ class LeaderboardIT {
         assertEquals(Boolean.TRUE, value(response, alpha, "provisional"));
         assertEquals(2, value(response, alpha, "ratingHistory.size()"));
         assertEquals("2000-01-02T12:00:00", value(response, alpha, "lastPlayed"));
+    }
+
+    @Test
+    void leaderboardReplaysOnlyTheSelectedHintMode() {
+        Response hinted = given().queryParam("legalMoveHints", true).get("/api/analytics/leaderboard")
+                .then().statusCode(200).extract().response();
+        Response unhinted = given().queryParam("legalMoveHints", false).get("/api/analytics/leaderboard")
+                .then().statusCode(200).extract().response();
+        assertEquals(1516, value(hinted, alpha, "rating"));
+        assertEquals(1484, value(unhinted, alpha, "rating"));
+        assertEquals(1, value(hinted, alpha, "games"));
+        assertEquals(1, value(unhinted, alpha, "games"));
+        given().queryParam("legalMoveHints", "").get("/api/analytics/leaderboard").then().statusCode(400);
     }
 
     @ParameterizedTest
@@ -200,8 +213,13 @@ class LeaderboardIT {
     }
 
     private Tournament tournament() {
+        return tournament(true);
+    }
+
+    private Tournament tournament(boolean legalMoveHints) {
         Tournament tournament = new Tournament();
         tournament.name = "Leaderboard fixture";
+        tournament.legalMoveHints = legalMoveHints;
         tournaments.persist(tournament);
         tournamentIds.add(tournament.id);
         return tournament;

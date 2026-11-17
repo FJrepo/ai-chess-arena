@@ -562,6 +562,7 @@ public class GameTurnService {
             Board board,
             String sideToMove,
             int moveNumber,
+            // Null means the tournament withholds the legal move list in all prompts.
             List<String> legalMoves,
             String modelId,
             String playerName,
