@@ -112,5 +112,5 @@ jobs:
       - name: Run frontend tests
         run: npm test -- --watch=false
 
-      - name: Build frontend (development config)
-        run: npm run build -- --configuration development
+      - name: Build frontend (production config)
+        run: npm run build -- --configuration production
