@@ -1,0 +1,53 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+section,
+.manual-connection,
+form {
+  display: grid;
+  gap: 16px;
+}
+
+h2,
+p {
+  margin: 0;
+}
+
+h2 {
+  font: var(--mat-sys-title-large);
+}
+
+.connection-status,
+.connect-primary {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.hint {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.error {
+  color: var(--mat-sys-error);
+}
+
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.manual-toggle,
+form button {
+  justify-self: start;
+}
+
+mat-form-field {
+  width: 100%;
+  min-width: 0;
+}

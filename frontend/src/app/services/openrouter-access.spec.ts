@@ -1,8 +1,8 @@
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { MatDialog } from '@angular/material/dialog';
+import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { OpenRouterAccess, ConnectOpenRouterDialog } from './openrouter-access';
 import { OpenRouterClient, OpenRouterStatus } from './openrouter-client';
@@ -47,6 +47,20 @@ describe('OpenRouter action prompts', () => {
     access.withKey(action);
     expect(action).not.toHaveBeenCalled();
     expect(dialog.open).toHaveBeenCalledWith(ConnectOpenRouterDialog, expect.any(Object));
+  });
+
+  it('requires another click after the connection dialog closes instead of replaying an action', () => {
+    const { access, client, dialog } = harness();
+    const closed = new Subject<void>();
+    dialog.open.mockReturnValue({ afterClosed: () => closed.asObservable() });
+    const action = vi.fn();
+    access.withKey(action);
+    client.status.mockReturnValue(of({ ...missing, key: { ...missing.key, source: 'ui' } }));
+    closed.next();
+    closed.complete();
+    expect(action).not.toHaveBeenCalled();
+    access.withKey(action);
+    expect(action).toHaveBeenCalledOnce();
   });
 
   it('permits configured keys and checks again for the next action', () => {
@@ -128,6 +142,41 @@ describe('OpenRouter action prompts', () => {
     expect(api.startGame).not.toHaveBeenCalled();
     expect(bracket.runBusy()).toBe(false);
   });
+});
+
+describe('Connect dialog lifecycle', () => {
+  it.each(['none', 'ui'] as const)(
+    'stays open for initial %s status and closes on a successful connection without returning an action',
+    (source) => {
+      const saved = new Subject<void>();
+      const close = vi.fn();
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([]),
+          { provide: MatDialogRef, useValue: { close } },
+          {
+            provide: OpenRouterClient,
+            useValue: {
+              status: () =>
+                of({
+                  ...missing,
+                  key: { ...missing.key, source, validation: source === 'ui' ? 'invalid' : 'none' },
+                }),
+              connectionSaved: saved.asObservable(),
+            },
+          },
+        ],
+      });
+      const fixture = TestBed.createComponent(ConnectOpenRouterDialog);
+      fixture.detectChanges();
+      expect(close).not.toHaveBeenCalled();
+      saved.next();
+      expect(close).toHaveBeenCalledExactlyOnceWith();
+      fixture.destroy();
+      saved.next();
+      expect(close).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe.each([
@@ -213,6 +262,9 @@ describe.each([
       expect(dialogs.openDialogs[0].componentInstance).toBeInstanceOf(ConnectOpenRouterDialog);
 
       const dialogElement = document.querySelector('app-connect-openrouter-dialog')!;
+      dialogElement.querySelector<HTMLButtonElement>('.manual-toggle')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
       const input = dialogElement.querySelector('input')!;
       const form = dialogElement.querySelector('form')!;
       input.value = 'fixture-private-key';
@@ -227,7 +279,7 @@ describe.each([
       await fixture.whenStable();
 
       expect(element.querySelector('.openrouter-status')).toBeNull();
-      expect(dialogs.openDialogs).toHaveLength(1);
+      await vi.waitFor(() => expect(dialogs.openDialogs).toHaveLength(0));
     },
   );
 

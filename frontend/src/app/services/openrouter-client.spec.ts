@@ -59,3 +59,46 @@ it('preserves the last known key metadata when a save fails', () => {
   client.manual('fixture-private-key').subscribe({ error: () => {} });
   expect(client.keyStatus()).toEqual(status.key);
 });
+
+it.each(['manual', 'callback'] as const)(
+  'notifies an open dialog only after a successful %s connection, with metadata already updated',
+  (operation) => {
+    const response = new Subject<OpenRouterStatus>();
+    const http = { post: () => response };
+    const client = new OpenRouterClient(http as unknown as HttpClient);
+    const connected: OpenRouterStatus = {
+      ...status,
+      key: { ...status.key, source: 'ui', validation: 'valid' },
+    };
+    const saved = vi.fn(() => expect(client.keyStatus()).toEqual(connected.key));
+    client.connectionSaved.subscribe(saved);
+    const request =
+      operation === 'manual'
+        ? client.manual('fixture-private-key')
+        : client.complete('fixture-code', 'fixture-state');
+    request.subscribe();
+    expect(saved).not.toHaveBeenCalled();
+    response.next(connected);
+    expect(saved).toHaveBeenCalledExactlyOnceWith(undefined);
+  },
+);
+
+it('keeps a dialog open on failed connections, status loads, tests, claiming and deletion', () => {
+  const connected: OpenRouterStatus = { ...status, key: { ...status.key, source: 'ui' } };
+  const http = {
+    get: () => of(connected),
+    post: vi.fn(() => of(connected)),
+    delete: () => of(status),
+  };
+  const client = new OpenRouterClient(http as unknown as HttpClient);
+  const saved = vi.fn();
+  client.connectionSaved.subscribe(saved);
+  client.status().subscribe();
+  client.test().subscribe();
+  client.claim('fixture-token').subscribe();
+  client.delete().subscribe();
+  http.post.mockReturnValue(throwError(() => new Error('Rejected fixture')));
+  client.manual('fixture-private-key').subscribe({ error: () => {} });
+  client.complete('fixture-code', 'fixture-state').subscribe({ error: () => {} });
+  expect(saved).not.toHaveBeenCalled();
+});

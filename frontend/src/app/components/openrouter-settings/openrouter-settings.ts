@@ -4,14 +4,17 @@ import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { Router } from '@angular/router';
 import { Observable, finalize } from 'rxjs';
 import { OpenRouterClient, OpenRouterStatus } from '../../services/openrouter-client';
 import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
+import { rememberOpenRouterReturnUrl } from '../../utils/openrouter-return-url';
 
 @Component({
   selector: 'app-openrouter-settings',
   imports: [DatePipe, FormsModule, MatButtonModule, MatFormFieldModule, MatInputModule],
   templateUrl: './openrouter-settings.html',
+  styleUrl: './openrouter-settings.scss',
 })
 export class OpenRouterSettings implements OnInit {
   status = signal<OpenRouterStatus | null>(null);
@@ -19,9 +22,13 @@ export class OpenRouterSettings implements OnInit {
   validation = computed(() => openRouterValidation(this.status()?.key));
   error = signal<string | null>(null);
   busy = signal(false);
+  manualExpanded = signal(false);
   manualKey = '';
 
-  constructor(private client: OpenRouterClient) {}
+  constructor(
+    private client: OpenRouterClient,
+    private router: Router,
+  ) {}
   ngOnInit() {
     this.update(this.client.status());
   }
@@ -43,7 +50,10 @@ export class OpenRouterSettings implements OnInit {
       .start()
       .pipe(finalize(() => this.busy.set(false)))
       .subscribe({
-        next: ({ authUrl }) => window.location.assign(authUrl),
+        next: ({ authUrl }) => {
+          rememberOpenRouterReturnUrl(this.router.url);
+          window.location.assign(authUrl);
+        },
         error: (err) =>
           this.error.set(err?.error?.error ?? 'Could not start OpenRouter connection.'),
       });

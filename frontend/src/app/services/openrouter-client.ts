@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, finalize, shareReplay, tap } from 'rxjs';
+import { Observable, Subject, finalize, shareReplay, tap } from 'rxjs';
 
 export interface OpenRouterKeyStatus {
   /** Key presence determines connection; validation is independent. */
@@ -22,6 +22,9 @@ export class OpenRouterClient {
   private pendingStatus?: Observable<OpenRouterStatus>;
   private readonly currentKey = signal<OpenRouterKeyStatus | null>(null);
   readonly keyStatus = this.currentKey.asReadonly();
+  private readonly savedConnection = new Subject<void>();
+  readonly connectionSaved = this.savedConnection.asObservable();
+  private readonly notifyConnectionSaved = tap<OpenRouterStatus>(() => this.savedConnection.next());
   private readonly updateKeyStatus = tap<OpenRouterStatus>((status) =>
     this.currentKey.set(status.key),
   );
@@ -42,10 +45,12 @@ export class OpenRouterClient {
   complete(code: string, state: string) {
     return this.http
       .post<OpenRouterStatus>(`${this.url}/complete`, { code, state })
-      .pipe(this.updateKeyStatus);
+      .pipe(this.updateKeyStatus, this.notifyConnectionSaved);
   }
   manual(key: string) {
-    return this.http.post<OpenRouterStatus>(`${this.url}/key`, { key }).pipe(this.updateKeyStatus);
+    return this.http
+      .post<OpenRouterStatus>(`${this.url}/key`, { key })
+      .pipe(this.updateKeyStatus, this.notifyConnectionSaved);
   }
   delete() {
     return this.http.delete<OpenRouterStatus>(`${this.url}/key`).pipe(this.updateKeyStatus);

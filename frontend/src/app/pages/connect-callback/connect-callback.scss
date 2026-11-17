@@ -1,0 +1,39 @@
+:host {
+  display: block;
+}
+
+.callback-card {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  border: var(--app-surface-border);
+  border-radius: var(--app-surface-radius-md);
+  background: var(--app-surface-bg);
+  box-shadow: var(--app-surface-shadow);
+}
+
+mat-card-content {
+  display: grid;
+  justify-items: start;
+  gap: 20px;
+  padding: 24px;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font: var(--mat-sys-headline-small);
+}
+
+.error {
+  color: var(--mat-sys-error);
+}
+
+.callback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

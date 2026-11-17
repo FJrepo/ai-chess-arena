@@ -1,5 +1,6 @@
 import { Component, Injectable } from '@angular/core';
-import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { OpenRouterSettings } from '../components/openrouter-settings/openrouter-settings';
@@ -17,7 +18,11 @@ import { openRouterConnected } from '../utils/openrouter-status';
     </mat-dialog-actions>
   `,
 })
-export class ConnectOpenRouterDialog {}
+export class ConnectOpenRouterDialog {
+  constructor(client: OpenRouterClient, dialog: MatDialogRef<ConnectOpenRouterDialog>) {
+    client.connectionSaved.pipe(takeUntilDestroyed()).subscribe(() => dialog.close());
+  }
+}
 
 @Injectable({ providedIn: 'root' })
 export class OpenRouterAccess {
