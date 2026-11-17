@@ -31,19 +31,16 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 @ApplicationScoped
 public class AnalyticsService {
@@ -71,9 +68,9 @@ public class AnalyticsService {
 
     private final AnalyticsReliabilityScorer reliabilityScorer = new AnalyticsReliabilityScorer();
 
-    private final ResponseCache<AnalyticsHealthDto> healthCache = new ResponseCache<>();
-    private final ResponseCache<ModelReliabilityResponseDto> reliabilityCache = new ResponseCache<>();
-    private final ResponseCache<AnalyticsModelComparisonDto> comparisonCache = new ResponseCache<>();
+    private final AnalyticsResponseCache<AnalyticsHealthDto> healthCache = new AnalyticsResponseCache<>();
+    private final AnalyticsResponseCache<ModelReliabilityResponseDto> reliabilityCache = new AnalyticsResponseCache<>();
+    private final AnalyticsResponseCache<AnalyticsModelComparisonDto> comparisonCache = new AnalyticsResponseCache<>();
 
     public TournamentCostSummaryDto getTournamentCostSummary(UUID tournamentId) {
         List<Game> games = gameRepository.findByTournamentId(tournamentId);
@@ -205,7 +202,7 @@ public class AnalyticsService {
     }
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId) {
-        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadScope(days, tournamentId);
+        AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadHealthScope(days, tournamentId);
         List<Game> games = scope.games();
         List<Move> moves = scope.moves().stream().filter(move -> !move.isBook).toList();
 
@@ -967,33 +964,6 @@ public class AnalyticsService {
 
     private BigDecimal decimal(double value, int scale) {
         return BigDecimal.valueOf(value).setScale(scale, RoundingMode.HALF_UP);
-    }
-
-    private static final class ResponseCache<T> {
-        private static final int MAX_FILTERS = 64;
-        private static final long TTL_NANOS = Duration.ofSeconds(15).toNanos();
-        private final LinkedHashMap<String, Entry<T>> entries = new LinkedHashMap<>(16, 0.75f, true);
-
-        private record Entry<T>(T value, long startedAt) {}
-
-        T get(String key, Supplier<T> load) {
-            long startedAt = System.nanoTime();
-            synchronized (entries) {
-                entries.values().removeIf(entry -> startedAt - entry.startedAt() >= TTL_NANOS);
-                Entry<T> cached = entries.get(key);
-                if (cached != null) return cached.value();
-            }
-
-            // Database reads for independent filters can proceed concurrently.
-            T value = load.get();
-            synchronized (entries) {
-                if (System.nanoTime() - startedAt < TTL_NANOS) {
-                    entries.putIfAbsent(key, new Entry<>(value, startedAt));
-                    if (entries.size() > MAX_FILTERS) entries.pollFirstEntry();
-                }
-            }
-            return value;
-        }
     }
 
     private static final class CostAccumulator {

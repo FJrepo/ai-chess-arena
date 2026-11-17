@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
+
 ### Fixed
 
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
