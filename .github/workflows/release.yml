@@ -401,6 +401,9 @@ jobs:
             printf 'Multi-arch images (linux/amd64 + linux/arm64; index digests verified before promotion):\n'
             printf -- '- `%s:%s` (`%s`)\n' "$BACKEND_IMAGE" "$VERSION" "$BACKEND_DIGEST"
             printf -- '- `%s:%s` (`%s`)\n' "$FRONTEND_IMAGE" "$VERSION" "$FRONTEND_DIGEST"
+            printf '\n### Assets\n\n'
+            printf -- '- [docker-compose.yml](%s/%s/releases/download/%s/docker-compose.yml): images default to `%s`.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION" "$VERSION"
+            printf -- '- [.env.example](%s/%s/releases/download/%s/env.example) ([original filename](%s/%s/releases/download/%s/.env.example) if retained): set your OpenRouter key and database password. GitHub may strip the leading dot.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION"
             if [[ -n "$previous_tag" ]]; then
               printf '\n[Full Changelog](%s/%s/compare/%s...%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous_tag" "$VERSION"
             else
@@ -408,8 +411,18 @@ jobs:
             fi
           } >> release-notes.md
 
+      - name: Prepare setup assets
+        env:
+          VERSION: ${{ needs.validate-tag.outputs.version }}
+        run: python3 scripts/release_assets.py "$VERSION"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: false
           body_path: release-notes.md
+          # Attach at creation: release immutability prevents adding assets later.
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/docker-compose.yml
+            release-assets/.env.example

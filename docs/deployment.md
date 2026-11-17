@@ -1,16 +1,11 @@
 # Deployment Guide
 
 ## Overview
-This project supports two Docker-based run paths:
+Run released images with the two setup assets from [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases): `docker-compose.yml` and `.env.example`. No source checkout, Make, Java or Node.js is needed.
 
-- `docker-compose.yml`
-  - local development
-  - builds images from source on your machine
-- `docker-compose.prod.yml`
-  - released deployment
-  - pulls prebuilt frontend/backend images from GHCR
+The **downloaded** `docker-compose.yml` is generated from the repository's `docker-compose.prod.yml`, changing only the two `IMAGE_TAG` expressions to default to that release's exact `vX.Y.Z` tag. Both application images stay pinned even when you downloaded the files through the `latest` release URL. Explicit `IMAGE_TAG` and `IMAGE_NAMESPACE` settings still override those defaults.
 
-For normal releases, `docker-compose.prod.yml` is the supported deployment path.
+In a **source checkout**, `docker-compose.yml` builds the development stack from source; use `docker-compose.prod.yml` to run released images. That repository file continues to require an explicit `IMAGE_TAG`.
 
 ## Image Platforms
 Starting with the next release, both backend and frontend images are multi-arch OCI indexes for `linux/amd64` and `linux/arm64`, including Apple Silicon and ARM servers. Older release tags retain their original platforms. Docker selects the host's native platform automatically; Stockfish 19 uses the matching checksum-pinned universal binary.
@@ -20,10 +15,11 @@ To force a platform for a pull, use `docker pull --platform linux/arm64 ghcr.io/
 The Maven and Node build stages run on the builder's native platform. Only runtime stages target each architecture. This distribution change requires pulling the new release and recreating containers; it adds no migration or backfill and leaves existing persisted data unchanged.
 
 ## Prerequisites
-- Docker Engine 28.0+ with Docker Compose support, or a Docker Desktop release that includes Engine 28.0+
-- Make for the `make setup` helper
+- Docker Desktop on macOS or Windows (including Apple Silicon), or Docker Engine on Linux with Docker Compose support; the included Engine must be 28.0+
 - An OpenRouter API key
 - Access to public GHCR images for this repository
+
+Make is optional and used only by source-checkout helpers such as `make setup` and `make doctor`.
 
 Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 network to reach ports published to `127.0.0.1`. Upgrade the engine before relying on this project's localhost-only boundary; otherwise, enforce equivalent host-firewall isolation before starting the stack.
 
@@ -44,49 +40,64 @@ Back up before upgrading. Flyway V19 adds `tournaments.opening_mode` (Standard b
 Rebuild/recreate the backend and frontend when deploying this feature. Opening settings affect newly created games only, including bracket placeholders; a running or waiting game retains its original history. See [opening variety and series fairness](how-it-works.md#opening-variety). Restore the pre-upgrade backup to roll back: older versions cannot exclude book rows from model metrics. No container image dependency or third-party software is added by this feature.
 
 ## First-Time Setup
-1. Create the environment file with owner-only permissions:
+Download the two assets into a new directory (use `curl.exe` in Windows PowerShell):
 
 ```bash
-make setup
+mkdir chess-arena
+cd chess-arena
+curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
+curl -fL -o .env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
+cp .env.example .env
 ```
 
-`make setup` creates `.env` with mode `0600`. If the file already exists, it keeps the contents and tightens the permissions to `0600`.
+GitHub can strip leading periods from uploaded filenames, storing `.env.example` as `env.example`; the command saves it locally as `.env.example`. The release action retains `.env.example` as its display label. If your release retains the leading dot in the download name, use `/.env.example` instead of `/env.example` in that URL; release notes link both forms. See [GitHub's asset naming rules](https://docs.github.com/en/rest/releases/assets#upload-a-release-asset).
 
-2. Edit `.env` and set:
-- `IMAGE_NAMESPACE`
-  - your GitHub user or org that owns the published GHCR images
-- `IMAGE_TAG`
-  - required; a release version such as `v1.1.0` (see GitHub Releases)
-  - `latest` works but is a convenience tag; pinned versions give predictable upgrades
+On macOS/Linux, run `chmod 600 .env` to restrict credential access to your user; on Windows, restrict access with file permissions. Edit `.env`, setting only the two required values:
+
 - `OPENROUTER_API_KEY`
+  - your OpenRouter API key
 - `DB_PASSWORD`
-  - required; production Compose does not provide a fallback password
+  - choose a strong password; production Compose has no fallback and the database is not exposed to the host
   - single-quote a value containing `$` (for example, `DB_PASSWORD='literal$value'`) so Compose treats it literally
 
-3. Pull the published images:
+All other production variables are optional with release assets:
+
+| Variable | Default / behavior |
+|---|---|
+| `IMAGE_NAMESPACE` | `fjrepo`; change for images published by a fork |
+| `IMAGE_TAG` | Leave empty to use the downloaded release's tag; set an exact version to override it |
+| `DB_NAME` | `chess_tournament`; keep unchanged for existing volumes |
+| `DB_USER` | `chess`; keep unchanged for existing volumes |
+| `FRONTEND_PORT` | `4200`; change if that host port is already in use |
+| `ALLOWED_HOSTS` | Empty; localhost names are always allowed, see [host names](#host-names-allowed_hosts) |
+
+Start the stack; Docker pulls any missing images automatically:
+
+```bash
+docker compose up -d
+docker compose ps
+docker compose logs --tail=120 backend frontend
+```
+
+Open **http://localhost:4200** (or your `FRONTEND_PORT`). To select a specific release at download time, replace `/releases/latest/download/` in both URLs with `/releases/download/vX.Y.Z/`. Do not overwrite an existing `.env` during upgrades.
+
+### Source checkouts and operating commands
+
+In a source checkout, `make doctor` checks local prerequisites. `make setup` creates `.env` from the same template with mode `0600`, or preserves its contents and tightens permissions. Set an explicit `IMAGE_TAG` as well as the two credentials, then use:
 
 ```bash
 docker compose -f docker-compose.prod.yml pull
-```
-
-4. Start the stack:
-
-```bash
 docker compose -f docker-compose.prod.yml up -d
-```
-
-5. Verify container state:
-
-```bash
 docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=120 backend frontend
 ```
+
+The operating commands below use the source checkout's `-f docker-compose.prod.yml`. **With downloaded release assets, substitute `-f docker-compose.yml`** (or omit `-f` if no other Compose files are present). Keep the same installation directory and Compose project name when upgrading so the stack continues to use its existing database volume.
 
 ## Default Endpoints
 - Frontend: `http://localhost:${FRONTEND_PORT:-4200}`
 - Backend API: `http://localhost:${FRONTEND_PORT:-4200}/api` (proxied by the frontend)
 
-The backend publishes no host port in `docker-compose.prod.yml`. On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` and is reachable only from the Docker host.
+The backend and database publish no host ports in either released-image file. On the supported Docker Engine 28.0+ baseline, the frontend port binds to `127.0.0.1` and is reachable only from the Docker host. Setting `ALLOWED_HOSTS` does not change that binding. Set `FRONTEND_PORT` in `.env` and recreate the frontend to use a different host port.
 
 ### Direct backend access (debugging)
 Create `docker-compose.debug.yml`:
@@ -143,6 +154,8 @@ If the backend is already failing to connect, start only the database with the t
 0. Back up the database (see [Backups and rollback](#backups-and-rollback)).
 1. Update `IMAGE_TAG` in `.env`
    - recommended: move from one pinned tag to another pinned tag
+   - release-asset installs can instead download the new release's `docker-compose.yml` into the same directory and leave `IMAGE_TAG` empty; an existing non-empty override takes precedence
+   - keep your `.env`, database password and Compose project name; do not replace them with the new template
 2. Pull the new images:
 
 ```bash
@@ -210,7 +223,9 @@ docker compose -f docker-compose.prod.yml exec backend wget -qO- http://localhos
 ## Release Publishing Notes
 Release metadata explicitly preserves the backend Dockerfile's `org.opencontainers.image.licenses=MIT, GPL-3.0-or-later` label for bundled Stockfish; the repository's MIT licence must not override it. The frontend has no explicit Dockerfile licence label and retains its generated repository metadata. All other generated OCI labels are retained for both images. This applies to newly built release images only; existing images and persisted data are unchanged, with no migration or backfill.
 
-GitHub Release notes come from the tagged version's section in [CHANGELOG.md](../CHANGELOG.md), extracted by `python3 scripts/release_notes.py vX.Y.Z CHANGELOG.md --repository OWNER/REPO`. The workflow supplies the release tag and `GITHUB_REPOSITORY`. The introduction becomes Highlights, Upgrade notes comes first, and other sections retain changelog order. The workflow appends Verification with both image index digests and a Full Changelog comparison to the closest reachable previous `vX.Y.Z` tag (or the tagged commit history for the first release); it does not generate a PR list. A missing version entry fails tag validation before CI, builds or promotion.
+GitHub Release notes come from the tagged version's section in [CHANGELOG.md](../CHANGELOG.md), extracted by `python3 scripts/release_notes.py vX.Y.Z CHANGELOG.md --repository OWNER/REPO`. The workflow supplies the release tag and `GITHUB_REPOSITORY`. The introduction becomes Highlights, Upgrade notes comes first, and other sections retain changelog order. The workflow appends Verification with both image index digests, an Assets subsection linking the two setup files, and a Full Changelog comparison to the closest reachable previous `vX.Y.Z` tag (or the tagged commit history for the first release); it does not generate a PR list. A missing version entry fails tag validation before CI, builds or promotion.
+
+`python3 scripts/release_assets.py vX.Y.Z` writes `release-assets/docker-compose.yml` with both application images defaulting to the validated release tag, plus an exact copy of `.env.example`. Every other Compose byte is preserved. Both files are supplied to the same action step that creates the GitHub Release, with missing files treated as errors: release immutability prevents uploading them afterwards. GitHub may normalize the template's filename to `env.example`; release notes include both download forms. This adds no application migration or backfill and leaves existing installations and stored data unchanged. The assets become available when a release containing this workflow is published; older releases are unchanged.
 
 Repository-relative Markdown links resolve from the repository root to `https://github.com/OWNER/REPO/blob/vX.Y.Z/…`, preserving query strings and fragments; images use the corresponding `raw` URL. Absolute URLs, anchors and mail links are unchanged. Used reference definitions are collected from the entire changelog and appended to the notes, including definitions within an entry or after older releases. Only the next release heading (`## [`) ends an entry. Fenced code examples are preserved without interpreting their headings, references or links. These changes apply to future release generation; existing releases and persisted application data are unchanged.
 
@@ -219,7 +234,7 @@ Repository-relative Markdown links resolve from the repository root to `https://
   2. runs the full CI suite on the tagged commit
   3. builds both images for `linux/amd64,linux/arm64` and pushes OCI indexes only as `sha-<12-character-commit>` candidates
   4. verifies both platforms in both indexes, checks backend license files and labels per platform, runs the ARM64 Stockfish UCI handshake under QEMU, and starts the amd64 `docker-compose.prod.yml` stack to check health, the frontend, and the proxied API
-  5. copies both verified full indexes to `<tag>` and `latest`, then creates the GitHub Release with changelog notes and index digest lines
+  5. copies both verified full indexes to `<tag>` and `latest`, then creates the GitHub Release with changelog notes, index digest lines and both setup assets
 - Published tags:
   - `ghcr.io/<owner>/chess-backend:<tag>` and `:latest`
   - `ghcr.io/<owner>/chess-frontend:<tag>` and `:latest`

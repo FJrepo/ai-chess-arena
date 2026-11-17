@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- GitHub Release setup assets: `docker-compose.yml` defaults both application images to the release's version tag, alongside `.env.example`. Both assets are attached when the immutable release is created and linked under Verification / Assets in its notes.
+
+### Changed
+- Set up from Docker and two downloaded release assets: the README now gives a 5-minute start with only an OpenRouter key and a user-chosen database password to configure. The production image namespace defaults to `fjrepo`; explicit namespace/tag overrides and existing database volumes remain supported. The repository's `docker-compose.prod.yml` still requires an explicit image tag.
+
 ## [1.5.0] - 2026-11-17
 
 Variety and robustness: opening variety (standard, random book line or a fixed opening), optional win adjudication with missed-mate markers and a Conversion table, cancelling a tournament, a random bracket draw, prompt-caching metrics, drawn SVG chess pieces, Stockfish 19, and release images for amd64 and arm64 (Apple Silicon runs natively). Release notes now come from this changelog.
