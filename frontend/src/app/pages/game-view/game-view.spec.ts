@@ -1732,6 +1732,25 @@ describe('GameView', () => {
     component.ngOnDestroy();
   });
 
+  it('retires legacy actions when polling discovers the upgraded backend before the ack', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const retired = new Subject<Game>();
+    Object.assign(api, { startGame: () => retired });
+    component.ngOnInit();
+    messages.next({ type: 'subscriptionUnavailable', gameId: 'g-1' });
+    gameLoad.next(gameWith({ statusRevision: 7, status: 'PAUSED' }));
+    component.resumeGame();
+    component.loadGame();
+    gameLoad.next(
+      gameWith({ liveRevision: 0, statusRevision: 0, streamId: 'new', status: 'PAUSED' }),
+    );
+    expect(component.game()?.liveRevision).toBe(0);
+    retired.next(gameWith({ statusRevision: 8, status: 'IN_PROGRESS' }));
+    expect(component.game()?.status).toBe('PAUSED');
+    expect(component.game()?.statusRevision).toBe(0);
+    component.ngOnDestroy();
+  });
+
   it('does not resume after a delayed key check from a retired or destroyed view', () => {
     const { component, gameLoad, messages, api } = createSpectator(false);
     const callbacks: Array<() => void> = [];

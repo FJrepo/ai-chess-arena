@@ -525,8 +525,14 @@ export class GameView implements OnInit, OnDestroy {
             const incomingStream = game.streamId ?? null;
             const streamChanged =
               incomingStream != null && this.streamId != null && incomingStream !== this.streamId;
-            const legacyDowngrade = game.liveRevision == null && this.game()?.liveRevision != null;
-            if (streamChanged || legacyDowngrade) {
+            const displayed = this.game();
+            const legacyUpgrade =
+              incomingStream != null &&
+              this.streamId == null &&
+              displayed != null &&
+              displayed.liveRevision == null;
+            const legacyDowngrade = game.liveRevision == null && displayed?.liveRevision != null;
+            if (streamChanged || legacyUpgrade || legacyDowngrade) {
               if (!this.snapshotFallback) {
                 this.scheduleSnapshotRetry();
                 return;
