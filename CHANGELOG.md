@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
+
 ## [1.7.1] - 2026-11-17
 
 Patch release: fairness and correctness fixes. A tournament can no longer forfeit a game without asking the model (zero attempts, or a cache-marker rejection followed by a timeout), viewers only see moves that were actually saved, and the scoresheet records the move the board played. In auto-run, Resume now queues while all slots are busy instead of failing. Back up the database before upgrading.
