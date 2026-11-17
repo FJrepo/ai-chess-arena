@@ -18,7 +18,7 @@ import { TournamentCostSummary } from '../../models/analytics.model';
 import { BracketDisplay } from '../../components/bracket-display/bracket-display';
 import { tournamentStatusLabel } from '../../utils/status-labels';
 import { downloadBlob } from '../../utils/download';
-import { canonicalBudget } from '../../utils/tournament-budget';
+import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 
 @Component({
   selector: 'app-tournament-bracket',
@@ -91,7 +91,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   get validRunBudget(): boolean {
     const budget = this.runBudget;
     if (budget === '') return true;
-    if (!/^(?:\d{1,17}(?:\.\d{0,2})?|\.\d{1,2})$/.test(budget)) return false;
+    if (!isBudgetDecimal(budget)) return false;
     const amount = Number(budget);
     return (
       amount > 0 &&

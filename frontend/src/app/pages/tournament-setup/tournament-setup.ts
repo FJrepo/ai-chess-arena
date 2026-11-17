@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { canonicalBudget } from '../../utils/tournament-budget';
+import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -302,8 +302,7 @@ Your opponent is %s (%s).`;
     return (
       concurrency !== null &&
       this.concurrencyOptions.includes(concurrency) &&
-      (budget === '' ||
-        /^(?=.{1,20}$)(?=.*[1-9])(?:\d{1,17}(?:\.\d{0,2})?|\.\d{1,2})$/.test(budget))
+      (budget === '' || (isBudgetDecimal(budget) && /[1-9]/.test(budget)))
     );
   });
 

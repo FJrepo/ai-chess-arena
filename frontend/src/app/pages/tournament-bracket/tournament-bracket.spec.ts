@@ -604,6 +604,32 @@ describe('TournamentBracket', () => {
     },
   );
 
+  it.each([
+    ['OFF', '5.0.1'],
+    ['PAUSED', '5.000'],
+    ['RUNNING', '000000000000000005'],
+  ] as const)(
+    'preserves malformed budget text across polls when %s (%s)',
+    async (status, malformed) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      await fixture.whenStable();
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      input.value = malformed;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      component.loadTournament();
+      fixture.detectChanges();
+      expect(component.runBudget).toBe(malformed);
+      expect(fixture.nativeElement.querySelector('#run-budget-error')).not.toBeNull();
+      const action = status === 'RUNNING' ? '.save-run' : '.start-run';
+      expect(fixture.nativeElement.querySelector(action).disabled).toBe(true);
+      component.runTournament();
+      component.saveRunSettings();
+      expect(api.runTournament).not.toHaveBeenCalled();
+      expect(api.updateTournamentRun).not.toHaveBeenCalled();
+    },
+  );
+
   it('submits a decimal budget as a number after correcting invalid input', async () => {
     const { fixture, component, api } = runPage();
     await fixture.whenStable();
