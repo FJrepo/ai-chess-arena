@@ -451,13 +451,15 @@ The analytics page shares its analysis window, tournament and minimum-games filt
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 
-Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries. Shared filters and the refresh schedule stay in place.
+
+Changing a shared filter clears the previous results and cancels pending report requests. Each report loads the new selection independently. Every 15 seconds, the dashboard refreshes each report that has no request in progress. A request still pending after 60 seconds times out and becomes eligible for the next poll. **Sync Data** replaces any pending requests immediately.
 
 Every model answer is stored, including rejected ones: the game feed lists failed attempts per move (for example "2 failed attempts: illegal Qxh7, unparseable answer") and, separately, answers cut off at the token limit, which are not counted as the model's failures, and `GET /api/games/{id}/attempts` returns them with tokens, cost and finish reason.
 
 Game, tournament and per-model costs include rejected answers. Costs are as reported by OpenRouter.
 
-Health, reliability and comparison each cache up to 64 filter combinations for 15 seconds. Applying a filter clears expired entries from that view's cache. At capacity, a new combination replaces the least recently used one.
+Health, reliability and comparison each cache up to 64 filter combinations for 30 seconds after a successful load. Concurrent requests for the same view and filters share one load. A failed load can be retried on the next request. Health reads games, moves and rejected-attempt spend, including unfinished games in the selected window.
 
 ### Finished games and reliability score
 
@@ -509,7 +511,7 @@ OpenRouter's `usage.prompt_tokens_details.cached_tokens` and `cache_write_tokens
 
 Estimated savings are `cached tokens × (pricing.prompt − pricing.input_cache_read)` using the **current** OpenRouter catalog's USD **per-token** prices. Missing, invalid, variable or unavailable prices mean **n/a**; a reported price of zero is valid. This is an estimate of the cache-read discount, not a historical billing reconstruction or net savings after cache-write charges. Cache writes are measured separately.
 
-Each comparison uses one cached catalog price snapshot for every model row and never waits for catalog I/O. With an empty or expired cache, a single background refresh updates prices for later comparisons; an existing stale snapshot remains usable. Failed refreshes wait 60 seconds after failure before another attempt, including when there is no cached catalog. A cold-cache comparison shows **n/a** for savings until prices become available and the comparison cache (15 seconds) expires.
+Each comparison uses one cached catalog price snapshot for every model row and never waits for catalog I/O. With an empty or expired cache, a single background refresh updates prices for later comparisons; an existing stale snapshot remains usable. Failed refreshes wait 60 seconds after failure before another attempt, including when there is no cached catalog. A cold-cache comparison shows **n/a** for savings until prices become available and the comparison cache (30 seconds) expires.
 
 All existing costs continue to use OpenRouter's returned `usage.cost`, which already reflects provider billing (including cache reads and writes); the app does not recalculate billed costs from catalog list prices. Comparison API rows add `promptCaching` with `promptTokens`, `cachedPromptTokens`, `cacheHitRate`, `cacheWriteTokens` and `estimatedSavingsUsd`; unknown values may be omitted. These metrics also measure the [append-only prompt window and cache breakpoints](#prompt-caching); older attempts and their recorded counters remain unchanged.
 
