@@ -12,7 +12,15 @@ public class GameRecovery {
     @Inject
     GameLifecycleService gameLifecycleService;
 
+    @Inject
+    TournamentAutoRunService autoRuns;
+
+    @Inject
+    TournamentRunScheduler scheduler;
+
     void onStart(@Observes StartupEvent event) {
+        autoRuns.pauseRunsOrphanedByRestart();
         gameLifecycleService.pauseGamesOrphanedByRestart();
+        scheduler.recoveryComplete();
     }
 }

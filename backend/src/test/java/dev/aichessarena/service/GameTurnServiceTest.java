@@ -1040,6 +1040,11 @@ class GameTurnServiceTest {
         private String pauseDetail;
 
         @Override
+        public boolean adjudicateIfEligible(UUID gameId, String expectedFen) {
+            return false;
+        }
+
+        @Override
         public void forfeitTimeout(UUID gameId, String forfeitColor, int moveTimeoutSeconds) {
             lastForfeitColor = forfeitColor;
             lastTimeoutSeconds = moveTimeoutSeconds;

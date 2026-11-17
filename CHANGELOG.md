@@ -7,16 +7,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- Back up before upgrading. Flyway `V20__tournament_auto_run.sql` adds run status (existing tournaments `OFF`), concurrency (default 2), nullable budget and pause reason. Existing games, results and spend remain unchanged; no backfill. Rebuild/recreate backend and frontend. Backend restarts pause active runs with “Backend restarted”; resume the run and its paused games explicitly. Restore the pre-upgrade backup to roll back.
+
 ### Added
 - Cross-tournament Leaderboard with all-time Elo per OpenRouter model id, provisional and moving-alias badges, bounded rating-history sparklines and an include-forfeits toggle. Ratings replay finished model-vs-model outcomes on each request through `GET /api/analytics/leaderboard`; no migration or backfill.
 - GitHub Release setup assets from v1.6.0: `docker-compose.yml` defaults both application images to the release's version tag, alongside `env.example`. Both assets are attached when the immutable release is created and linked under Verification / Assets in its notes.
 - Python 3.12 script tests in reusable CI, gating pull requests and releases with the same dependency installation and unittest discovery.
+- Auto-run tournaments from the bracket page or `/api/tournaments/{id}/run`, with 1–8 concurrent games (default 2), optional USD budget, pause/resume, editable limits, spend and attention banner. Ready model games start in bracket order through the atomic start path; paused and human games need manual attention. Budget checks before each request/retry and after every attempt pause the run and its running games at the cap; in-flight answers may overshoot. Manual play without a run ignores run limits. Cancellation stops scheduling and restart recovery requires explicit resume.
 
 ### Changed
 - Keep the v1.5.0 source-checkout quick start in the README; document the two-file 5-minute start in the deployment guide for v1.6.0 onward. The production image namespace defaults to `fjrepo`; explicit namespace/tag overrides and existing database volumes remain supported. The repository's `docker-compose.prod.yml` still requires an explicit image tag.
 - Tournament setup page: the add-participant form comes first, and the tournament name, seeded lineup, readiness checklist and Create button sit together in the right column, with the estimate below it. The column stays sticky only when its measured height fits the window with space above and below; without ResizeObserver support, it uses normal page scrolling. Below 1200px, settings precede the lineup to match keyboard navigation. Participant reasoning-effort overrides remain visible in roster rows. Participant and shared custom instructions and the system rules are collapsed by default; collapsing participant instructions preserves the draft when adding. Long helper texts are now one line with details in a "?" tooltip. The estimate reads as a rough heuristic ("Tournament Estimate", "about $X", "can be higher with reasoning models"), and the risk bands are Low risk / Moderate risk / High cost.
 
 ### Fixed
+- Complete accepted terminal moves and eligible stored-evaluation adjudications before attempt budget checks stop a game loop, preserving results, series/bracket advancement and after-commit updates. Resignations retain the same completion precedence; cancellation still prevents advancement.
+- Preserve budget input text so malformed amounts such as `1e` block Run, Resume and Save limits with a validation message. Only an explicitly empty field removes the cap.
 - Generate and upload the release template explicitly as `env.example`, with one canonical download link in release notes, avoiding GitHub's renaming of dot-prefixed assets.
 - Create the downloaded setup's `.env` with mode `0600` before editing on macOS/Linux; document keeping it private in the Windows user profile. Source-checkout `make setup` continues to enforce `0600` while preserving existing credentials.
 

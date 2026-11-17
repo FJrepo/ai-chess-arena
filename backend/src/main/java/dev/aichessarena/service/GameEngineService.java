@@ -15,6 +15,9 @@ import io.quarkus.arc.ManagedContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.transaction.TransactionSynchronizationRegistry;
+import jakarta.transaction.Status;
+import jakarta.transaction.Synchronization;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -52,6 +55,9 @@ public class GameEngineService {
     @Inject
     GameConversationService gameConversationService;
 
+    @Inject
+    TransactionSynchronizationRegistry transactionRegistry;
+
     /**
      * One entry per game loop that is alive. The entry belongs to exactly one loop (identity matters):
      * a pause only flags it, and only the owning loop removes it when it exits, so a resumed game can
@@ -77,18 +83,43 @@ public class GameEngineService {
      * @throws WebApplicationException 409 if the game is running, in progress or finished; 404 if it does not exist
      */
     public GameDto startGame(UUID gameId) {
+        return startGame(gameId, false);
+    }
+
+    public GameDto startWaitingGame(UUID gameId) {
+        return startGame(gameId, true);
+    }
+
+    private GameDto startGame(UUID gameId, boolean automatic) {
         GameLoop loop = tryClaimLoop(gameId);
         if (loop == null) {
             throw new GameStateConflictException("Game is already running");
         }
         GameDto started;
         try {
-            started = gameLifecycleService.markGameStarted(gameId);
+            started = automatic ? gameLifecycleService.markGameStarted(gameId, true)
+                    : gameLifecycleService.markGameStarted(gameId);
         } catch (RuntimeException e) {
             runningGames.remove(gameId, loop);
             throw e;
         }
-        spawnGameLoop(gameId, loop, null, null);
+        if (transactionRegistry != null && transactionRegistry.getTransactionStatus() == Status.STATUS_ACTIVE) {
+            transactionRegistry.registerInterposedSynchronization(new Synchronization() {
+                @Override
+                public void beforeCompletion() {}
+
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == Status.STATUS_COMMITTED) {
+                        spawnGameLoop(gameId, loop, null, null);
+                    } else {
+                        runningGames.remove(gameId, loop);
+                    }
+                }
+            });
+        } else {
+            spawnGameLoop(gameId, loop, null, null);
+        }
         return started;
     }
 

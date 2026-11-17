@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  TournamentRunSettings,
   BracketDrawMode,
   ChatMode,
   Tournament,
@@ -79,6 +80,18 @@ export class ApiService {
 
   cancelTournament(id: string): Observable<Tournament> {
     return this.http.post<Tournament>(`${this.baseUrl}/tournaments/${id}/cancel`, {});
+  }
+
+  runTournament(id: string, settings: TournamentRunSettings): Observable<Tournament> {
+    return this.http.post<Tournament>(`${this.baseUrl}/tournaments/${id}/run`, settings);
+  }
+
+  updateTournamentRun(id: string, settings: TournamentRunSettings): Observable<Tournament> {
+    return this.http.put<Tournament>(`${this.baseUrl}/tournaments/${id}/run`, settings);
+  }
+
+  pauseTournamentRun(id: string): Observable<Tournament> {
+    return this.http.post<Tournament>(`${this.baseUrl}/tournaments/${id}/run/pause`, {});
   }
 
   addParticipant(tournamentId: string, data: Partial<Participant>): Observable<Participant> {

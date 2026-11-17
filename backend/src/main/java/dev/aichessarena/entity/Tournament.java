@@ -2,6 +2,7 @@ package dev.aichessarena.entity;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +22,19 @@ public class Tournament extends PanacheEntityBase {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     public TournamentStatus status = TournamentStatus.CREATED;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auto_run_status", nullable = false, length = 16)
+    public AutoRunStatus autoRunStatus = AutoRunStatus.OFF;
+
+    @Column(name = "max_concurrent_games", nullable = false)
+    public int maxConcurrentGames = 2;
+
+    @Column(name = "budget_usd", precision = 19, scale = 2)
+    public BigDecimal budgetUsd;
+
+    @Column(name = "auto_run_pause_reason", length = 500)
+    public String autoRunPauseReason;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -139,6 +153,10 @@ public class Tournament extends PanacheEntityBase {
     /** True unless chat is OFF; the API still reports this as {@code trashTalkEnabled}. */
     public boolean isTrashTalkEnabled() {
         return chatMode != ChatMode.OFF;
+    }
+
+    public enum AutoRunStatus {
+        OFF, RUNNING, PAUSED, FINISHED
     }
 
     public enum TournamentStatus {

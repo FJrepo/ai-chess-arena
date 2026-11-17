@@ -44,6 +44,214 @@ describe('TournamentBracket', () => {
     return fixture.nativeElement;
   }
 
+  function runPage(
+    status: Tournament['status'] = 'IN_PROGRESS',
+    runStatus: Tournament['autoRunStatus'] = 'OFF',
+  ) {
+    const current: Tournament = {
+      ...tournament(status, null, finalGame({ status: 'WAITING' })),
+      autoRunStatus: runStatus,
+      maxConcurrentGames: 2,
+      budgetUsd: 5,
+    };
+    const api = {
+      getTournament: vi.fn().mockReturnValue(of(current)),
+      getTournamentCostSummary: () => EMPTY,
+      runTournament: vi.fn().mockReturnValue(of({ ...current, autoRunStatus: 'RUNNING' })),
+      updateTournamentRun: vi.fn().mockReturnValue(of(current)),
+      pauseTournamentRun: vi
+        .fn()
+        .mockReturnValue(
+          of({ ...current, autoRunStatus: 'PAUSED', autoRunPauseReason: 'Paused by user' }),
+        ),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: api },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: current.id }) } },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentBracket);
+    fixture.detectChanges();
+    return { fixture, api, component: fixture.componentInstance, current };
+  }
+
+  it('runs with selected concurrency and nullable budget and renders spend and attention', () => {
+    const { fixture, component, api, current } = runPage();
+    component.runConcurrency = 3;
+    component.runBudget = '';
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledWith('t-1', {
+      maxConcurrentGames: 3,
+      budgetUsd: null,
+    });
+    component.tournament.set({
+      ...current,
+      autoRunStatus: 'RUNNING',
+      games: [
+        finalGame({ status: 'IN_PROGRESS', totalCostUsd: 1.23 }),
+        finalGame({ id: 'paused', status: 'PAUSED', totalCostUsd: 0.5 }),
+      ],
+    });
+    fixture.detectChanges();
+    const banner = fixture.nativeElement.querySelector('.run-status').textContent;
+    expect(banner).toContain('Running');
+    expect(banner).toContain('1 of 2 games');
+    expect(banner).toContain('$1.73');
+    expect(banner).toContain('$5.00');
+    expect(banner).toContain('1 games need attention');
+  });
+
+  it('pauses, resumes and edits limits without implicitly resuming', () => {
+    const { fixture, component, api } = runPage('IN_PROGRESS', 'RUNNING');
+    (fixture.nativeElement.querySelector('.pause-run') as HTMLButtonElement).click();
+    expect(api.pauseTournamentRun).toHaveBeenCalledWith('t-1');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Paused by user');
+    expect(fixture.nativeElement.querySelector('.start-run').textContent).toContain('Resume run');
+    component.runBudget = '10';
+    component.saveRunSettings();
+    expect(api.updateTournamentRun).toHaveBeenCalledWith('t-1', {
+      maxConcurrentGames: 2,
+      budgetUsd: 10,
+    });
+    expect(api.runTournament).not.toHaveBeenCalled();
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledOnce();
+  });
+
+  it.each(['COMPLETED', 'CANCELLED'] as const)('disables run actions for %s', (status) => {
+    const { fixture, component, api } = runPage(status);
+    expect((fixture.nativeElement.querySelector('.start-run') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    component.runTournament();
+    component.pauseRun();
+    component.saveRunSettings();
+    expect(api.runTournament).not.toHaveBeenCalled();
+    expect(api.pauseTournamentRun).not.toHaveBeenCalled();
+    expect(api.updateTournamentRun).not.toHaveBeenCalled();
+  });
+
+  it.each(['0', '-1', '0.001', 'NaN', 'Infinity', '1e', 'abc', ' '])(
+    'rejects invalid budget %s',
+    (budget) => {
+      const { component, api } = runPage();
+      component.runBudget = budget;
+      component.runTournament();
+      expect(component.validRunSettings).toBe(false);
+      expect(api.runTournament).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['OFF', 'PAUSED', 'RUNNING'] as const)(
+    'preserves malformed 1e and blocks run/resume/save with a message when %s',
+    async (status) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      await fixture.whenStable();
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      expect(input.value).toBe('5');
+      input.value = '1e';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(component.runBudget).toBe('1e');
+      expect(component.validRunSettings).toBe(false);
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain(
+        'Enter a positive budget with at most two decimal places',
+      );
+      const run = fixture.nativeElement.querySelector('.start-run') as HTMLButtonElement | null;
+      if (run) expect(run.disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.save-run').disabled).toBe(true);
+      component.runTournament();
+      component.saveRunSettings();
+      component.loadTournament();
+      expect(component.runBudget).toBe('1e');
+      expect(api.runTournament).not.toHaveBeenCalled();
+      expect(api.updateTournamentRun).not.toHaveBeenCalled();
+      expect(component.tournament()?.budgetUsd).toBe(5);
+    },
+  );
+
+  it.each(['OFF', 'PAUSED', 'RUNNING'] as const)(
+    'allows deliberately clearing an existing cap after malformed input when %s',
+    async (status) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      await fixture.whenStable();
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      input.value = '1e';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(component.runBudget).toBe('');
+      expect(component.validRunSettings).toBe(true);
+      expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+      const action = status === 'RUNNING' ? '.save-run' : '.start-run';
+      expect(fixture.nativeElement.querySelector(action).disabled).toBe(false);
+      (fixture.nativeElement.querySelector(action) as HTMLButtonElement).click();
+      const request = status === 'RUNNING' ? api.updateTournamentRun : api.runTournament;
+      expect(request).toHaveBeenCalledExactlyOnceWith('t-1', {
+        maxConcurrentGames: 2,
+        budgetUsd: null,
+      });
+    },
+  );
+
+  it('submits a decimal budget as a number after correcting invalid input', async () => {
+    const { fixture, component, api } = runPage();
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    for (const value of ['1e', '1.25']) {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+    }
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledExactlyOnceWith('t-1', {
+      maxConcurrentGames: 2,
+      budgetUsd: 1.25,
+    });
+  });
+
+  it('keeps drafts across polls and ignores a poll predating a run change', () => {
+    const { component, api, current } = runPage();
+    component.runBudget = '9';
+    component.runDraftDirty = true;
+    component.loadTournament();
+    expect(component.runBudget).toBe('9');
+    const oldPoll = new Subject<Tournament>();
+    api.getTournament.mockReturnValueOnce(oldPoll);
+    component.loadTournament();
+    const pending = new Subject<Tournament>();
+    api.runTournament.mockReturnValue(pending);
+    component.runTournament();
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledOnce();
+    oldPoll.next({ ...current, status: 'CANCELLED' });
+    expect(component.tournament()?.status).toBe('IN_PROGRESS');
+    pending.next({ ...current, autoRunStatus: 'RUNNING', budgetUsd: 9 });
+    oldPoll.next(current);
+    expect(component.tournament()?.autoRunStatus).toBe('RUNNING');
+    expect(component.runBusy()).toBe(false);
+    expect(component.runDraftDirty).toBe(false);
+  });
+
+  it('surfaces run failures and releases the controls', () => {
+    const { component, api } = runPage();
+    api.runTournament.mockReturnValue(throwError(() => ({ error: { error: 'Budget rejected' } })));
+    component.runTournament();
+    expect(component.runBusy()).toBe(false);
+    expect(document.body.textContent).toContain('Budget rejected');
+  });
+
   it('is hidden while the tournament is still running', () => {
     const el = render(tournament('IN_PROGRESS', 'White', finalGame({ status: 'WAITING' })));
 

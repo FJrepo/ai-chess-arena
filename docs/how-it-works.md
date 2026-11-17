@@ -5,6 +5,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 ## Contents
 
 - [Tournament formats and draw policies](#tournament-formats-and-draw-policies)
+- [Auto-run](#auto-run)
 - [Opening variety](#opening-variety)
 - [Cancelling a tournament](#cancelling-a-tournament)
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
@@ -52,6 +53,28 @@ When level after N games (or a drawn single game), the tournament's draw policy 
 ### Cost estimate
 
 The **cost estimate** before you start shows expected games, runtime and spend for the chosen models and format.
+
+## Auto-run
+
+Generate a bracket, then choose **Run tournament** on the tournament page. **Concurrent games** defaults to 2 and accepts 1–8. Leave **Budget (USD, optional)** empty for no cap, or enter a positive decimal amount with at most two decimal places. Invalid text such as `1e` shows a validation message and blocks Run, Resume and Save limits; it never removes an existing cap. Deliberately clearing the field removes the cap when you submit. The banner shows run status, running games against the limit, total reported spend against the budget, and how many paused games need attention. It refreshes with the page's 15-second polling interval.
+
+Auto-run starts ready **Waiting** model-vs-model games in bracket order (earlier rounds, bracket position, then series game number), filling free slots as games end and series/bracket advancement creates the next games. Byes and unknown pairings are skipped. Games containing a **human player must be started manually**; while running, they count toward the concurrency cap too. Manual starts share the run's cap, so simultaneous Battle clicks and scheduler notifications cannot start the same game twice or exceed it.
+
+Paused games never start automatically and do not occupy a concurrency slot. A provider problem or cut-off answer needs the operator to fix settings and resume that game from its game view. **Pause** stops scheduling and pauses every running game through the normal game lifecycle. **Resume run** enables scheduling of waiting games again; separately resume any paused games you want to continue. A paused run rejects manual starts until the run is resumed. **Save limits** changes the budget/concurrency immediately without resuming a paused run. Reducing concurrency pauses games beyond the new limit, keeping the earliest bracket games running; those paused games also need manual attention.
+
+Spend is the sum of every game’s `totalCostUsd` in the tournament, including historical spend and failed or discarded attempts. Before every model request (including retries), and after every recorded attempt, the backend compares spend against the cap. At or above it, the run becomes **Paused** with `Budget of $X reached ($Y spent)` and every unfinished running game pauses with that reason. An accepted terminal move (mate or automatic draw), resignation or eligible adjudication using already stored evaluations completes and advances the series/bracket before its attempt triggers the budget pause; finished games keep their results. Cancellation still prevents completion and advancement. Lowering a running budget below current spend pauses immediately. Raise or remove the cap and resume the run, then resume paused games manually. **A budget is not a hard billing limit:** one in-flight answer can overshoot it slightly; with concurrent games, several already in-flight answers can still add cost after pausing. Provider-reported spend remains authoritative.
+
+Without an enabled run (`OFF`), manual play ignores the saved run budget and concurrency settings. Finishing a run sets `FINISHED`; cancellation switches it `OFF` and is final. After a backend restart, a previously `RUNNING` run becomes `PAUSED` with **Backend restarted**; GameRecovery pauses its interrupted games. Resume the run and its games explicitly. Notifications trigger scheduling after commit, with a 10-second safety tick; no model request or automatic start is made during startup recovery.
+
+API (all changes take the tournament row lock):
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /api/tournaments/{id}/run` | Start/resume with a JSON object containing optional `maxConcurrentGames` and `budgetUsd`. |
+| `PUT /api/tournaments/{id}/run` | Save limits without changing a paused/off run into a running one. |
+| `POST /api/tournaments/{id}/run/pause` | Pause the run and its running games; no body required. |
+
+Omitted fields retain saved values (initially 2 and no budget); explicit `budgetUsd: null` removes the cap. Concurrency must be an integer 1–8, budget a positive JSON number with at most two decimal places; invalid bodies/unknown fields return 400. Missing tournaments return 404; tournaments without a generated bracket, completed tournaments and cancelled tournaments return 409. Responses and tournament reads include `autoRunStatus` (`OFF`, `RUNNING`, `PAUSED`, `FINISHED`), `maxConcurrentGames`, `budgetUsd` (always present, nullable) and `autoRunPauseReason` when paused. For example, start with `{"maxConcurrentGames": 2, "budgetUsd": 5.00}`.
 
 ## Opening variety
 
