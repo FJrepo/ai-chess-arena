@@ -516,6 +516,9 @@ export class GameView implements OnInit, OnDestroy {
           return;
         }
         this.loadInFlight = false;
+        // Respect navigation while the request was in flight; only a live-following viewer advances.
+        const selectedMoveIndex = this.currentMoveIndex();
+        const wasAtLatest = this.game() === null || selectedMoveIndex === this.moves().length - 1;
         const sorted = sortMovesInPlayOrder(game.moves || []);
         const moves = keepLiveEvaluations(sorted, this.moves());
         const keptLive = moves.some((move, index) => move !== sorted[index]);
@@ -536,9 +539,9 @@ export class GameView implements OnInit, OnDestroy {
         if (isFinishedStatus(reconciled.status)) this.pendingPromotion.set(null);
         this.moves.set(moves);
         this.chatMessages.set(game.chatMessages || []);
-        if (moves.length) {
-          this.currentMoveIndex.set(moves.length - 1);
-        }
+        this.currentMoveIndex.set(
+          wasAtLatest ? moves.length - 1 : Math.min(selectedMoveIndex, moves.length - 1),
+        );
         // A status change announced before the first snapshot arrived is newer than the snapshot: the replay
         // below applies it, and the stored game is read again for the details that only it carries.
         const announced = highestStatusRevision(this.bufferedLiveMessages);
