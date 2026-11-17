@@ -131,7 +131,7 @@ class TournamentCancellationIT {
         assertEquals(3, updates.size());
         assertEquals(costBefore, analyticsService.getTournamentCostSummary(id));
         assertEquals(2, QuarkusTransaction.requiringNew().call(() -> analytics.loadTerminalScope(30, id).games().size()));
-        assertEquals(2, QuarkusTransaction.requiringNew().call(() -> analytics.loadScope(30, id).games().size()));
+        assertEquals(2, QuarkusTransaction.requiringNew().call(() -> analytics.loadHealthScope(30, id).games().size()));
         assertEquals(2, QuarkusTransaction.requiringNew().call(() -> analyticsService.getComparison(30, id, 0).gamesCount()));
     }
 

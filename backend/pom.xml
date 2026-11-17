@@ -74,6 +74,12 @@
             <artifactId>quarkus-rest-client-jackson</artifactId>
         </dependency>
 
+        <!-- Analytics response cache (also used by Quarkus Hibernate ORM) -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Database -->
         <dependency>
             <groupId>io.quarkus</groupId>

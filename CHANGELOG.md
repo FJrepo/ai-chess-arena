@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
+
 ### Fixed
 
 - System Status shows a neutral validation state for untested OpenRouter keys and unavailable checks. Testing the key updates the status card.
