@@ -2196,8 +2196,8 @@ describe('GameView resume while saving', () => {
   });
 });
 
-describe('GameView promotion picker', () => {
-  function renderPicker(currentFen: string) {
+describe('GameView piece images', () => {
+  function renderGame(currentFen = START_FEN) {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -2228,22 +2228,83 @@ describe('GameView promotion picker', () => {
     });
     const fixture = TestBed.createComponent(GameView);
     fixture.detectChanges();
+    return fixture;
+  }
+
+  function renderPicker(currentFen: string) {
+    const fixture = renderGame(currentFen);
     fixture.componentInstance.pendingPromotion.set({ from: 'e7', to: 'e8' });
     fixture.detectChanges();
     return fixture;
   }
 
   it.each([
-    ['WHITE', START_FEN, 'white-piece'],
-    ['BLACK', AFTER_E4, 'black-piece'],
-  ])('shows the four piece glyphs in %s colours, not escape text', (_color, fen, pieceClass) => {
+    ['WHITE', START_FEN, 'w'],
+    ['BLACK', AFTER_E4, 'b'],
+  ])('shows %s promotion images with decorative alt and named buttons', (color, fen, prefix) => {
     const fixture = renderPicker(fen);
-    const pieces = Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('.promotion-picker .promotion-piece'),
+    fixture.componentInstance.game.set(
+      gameWith({
+        currentFen: fen,
+        [color === 'WHITE' ? 'whiteControlType' : 'blackControlType']: 'HUMAN',
+      }),
     );
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const pieces = Array.from(element.querySelectorAll('.promotion-picker img.promotion-piece'));
+    const buttons = Array.from(element.querySelectorAll('.promotion-btn'));
 
-    expect(pieces.map((piece) => piece.textContent?.trim())).toEqual(['♛', '♜', '♝', '♞']);
-    expect(pieces.every((piece) => piece.classList.contains(pieceClass))).toBe(true);
+    expect(pieces.map((piece) => piece.getAttribute('src'))).toEqual(
+      ['Q', 'R', 'B', 'N'].map((type) => `pieces/cburnett/${prefix}${type}.svg`),
+    );
+    expect(pieces.map((piece) => piece.getAttribute('alt'))).toEqual(['', '', '', '']);
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Promote to queen',
+      'Promote to rook',
+      'Promote to bishop',
+      'Promote to knight',
+    ]);
+    (buttons[2] as HTMLButtonElement).click();
+    expect(TestBed.inject(ApiService).submitHumanMoveCoordinates).toHaveBeenCalledWith(
+      'g-1',
+      'e7',
+      'e8',
+      'B',
+      null,
+    );
+    fixture.destroy();
+  });
+
+  it('renders a named image per captured piece with the captured side colour', () => {
+    const fixture = renderGame();
+    const component = fixture.componentInstance;
+    component.moves.set([
+      storedMove(5, 'WHITE', 'Qxe2', 'rnb1kbnr/ppp1pppp/8/8/8/2N5/PPPPQPPP/R1B1K1NR b KQkq - 0 5'),
+    ]);
+    component.goLast();
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const whiteCaptures = element.querySelectorAll('.capture-strip.top img.captured-piece');
+    const blackCaptures = element.querySelectorAll('.capture-strip.bottom img.captured-piece');
+
+    expect(whiteCaptures).toHaveLength(2);
+    expect(whiteCaptures[0].getAttribute('src')).toBe('pieces/cburnett/bQ.svg');
+    expect(whiteCaptures[0].getAttribute('alt')).toBe('black queen');
+    expect(whiteCaptures[1].getAttribute('src')).toBe('pieces/cburnett/bP.svg');
+    expect(whiteCaptures[1].getAttribute('alt')).toBe('black pawn');
+    expect(blackCaptures).toHaveLength(2);
+    expect(blackCaptures[0].getAttribute('src')).toBe('pieces/cburnett/wB.svg');
+    expect(blackCaptures[0].getAttribute('alt')).toBe('white bishop');
+    expect(blackCaptures[1].getAttribute('src')).toBe('pieces/cburnett/wP.svg');
+    expect(blackCaptures[1].getAttribute('alt')).toBe('white pawn');
+    expect(element.querySelector('.capture-empty')).toBeNull();
+
+    component.goFirst();
+    fixture.detectChanges();
+    expect(element.querySelectorAll('img.captured-piece')).toHaveLength(0);
+    expect(
+      Array.from(element.querySelectorAll('.capture-empty'), (el) => el.textContent?.trim()),
+    ).toEqual(['None', 'None']);
     fixture.destroy();
   });
 

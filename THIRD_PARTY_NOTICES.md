@@ -61,3 +61,30 @@ If the bundled Stockfish version changes, update this file, the Dockerfile metad
 Copyright 2017 Ben-Hur Carlos Vieira Langoni Junior. chesslib is licensed under the Apache License, Version 2.0. You may not use it except in compliance with the License. Unless required by applicable law or agreed to in writing, it is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
 chesslib is used unmodified. If its version in `backend/pom.xml` changes, update this section.
+
+## Chess piece images (Cburnett set)
+
+- Component: 12 SVG chess piece images, vendored as `frontend/public/pieces/cburnett/`, optimised with svgo (path data rewritten, comments and metadata removed, viewBox added); otherwise unmodified.
+- Attribution: Colin M.L. Burnett, with later revisions by Wikimedia Commons contributors.
+- Author: Colin M.L. Burnett (Wikimedia Commons user "Cburnett"), original uploads 2006-12-28 / 2007-01-03; later revisions on Commons by other contributors (symmetry, alignment and SVG validity fixes). We use the current revisions as of 2026-11-17.
+- Source: Wikimedia Commons, files `File:Chess_klt45.svg`, `File:Chess_qlt45.svg`, `File:Chess_rlt45.svg`, `File:Chess_blt45.svg`, `File:Chess_nlt45.svg`, `File:Chess_plt45.svg` (white) and the matching `...dt45.svg` (black). [Example file page](https://commons.wikimedia.org/wiki/File:Chess_blt45.svg); the other eleven follow the same pattern. [Category: SVG chess pieces/Standard transparent](https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces/Standard_transparent).
+- Licence on Commons: the author's licence statement on each file page is `{{self|GFDL|migration=relicense|BSD|GPL}}`, i.e. the author offers GFDL, the BSD licence or the GPL at the licensee's choice (CC BY-SA 3.0 was added through the GFDL relicensing migration). **This project uses the BSD licence option.**
+- Included in: the frontend build / released frontend Docker image. The notice also travels with the images as `pieces/cburnett/LICENSE.txt`.
+
+### BSD licence text
+
+"The author" is Colin M.L. Burnett.
+
+```text
+Copyright © The author
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+Neither the name of The author nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+This software is provided by The author and contributors "as is" and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall The author and contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
+```
+
+Commons reference link for the template: http://opensource.org/licenses/bsd-license.php
