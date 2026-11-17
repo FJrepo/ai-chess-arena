@@ -41,7 +41,7 @@ import {
   RaiseLimitRequest,
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
-import { Observable, of, Subscription, switchMap, take, tap, timeout, timer } from 'rxjs';
+import { Observable, Observer, of, Subscription, switchMap, take, tap, timeout, timer } from 'rxjs';
 import { deriveCapturedMaterial } from '../../utils/captured-material';
 import { pieceImage, pieceName } from '../../utils/piece-assets';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
@@ -227,6 +227,7 @@ export class GameView implements OnInit, OnDestroy {
   private queueRefreshSub?: Subscription;
   private loadInFlight = false;
   private loadSub?: Subscription;
+  private gameActions = new Subscription();
   private revision = new GameRevision();
   private streamId: string | null = null;
   private snapshotFallback = false;
@@ -497,6 +498,7 @@ export class GameView implements OnInit, OnDestroy {
     this.wsSub?.unsubscribe();
     this.queueRefreshSub?.unsubscribe();
     this.loadSub?.unsubscribe();
+    this.gameActions.unsubscribe();
     this.attemptsSub?.unsubscribe();
     this.pauseSettingsSub?.unsubscribe();
     clearTimeout(this.retryTimer);
@@ -576,6 +578,11 @@ export class GameView implements OnInit, OnDestroy {
     this.knownStatusRevision = null;
     this.loadSub?.unsubscribe();
     this.attemptsSub?.unsubscribe();
+    this.pauseSettingsSub?.unsubscribe();
+    this.gameActions.unsubscribe();
+    this.gameActions = new Subscription();
+    this.savingLimit.set(false);
+    this.humanMoveSubmitting.set(false);
     this.loadInFlight = false;
     this.snapshotQueued = false;
     clearTimeout(this.retryTimer);
@@ -1097,8 +1104,17 @@ export class GameView implements OnInit, OnDestroy {
     this.goToMove(this.moves().length - 1);
   }
 
+  /** Keeps action responses scoped to the backend that received the request. */
+  private runGameAction<T>(request: Observable<T>, observer: Partial<Observer<T>>): void {
+    const action = new Subscription();
+    this.gameActions.add(action);
+    const response = request.subscribe(observer);
+    action.add(response);
+    response.add(() => action.unsubscribe());
+  }
+
   pauseGame() {
-    this.api.pauseGame(this.gameId).subscribe({
+    this.runGameAction(this.api.pauseGame(this.gameId), {
       error: () => {
         this.snackbar.open('Failed to pause the game.', 'Dismiss', {
           duration: 4000,
@@ -1167,42 +1183,41 @@ export class GameView implements OnInit, OnDestroy {
                 this.tournamentMaxOutputTokens.set(tournament?.maxOutputTokens ?? maxOutputTokens),
               ),
             );
-    saveLimit
-      .pipe(
-        switchMap(() => {
-          if (!effortChoice || !side) {
-            return this.api.startGame(this.gameId, true);
-          }
-          return this.api
-            .updateParticipant(tournamentId, effortChoice.participantId, {
-              reasoningEffort: reasoningEffort ?? null,
-            })
-            .pipe(
-              switchMap((participant) => {
-                // Shown next to the model name at once; the next reload confirms it.
-                const asked = participant?.reasoningEffort ?? effortChoice.tournamentLevel;
-                this.game.update((game) =>
-                  game
-                    ? side === 'WHITE'
-                      ? { ...game, whiteReasoningEffort: asked }
-                      : { ...game, blackReasoningEffort: asked }
-                    : game,
-                );
-                return this.api.startGame(this.gameId, true);
-              }),
-            );
-        }),
-      )
-      .subscribe({
-        next: (game) => {
-          this.savingLimit.set(false);
-          this.applyResumeSnapshot(game);
-        },
-        error: (err) => {
-          this.savingLimit.set(false);
-          this.showServerError(err, 'Failed to save the limit and resume the game.');
-        },
-      });
+    const resume = saveLimit.pipe(
+      switchMap(() => {
+        if (!effortChoice || !side) {
+          return this.api.startGame(this.gameId, true);
+        }
+        return this.api
+          .updateParticipant(tournamentId, effortChoice.participantId, {
+            reasoningEffort: reasoningEffort ?? null,
+          })
+          .pipe(
+            switchMap((participant) => {
+              // Shown next to the model name at once; the next reload confirms it.
+              const asked = participant?.reasoningEffort ?? effortChoice.tournamentLevel;
+              this.game.update((game) =>
+                game
+                  ? side === 'WHITE'
+                    ? { ...game, whiteReasoningEffort: asked }
+                    : { ...game, blackReasoningEffort: asked }
+                  : game,
+              );
+              return this.api.startGame(this.gameId, true);
+            }),
+          );
+      }),
+    );
+    this.runGameAction(resume, {
+      next: (game) => {
+        this.savingLimit.set(false);
+        this.applyResumeSnapshot(game);
+      },
+      error: (err) => {
+        this.savingLimit.set(false);
+        this.showServerError(err, 'Failed to save the limit and resume the game.');
+      },
+    });
   }
 
   resumeGame() {
@@ -1214,7 +1229,7 @@ export class GameView implements OnInit, OnDestroy {
     if (this.savingLimit()) {
       return;
     }
-    this.api.startGame(this.gameId, true).subscribe({
+    this.runGameAction(this.api.startGame(this.gameId, true), {
       next: (game) => this.applyResumeSnapshot(game),
       error: (err) => {
         this.showServerError(err, 'Failed to resume the game.');
@@ -1227,7 +1242,7 @@ export class GameView implements OnInit, OnDestroy {
       this.loadGame();
       return;
     }
-    this.api.cancelResumeRequest(displayed.id, displayed.statusRevision).subscribe({
+    this.runGameAction(this.api.cancelResumeRequest(displayed.id, displayed.statusRevision), {
       next: (game) => this.applyResumeSnapshot(game),
       error: (err) => {
         this.showServerError(err, 'Failed to cancel the queued resume.');
@@ -1277,9 +1292,9 @@ export class GameView implements OnInit, OnDestroy {
     }
 
     this.humanMoveSubmitting.set(true);
-    this.api
-      .submitHumanMove(this.gameId, move, this.normalizeMessage(this.humanMessage))
-      .subscribe({
+    this.runGameAction(
+      this.api.submitHumanMove(this.gameId, move, this.normalizeMessage(this.humanMessage)),
+      {
         next: () => {
           this.humanMove = '';
           this.humanMessage = '';
@@ -1298,7 +1313,8 @@ export class GameView implements OnInit, OnDestroy {
           });
           this.humanMoveSubmitting.set(false);
         },
-      });
+      },
+    );
   }
 
   onBoardMoveAttempt(attempt: BoardMoveAttempt) {
@@ -1324,15 +1340,15 @@ export class GameView implements OnInit, OnDestroy {
   private submitCoordinateMove(from: string, to: string, promotion: string | null) {
     if (!this.isAwaitingHumanMove() || this.humanMoveSubmitting()) return;
     this.humanMoveSubmitting.set(true);
-    this.api
-      .submitHumanMoveCoordinates(
+    this.runGameAction(
+      this.api.submitHumanMoveCoordinates(
         this.gameId,
         from,
         to,
         promotion,
         this.normalizeMessage(this.humanMessage),
-      )
-      .subscribe({
+      ),
+      {
         next: () => {
           this.humanMessage = '';
           this.humanMoveSubmitting.set(false);
@@ -1348,7 +1364,8 @@ export class GameView implements OnInit, OnDestroy {
           });
           this.humanMoveSubmitting.set(false);
         },
-      });
+      },
+    );
   }
 
   goToTournament() {
@@ -1367,7 +1384,7 @@ export class GameView implements OnInit, OnDestroy {
       return;
     }
     if (!this.overrideMove) return;
-    this.api.overrideMove(this.gameId, this.overrideMove).subscribe({
+    this.runGameAction(this.api.overrideMove(this.gameId, this.overrideMove), {
       next: () => {
         this.overrideMove = '';
       },

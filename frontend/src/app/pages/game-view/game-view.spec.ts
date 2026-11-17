@@ -1711,6 +1711,27 @@ describe('GameView', () => {
     component.ngOnDestroy();
   });
 
+  it('ignores a delayed resume response from the retired backend after restore', () => {
+    const { component, gameLoad, messages, getGame, api } = createSpectator(false);
+    const retiredAction = new Subject<Game>();
+    Object.assign(api, { startGame: () => retiredAction });
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(
+      gameWith({ liveRevision: 25, statusRevision: 9, streamId: 'first', status: 'PAUSED' }),
+    );
+    component.resumeGame();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 3, streamId: 'restored' });
+    gameLoad.next(
+      gameWith({ liveRevision: 3, statusRevision: 2, streamId: 'restored', status: 'PAUSED' }),
+    );
+    retiredAction.next(gameWith({ liveRevision: 26, statusRevision: 10, status: 'IN_PROGRESS' }));
+    messages.next({ ...revision(4, gameState()), streamId: 'restored' });
+    expect(getGame).toHaveBeenCalledTimes(2);
+    expect(component.game()?.liveRevision).toBe(4);
+    component.ngOnDestroy();
+  });
+
   it('does not infer an expired deadline from an older server after a fallback read', () => {
     const { component, gameLoad, messages, api } = createSpectator(false);
     Object.assign(api, { getTournament: () => of({ moveTimeoutSeconds: 30 }) });
