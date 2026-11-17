@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, Subject, finalize, shareReplay, tap } from 'rxjs';
+import { Observable, Subject, defer, finalize, shareReplay, tap } from 'rxjs';
 
 export interface OpenRouterKeyStatus {
   /** Key presence determines connection; validation is independent. */
@@ -20,25 +20,35 @@ export interface OpenRouterStatus {
 export class OpenRouterClient {
   private readonly url = '/api/config/openrouter';
   private pendingStatus?: Observable<OpenRouterStatus>;
+  private keyMutationGeneration = 0;
   private readonly currentKey = signal<OpenRouterKeyStatus | null>(null);
   readonly keyStatus = this.currentKey.asReadonly();
   private readonly savedConnection = new Subject<void>();
   readonly connectionSaved = this.savedConnection.asObservable();
   private readonly notifyConnectionSaved = tap<OpenRouterStatus>(() => this.savedConnection.next());
-  private readonly updateKeyStatus = tap<OpenRouterStatus>((status) =>
-    this.reconcileKeyStatus(status.key),
-  );
+  private readonly updateKeyStatus = tap<OpenRouterStatus>((status) => {
+    this.keyMutationGeneration++;
+    this.reconcileKeyStatus(status.key);
+  });
   constructor(private http: HttpClient) {}
 
-  /** Publish fresh masked metadata from any status endpoint before its consumers run. */
-  reconcileKeyStatus(key: OpenRouterKeyStatus) {
-    this.currentKey.set(key);
+  get mutationGeneration() {
+    return this.keyMutationGeneration;
+  }
+
+  /** Publish metadata only if no successful mutation superseded the status request. */
+  reconcileKeyStatus(key: OpenRouterKeyStatus, generation = this.keyMutationGeneration) {
+    if (generation === this.keyMutationGeneration) this.currentKey.set(key);
   }
 
   status() {
     // Initial app and route loads must establish one browser cookie, even when concurrent.
-    this.pendingStatus ??= this.http.get<OpenRouterStatus>(this.url).pipe(
-      this.updateKeyStatus,
+    this.pendingStatus ??= defer(() => {
+      const generation = this.keyMutationGeneration;
+      return this.http
+        .get<OpenRouterStatus>(this.url)
+        .pipe(tap((status) => this.reconcileKeyStatus(status.key, generation)));
+    }).pipe(
       finalize(() => (this.pendingStatus = undefined)),
       shareReplay({ bufferSize: 1, refCount: false }),
     );

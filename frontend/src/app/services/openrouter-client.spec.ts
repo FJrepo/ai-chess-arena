@@ -60,6 +60,46 @@ it('preserves the last known key metadata when a save fails', () => {
   expect(client.keyStatus()).toEqual(status.key);
 });
 
+it.each([
+  ['callback', (client: OpenRouterClient) => client.complete('fixture-code', 'fixture-state')],
+  ['manual save', (client: OpenRouterClient) => client.manual('fixture-private-key')],
+  ['delete', (client: OpenRouterClient) => client.delete()],
+  ['test', (client: OpenRouterClient) => client.test()],
+  ['claim', (client: OpenRouterClient) => client.claim('fixture-token')],
+] as const)(
+  'preserves a successful %s when the settings status GET resolves afterwards',
+  (operation, mutate) => {
+    const pendingStatus = new Subject<OpenRouterStatus>();
+    const http = {
+      get: () => pendingStatus,
+      post: () => of(next),
+      delete: () => of(next),
+    };
+    const client = new OpenRouterClient(http as unknown as HttpClient);
+    const connected: OpenRouterStatus = {
+      ...status,
+      key: { ...status.key, source: 'ui', validation: 'valid' },
+    };
+    const initial = operation === 'delete' || operation === 'test' ? connected : status;
+    const next: OpenRouterStatus =
+      operation === 'delete'
+        ? status
+        : operation === 'test'
+          ? { ...connected, key: { ...connected.key, validation: 'invalid' } }
+          : connected;
+    client.reconcileKeyStatus(initial.key);
+    const received = vi.fn();
+    client.status().subscribe(received);
+    mutate(client).subscribe();
+    expect(client.keyStatus()).toEqual(next.key);
+
+    pendingStatus.next(initial);
+    pendingStatus.complete();
+    expect(received).toHaveBeenCalledExactlyOnceWith(initial);
+    expect(client.keyStatus()).toEqual(next.key);
+  },
+);
+
 it.each(['manual', 'callback'] as const)(
   'notifies an open dialog only after a successful %s connection, with metadata already updated',
   (operation) => {

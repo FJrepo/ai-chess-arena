@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, defer, tap } from 'rxjs';
 import {
   TournamentRunSettings,
   BracketDrawMode,
@@ -228,9 +228,12 @@ export class ApiService {
   }
 
   checkOpenRouterStatus(): Observable<OpenRouterStatusResponse> {
-    return this.http
-      .get<OpenRouterStatusResponse>(`${this.baseUrl}/config/openrouter-status`)
-      .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key)));
+    return defer(() => {
+      const generation = this.connection.mutationGeneration;
+      return this.http
+        .get<OpenRouterStatusResponse>(`${this.baseUrl}/config/openrouter-status`)
+        .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key, generation)));
+    });
   }
 
   getPromptTemplate(): Observable<PromptTemplateResponse> {
@@ -238,9 +241,12 @@ export class ApiService {
   }
 
   getSystemStatus(): Observable<SystemStatusResponse> {
-    return this.http
-      .get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`)
-      .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key)));
+    return defer(() => {
+      const generation = this.connection.mutationGeneration;
+      return this.http
+        .get<SystemStatusResponse>(`${this.baseUrl}/config/system-status`)
+        .pipe(tap((status) => this.connection.reconcileKeyStatus(status.key, generation)));
+    });
   }
 
   getTournamentCostSummary(tournamentId: string): Observable<TournamentCostSummary> {

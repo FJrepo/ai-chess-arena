@@ -27,6 +27,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; connect in System after startup, or use an operator env value/file.
 
 ### Fixed
+- Preserve newer OpenRouter connection and validation changes when an older status request arrives late, including keeping a deleted key disconnected.
 - Cancel callback navigation when leaving the Connect page, clear abandoned manual key input on collapse or exit, and let fresh page status replace cached connection metadata.
 - Clarify OpenRouter settings with one primary Connect action, collapsed manual key entry and grouped connected actions. After OAuth, return to the previous in-app page with a confirmation; failed callbacks offer retry. Successful connections close the dialog without replaying the original action.
 - Show missing OpenRouter keys as an informational first-run hint on setup and tournament onboarding, with an inline Connect OpenRouter button. Failed validation retains a warning with Fix connection; successful connections clear either hint without a page reload.
