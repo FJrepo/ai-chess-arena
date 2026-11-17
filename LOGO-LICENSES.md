@@ -1,5 +1,9 @@
 # Logo and Icon Licensing
 
+## AI Chess Arena logo
+
+The app logo (`frontend/public/logo.svg`, the inline header mark in `frontend/src/app/app.html`) and the favicons (`frontend/public/favicon.svg`, `frontend/public/favicon.ico`) are original artwork made for this project and licensed under the repository's MIT licence. They do not reuse the Cburnett piece images or any third-party mark or outlined font.
+
 This repository does not ship official provider logos.
 
 All files in `frontend/public/provider-logos/` are custom, in-house abstract icons created for this project to avoid third-party trademark usage risk.
