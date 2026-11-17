@@ -32,7 +32,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -408,7 +407,7 @@ public class AnalyticsService {
         List<Move> plies = CanonicalPlies.of(scope.moves());
 
         Map<Side, ReasoningAnalytics.Sample> samples = ReasoningAnalytics.bySide(
-                moveAttemptRepository.findReasoningAttempts(LocalDateTime.now().minusDays(days), tournamentId), plies.stream().map(ReasoningAnalytics::modelPly).toList());
+                moveAttemptRepository.findReasoningAttempts(scope.cutoff(), tournamentId), plies.stream().map(ReasoningAnalytics::modelPly).toList());
         Map<String, ComparisonAccumulator> byModel = new HashMap<>();
         Set<Side> selectedSides = new HashSet<>();
         long gamesCount = 0;
@@ -545,7 +544,7 @@ public class AnalyticsService {
                             accumulator.evaluatedGames == 0 ? null : accumulator.adjudicatedWins,
                             accumulator.evaluatedGames == 0 ? null : accumulator.thrownAway,
                             accumulator.analyzedMoves == 0 ? null : accumulator.missedMates),
-                    accumulator.reasoning.toDto()
+                    accumulator.reasoning.toDto(effort)
             ));
         }
 

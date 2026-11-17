@@ -32,7 +32,7 @@ final class ReasoningAnalytics {
 
     static ReasoningPly modelPly(Move move) {
         return new ReasoningPly(move.game.id, move.color, move.modelId, move.moveNumber, move.retryCount,
-                move.isBook, move.isOverride);
+                move.isBook, move.isOverride, move.createdAt, move.id);
     }
 
     static Map<Side, Sample> bySide(List<ReasoningAttempt> attempts, List<ReasoningPly> canonicalMoves) {
@@ -41,16 +41,18 @@ final class ReasoningAnalytics {
         for (ReasoningAttempt attempt : attempts) {
             Side side = Side.of(attempt.gameId(), attempt.color(), attempt.modelId());
             Sample sample = samples.computeIfAbsent(side, ignored -> new Sample());
-            // An explicit level is recorded on the request attempt. Null only proves no explicit level if
-            // the row also has request metadata, introduced after effort tracking.
+            // Without response evidence we cannot tell whether a provider/deadline failure ever sent its request.
+            // A different possible effort prevents claiming a uniform known level, but cannot prove Mixed.
+            String recorded = attempt.effort() != null ? attempt.effort().apiValue()
+                    : attempt.requestTokenLimit() != null ? DEFAULT : null;
             if (!attempt.responseEvidence()) {
+                if (recorded != null) sample.possibleEfforts.add(recorded);
                 continue;
-            } else if (attempt.effort() != null) {
-                sample.efforts.add(attempt.effort().apiValue());
-            } else if (attempt.requestTokenLimit() != null) {
-                sample.efforts.add(DEFAULT);
-            } else {
+            }
+            if (recorded == null) {
                 sample.incomplete = true;
+            } else {
+                sample.efforts.add(recorded);
             }
             if (attempt.outcome() == Outcome.ACCEPTED) {
                 acceptedByPly.putIfAbsent(new Ply(side, attempt.moveNumber(), attempt.attemptNumber()), attempt);
@@ -89,6 +91,7 @@ final class ReasoningAnalytics {
 
     static final class Sample {
         private final Set<String> efforts = new HashSet<>();
+        private final Set<String> possibleEfforts = new HashSet<>();
         private boolean incomplete;
         private long modelMoves;
         private long reportedMoves;
@@ -100,7 +103,7 @@ final class ReasoningAnalytics {
                 return;
             }
             efforts.addAll(other.efforts);
-            incomplete |= other.incomplete || other.efforts.isEmpty();
+            incomplete |= UNKNOWN.equals(other.effort());
             modelMoves += other.modelMoves;
             reportedMoves += other.reportedMoves;
             tokens += other.tokens;
@@ -110,13 +113,15 @@ final class ReasoningAnalytics {
             if (efforts.size() > 1) {
                 return MIXED;
             }
-            return incomplete || efforts.isEmpty() ? UNKNOWN : efforts.iterator().next();
+            return incomplete || efforts.isEmpty() || !efforts.containsAll(possibleEfforts)
+                    ? UNKNOWN : efforts.iterator().next();
         }
 
-        ReasoningAnalyticsDto toDto() {
+        ReasoningAnalyticsDto toDto(String selectedEffort) {
             BigDecimal average = reportedMoves == 0
                     ? null : BigDecimal.valueOf(tokens).divide(BigDecimal.valueOf(reportedMoves), 1, RoundingMode.HALF_UP);
-            return new ReasoningAnalyticsDto(effort(), average, reportedMoves, modelMoves);
+            return new ReasoningAnalyticsDto(selectedEffort == null ? effort() : selectedEffort,
+                    average, reportedMoves, modelMoves);
         }
     }
 }

@@ -138,6 +138,41 @@ class AnalyticsIT {
     }
 
     @Test
+    void ambiguousDifferentEffortsKeepEachSideInTheUnknownBucket() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game recent = gameRepository.find("tournament.id = ?1 and bracketPosition = 0", tournamentId).firstResult();
+            bodylessTimeout(recent, ReasoningEffort.HIGH);
+            Game second = game(tournamentRepository.findById(tournamentId), recent.whiteParticipant,
+                    recent.blackParticipant, 4, GameStatus.COMPLETED, LocalDateTime.now(), LocalDateTime.now());
+            second.result = Game.GameResult.WHITE_WINS;
+            gameRepository.persist(second);
+            move(second, 1, "WHITE", "model-alpha", "0", 0);
+            attempt(second, 1, "WHITE", 1, "model-alpha", Outcome.ACCEPTED, "0")
+                    .reasoningEffort = ReasoningEffort.HIGH;
+            bodylessTimeout(second, ReasoningEffort.MEDIUM);
+        });
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "medium")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models", hasSize(0));
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "unknown")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models.find { it.modelId == 'model-alpha' }.gamesPlayed", equalTo(2))
+                .body("models.find { it.modelId == 'model-alpha' }.reasoning.effort", equalTo("unknown"));
+    }
+
+    private void bodylessTimeout(Game game, ReasoningEffort effort) {
+        MoveAttempt timedOut = attempt(game, 2, "WHITE", 3, "model-alpha", Outcome.TIMEOUT, "0");
+        timedOut.reasoningEffort = effort;
+        timedOut.promptTokens = null;
+        timedOut.cachedPromptTokens = null;
+        timedOut.cacheWriteTokens = null;
+    }
+
+    @Test
     void mixedDefaultAndFailedOnlySamplesUseObservedRequests() {
         QuarkusTransaction.requiringNew().run(() -> {
             Game recent = gameRepository.find("tournament.id = ?1 and bracketPosition = 0", tournamentId).firstResult();

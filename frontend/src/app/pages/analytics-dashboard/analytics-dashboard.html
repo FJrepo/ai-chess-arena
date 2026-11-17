@@ -314,11 +314,7 @@
                       <td class="num">{{ formatAcpl(row.averageCentipawnLoss) }}</td>
                       <td class="num">
                         @if (row.reasoning; as reasoning) {
-                          {{
-                            reasoning.averageTokens === null
-                              ? 'n/a'
-                              : (reasoning.averageTokens | number: '1.0-1')
-                          }}
+                          {{ (reasoning.averageTokens | number: '1.0-1') ?? 'n/a' }}
                           <span class="table-note"
                             >{{ reasoning.reportedMoves }}/{{ reasoning.modelMoves }} reported</span
                           >

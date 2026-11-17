@@ -56,7 +56,7 @@ export interface AnalyticsConversion {
 
 export interface AnalyticsReasoning {
   effort: ObservedReasoningEffort;
-  averageTokens: number | null;
+  averageTokens?: number | null;
   reportedMoves: number;
   modelMoves: number;
 }

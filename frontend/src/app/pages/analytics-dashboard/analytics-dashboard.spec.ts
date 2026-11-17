@@ -80,24 +80,24 @@ describe('AnalyticsDashboard', () => {
 
   it('filters comparison by observed effort and displays reported zero next to ACPL', async () => {
     const { harness, component, api } = await renderDashboard('?tab=quality');
-    api.getAnalyticsComparison.mockReturnValueOnce(
-      of({
-        windowDays: 30,
-        tournamentId: null,
-        minGames: 0,
-        gamesCount: 1,
-        models: [
-          comparisonRow('model.sample', {
-            analyzedMoves: 9,
-            averageCentipawnLoss: 38,
-            reasoning: { effort: 'medium', averageTokens: 0, reportedMoves: 8, modelMoves: 10 },
-          }),
-          comparisonRow('model.unjudged', {
-            reasoning: { effort: 'medium', averageTokens: 25, reportedMoves: 1, modelMoves: 1 },
-          }),
-        ],
-      }),
-    );
+    const response: AnalyticsComparisonResponse = {
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 1,
+      models: [
+        comparisonRow('model.sample', {
+          analyzedMoves: 9,
+          averageCentipawnLoss: 38,
+          reasoning: { effort: 'medium', averageTokens: 0, reportedMoves: 8, modelMoves: 10 },
+        }),
+        comparisonRow('model.unjudged', {
+          // The backend omits null counters when serializing the response.
+          reasoning: { effort: 'medium', reportedMoves: 0, modelMoves: 1 },
+        }),
+      ],
+    };
+    api.getAnalyticsComparison.mockReturnValueOnce(of(response));
     component.selectedReasoningEffort = 'medium';
     component.onCommonFiltersChanged();
     harness.detectChanges();
@@ -121,9 +121,11 @@ describe('AnalyticsDashboard', () => {
     expect(columns.slice(1, 3)).toEqual(['ACPL', 'Reasoning tokens / accepted move']);
     const unjudged = quality.querySelector('tbody tr:nth-child(2)');
     expect(unjudged?.querySelector('td:nth-child(2)')?.textContent).toBe('n/a');
-    expect(unjudged?.querySelector('td:nth-child(3)')?.textContent).toContain('25');
+    expect(unjudged?.querySelector('td:nth-child(3)')?.textContent).toContain('n/a');
     expect(quality.querySelector('tbody td')?.textContent).toContain('Medium');
-    expect(quality.querySelector('tbody td:nth-child(3)')?.textContent).toContain('0');
+    expect(quality.querySelector('tbody td:nth-child(3)')?.firstChild?.textContent?.trim()).toBe(
+      '0',
+    );
     expect(quality.querySelector('tbody td:nth-child(3) .table-note')?.textContent).toBe(
       '8/10 reported',
     );

@@ -33,7 +33,7 @@ public class LeaderboardService {
                         game.blackModelId.trim(), game.result))
                 .toList(), includeForfeits, ReasoningAnalytics.bySide(
                         moveAttemptRepository.findReasoningAttempts(null, null),
-                        moveRepository.findFinishedReasoningPlies()));
+                        CanonicalPlies.reasoningOf(moveRepository.findFinishedReasoningPlies())));
     }
 
     static boolean isRatedGame(Game game) {

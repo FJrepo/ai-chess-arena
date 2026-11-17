@@ -149,6 +149,15 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    void comparisonSharesTheExactWindowBoundaryWithReasoningTelemetry() {
+        AnalyticsService service = service(List.of(), List.of(), List.of());
+        service.getComparison(30, UUID.randomUUID(), 0);
+        FakeMoveAttemptRepository repository = (FakeMoveAttemptRepository) service.moveAttemptRepository;
+        assertNotNull(repository.costCutoff);
+        assertSame(repository.costCutoff, repository.reasoningCutoff);
+    }
+
+    @Test
     void healthSkipsQueriesUsedOnlyByModelAnalytics() {
         AnalyticsService service = service(List.of(), List.of(), List.of());
         service.windowLoader.chatMessageRepository = new ChatMessageRepository() {
@@ -1336,6 +1345,8 @@ class AnalyticsServiceTest {
 
     private static final class FakeMoveAttemptRepository extends MoveAttemptRepository {
         private final List<RejectedAttemptCost> costs;
+        private LocalDateTime reasoningCutoff;
+        private LocalDateTime costCutoff;
 
         private FakeMoveAttemptRepository(List<RejectedAttemptCost> costs) {
             this.costs = costs;
@@ -1343,11 +1354,13 @@ class AnalyticsServiceTest {
 
         @Override
         public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId) {
+            reasoningCutoff = cutoff;
             return List.of();
         }
 
         @Override
         public List<RejectedAttemptCost> findRejectedCostsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            costCutoff = cutoff;
             return costs;
         }
 
