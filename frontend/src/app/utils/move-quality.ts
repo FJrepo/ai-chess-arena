@@ -57,6 +57,12 @@ export function qualityTooltip(quality: MoveQuality | null | undefined): string 
   );
 }
 
+/** Separate from quality judgement: a mate can be missed while retaining high winning chances. */
+export function missedMateTooltip(quality: MoveQuality | null | undefined): string | null {
+  if (!quality?.missedMate || quality.excluded) return null;
+  return quality.missedMateIn != null ? `Missed mate in ${quality.missedMateIn}` : 'Missed mate';
+}
+
 /** Applies the qualities of an evaluation update to the matching moves; other moves stay as they are. */
 export function applyPlyQualities(
   moves: Move[],

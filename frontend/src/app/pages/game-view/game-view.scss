@@ -109,9 +109,9 @@ $warning: mat.$orange-palette;
   --board-chrome-v: 384px;
   --board-max: 680px;
   // Moves column minimum: two full notation cells (see the move list's --move-cell-min).
-  --moves-col-min: 19rem;
+  --moves-col-min: 21.5rem;
   // Width the side columns, gaps, eval bar and page padding need next to the board.
-  --board-side-reserve: 798px;
+  --board-side-reserve: 838px;
   --board-size: clamp(
     340px,
     min(100dvh - var(--board-chrome-v), min(100vw, 1720px) - var(--board-side-reserve)),

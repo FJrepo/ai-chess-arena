@@ -736,6 +736,47 @@ describe('TournamentSetup', () => {
     expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
   });
 
+  it('sends adjudication off by default, on when chosen, and resets it in presets', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Adjudication Arena';
+    component.create();
+    expect(api.createTournamentPayload?.['adjudicationEnabled']).toBe(false);
+    component.adjudicationEnabled = true;
+    component.create();
+    expect(api.createTournamentPayload?.['adjudicationEnabled']).toBe(true);
+    const preset = new TournamentSetup(
+      createApiService(),
+      createRouter(),
+      createRoute({ preset: 'showcase' }),
+    );
+    preset.adjudicationEnabled = true;
+    preset.ngOnInit();
+    expect(preset.adjudicationEnabled).toBe(false);
+  });
+
+  it('renders an adjudication toggle with the rule and model-only hint', async () => {
+    TestBed.configureTestingModule({
+      imports: [TournamentSetup],
+      providers: [
+        { provide: ApiService, useValue: createApiService() },
+        { provide: Router, useValue: createRouter() },
+        { provide: ActivatedRoute, useValue: createRoute() },
+      ],
+    });
+    const fixture = TestBed.createComponent(TournamentSetup);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.querySelector('#adjudication-hint')?.textContent).toContain('Model games only');
+    expect(element.querySelector('#adjudication-hint')?.textContent).toContain('10 plies');
+    expect(element.querySelector('#adjudication-hint')?.textContent).toContain('+10 pawns');
+    element.querySelector<HTMLButtonElement>('.adjudication-toggle button')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.adjudicationEnabled).toBe(true);
+  });
+
   it('sends resignation off by default and on when allowed', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());

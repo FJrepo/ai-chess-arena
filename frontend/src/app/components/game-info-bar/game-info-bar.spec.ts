@@ -446,3 +446,44 @@ describe('GameInfoBar move-quality summary', () => {
     );
   });
 });
+
+describe('GameInfoBar adjudication', () => {
+  it('renders the result and its decisive-window panel for either color', () => {
+    for (const color of ['WHITE', 'BLACK'] as const) {
+      const fixture = TestBed.createComponent(GameInfoBar);
+      fixture.componentRef.setInput('game', {
+        ...pausedGame(null),
+        status: 'COMPLETED',
+        result: `${color}_WINS`,
+        resultReason: 'ADJUDICATION',
+        adjudication: { color, plies: 10, evaluationCp: 1230 },
+      });
+      fixture.detectChanges();
+      const element: HTMLElement = fixture.nativeElement;
+      const side = color === 'WHITE' ? 'White' : 'Black';
+      expect(element.querySelector('.result')?.textContent).toContain(
+        `${side} wins by adjudication`,
+      );
+      expect(element.querySelector('.adjudication-panel')?.textContent).toContain(
+        `Adjudicated: decisive for ${side} over the last 10 plies (+12.3)`,
+      );
+      fixture.destroy();
+    }
+  });
+
+  it('shows mate evidence and hides the panel for other results or absent details', () => {
+    const bar = new GameInfoBar();
+    bar.game = {
+      ...pausedGame(),
+      result: 'BLACK_WINS',
+      resultReason: 'ADJUDICATION',
+      adjudication: { color: 'BLACK', plies: 10, evaluationCp: 1230, evaluationMate: 4 },
+    };
+    expect(bar.adjudicationText()).toContain('(mate in 4)');
+    bar.game = { ...bar.game, adjudication: null };
+    expect(bar.adjudicationText()).toBeNull();
+    expect(bar.getResultText()).toBe('Black wins by adjudication');
+    bar.game = { ...bar.game, resultReason: 'CHECKMATE' };
+    expect(bar.adjudicationText()).toBeNull();
+  });
+});

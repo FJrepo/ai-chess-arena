@@ -57,6 +57,14 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     "ACPL is the average centipawn loss per move (lower is better). A move is ?! / ? / ?? when it drops the mover's winning chances by at least 5 / 10 / 15 percentage points (Lichess-style win-probability model); forced moves, overrides and moves without an evaluation are not judged.";
   readonly talkExplanation =
     "Talk rate is the share of a model's moves in finished games that came with a non-empty message: with chat Optional it is the model's own choice, with chat Mandatory it shows how often it complied. Average length is in characters per message; moves made with chat Off are left out.";
+  readonly conversionExplanation =
+    'Games reaching ≥90% winning chances: converted = won (including adjudication), thrown away = drawn/lost; n/a = no evaluation data.';
+  conversionRows = computed(() => this.comparisonRows());
+
+  conversionCount(value: number | null | undefined): string {
+    return value == null ? 'n/a' : String(value);
+  }
+
   readonly resignationExplanation =
     "Resignations in finished games (tournaments with resignation allowed, from a side's 10th move on). Resigned while not losing: the resigning side still had at least 35% winning chances by Stockfish's evaluation of the position it gave up, i.e. roughly level or better; resignations without an evaluation are not judged.";
   readonly comparisonSortOptions = [

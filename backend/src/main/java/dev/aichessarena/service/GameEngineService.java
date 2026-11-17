@@ -194,6 +194,9 @@ public class GameEngineService {
             // game and tournament it loaded first, so every turn starts from an empty session and reads them anew.
             gameRepository.detachAll();
             Game game = gameRepository.findById(gameId);
+            if (WinAdjudication.enabledFor(game) && gameLifecycleService.adjudicateIfEligible(gameId, fen)) {
+                return;
+            }
             String pgn = game.pgn;
             String modelId = "WHITE".equals(sideToMove) ? game.whiteModelId : game.blackModelId;
             String playerName = "WHITE".equals(sideToMove) ? game.whitePlayerName : game.blackPlayerName;

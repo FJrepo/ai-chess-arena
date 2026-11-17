@@ -153,6 +153,8 @@ Flyway migrations run automatically on backend startup.
 ## Backups and rollback
 Migrations only run forward: there are no down-migrations, and an older backend is not guaranteed to keep a migrated database consistent. To roll back to an older release, restore the database backup taken before the upgrade; the data written since then is lost. Since 1.4 (migration V12, chat modes) this is required: an older backend still starts, but it only writes `trash_talk_enabled` and stores moves without a chat mode, which leaves the data inconsistent when you upgrade again.
 
+The adjudication upgrade runs Flyway `V18__adjudication.sql` on backend startup, adding `tournaments.adjudication_enabled` with default false for new and existing tournaments. Rebuild/recreate the backend and frontend to apply the option, result panel and analytics. Existing results and evaluations remain unchanged; missed-mate and conversion metrics are derived from stored evaluations without backfill. Games with a human never adjudicate.
+
 The prompt caching metrics upgrade adds nullable `move_attempts.cached_prompt_tokens` and `cache_write_tokens` via Flyway V17 on backend startup. Existing rows keep null cache counters and their reported costs; there is no historical cache-usage backfill. Only newly reported provider counters populate the metrics.
 
 Analytics comparisons read one cached catalog price snapshot without waiting for OpenRouter. Empty or expired catalogs trigger a single background refresh; failed catalog refreshes back off for 60 seconds, retaining stale prices when available. After a restart, savings may show n/a until prices are cached and the 15-second comparison cache expires. This catalog handling fix adds no migration or backfill and leaves persisted usage and costs unchanged; rebuild and recreate the backend to apply it.
@@ -253,14 +255,16 @@ Recommended tagging policy:
 ## Troubleshooting
 
 ### Migration V8 reports "Skipping uq_moves_game_ply"
-Older versions could store two moves for the same ply when moves were submitted concurrently. Migration V8 then still succeeds but skips the unique index and logs a notice. Current versions prevent new duplicates with a row lock either way. To add the index afterwards, list the affected plies, delete the unwanted duplicate rows by `id` (usually the later `created_at`), then create the index:
+Older versions could store two moves for the same ply when moves were submitted concurrently. Migration V8 then still succeeds but skips the unique index and logs a notice. Current versions prevent new duplicates with a row lock either way. Adjudication, move quality (including missed mates), Conversion and talkativeness count one canonical move per `(game_id, move_number, color)`: the earliest `created_at`, with `id` breaking ties. Later duplicates cannot fill a missing canonical evaluation, create winning positions or extend the ten-ply adjudication window. Move API rows remain available, with null quality on later duplicates; live quality updates use the canonical move and the next canonical ply.
+
+Rebuild and recreate the backend to apply this fix. No migration or backfill is needed; duplicate rows, stored evaluations and completed results remain unchanged. Previously adjudicated results and series advancement are not repaired automatically. To add the index afterwards, list the affected plies, delete the unwanted duplicate rows by `id` (keeping the first by `created_at`, then `id`), then create the index:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 ```sql
-SELECT game_id, move_number, color, array_agg(id ORDER BY created_at) AS move_ids
+SELECT game_id, move_number, color, array_agg(id ORDER BY created_at, id) AS move_ids
 FROM moves GROUP BY game_id, move_number, color HAVING COUNT(*) > 1;
 -- after removing the unwanted rows:
 CREATE UNIQUE INDEX IF NOT EXISTS uq_moves_game_ply ON moves (game_id, move_number, color);

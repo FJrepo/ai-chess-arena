@@ -12,7 +12,9 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Reasoning effort](#reasoning-effort)
 - [Chat mode](#chat-mode)
 - [Resignation](#resignation)
-- [Move quality](#move-quality)
+- [Adjudication](#adjudication)
+- [Move quality](#move-quality) and [missed mates](#missed-mates)
+- [Conversion metrics](#conversion-metrics)
 - [Analytics and reliability](#analytics-and-reliability)
 - [Live settings](#live-settings)
 - [Scope and interpretation](#scope-and-interpretation)
@@ -76,7 +78,7 @@ Models are asked to answer in JSON, but the parser also extracts a move from oth
 
 Each model gets its system prompt, its last few exchanges and the current turn; older turns are not resent because every turn prompt contains the moves so far (PGN) and the full position (FEN, board, legal moves).
 
-Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override.
+Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override.
 
 ## Time limit per move
 
@@ -232,6 +234,20 @@ The result reads "Black Bot resigned; White Bot wins", and a panel shows the res
 
 `GET /api/games/{id}` carries the same as `resignation` (`color`, `moveNumber`, `winChance` 0–1 or null, `notLosing`, `lastWords`, `opponentMessage`, `opponentMessageMoveNumber`). The bracket notes "(Black Bot resigned)" after the result.
 
+## Adjudication
+
+*Adjudicate decisive wins* is **off by default**. With it on, at the start of each turn a model-vs-model game ends with a win when **every one of the last 10 plies** already has a Stockfish evaluation decisive for the **same side**: either a forced mate for that side or **at least +1000 centipawns (+10 pawns)** from its view. Mate and centipawn scores may be mixed. These constants are `WinAdjudication.WINDOW_PLIES` and `DECISIVE_CP`.
+
+Evaluations describe the position **after** each move, from White's view; negative mate or centipawn scores favor Black. Unsigned mate 0 belongs to the side that delivered checkmate. Board endings (checkmate, stalemate, repetition, fifty-move rule, insufficient material) take precedence. Fewer than 10 plies, any missing evaluation, a sub-threshold score or mixed winning sides means no adjudication that turn. The loop never waits for Stockfish, so asynchronous evaluation can postpone or prevent adjudication.
+
+Operator overrides count as ordinary plies in this window, including their evaluations; forced moves count too. Games with a human on either side **never adjudicate**, even during a model turn. Games outside a tournament do not adjudicate.
+
+API: `adjudicationEnabled` on tournament create/update is a boolean; omitted or null keeps false on create and the current value on update. Changes apply from the next turn, including turning it off. Adjudication completes the game with `WHITE_WINS` or `BLACK_WINS`, reason `ADJUDICATION`, through the same transactional lifecycle, status revision, broadcasts after commit and bracket/series advancement as other wins. In best-of series it is one decisive win.
+
+The game view says "White wins by adjudication" (or Black), with a compact panel identifying the 10-ply window and its latest score from the winner's view, for example "+12.3" or "mate in 4". The game details API carries `adjudication` with `color`, `plies`, `evaluationCp` and `evaluationMate`; bracket cards treat it as a normal win.
+
+Flyway V18 adds `tournaments.adjudication_enabled` with default false, including existing tournaments. Existing game results are never changed or backfilled.
+
 ## Move quality
 
 Stockfish's evaluations mark inaccuracies `?!`, mistakes `?` and blunders `??` in the move list and game feed (the tooltip shows the mover's winning chances before and after, e.g. "Blunder: winning chances 74% → 22% (−6.2)"), and each player gets an average centipawn loss (ACPL) and error counts, live as evaluations arrive.
@@ -254,6 +270,12 @@ In analytics, ACPL and blunders per game cover finished games only (byes exclude
 
 Depth-12 evaluations are a quick check, not deep analysis.
 
+### Missed mates
+
+The move list always marks a **missed mate** with `M×` and a tooltip such as "Missed mate in 2", independently of the adjudication option and ordinary `?!` / `?` / `??` judgement. A move misses mate when the position before it had a forced mate **for the mover**, and the position after it no longer has a forced mate for that mover. Keeping any forced mate, even a longer one, or delivering mate 0 keeps the mate. A high centipawn score is not a forced mate: missing mate while staying clearly winning still gets the marker.
+
+Both surrounding evaluations must be available. Operator overrides and forced moves are excluded just as for move quality; no marker or missed-mate count is assigned to them. `MoveQualityDto` adds `missedMate` and `missedMateIn` (the former distance, omitted without a missed mate), including qualities delivered by live evaluation updates. These are derived on read from existing evaluations; no evaluation or game result is rewritten.
+
 ## Analytics and reliability
 
 Analysis includes a bracket overview with series scores and the champion, PGN export, and analytics on results, move quality (ACPL, blunders per game), talkativeness (how often each model talks, per chat mode), resignations (including resignations while not losing), reliability (first-try legal moves, retries, timeouts, forfeits) and reported cost.
@@ -275,6 +297,20 @@ With fewer than 60 moves it is pulled toward 60 in proportion to the moves playe
 Latency is shown but not scored, so slow reasoning models are not penalised for thinking; answers cut off at the token limit never count.
 
 Per-model cost is the cost of accepted moves plus the cost of rejected answers whenever OpenRouter reports one (including answers cut off at the token limit and provider errors: real spend, not blame); a model whose only answers were rejected still shows its total cost.
+
+### Conversion metrics
+
+The *Conversion* table uses the same completion-time window, tournament and minimum-games filters as other comparison tables: **finished, non-bye games, model sides only**. Each model side in a game counts once:
+
+- **Winning positions:** games where that side had **at least 90% winning chances** at any stored evaluated position, using the [move-quality probability model](#move-quality). Every evaluated point counts, including an opponent's move, a forced move or an override; the side need not have made a move yet. Repeated winning positions in one game add no extra count.
+- **Converted:** of those games, games the model won, including checkmate, resignation, opponent forfeits and adjudication.
+- **Adjudicated wins:** the converted games won by adjudication, also included in Converted.
+- **Thrown away:** of the games with a winning position, games that ended in a draw or a loss (including the model's own forfeit).
+- **Missed mates:** the number of judged model moves that [missed a forced mate](#missed-mates), independently of whether the game reached the winning-position threshold or was ultimately won.
+
+The table shows evaluated-game coverage per model. Games with no evaluations cannot prove a winning position and are left out; a model with no evaluated games shows **n/a** for position/outcome counts. Missed mates show **n/a** without any judged moves. Observed zero counts stay zero. Partial coverage describes the available evaluations, not every position of a game. With self-play, each model side counts separately, as in the other tables.
+
+Comparison API rows carry `conversion` with `evaluatedGames`, `winningPositionsReached`, `converted`, `adjudicatedWins`, `thrownAway` and `missedMates`; unknown counts may be omitted. All metrics derive from stored evaluations, including historical games; there is no backfill or engine re-analysis.
 
 ### Talkativeness
 
@@ -320,7 +356,7 @@ Recognized OpenRouter failures (rate limits, server or network errors, invalid k
 
 Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
 
-Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode and resignation changes rebuild both system prompts.
+Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode and resignation changes rebuild both system prompts.
 
 ## Scope and interpretation
 

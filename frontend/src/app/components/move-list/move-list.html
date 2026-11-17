@@ -23,6 +23,11 @@
                   >{{ b.glyph }}</span
                 >
               }
+              @if (missedMate(pair.white); as hint) {
+                <span class="missed-mate-badge" [attr.title]="hint" [attr.aria-label]="hint"
+                  >M×</span
+                >
+              }
               @if (pair.white.retryCount > 0) {
                 <span class="retry-badge" title="Retries">{{ pair.white.retryCount }}</span>
               }
@@ -42,6 +47,11 @@
                   [class]="'quality-' + b.tone"
                   [attr.aria-label]="b.label"
                   >{{ b.glyph }}</span
+                >
+              }
+              @if (missedMate(pair.black); as hint) {
+                <span class="missed-mate-badge" [attr.title]="hint" [attr.aria-label]="hint"
+                  >M×</span
                 >
               }
               @if (pair.black.retryCount > 0) {

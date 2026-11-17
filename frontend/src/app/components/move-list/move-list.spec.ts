@@ -86,6 +86,57 @@ describe('MoveListComponent quality annotations', () => {
     expect(cells[3].textContent?.replace(/\s+$/, '')).toMatch(/g5\?\?$/);
   });
 
+  it('marks a missed mate distinctly even without an ordinary quality error', () => {
+    const element = render([
+      move(1, 'WHITE', 'Qh5', {
+        judgement: null,
+        centipawnLoss: 0,
+        winChanceBefore: 1,
+        winChanceAfter: 0.976,
+        excluded: null,
+        missedMate: true,
+        missedMateIn: 2,
+      }),
+    ]);
+    const marker = element.querySelector('.missed-mate-badge');
+    expect(marker?.textContent).toBe('M×');
+    expect(marker?.getAttribute('title')).toBe('Missed mate in 2');
+    expect(marker?.getAttribute('aria-label')).toBe('Missed mate in 2');
+    expect(element.querySelector('.quality-badge')).toBeNull();
+  });
+
+  it('does not mark kept mates, overrides or forced moves', () => {
+    const element = render([
+      move(1, 'WHITE', 'Qh5', {
+        judgement: null,
+        centipawnLoss: null,
+        winChanceBefore: 1,
+        winChanceAfter: 0.5,
+        excluded: 'OVERRIDE',
+        missedMate: true,
+        missedMateIn: 2,
+      }),
+      move(1, 'BLACK', 'Kh7', {
+        judgement: null,
+        centipawnLoss: null,
+        winChanceBefore: 1,
+        winChanceAfter: 0.5,
+        excluded: 'FORCED',
+        missedMate: true,
+        missedMateIn: 2,
+      }),
+      move(2, 'WHITE', 'Qh6', {
+        judgement: null,
+        centipawnLoss: 0,
+        winChanceBefore: 1,
+        winChanceAfter: 1,
+        excluded: null,
+        missedMate: false,
+      }),
+    ]);
+    expect(element.querySelector('.missed-mate-badge')).toBeNull();
+  });
+
   it('shows no annotation before the evaluations are in, and a note for forced moves', () => {
     const element = render([
       move(1, 'WHITE', 'e4'),

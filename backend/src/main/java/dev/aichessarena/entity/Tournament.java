@@ -77,6 +77,10 @@ public class Tournament extends PanacheEntityBase {
     @Column(name = "resignation_allowed", nullable = false)
     public boolean resignationAllowed;
 
+    /** Optional decisive-position adjudication for model-vs-model games, read anew each turn. */
+    @Column(name = "adjudication_enabled", nullable = false)
+    public boolean adjudicationEnabled;
+
     /** The first move number at which a side may resign: a game cannot end on move 3 because a model gives up. */
     public static final int MIN_RESIGNATION_MOVE = 10;
 

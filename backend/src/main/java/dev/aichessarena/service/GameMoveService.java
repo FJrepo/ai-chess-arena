@@ -185,9 +185,7 @@ public class GameMoveService {
      * updated summary. Quality is derived from the stored evaluations, so a reload shows the same.
      */
     private void broadcastEvaluation(dev.aichessarena.entity.Move move) {
-        List<dev.aichessarena.entity.Move> moves = moveRepository.findByGameId(move.game.id);
-        List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
-        List<PlyQualityDto> changed = new ArrayList<>();
+        List<dev.aichessarena.entity.Move> moves = CanonicalPlies.of(moveRepository.findByGameId(move.game.id));
         int index = -1;
         for (int i = 0; i < moves.size(); i++) {
             if (moves.get(i).id != null && moves.get(i).id.equals(move.id)) {
@@ -195,15 +193,17 @@ public class GameMoveService {
                 break;
             }
         }
-        if (index >= 0) {
-            for (int i = index; i <= Math.min(index + 1, moves.size() - 1); i++) {
-                dev.aichessarena.entity.Move affected = moves.get(i);
-                changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i))));
-            }
+        if (index < 0) {
+            // A later duplicate's score must not replace the canonical ply's evaluation or quality in clients.
+            return;
         }
-        GameQualitySummaryDto summary = index >= 0
-                ? DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities))
-                : null;
+        List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
+        List<PlyQualityDto> changed = new ArrayList<>();
+        for (int i = index; i <= Math.min(index + 1, moves.size() - 1); i++) {
+            dev.aichessarena.entity.Move affected = moves.get(i);
+            changed.add(new PlyQualityDto(affected.moveNumber, affected.color, DtoMapper.toDto(qualities.get(i))));
+        }
+        GameQualitySummaryDto summary = DtoMapper.toDto(MoveQualityClassifier.summarize(moves, qualities));
         UUID gameId = move.game.id;
         int moveNumber = move.moveNumber;
         String color = move.color;

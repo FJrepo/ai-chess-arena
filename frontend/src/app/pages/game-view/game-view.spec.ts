@@ -2080,3 +2080,61 @@ describe('GameView promotion picker', () => {
     fixture.destroy();
   });
 });
+
+describe('GameView adjudication and missed mate updates', () => {
+  it('reloads adjudication evidence when the game completes live', () => {
+    const { component, gameLoad, messages, getGame } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith());
+    messages.next({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'ADJUDICATION',
+      statusRevision: 3,
+    });
+    gameLoad.next(
+      gameWith({
+        status: 'COMPLETED',
+        result: 'WHITE_WINS',
+        resultReason: 'ADJUDICATION',
+        statusRevision: 3,
+        adjudication: { color: 'WHITE', plies: 10, evaluationMate: 4 },
+      }),
+    );
+    expect(getGame).toHaveBeenCalledTimes(2);
+    expect(component.game()?.adjudication?.evaluationMate).toBe(4);
+    component.ngOnDestroy();
+  });
+
+  it('keeps the missed-mate flag from live evaluation qualities for the move list', () => {
+    const { component } = createComponent();
+    component.game.set(gameWith());
+    component.moves.set([storedMove(1, 'WHITE', 'e4', AFTER_E4)]);
+    component.handleWsMessage({
+      type: 'evaluationUpdate',
+      gameId: 'g-1',
+      moveNumber: 1,
+      color: 'WHITE',
+      evaluationCp: 1000,
+      qualities: [
+        {
+          moveNumber: 1,
+          color: 'WHITE',
+          quality: {
+            judgement: null,
+            centipawnLoss: 0,
+            winChanceBefore: 1,
+            winChanceAfter: 0.976,
+            excluded: null,
+            missedMate: true,
+            missedMateIn: 2,
+          },
+        },
+      ],
+    });
+    expect(component.moves()[0].quality?.missedMate).toBe(true);
+    expect(component.moves()[0].quality?.missedMateIn).toBe(2);
+  });
+});

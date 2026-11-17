@@ -42,6 +42,8 @@ export interface Tournament {
    * backends before 1.4.
    */
   resignationAllowed?: boolean;
+  /** Default-off decisive-position adjudication; model-vs-model only, applied from the next turn. */
+  adjudicationEnabled?: boolean;
   /**
    * Cap on generated tokens per model answer (includes reasoning tokens); cut-off answers pause the game.
    * Always sent by the backend (default 16384); optional only so existing test fixtures stay valid.
@@ -109,6 +111,13 @@ export interface Game {
   qualitySummary?: GameQualitySummary | null;
   /** How the game ended by resignation; sent with a single game that ended so, otherwise null or absent. */
   resignation?: GameResignation | null;
+  /** Evidence for an adjudicated result, from the winner's view. */
+  adjudication?: {
+    color: 'WHITE' | 'BLACK';
+    plies: number;
+    evaluationCp?: number | null;
+    evaluationMate?: number | null;
+  } | null;
   /**
    * Grows with every status change (start, pause, game over); status-change updates carry it too, so an older
    * update that arrives late can be ignored. Absent from older backends.
@@ -152,6 +161,9 @@ export interface MoveQuality {
   winChanceAfter: number;
   /** Operator overrides and forced moves (the only legal move) are not judged. */
   excluded: 'OVERRIDE' | 'FORCED' | null;
+  /** Lost a forced mate; excluded moves never receive this marker. */
+  missedMate?: boolean;
+  missedMateIn?: number | null;
 }
 
 /** One side's judged moves in a game: average centipawn loss (null without any) and error counts. */

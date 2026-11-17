@@ -271,8 +271,27 @@ export class GameInfoBar {
       : `Last message from ${opponent}`;
   }
 
+  adjudicationText(): string | null {
+    const evidence = this.game?.adjudication;
+    if (this.game?.resultReason !== 'ADJUDICATION' || !evidence) {
+      return null;
+    }
+    const color = evidence.color === 'WHITE' ? 'White' : 'Black';
+    const evaluation =
+      evidence.evaluationMate != null
+        ? `mate in ${evidence.evaluationMate}`
+        : evidence.evaluationCp != null
+          ? `+${(evidence.evaluationCp / 100).toFixed(1)}`
+          : null;
+    return `Adjudicated: decisive for ${color} over the last ${evidence.plies} plies${evaluation ? ` (${evaluation})` : ''}`;
+  }
+
   getResultText(): string {
     if (!this.game.result) return '';
+    if (this.game.resultReason === 'ADJUDICATION') {
+      if (this.game.result === 'WHITE_WINS') return 'White wins by adjudication';
+      if (this.game.result === 'BLACK_WINS') return 'Black wins by adjudication';
+    }
     if (this.game.resultReason === 'RESIGNATION') {
       // "Black Bot resigned; White Bot wins"
       if (this.game.result === 'WHITE_WINS') {

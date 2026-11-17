@@ -259,6 +259,73 @@ class MoveQualityClassifierTest {
         assertEquals(List.of(whiteOne, blackOne, whiteTwo), moves);
     }
 
+    @Test
+    void legacyDuplicatesCannotCreateMissedMatesOrHideTheCanonicalPreviousEvaluation() {
+        Move before = move(1, "BLACK", "e5", "fen", null, 2);
+        Move duplicateBefore = move(1, "BLACK", "e5", "fen", 0, null);
+        Move missed = move(2, "WHITE", "Nf3", "fen", 0, null);
+        Move duplicateMissed = move(2, "WHITE", "Nf3", "fen", null, 3);
+        Move anotherDuplicate = move(2, "WHITE", "Nf3", "fen", 0, null);
+        List<Move> moves = List.of(before, duplicateBefore, missed, duplicateMissed, anotherDuplicate);
+        for (int i = 0; i < moves.size(); i++) {
+            moves.get(i).createdAt = LocalDateTime.of(2026, 1, 1, 0, 0).plusSeconds(i);
+        }
+
+        List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
+
+        assertNull(qualities.get(1));
+        assertTrue(qualities.get(2).missedMate());
+        assertEquals(2, qualities.get(2).missedMateIn());
+        assertNull(qualities.get(3));
+        assertNull(qualities.get(4));
+        assertEquals(1, MoveQualityClassifier.summarize(moves, qualities).white().analyzedMoves());
+    }
+
+    @Test
+    void missedMatesAreMarkedEvenWhenThePositionStillHasHighWinningChances() {
+        for (String color : List.of("WHITE", "BLACK")) {
+            int sign = "WHITE".equals(color) ? 1 : -1;
+            MoveQuality lost = classify(mate(sign * 2, "WHITE"), cp(sign * 1000, color), color);
+            assertTrue(lost.missedMate());
+            assertEquals(2, lost.missedMateIn());
+            assertNull(lost.judgement(), "a missed mate is independent of the ordinary quality thresholds");
+            assertTrue(classify(mate(sign * 2, "WHITE"), cp(0, color), color).missedMate());
+            assertTrue(classify(mate(sign * 2, "WHITE"), mate(-sign * 3, color), color).missedMate());
+        }
+    }
+
+    @Test
+    void longerMatesAndDeliveredMateZeroAreKeptForBothColors() {
+        for (String color : List.of("WHITE", "BLACK")) {
+            int sign = "WHITE".equals(color) ? 1 : -1;
+            MoveQuality longer = classify(mate(sign * 2, "WHITE"), mate(sign * 8, color), color);
+            assertFalse(longer.missedMate());
+            assertNull(longer.missedMateIn());
+            assertFalse(classify(mate(sign, "WHITE"), mate(0, color), color).missedMate());
+            assertFalse(classify(cp(sign * 1000, "WHITE"), cp(0, color), color).missedMate());
+            assertFalse(classify(mate(-sign * 2, "WHITE"), cp(0, color), color).missedMate());
+        }
+    }
+
+    @Test
+    void overridesForcedAndUnevaluatedMovesDoNotGetMissedMateMarkers() {
+        Move before = move(30, "BLACK", "Ra1+", ONLY_KH2, null, 2);
+        Move after = move(31, "WHITE", "Kh2", "fen", 500, null);
+        MoveQuality forced = MoveQualityClassifier.quality(after, before);
+        assertEquals(Exclusion.FORCED, forced.excluded());
+        assertFalse(forced.missedMate());
+        assertNull(forced.missedMateIn());
+        before.fen = AFTER_E4;
+        after.isOverride = true;
+        assertFalse(MoveQualityClassifier.quality(after, before).missedMate());
+        after.isOverride = false;
+        after.evaluationCp = null;
+        assertNull(MoveQualityClassifier.quality(after, before));
+        after.evaluationCp = 500;
+        before.evaluationMate = null;
+        assertNull(MoveQualityClassifier.quality(after, before));
+    }
+
     private static MoveQuality classify(MoveQualityClassifier.Score before, MoveQualityClassifier.Score after,
                                         String mover) {
         return MoveQualityClassifier.classify(before, after, mover);

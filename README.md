@@ -28,7 +28,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Participants](docs/how-it-works.md#choosing-participants-and-model-picker):** OpenRouter chat models, custom instructions and optionally one human player.
 - **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker):** catalog search, provider filters, prices, reasoning support and Intelligence Index.
 - **[Live games](docs/how-it-works.md#live-settings):** board, moves, chat and retries over WebSocket, with optional Stockfish 19 evaluation.
-- **[Move quality](docs/how-it-works.md#move-quality):** inaccuracies, mistakes, blunders and average centipawn loss (ACPL).
+- **[Move quality](docs/how-it-works.md#move-quality):** inaccuracies, mistakes, blunders, missed mates and average centipawn loss (ACPL).
+- **[Adjudication](docs/how-it-works.md#adjudication):** optional decisive wins after 10 evaluated plies; per-model [conversion metrics](docs/how-it-works.md#conversion-metrics).
 - **[Turn controls](docs/how-it-works.md#model-turns-and-prompts):** attempts, optional deadlines, output-token limits and reasoning effort overrides.
 - **[Chat](docs/how-it-works.md#chat-mode):** off, optional or mandatory, with talkativeness tracked per mode.
 - **[Resignation](docs/how-it-works.md#resignation):** optional from each model's tenth move, with last words and resignation analytics.
@@ -39,6 +40,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 Prompt caching savings use one cached price snapshot per comparison. Analytics never waits for catalog requests: missing prices show **n/a**, stale prices remain usable, and failed refreshes back off for 60 seconds.
 
 Concurrent catalog lookups use a consistent snapshot for freshness and model data, so model validation and reasoning-effort mapping can use a catalog published by another caller during a refresh.
+
+Legacy duplicate move rows count as one ply for adjudication, move quality (including missed mates), Conversion and talkativeness: the earliest `created_at` wins, with `id` breaking ties. Later duplicates cannot supply a missing evaluation or extend the ten-ply window. Stored rows and completed results remain unchanged; see [duplicate-move troubleshooting](docs/deployment.md#migration-v8-reports-skipping-uq_moves_game_ply).
 
 ## Quick start
 

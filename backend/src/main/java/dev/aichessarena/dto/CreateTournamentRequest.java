@@ -1,5 +1,6 @@
 package dev.aichessarena.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +14,9 @@ import java.util.UUID;
  *
  * <p>{@code resignationAllowed} lets models resign from their 10th move on; null keeps the default (false) on create
  * and the current value on update.
+ *
+ * <p>{@code adjudicationEnabled} enables decisive-position adjudication for model-vs-model games; null keeps the
+ * default (false) on create and the current value on update. A change applies from the next turn.
  *
  * <p>{@code reasoningEffort} is OpenRouter's reasoning effort for all models (none, minimal, low, medium, high, xhigh,
  * max; case-insensitive) or {@code "default"} for each model's own default. Null keeps the model default on create
@@ -32,8 +36,21 @@ public record CreateTournamentRequest(
         Integer maxOutputTokens,
         String chatMode,
         Boolean resignationAllowed,
-        String reasoningEffort
+        String reasoningEffort,
+        @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean adjudicationEnabled
 ) {
+    /** Compatibility constructor for callers without adjudication settings. */
+    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
+                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
+                                   Boolean trashTalkEnabled, String drawPolicy,
+                                   List<AddParticipantRequest> participants, UUID clientRequestId,
+                                   Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
+                                   String reasoningEffort) {
+        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
+                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
+                resignationAllowed, reasoningEffort, null);
+    }
+
     /**
      * A request without {@code resignationAllowed} and {@code reasoningEffort}: create keeps the defaults, update the
      * current values.
@@ -44,6 +61,6 @@ public record CreateTournamentRequest(
                                    List<AddParticipantRequest> participants, UUID clientRequestId,
                                    Integer maxOutputTokens, String chatMode) {
         this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
-                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode, null, null);
+                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode, null, null, null);
     }
 }

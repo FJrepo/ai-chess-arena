@@ -64,6 +64,7 @@ public class TournamentResource {
         ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
         if (chatMode != null) t.chatMode = chatMode;
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
+        if (req.adjudicationEnabled() != null) t.adjudicationEnabled = req.adjudicationEnabled();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         // null (omitted) keeps the model default.
@@ -120,6 +121,7 @@ public class TournamentResource {
         if (chatMode != null) t.chatMode = chatMode;
         // A change applies to running games from their next turn.
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
+        if (req.adjudicationEnabled() != null) t.adjudicationEnabled = req.adjudicationEnabled();
         if (req.maxOutputTokens() != null) t.maxOutputTokens = parseMaxOutputTokens(req.maxOutputTokens());
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         // null (omitted) keeps the current level, "default" clears it; applies from the next turn of running games.

@@ -143,6 +143,29 @@ public class GameLifecycleService {
     }
 
     /**
+     * Checks the stored window under the game lock and uses the normal completion path. Never waits for the engine.
+     * Rechecking status and position protects against a concurrent pause, completion or move.
+     */
+    @Transactional
+    public boolean adjudicateIfEligible(UUID gameId, String expectedFen) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null) {
+            return false;
+        }
+        gameRepository.refreshForUpdate(game);
+        if (game.status != GameStatus.IN_PROGRESS || !GameMoveService.samePosition(game.currentFen, expectedFen)
+                || !WinAdjudication.enabledFor(game)) {
+            return false;
+        }
+        String winner = WinAdjudication.winner(moveRepository.findByGameId(gameId));
+        if (winner == null) {
+            return false;
+        }
+        completeGame(gameId, new ChessService.GameEndInfo(winner + "_WINS", "ADJUDICATION"));
+        return true;
+    }
+
+    /**
      * Ends an IN_PROGRESS game because {@code resigningColor} resigned: COMPLETED, the opponent wins, reason
      * RESIGNATION. Like a recorded move it requires the position the model answered for, and in the same transaction
      * it adds the answer's cost to the game and stores the resigning side's last words ({@code message}, null for

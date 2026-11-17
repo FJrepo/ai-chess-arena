@@ -349,6 +349,59 @@
             <p class="table-footnote">{{ cacheExplanation }}</p>
           </div>
 
+          <div class="table-card conversion-table-card">
+            <div class="section-header">
+              <div>
+                <h3>Conversion</h3>
+                <p>How often models finish a winning position.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table conversion-table">
+                <thead>
+                  <tr>
+                    <th class="col-model">Model</th>
+                    <th class="num">Winning positions</th>
+                    <th class="num">Converted</th>
+                    <th class="num">Adjudicated wins</th>
+                    <th class="num">Thrown away</th>
+                    <th
+                      class="num"
+                      title="Judged model moves that lost a forced mate; overrides and forced moves excluded"
+                    >
+                      Missed mates
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of conversionRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                        <span class="table-note"
+                          >{{ row.conversion?.evaluatedGames ?? 0 }} of {{ row.gamesPlayed }} games
+                          evaluated</span
+                        >
+                      </td>
+                      <td class="num">
+                        {{ conversionCount(row.conversion?.winningPositionsReached) }}
+                      </td>
+                      <td class="num">{{ conversionCount(row.conversion?.converted) }}</td>
+                      <td class="num">{{ conversionCount(row.conversion?.adjudicatedWins) }}</td>
+                      <td class="num">{{ conversionCount(row.conversion?.thrownAway) }}</td>
+                      <td class="num">{{ conversionCount(row.conversion?.missedMates) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="6" class="empty">No finished model games in this scope.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ conversionExplanation }}</p>
+          </div>
+
           <div class="table-card resign-table-card">
             <div class="section-header">
               <div>

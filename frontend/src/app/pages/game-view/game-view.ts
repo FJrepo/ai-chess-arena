@@ -762,9 +762,11 @@ export class GameView implements OnInit, OnDestroy {
         if (msg.tournamentChatMode) {
           this.tournamentChatMode.set(msg.tournamentChatMode);
         }
-        if (status === 'COMPLETED' && msg.resultReason === 'RESIGNATION') {
-          // A resignation has details (winning chance, last words) that only the game itself carries; the
-          // reload also brings the attempts.
+        if (
+          status === 'COMPLETED' &&
+          (msg.resultReason === 'RESIGNATION' || msg.resultReason === 'ADJUDICATION')
+        ) {
+          // Result evidence is carried by the game details; reload it and the attempts.
           this.loadGame();
         } else if (status === 'PAUSED' || status === 'COMPLETED' || status === 'FORFEIT') {
           if (status === 'PAUSED') {

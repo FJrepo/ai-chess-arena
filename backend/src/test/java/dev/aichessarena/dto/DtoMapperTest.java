@@ -9,6 +9,7 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -100,6 +101,29 @@ class DtoMapperTest {
 
         assertTrue(dto.moves().isEmpty());
         assertNull(dto.qualitySummary());
+    }
+
+    @Test
+    void legacyDuplicateRowsKeepTheirShapeButOnlyCanonicalPliesReceiveQuality() {
+        Game game = game(null, "Final", null);
+        Move black = move(game, 1, "BLACK", null);
+        black.evaluationMate = 2;
+        Move duplicateBlack = move(game, 1, "BLACK", 0);
+        duplicateBlack.createdAt = black.createdAt.plusSeconds(1);
+        Move white = move(game, 2, "WHITE", 0);
+        Move duplicateWhite = move(game, 2, "WHITE", 0);
+        duplicateWhite.createdAt = white.createdAt.plusSeconds(1);
+        game.moves.addAll(List.of(black, duplicateBlack, white, duplicateWhite));
+
+        GameDto dto = DtoMapper.toDto(game, true);
+
+        assertEquals(4, dto.moves().size());
+        assertNull(dto.moves().get(1).quality());
+        assertTrue(dto.moves().get(2).quality().missedMate());
+        assertEquals(2, dto.moves().get(2).quality().missedMateIn());
+        assertNull(dto.moves().get(3).quality());
+        assertEquals(1, dto.qualitySummary().white().analyzedMoves());
+        assertEquals(1, dto.qualitySummary().black().analyzedMoves());
     }
 
     @Test
