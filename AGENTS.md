@@ -41,8 +41,8 @@ These rules each come from a real bug. Keep them when touching the related code 
 - **Broadcasts after commit:** status, game-over and evaluation updates are sent only after the transaction commits, with data captured while entities are attached. WebSocket sends never carry the caller's transaction context.
 - **Fresh state per turn:** the game loop re-reads game and tournament state every turn; no entity is reused across turns.
 - **Fairness:** a provider problem (HTTP errors, safety cap, cache-marker fallback running out of time) pauses the game; it never counts as the model's timeout, invalid move or forfeit.
-- **Prompts:** existing prompt texts, versions and hashes stay byte-identical (pinned by tests). The prompt prefix sent for a side must stay byte-stable across turns so provider caches hit; only the newest user message carries per-turn content.
-- **Analytics scope:** count finished, non-bye games and model sides only; one canonical move per ply (earliest row wins, legacy duplicates allowed by V8); book moves and cancelled games never count toward model metrics.
+- **Prompts:** existing prompt templates keep their exact texts, versions and hashes (pinned by tests). While no prompt-affecting setting changes, the prompt prefix sent for a side stays byte-stable across turns so provider caches hit; only the newest user message carries per-turn content. Supported live changes to prompt-affecting settings (chat mode, resignation, custom instructions) rebuild the system prompt on purpose, from the next turn.
+- **Analytics scope:** model metrics (comparison, reliability, move quality, talkativeness, conversion, leaderboard) count finished, non-bye games and model sides only, with one canonical move per ply (earliest row wins; legacy duplicates are allowed by V8); book moves and cancelled games never count toward them. Operational views keep their own scope: health counts unfinished games, and spend summaries include every paid answer, also from unfinished and cancelled games.
 
 ### 4. Documentation guardrails
 - `README.md` is the front page: keep it under ~1,100 words.
