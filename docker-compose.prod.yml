@@ -1,13 +1,62 @@
 services:
+  secrets-init:
+    image: busybox:1.37.0
+    restart: "no"
+    user: "0:0"
+    volumes:
+      - secrets_prod:/run/secrets
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        umask 077
+        chown 10001:10001 /run/secrets
+        chmod 0700 /run/secrets
+        for name in db_password instance_key; do
+          target="/run/secrets/$$name"
+          if [ ! -e "$$target" ] && [ ! -L "$$target" ]; then
+            temp=$$(mktemp /run/secrets/.secret.XXXXXX)
+            trap 'rm -f "$$temp"' EXIT
+            head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$temp"
+            test "$$(wc -c < "$$temp")" -eq 64
+            chmod 0600 "$$temp"
+            chown 10001:10001 "$$temp"
+            # Hard-link publication is atomic and never replaces an existing file.
+            if ! ln "$$temp" "$$target"; then test -f "$$target"; fi
+            rm -f "$$temp"
+            trap - EXIT
+          fi
+          if [ -L "$$target" ] || [ ! -f "$$target" ] || [ ! -s "$$target" ]; then
+            echo 'Invalid existing secret file' >&2
+            exit 1
+          fi
+          chown 10001:10001 "$$target"
+          chmod 0600 "$$target"
+        done
+
   db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-chess_tournament}
       POSTGRES_USER: ${DB_USER:-chess}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-}
+      POSTGRES_PASSWORD_FILE: ${DB_PASSWORD_FILE:-/run/secrets/db_password}
+    # The official entrypoint rejects both options together. Keep existing .env passwords authoritative.
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        if [ -n "$$POSTGRES_PASSWORD" ]; then unset POSTGRES_PASSWORD_FILE; fi
+        exec docker-entrypoint.sh "$$@"
+      - --
+    command: ["postgres"]
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
+      # The root entrypoint reads the 0600 file before switching to the postgres user.
+      - secrets_prod:/run/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-chess} -d ${DB_NAME:-chess_tournament}"]
       interval: 5s
@@ -22,12 +71,19 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-chess_tournament}
       DB_USER: ${DB_USER:-chess}
-      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_PASSWORD_FILE: ${DB_PASSWORD_FILE:-/run/secrets/db_password}
+      INSTANCE_KEY_FILE: /run/secrets/instance_key
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_API_KEY_FILE: ${OPENROUTER_API_KEY_FILE:-}
       HTTP_PORT: 8080
+    volumes:
+      - secrets_prod:/run/secrets:ro
     # No host port: the frontend (nginx) proxies /api and /ws to backend:8080 on the Compose network.
     # For direct API debugging, see "Direct backend access" in docs/deployment.md.
     depends_on:
+      secrets-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
     healthcheck:
@@ -57,3 +113,4 @@ services:
 
 volumes:
   pgdata_prod:
+  secrets_prod:

@@ -96,13 +96,7 @@ Copy-Item env.example .env
 
 #### Configure and start
 
-Edit `.env`, setting only the two required values:
-
-- `OPENROUTER_API_KEY`
-  - your OpenRouter API key
-- `DB_PASSWORD`
-  - choose a strong password; production Compose has no fallback and the database is not exposed to the host
-  - single-quote a value containing `$` (for example, `DB_PASSWORD='literal$value'`) so Compose treats it literally
+Set your `OPENROUTER_API_KEY` in `.env`, or use `OPENROUTER_API_KEY_FILE` with a read-only mount as described under [Secrets](#secrets). New installs need no database password: it is generated on first start. **Upgrades must keep their existing `DB_PASSWORD` unchanged.**
 
 All other production variables are optional with release assets:
 
@@ -110,6 +104,7 @@ All other production variables are optional with release assets:
 |---|---|
 | `IMAGE_NAMESPACE` | `fjrepo`; change for images published by a fork |
 | `IMAGE_TAG` | Leave empty to use the downloaded release's tag; set an exact version to override it |
+| `DB_PASSWORD` | Optional for new installs; existing installs must retain their stored password |
 | `DB_NAME` | `chess_tournament`; keep unchanged for existing volumes |
 | `DB_USER` | `chess`; keep unchanged for existing volumes |
 | `FRONTEND_PORT` | `4200`; change if that host port is already in use |
@@ -118,7 +113,7 @@ All other production variables are optional with release assets:
 Start the stack; Docker pulls any missing images automatically:
 
 ```bash
-docker compose up -d
+docker compose up -d --wait
 docker compose ps
 docker compose logs --tail=120 backend frontend
 ```
@@ -143,14 +138,16 @@ make setup
 IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
 IMAGE_TAG=v1.6.0               # choose an exact tag from GitHub Releases
 OPENROUTER_API_KEY=sk-or-...
-DB_PASSWORD='choose-a-strong-password'
+DB_PASSWORD=replace-with-a-long-random-password  # required by v1.6.0; keep existing passwords unchanged
 ```
+
+Generated secrets require **v1.7.0+ images**. With v1.6.0 or older images, set `DB_PASSWORD` explicitly even for a new install, as above. For a new install using v1.7.0 or newer, you may omit it. Existing installs must always keep their original `DB_PASSWORD` unchanged.
 
 Start the released images using the production Compose file:
 
 ```bash
 docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --wait
 docker compose -f docker-compose.prod.yml ps
 ```
 
@@ -199,6 +196,29 @@ ALLOWED_HOSTS="chess-server 192.168.1.20"
 Entries are space-separated, without scheme or port: host names and IPv4 addresses, bracketed IPv6 addresses in hex-group notation (`[fd00::1]`), or a wildcard at the start or end of a name (`*.lan`, `chess.*`). The frontend container refuses to start on anything else, including `*` on its own, a wildcard in the middle (`foo.*.lan`) and nginx's `.example.lan` shorthand. A request whose `Host` header names a different host than its request line (an absolute-form request such as `GET http://localhost/api/... HTTP/1.1` with a foreign `Host`) also gets 421. Loopback names stay allowed. Recreate the frontend afterwards (`docker compose -f docker-compose.prod.yml up -d`). The source-build `docker-compose.yml` reads the same variable.
 
 The allowlist lives in the frontend's nginx. The backend's own port (the source-build stack's `127.0.0.1:8081`, the debug override above, `mvn quarkus:dev`) does not check host names, so publish it only while you need it.
+
+## Secrets
+
+Production Compose runs `secrets-init` (`busybox:1.37.0`) before the database and backend. It generates `db_password` and `instance_key` in the named `secrets_prod` volume, each from 32 random bytes encoded as 64 hexadecimal characters. Atomic publication never overwrites existing files; empty files, directories or symlinks fail initialization. Restarts and container recreation retain both secrets. The directory is mode `0700`; files are `0600`, owned by backend UID/GID `10001:10001`. The PostgreSQL Alpine entrypoint starts as root, reads the password, then switches to postgres UID/GID `70:70`; do not override its container user. Both consumers mount the volume read-only. `INSTANCE_KEY_FILE=/run/secrets/instance_key` reserves the key for a later release; it is not used for encryption or signing yet.
+
+Backend precedence is **non-empty explicit env value > `*_FILE` > generated default**. `DB_PASSWORD` and `OPENROUTER_API_KEY` continue to work unchanged; empty env values permit file fallback. File contents are UTF-8 and trimmed; an explicitly configured unreadable or empty file fails startup with a sanitized error. When `DB_PASSWORD_FILE` is unset, Compose selects the generated default `/run/secrets/db_password`. There is no generated OpenRouter key. Native backend runs can also set either file variable; they must provide their own files/DB credentials. Direct Quarkus property overrides remain supported. Secret changes require recreating/restarting the backend.
+
+For PostgreSQL, Compose selects the same path via `POSTGRES_PASSWORD_FILE`. If `DB_PASSWORD` is non-empty, the wrapper removes `POSTGRES_PASSWORD_FILE` before invoking the official entrypoint, so the explicit password wins for both services. **Do not remove `DB_PASSWORD` from an existing `.env`.** PostgreSQL never changes the stored role password merely because a file or environment value changes. The newly generated file is unused for DB authentication on such upgrades. Retain the existing password, project name, DB name/user and database volume. To rotate credentials, use the existing [password rotation steps](#upgrading-volumes-created-before-db_password-was-required); do not delete the secrets volume to rotate them.
+
+To keep the OpenRouter key out of container environment configuration, create a private UTF-8 key file readable by UID 10001 (mode `0600` with that owner on Linux), leave `OPENROUTER_API_KEY` empty, set `OPENROUTER_API_KEY_FILE=/run/openrouter/api_key` in `.env`, and add an operator-owned override:
+
+```yaml
+services:
+  backend:
+    volumes:
+      - ./openrouter.key:/run/openrouter/api_key:ro
+```
+
+Use `docker compose -f docker-compose.prod.yml -f docker-compose.secrets.yml up -d --wait` for that override (use `docker-compose.yml` for downloaded release assets). Docker bind mounts preserve Linux ownership; Docker Desktop operators should verify readability by the backend user. For a custom DB file, set `DB_PASSWORD_FILE` to its container path in `.env` and mount the file read-only at that path in both db and backend. Use a single-line DB password without surrounding whitespace (a final newline is fine), because the official PostgreSQL image does not trim spaces. Never commit secret files. The backend does not log or export resolved secrets. The official PostgreSQL entrypoint internally uses the password during initialization; `*_FILE` keeps it out of Docker's configured environment.
+
+Compose interpolation permits empty OpenRouter credentials, but this part still requires a key from env or file before backend startup (`openrouter.api-key` is required); there is no setup UI yet. No real OpenRouter call is needed to initialize the database. Release assets include this same init service and default their application images to the release tag; repository Compose still requires `IMAGE_TAG`.
+
+Back up `secrets_prod` securely alongside the database, preserving numeric ownership and modes. Never publish its contents or include them in diagnostics. Losing the generated DB password while retaining `pgdata_prod` requires restoring the secret backup or deliberately resetting the role password; a newly generated password cannot unlock the old database. `docker compose down` preserves both volumes; `down -v` destroys both the database and secrets. No schema migration or backfill is introduced. Existing persisted games and credentials remain unchanged when upgrading correctly.
 
 ## Upgrading Volumes Created Before `DB_PASSWORD` Was Required
 
@@ -271,14 +291,15 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Persistence
 - Postgres data is stored in the named Docker volume `pgdata_prod`.
-- Recreating containers does not delete the DB volume.
+- Generated secrets are stored in `secrets_prod`; keep and back up both volumes together.
+- Recreating containers does not delete either volume.
 - To remove all persisted data intentionally:
 
 ```bash
 docker compose -f docker-compose.prod.yml down -v
 ```
 
-Use that only when you explicitly want to destroy the database.
+Use that only when you explicitly want to destroy the database and its generated secrets.
 
 ## Health Checks
 Useful commands:
