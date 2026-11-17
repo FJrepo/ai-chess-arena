@@ -82,6 +82,8 @@ The frontend accepts `localhost`, `127.0.0.1` and `[::1]`; other host names need
 
 See [docs/deployment.md](docs/deployment.md) for upgrades, backups, password rotation and troubleshooting.
 
+From v1.6.0: two-file setup, see the [5-minute start](docs/deployment.md#5-minute-start-from-v160).
+
 ## How it works
 
 - Add models or one human participant, then generate the seeded bracket; top seeds receive byes when needed.
@@ -125,6 +127,7 @@ cd frontend && npm ci && npm start
 make test                               # backend unit + frontend tests
 (cd backend && mvn verify)              # + PostgreSQL integration tests (Docker required)
 (cd frontend && npm run lint && npm run typecheck && npm run format:check)
+python3 -m pip install -r scripts/requirements-test.txt # YAML parser for script tests
 python3 -B -m unittest discover -s scripts -p 'test_*.py' # offline installer and release tests
 ```
 
@@ -155,7 +158,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
 Releases use `vX.Y.Z`. The workflow runs full CI, builds both images and smoke-tests them together before publishing to GHCR as the version tag and `latest`. Deploy a pinned version; `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases) and [CHANGELOG.md](CHANGELOG.md).
 
-Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. Documentation links and images point to the released tag, used Markdown references are retained, and fenced code examples stay intact. See [release publishing notes](docs/deployment.md#release-publishing-notes).
+Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. From v1.6.0, releases will include `docker-compose.yml` pinned to the release tag and `env.example`, attached when the immutable release is created. See [release publishing notes](docs/deployment.md#release-publishing-notes).
 
 Release builds preserve the backend Dockerfile's `MIT, GPL-3.0-or-later` licence label for bundled Stockfish. Frontend and other generated OCI labels are unchanged.
 
