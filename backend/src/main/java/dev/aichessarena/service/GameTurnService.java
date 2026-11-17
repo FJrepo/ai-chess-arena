@@ -63,6 +63,9 @@ public class GameTurnService {
     @Inject
     MoveAttemptService moveAttemptService;
 
+    @Inject
+    TournamentAutoRunService autoRuns;
+
     public TurnResult playTurn(TurnRequest request) {
         boolean mayResign = mayResign(request);
         String turnPrompt = promptService.buildTurnPrompt(
@@ -108,6 +111,10 @@ public class GameTurnService {
         for (int attempt = 1; attempt <= request.maxRetries(); attempt++) {
             if (!request.shouldContinue().getAsBoolean()) {
                 return TurnResult.stopped();
+            }
+
+            if (autoRuns != null && !autoRuns.beforeRequest(request.gameId())) {
+                return TurnResult.paused();
             }
 
             if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
@@ -327,6 +334,7 @@ public class GameTurnService {
             return TurnResult.recorded(parseResult.move(), message);
         }
 
+        if (autoRuns != null && !autoRuns.beforeRequest(request.gameId())) return TurnResult.paused();
         gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), request.maxRetries());
         return TurnResult.terminal();
     }

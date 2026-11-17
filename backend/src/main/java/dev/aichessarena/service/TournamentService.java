@@ -83,6 +83,8 @@ public class TournamentService {
             throw new WebApplicationException("Tournament has already finished", Response.Status.CONFLICT);
         }
         tournament.status = Tournament.TournamentStatus.CANCELLED;
+        tournament.autoRunStatus = Tournament.AutoRunStatus.OFF;
+        tournament.autoRunPauseReason = null;
         tournament.updatedAt = LocalDateTime.now();
         for (Game game : gameRepository.findByTournamentId(tournamentId)) {
             UUID gameId = game.id;
@@ -364,6 +366,10 @@ public class TournamentService {
         if (nextRound == null) {
             // This was the final, tournament is complete
             completedGame.tournament.status = Tournament.TournamentStatus.COMPLETED;
+            if (completedGame.tournament.autoRunStatus != Tournament.AutoRunStatus.OFF) {
+                completedGame.tournament.autoRunStatus = Tournament.AutoRunStatus.FINISHED;
+                completedGame.tournament.autoRunPauseReason = null;
+            }
             return;
         }
 

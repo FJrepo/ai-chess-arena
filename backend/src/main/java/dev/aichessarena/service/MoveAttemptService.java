@@ -40,6 +40,9 @@ public class MoveAttemptService {
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
+    @Inject
+    TournamentAutoRunService autoRuns;
+
     public record AttemptRecord(
             UUID gameId,
             int moveNumber,
@@ -66,9 +69,7 @@ public class MoveAttemptService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void record(AttemptRecord attempt) {
         try {
-            Game game = attempt.outcome().isCostedElsewhere()
-                    ? gameRepository.findById(attempt.gameId())
-                    : gameRepository.findByIdForUpdate(attempt.gameId());
+            Game game = gameRepository.findByIdForUpdate(attempt.gameId());
             if (game == null) {
                 return;
             }
@@ -103,6 +104,7 @@ public class MoveAttemptService {
             if (!attempt.outcome().isCostedElsewhere() && row.costUsd != null) {
                 game.totalCostUsd = game.totalCostUsd.add(row.costUsd);
             }
+            if (autoRuns != null) autoRuns.afterAttempt(game);
             // A paid answer can arrive after cancellation's status update. Invalidate only after the
             // attempt and its cost are visible, without inventing another status change/revision.
             AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));

@@ -56,6 +56,93 @@
       </div>
     </div>
 
+    @if (t.status !== 'CREATED') {
+      <mat-card class="auto-run-panel">
+        <mat-card-content>
+          <p class="run-status" role="status">
+            {{
+              t.autoRunStatus === 'RUNNING'
+                ? 'Running'
+                : t.autoRunStatus === 'PAUSED'
+                  ? 'Paused'
+                  : t.autoRunStatus === 'FINISHED'
+                    ? 'Finished'
+                    : 'Auto-run off'
+            }}
+            · {{ runningGames() }} of {{ t.maxConcurrentGames ?? 2 }} games ·
+            {{ runSpend() | currency: 'USD' }}
+            @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
+              of {{ t.budgetUsd | currency: 'USD' }}
+            } @else {
+              · No budget cap
+            }
+            · {{ attentionGames() }} games need attention
+          </p>
+          @if (t.autoRunPauseReason) {
+            <p>{{ t.autoRunPauseReason }}</p>
+          }
+          <div class="run-controls">
+            <mat-form-field appearance="outline">
+              <mat-label>Concurrent games</mat-label>
+              <mat-select
+                [(ngModel)]="runConcurrency"
+                (ngModelChange)="runDraftDirty = true"
+                [disabled]="!canRun()"
+              >
+                @for (n of concurrencyOptions; track n) {
+                  <mat-option [value]="n">{{ n }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Budget (USD, optional)</mat-label>
+              <input
+                matInput
+                type="number"
+                min="0.01"
+                step="0.01"
+                [(ngModel)]="runBudget"
+                (ngModelChange)="runDraftDirty = true"
+                [disabled]="!canRun()"
+              />
+            </mat-form-field>
+            @if (t.autoRunStatus === 'RUNNING') {
+              <button
+                mat-stroked-button
+                class="pause-run"
+                (click)="pauseRun()"
+                [disabled]="!canRun()"
+              >
+                Pause
+              </button>
+            } @else {
+              <button
+                mat-raised-button
+                color="primary"
+                class="start-run"
+                (click)="runTournament()"
+                [disabled]="!canRun() || !validRunSettings"
+              >
+                {{ t.autoRunStatus === 'PAUSED' ? 'Resume run' : 'Run tournament' }}
+              </button>
+            }
+            <button
+              mat-stroked-button
+              class="save-run"
+              (click)="saveRunSettings()"
+              [disabled]="!canRun() || !validRunSettings || !runDraftDirty"
+            >
+              Save limits
+            </button>
+          </div>
+          <p class="run-hint">
+            Paused games need manual attention in the game view after resuming the run. Human games
+            start manually. In-flight answers can exceed the budget.
+          </p>
+        </mat-card-content>
+      </mat-card>
+    }
+
     <mat-expansion-panel class="cost-panel" [expanded]="false">
       <mat-expansion-panel-header>
         <mat-panel-title>

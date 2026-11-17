@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+- Back up before upgrading. Flyway `V20__tournament_auto_run.sql` adds run status (existing tournaments `OFF`), concurrency (default 2), nullable budget and pause reason. Existing games, results and spend remain unchanged; no backfill. Rebuild/recreate backend and frontend. Backend restarts pause active runs with “Backend restarted”; resume the run and its paused games explicitly. Restore the pre-upgrade backup to roll back.
+
+### Added
+- Auto-run tournaments from the bracket page or `/api/tournaments/{id}/run`, with 1–8 concurrent games (default 2), optional USD budget, pause/resume, editable limits, spend and attention banner. Ready model games start in bracket order through the atomic start path; paused and human games need manual attention. Budget checks before each request/retry and after every attempt pause the run and its running games at the cap; in-flight answers may overshoot. Manual play without a run ignores run limits. Cancellation stops scheduling and restart recovery requires explicit resume.
+
 ## [1.5.0] - 2026-11-17
 
 Variety and robustness: opening variety (standard, random book line or a fixed opening), optional win adjudication with missed-mate markers and a Conversion table, cancelling a tournament, a random bracket draw, prompt-caching metrics, drawn SVG chess pieces, Stockfish 19, and release images for amd64 and arm64 (Apple Silicon runs natively). Release notes now come from this changelog.

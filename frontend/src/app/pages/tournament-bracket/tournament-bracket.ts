@@ -7,6 +7,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
+import { MatInputModule } from '@angular/material/input';
+import { Observable } from 'rxjs';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { CurrencyPipe } from '@angular/common';
 import { ApiService } from '../../services/api.service';
@@ -19,6 +21,7 @@ import { tournamentStatusLabel } from '../../utils/status-labels';
   selector: 'app-tournament-bracket',
   imports: [
     FormsModule,
+    MatInputModule,
     MatFormFieldModule,
     MatSelectModule,
     MatCardModule,
@@ -39,9 +42,40 @@ export class TournamentBracket implements OnInit, OnDestroy {
   tournamentId = '';
   generating = signal(false);
   cancelling = signal(false);
+  runBusy = signal(false);
+  runConcurrency = 2;
+  runBudget: number | null = null;
+  runDraftDirty = false;
+  readonly concurrencyOptions = [1, 2, 3, 4, 5, 6, 7, 8];
+  readonly runningGames = computed(
+    () => this.tournament()?.games.filter((g) => g.status === 'IN_PROGRESS').length ?? 0,
+  );
+  readonly attentionGames = computed(
+    () => this.tournament()?.games.filter((g) => g.status === 'PAUSED').length ?? 0,
+  );
+  readonly runSpend = computed(
+    () => this.tournament()?.games.reduce((sum, g) => sum + (g.totalCostUsd ?? 0), 0) ?? 0,
+  );
+  readonly canRun = computed(
+    () => this.tournament()?.status === 'IN_PROGRESS' && !this.cancelling() && !this.runBusy(),
+  );
+  get validRunSettings(): boolean {
+    return (
+      Number.isInteger(this.runConcurrency) &&
+      this.runConcurrency >= 1 &&
+      this.runConcurrency <= 8 &&
+      (this.runBudget === null ||
+        (Number.isFinite(this.runBudget) &&
+          this.runBudget > 0 &&
+          Math.abs(this.runBudget * 100 - Math.round(this.runBudget * 100)) < 0.000001))
+    );
+  }
+
   readonly canCancel = computed(() => {
     const status = this.tournament()?.status;
-    return (status === 'CREATED' || status === 'IN_PROGRESS') && !this.cancelling();
+    return (
+      (status === 'CREATED' || status === 'IN_PROGRESS') && !this.cancelling() && !this.runBusy()
+    );
   });
   drawMode: BracketDrawMode = 'RANDOM';
   readonly drawnParticipants = computed(() =>
@@ -74,11 +108,14 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   loadTournament() {
-    if (this.cancelling()) return;
+    if (this.cancelling() || this.runBusy()) return;
     const generation = ++this.loadGeneration;
     this.api.getTournament(this.tournamentId).subscribe({
       next: (t) => {
-        if (generation === this.loadGeneration) this.tournament.set(t);
+        if (generation === this.loadGeneration) {
+          this.tournament.set(t);
+          if (!this.runDraftDirty) this.syncRunSettings(t);
+        }
       },
       error: () => {
         if (generation !== this.loadGeneration) return;
@@ -122,6 +159,56 @@ export class TournamentBracket implements OnInit, OnDestroy {
       next: () => this.router.navigate(['/games', game.id]),
       error: (err) => {
         this.showError(err, 'Failed to start the game.');
+        this.loadTournament();
+      },
+    });
+  }
+
+  runTournament(): void {
+    if (!this.canRun() || !this.validRunSettings) return;
+    this.changeRun(() =>
+      this.api.runTournament(this.tournamentId, {
+        maxConcurrentGames: this.runConcurrency,
+        budgetUsd: this.runBudget,
+      }),
+    );
+  }
+
+  saveRunSettings(): void {
+    if (!this.canRun() || !this.validRunSettings) return;
+    this.changeRun(() =>
+      this.api.updateTournamentRun(this.tournamentId, {
+        maxConcurrentGames: this.runConcurrency,
+        budgetUsd: this.runBudget,
+      }),
+    );
+  }
+
+  pauseRun(): void {
+    if (!this.canRun()) return;
+    this.changeRun(() => this.api.pauseTournamentRun(this.tournamentId));
+  }
+
+  private syncRunSettings(t: Tournament): void {
+    this.runConcurrency = t.maxConcurrentGames ?? 2;
+    this.runBudget = t.budgetUsd ?? null;
+  }
+
+  private changeRun(request: () => Observable<Tournament>): void {
+    this.runBusy.set(true);
+    ++this.loadGeneration;
+    request().subscribe({
+      next: (t) => {
+        ++this.loadGeneration;
+        this.tournament.set(t);
+        this.syncRunSettings(t);
+        this.runDraftDirty = false;
+        this.runBusy.set(false);
+        this.loadCostSummary();
+      },
+      error: (err) => {
+        this.runBusy.set(false);
+        this.showError(err, 'Failed to update the tournament run.');
         this.loadTournament();
       },
     });
