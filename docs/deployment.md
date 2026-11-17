@@ -33,6 +33,14 @@ Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 net
 - For native development, `make install-stockfish` installs checksum-verified Stockfish 19 for Linux (x86-64 or ARM64) or macOS (universal). An explicit `--version sf_18` selection remains supported on the previously supported platforms.
 - Rebuild/recreate the backend to use the upgraded binary. No migration or backfill is needed; existing evaluations remain unchanged.
 
+## Prompt caching configuration
+
+Prompt caching is enabled by default. The backend uses an append-only history per side and explicit cache breakpoints for Anthropic and Google models; see [window limits, provider behavior and pricing trade-offs](how-it-works.md#prompt-caching).
+
+Configure the backend with `OPENROUTER_PROMPT_CACHING` (default `true`), `OPENROUTER_PROMPT_CACHE_MAX_PRIOR_MESSAGES` (default `12`) and `OPENROUTER_PROMPT_CACHE_RETAINED_MESSAGES` (default `4`). The limits count prior messages only, excluding system/current-turn/retry messages. Both must be non-negative and retained must not exceed maximum. Disabling caching restores the legacy six-prior-message sliding window and plain messages; it does not disable a provider's automatic caching.
+
+For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
+
 ## Auto-run migration (V20)
 
 Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend startup and adds tournament run state (`OFF` for every existing tournament), concurrency (default 2), optional budget (null/no cap), and pause reason. Existing game positions, attempts, results and spend remain unchanged; no historical backfill is needed. No bundled third-party software changes.

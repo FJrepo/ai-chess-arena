@@ -445,11 +445,11 @@ class GameTurnServiceTest {
     }
 
     @Test
-    void onlyTheRecentConversationIsSentToTheModel() {
+    void anOverfullConversationReanchorsBeforeTheCurrentTurn() {
         List<OpenRouterService.ChatMsg> history = new ArrayList<>();
         history.add(new OpenRouterService.ChatMsg("system", "rules"));
         for (int i = 0; i < 20; i++) {
-            history.add(new OpenRouterService.ChatMsg("user", "turn " + i));
+            history.add(new OpenRouterService.ChatMsg("user", "turn " + i, true));
             history.add(new OpenRouterService.ChatMsg("assistant", "answer " + i));
         }
         Fixture fixture = new Fixture(VALID_MOVE);
@@ -457,10 +457,56 @@ class GameTurnServiceTest {
         fixture.service.playTurn(request(history, 3, 30));
 
         List<OpenRouterService.ChatMsg> sent = fixture.openRouter.sentMessages.getFirst();
-        assertEquals(1 + ConversationWindow.DEFAULT_PRIOR_MESSAGES + 1, sent.size());
+        assertEquals(1 + ConversationWindow.DEFAULT_RETAINED_MESSAGES + 1, sent.size());
         assertEquals("rules", sent.getFirst().content());
+        assertEquals("turn 18", sent.get(1).content());
+        assertEquals(7, history.size(), "only the anchored chunk and accepted answer are kept locally");
+    }
+
+    @Test
+    void disablingCachingRestoresTheSixPriorMessageSlidingWindow() {
+        List<OpenRouterService.ChatMsg> history = new ArrayList<>();
+        history.add(new OpenRouterService.ChatMsg("system", "rules"));
+        for (int i = 0; i < 20; i++) {
+            history.add(new OpenRouterService.ChatMsg("user", "turn " + i, true));
+            history.add(new OpenRouterService.ChatMsg("assistant", "answer " + i));
+        }
+        Fixture fixture = new Fixture(VALID_MOVE);
+        fixture.service.promptCaching = false;
+
+        fixture.service.playTurn(request(history, 3, 30));
+
+        List<OpenRouterService.ChatMsg> sent = fixture.openRouter.sentMessages.getFirst();
+        assertEquals(1 + ConversationWindow.LEGACY_PRIOR_MESSAGES + 1, sent.size());
         assertEquals("turn 17", sent.get(1).content());
-        assertEquals(43, history.size(), "the full history is kept locally");
+        assertEquals(43, history.size());
+    }
+
+    @Test
+    void retriesAndTheNextTurnOnlyAppendToTheOriginalPrefix() {
+        Fixture fixture = new Fixture(answer("not JSON"), answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+        fixture.service.maxPriorMessages = 8;
+        fixture.service.retainedMessages = 2;
+        List<OpenRouterService.ChatMsg> history = new ArrayList<>(List.of(
+                new OpenRouterService.ChatMsg("system", "fixed rules")));
+
+        fixture.service.playTurn(request(history, 3, 30));
+        List<OpenRouterService.ChatMsg> first = fixture.openRouter.sentMessages.get(0);
+        List<OpenRouterService.ChatMsg> retry = fixture.openRouter.sentMessages.get(1);
+        List<OpenRouterService.ChatMsg> lastRetry = fixture.openRouter.sentMessages.get(2);
+        assertEquals(first, retry.subList(0, first.size()));
+        assertEquals(retry, lastRetry.subList(0, retry.size()));
+        assertTrue(lastRetry.get(1).startsTurn());
+        assertFalse(lastRetry.get(3).startsTurn(), "a retry must not move the cache boundary");
+
+        fixture.service.playTurn(request(history, 3, 30));
+        List<OpenRouterService.ChatMsg> next = fixture.openRouter.sentMessages.get(3);
+        assertEquals(lastRetry, next.subList(0, lastRetry.size()));
+        fixture.service.playTurn(request(history, 3, 30));
+        List<OpenRouterService.ChatMsg> atLimit = fixture.openRouter.sentMessages.get(4);
+        assertEquals(10, atLimit.size(), "system + eight prior messages + current turn");
+        fixture.service.playTurn(request(history, 3, 30));
+        assertEquals(4, fixture.openRouter.sentMessages.get(5).size(), "custom retained budget is applied");
     }
 
     @Test

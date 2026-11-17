@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import org.jboss.logging.Logger;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
 public class GameTurnService {
@@ -35,6 +36,15 @@ public class GameTurnService {
 
     /** Monotonic clock for the turn deadline ({@link System#nanoTime()}); replaceable in tests. */
     LongSupplier nanoClock = System::nanoTime;
+
+    @ConfigProperty(name = "openrouter.prompt-caching", defaultValue = "true")
+    boolean promptCaching = true;
+
+    @ConfigProperty(name = "openrouter.prompt-cache-max-prior-messages", defaultValue = "12")
+    int maxPriorMessages = ConversationWindow.DEFAULT_MAX_PRIOR_MESSAGES;
+
+    @ConfigProperty(name = "openrouter.prompt-cache-retained-messages", defaultValue = "4")
+    int retainedMessages = ConversationWindow.DEFAULT_RETAINED_MESSAGES;
 
     @Inject
     ChessService chessService;
@@ -83,8 +93,11 @@ public class GameTurnService {
                 mayResign
         );
 
+        if (promptCaching) {
+            ConversationWindow.reanchor(request.history(), maxPriorMessages, retainedMessages);
+        }
         int turnStart = request.history().size();
-        request.history().add(new OpenRouterService.ChatMsg("user", turnPrompt));
+        request.history().add(new OpenRouterService.ChatMsg("user", turnPrompt, true));
 
         // Decided once per turn and before the move time starts: the catalog lookup must not eat the model's time.
         ReasoningEffort effort = openRouterService.resolveReasoningEffort(request.modelId(), request.reasoningEffort());
@@ -131,7 +144,8 @@ public class GameTurnService {
 
             OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
                     request.modelId(),
-                    ConversationWindow.trim(request.history(), turnStart, ConversationWindow.DEFAULT_PRIOR_MESSAGES),
+                    promptCaching ? List.copyOf(request.history())
+                            : ConversationWindow.trim(request.history(), turnStart, ConversationWindow.LEGACY_PRIOR_MESSAGES),
                     turnDeadline,
                     request.maxOutputTokens(),
                     effort

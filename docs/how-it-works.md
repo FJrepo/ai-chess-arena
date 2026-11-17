@@ -10,6 +10,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Cancelling a tournament](#cancelling-a-tournament)
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
 - [Model turns and prompts](#model-turns-and-prompts)
+- [Prompt caching](#prompt-caching)
 - [Time limit per move](#time-limit-per-move)
 - [Output-token limit](#output-token-limit) and [fixing a cut-off game](#fixing-a-cut-off-game)
 - [Reasoning effort](#reasoning-effort)
@@ -145,9 +146,37 @@ Models are asked to answer in JSON, but the parser also extracts a move from oth
 
 *Max attempts per move* (API field `maxRetries`) is the total number of attempts per move (3 means up to two retries); after that the model forfeits, and a model that runs out of time forfeits on time.
 
-Each model gets its system prompt, its last few exchanges and the current turn; older turns are not resent because every turn prompt contains the moves so far (PGN) and the full position (FEN, board, legal moves).
+Each model gets its system prompt, an append-only chunk of its own prior exchanges and the current turn. Every new turn prompt contains the moves so far (PGN, including book moves) and the full position (FEN, board, legal moves), plus the opponent's latest move/message when present. New position and opponent data go only in that newest user message; earlier messages are replayed verbatim.
 
 Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override.
+
+### Prompt caching
+
+Provider caches reuse an identical **prefix**. Sliding the oldest exchange out on every move changes that prefix, so even a large number of cache writes can produce almost no reads. By default, each side now has its own anchor: the messages sent on its next turn start with exactly the same roles and text bytes as its previous request, followed by the previous answer and the new turn. Historical prompts and raw answers keep their original whitespace and JSON ordering; they are never rebuilt with timestamps, costs or updated positions.
+
+The window grows append-only until there are **more than 12 prior messages** (normally six completed turns). Before appending the next turn, it re-anchors to the last **four messages** (normally two completed turns), then grows again. Exactly 12 prior messages are still sent. These are message-count limits, not a fixed input-token cap: the system prompt, newest user message and all retries of that turn are outside the prior-message budget. Retries append after the current turn without changing its prefix or cache boundary. Re-anchoring retains complete turns within the retained budget; if a long retry sequence cannot fit, that entire turn is dropped. PGN still supplies the complete game, including the opening, after every re-anchor.
+
+The backend settings are:
+
+| Property | Default | Meaning |
+|---|---|---|
+| `openrouter.prompt-caching` | `true` | Enable append-only chunks and explicit provider cache markers. `false` restores the former six-prior-message sliding window with plain string content. Providers can still cache automatically. |
+| `openrouter.prompt-cache-max-prior-messages` | `12` | Re-anchor only when prior messages exceed this number. |
+| `openrouter.prompt-cache-retained-messages` | `4` | Keep up to this many prior messages in complete turns at a re-anchor. Must be between zero and the maximum; both limits must be non-negative. |
+
+Environment equivalents are `OPENROUTER_PROMPT_CACHING`, `OPENROUTER_PROMPT_CACHE_MAX_PRIOR_MESSAGES` and `OPENROUTER_PROMPT_CACHE_RETAINED_MESSAGES`; see [deployment configuration](deployment.md#prompt-caching-configuration).
+
+For `anthropic/*`, moving `~anthropic/*` aliases and `google/*` model ids, the backend sends one explicit breakpoint on the final text block of the last prior message, or on the system prompt when there is no history. Only that message uses OpenRouter's content-array form, for example:
+
+```json
+{"role":"assistant","content":[{"type":"text","text":"{\"move\":\"e4\"}","cache_control":{"type":"ephemeral"}}]}
+```
+
+The current turn and its retries are never marked. The breakpoint moves forward as history grows; it is request metadata, never part of the stored text. There is at most one marker per request (within Anthropic's four-breakpoint limit, and the final breakpoint Gemini uses). Other providers receive plain string messages with the same stable text prefix for automatic caching. See [OpenRouter's prompt-caching contract](https://openrouter.ai/docs/guides/best-practices/prompt-caching).
+
+This sends slightly more history tokens per turn than the former three-turn window. With cache hits, most repeated input is read from cache at a fraction of the normal input price; cache writes can cost extra. Model-specific minimum lengths, expiry, routing and re-anchors can still cause misses, so savings are not guaranteed. The setup cost preview remains a rough heuristic; use the [prompt-caching analytics](#prompt-caching-metrics) and provider-reported costs to measure actual results.
+
+Each side's system prompt stays identical during ordinary play. Chat-mode or resignation changes rebuild both system prompts and **reset the cached prefix**. Reasoning-effort changes can also invalidate provider caching; changing settings or rebuilding/resuming a conversation should be treated as a cache reset. A restart/resume begins fresh in-memory conversation chunks while retaining persisted moves, PGN, attempts and spend. There is no migration or backfill.
 
 ## Time limit per move
 
@@ -391,7 +420,7 @@ A move counts as talking when a chat message was stored for the same game, move 
 
 Comparison API rows carry `optionalChat` and `mandatoryChat` with `moves`, `messages`, `talkRate` and `averageMessageLength` (the last two omitted without moves or messages).
 
-### Prompt caching
+### Prompt caching metrics
 
 The *Prompt caching* table shows per-model prompt tokens, cached prompt tokens (cache reads), cache hit rate (`cached / prompt`), cache writes and estimated savings in USD. It uses all recorded usage-bearing attempts, including accepted moves, retries, truncated answers, provider errors, discarded answers and resignations. The same completion-time window, tournament and minimum-games filters as the other comparison tables apply: finished, non-bye games only. Attempts without usage are left out; tokens are not counted again from moves.
 
@@ -401,7 +430,7 @@ Estimated savings are `cached tokens × (pricing.prompt − pricing.input_cache_
 
 Each comparison uses one cached catalog price snapshot for every model row and never waits for catalog I/O. With an empty or expired cache, a single background refresh updates prices for later comparisons; an existing stale snapshot remains usable. Failed refreshes wait 60 seconds after failure before another attempt, including when there is no cached catalog. A cold-cache comparison shows **n/a** for savings until prices become available and the comparison cache (15 seconds) expires.
 
-All existing costs continue to use OpenRouter's returned `usage.cost`, which already reflects provider billing (including cache reads and writes); the app does not recalculate billed costs from catalog list prices. Comparison API rows add `promptCaching` with `promptTokens`, `cachedPromptTokens`, `cacheHitRate`, `cacheWriteTokens` and `estimatedSavingsUsd`; unknown values may be omitted. This step only measures caching: prompts, request messages and `cache_control` are unchanged.
+All existing costs continue to use OpenRouter's returned `usage.cost`, which already reflects provider billing (including cache reads and writes); the app does not recalculate billed costs from catalog list prices. Comparison API rows add `promptCaching` with `promptTokens`, `cachedPromptTokens`, `cacheHitRate`, `cacheWriteTokens` and `estimatedSavingsUsd`; unknown values may be omitted. These metrics also measure the [append-only prompt window and cache breakpoints](#prompt-caching); older attempts and their recorded counters remain unchanged.
 
 ### Resignations in analytics
 

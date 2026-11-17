@@ -1,6 +1,8 @@
 package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.aichessarena.entity.ChatMode;
@@ -93,6 +95,8 @@ class GameConversationServiceTest {
         GameConversationService.ConversationState state = service.initializeConversation(game.id);
         state.whiteHistory().add(new OpenRouterService.ChatMsg("user", "turn 1"));
         state.whiteHistory().add(new OpenRouterService.ChatMsg("assistant", "{\"move\":\"e4\"}"));
+        var originalTurn = state.whiteHistory().get(1);
+        String originalSystem = state.whiteHistory().getFirst().content();
 
         game.tournament.chatMode = ChatMode.MANDATORY;
         GameConversationService.ConversationState refreshed = service.refreshSystemPrompts(game, state);
@@ -103,7 +107,25 @@ class GameConversationServiceTest {
         assertEquals("system", refreshed.whiteHistory().getFirst().role());
         assertTrue(refreshed.whiteHistory().getFirst().content().contains(PromptService.REQUIRED_MESSAGE_RULE));
         assertEquals("turn 1", refreshed.whiteHistory().get(1).content());
+        assertSame(originalTurn, refreshed.whiteHistory().get(1));
+        assertNotEquals(originalSystem, refreshed.whiteHistory().getFirst().content(), "settings change resets the prefix");
         assertEquals(1, refreshed.blackHistory().size());
+    }
+
+    @Test
+    void unchangedSettingsKeepSystemPromptBytesIdenticalWhenRebuilt() {
+        Game game = tournamentGame(ChatMode.OPTIONAL);
+        GameConversationService service = baseService(Map.of(game.id, game), List.of());
+        var state = service.initializeConversation(game.id);
+        String white = state.whiteHistory().getFirst().content();
+        String black = state.blackHistory().getFirst().content();
+        var whitePrompt = state.whitePrompt();
+        for (int turn = 0; turn < 20; turn++) {
+            state = service.refreshSystemPrompts(game, state);
+            assertEquals(white, state.whiteHistory().getFirst().content());
+            assertEquals(black, state.blackHistory().getFirst().content());
+            assertEquals(whitePrompt, state.whitePrompt());
+        }
     }
 
     private static Game tournamentGame(ChatMode chatMode) {

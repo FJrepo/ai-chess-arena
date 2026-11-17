@@ -107,6 +107,9 @@ public class OpenRouterService {
     @ConfigProperty(name = "openrouter.request-safety-cap", defaultValue = "PT10M")
     Duration requestSafetyCap = Duration.ofMinutes(10);
 
+    @ConfigProperty(name = "openrouter.prompt-caching", defaultValue = "true")
+    boolean promptCaching = true;
+
     /** Monotonic clock for deadlines ({@link System#nanoTime()}); replaceable in tests. */
     LongSupplier nanoClock = System::nanoTime;
 
@@ -195,10 +198,19 @@ public class OpenRouterService {
             }
 
             ArrayNode msgs = body.putArray("messages");
-            for (ChatMsg msg : messages) {
+            int breakpoint = promptCaching && needsCacheBreakpoint(modelId) ? stablePrefixEnd(messages) : -1;
+            for (int i = 0; i < messages.size(); i++) {
+                ChatMsg msg = messages.get(i);
                 ObjectNode m = msgs.addObject();
                 m.put("role", msg.role());
-                m.put("content", msg.content());
+                if (i == breakpoint) {
+                    ObjectNode block = m.putArray("content").addObject();
+                    block.put("type", "text");
+                    block.put("text", msg.content());
+                    block.putObject("cache_control").put("type", "ephemeral");
+                } else {
+                    m.put("content", msg.content());
+                }
             }
 
             String jsonBody = objectMapper.writeValueAsString(body);
@@ -1077,7 +1089,33 @@ public class OpenRouterService {
         return body.substring(0, 500) + "...";
     }
 
-    public record ChatMsg(String role, String content) {}
+    private static boolean needsCacheBreakpoint(String modelId) {
+        return modelId != null && (modelId.startsWith("anthropic/") || modelId.startsWith("~anthropic/")
+                || modelId.startsWith("google/"));
+    }
+
+    /** One moving breakpoint, before the current turn including all of its retries. Never stored in history. */
+    private static int stablePrefixEnd(List<ChatMsg> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).startsTurn()) {
+                return i - 1;
+            }
+        }
+        // Simple callers without turn metadata have no retry suffix: their last user message is the current turn.
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if ("user".equals(messages.get(i).role())) {
+                return i - 1;
+            }
+        }
+        return !messages.isEmpty() && "system".equals(messages.getFirst().role()) ? 0 : -1;
+    }
+
+    /** Immutable text, replayed verbatim. startsTurn is internal boundary metadata, never sent in the JSON. */
+    public record ChatMsg(String role, String content, boolean startsTurn) {
+        public ChatMsg(String role, String content) {
+            this(role, content, false);
+        }
+    }
 
     /**
      * An absolute point on the monotonic clock ({@link System#nanoTime()}) by which a complete answer must have
