@@ -55,6 +55,18 @@ describe('TournamentBracket', () => {
     expect(element.querySelector('.start-run')?.textContent).toContain('Run tournament');
   });
 
+  it('links to setup with only the tournament ID in the rematch URL', () => {
+    const original = {
+      ...tournament('COMPLETED', 'Winner', finalGame({ status: 'COMPLETED' })),
+      sharedCustomInstructions: 'Private instructions',
+    };
+    const element = render(original);
+    const action = Array.from(element.querySelectorAll('a')).find(
+      (link) => link.textContent.trim() === 'Run this tournament again',
+    );
+    expect(action?.getAttribute('href')).toBe('/tournaments/' + original.id + '/rematch');
+  });
+
   function runPage(
     status: Tournament['status'] = 'IN_PROGRESS',
     runStatus: Tournament['autoRunStatus'] = 'OFF',
@@ -94,6 +106,43 @@ describe('TournamentBracket', () => {
     fixture.detectChanges();
     return { fixture, api, component: fixture.componentInstance, current };
   }
+
+  it('starts with an unchanged large cap and never rounds an edited amount into a patch', () => {
+    const { api, component, current } = runPage();
+    const exact = '99999999999999999.99';
+    api.getTournament.mockReturnValue(of({ ...current, budgetUsd: 1e17, budgetUsdExact: exact }));
+    component.loadTournament();
+    expect(component.runBudget).toBe(exact);
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledWith(current.id, {});
+    api.getTournament.mockReturnValue(of({ ...current, budgetUsd: 1e17, budgetUsdExact: exact }));
+    component.loadTournament();
+    component.runBudget = '99999999999999999.98';
+    expect(component.runSettingsChanged).toBe(true);
+    expect(component.validRunBudget).toBe(false);
+  });
+
+  it('keeps a local concurrency edit while picking up a new remote budget', () => {
+    const { api, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+    component.runConcurrency = 4;
+    api.getTournament.mockReturnValue(of({ ...current, budgetUsd: 2 }));
+    component.loadTournament();
+    expect(component.runConcurrency).toBe(4);
+    expect(component.runBudget).toBe('2');
+    component.saveRunSettings();
+    expect(api.updateTournamentRun).toHaveBeenCalledWith(current.id, { maxConcurrentGames: 4 });
+  });
+
+  it('keeps a local budget edit while picking up a new remote concurrency limit', () => {
+    const { api, component, current } = runPage('IN_PROGRESS', 'PAUSED');
+    component.runBudget = '2';
+    api.getTournament.mockReturnValue(of({ ...current, maxConcurrentGames: 3 }));
+    component.loadTournament();
+    expect(component.runConcurrency).toBe(3);
+    expect(component.runBudget).toBe('2');
+    component.runTournament();
+    expect(api.runTournament).toHaveBeenCalledWith(current.id, { budgetUsd: 2 });
+  });
 
   function runBanner(fixture: ComponentFixture<TournamentBracket>): string {
     return fixture.nativeElement
@@ -385,7 +434,6 @@ describe('TournamentBracket', () => {
       input.value = '5.00';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       fixture.detectChanges();
-      expect(component.runDraftDirty).toBe(true);
       expect(save.disabled).toBe(true);
       expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
 
@@ -419,7 +467,6 @@ describe('TournamentBracket', () => {
       const { fixture, component, api, current } = runPage();
       component.tournament.set({ ...current, autoRunStatus: status });
       component.runConcurrency = 4;
-      component.runDraftDirty = true;
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.save-run')).toBeNull();
       expect(fixture.nativeElement.querySelector('.run-unsaved')).toBeNull();
@@ -443,7 +490,6 @@ describe('TournamentBracket', () => {
     fixture.detectChanges();
     expect(save.disabled).toBe(true);
     expect(api.updateTournamentRun).toHaveBeenCalledExactlyOnceWith('t-1', {
-      maxConcurrentGames: 2,
       budgetUsd: 10,
     });
     pending.next({ ...current, budgetUsd: 10 });
@@ -463,7 +509,6 @@ describe('TournamentBracket', () => {
     component.runBudget = '10';
     component.saveRunSettings();
     expect(api.updateTournamentRun).toHaveBeenCalledWith('t-1', {
-      maxConcurrentGames: 2,
       budgetUsd: 10,
     });
     expect(api.runTournament).not.toHaveBeenCalled();
@@ -554,9 +599,34 @@ describe('TournamentBracket', () => {
       (fixture.nativeElement.querySelector(action) as HTMLButtonElement).click();
       const request = status === 'RUNNING' ? api.updateTournamentRun : api.runTournament;
       expect(request).toHaveBeenCalledExactlyOnceWith('t-1', {
-        maxConcurrentGames: 2,
         budgetUsd: null,
       });
+    },
+  );
+
+  it.each([
+    ['OFF', '5.0.1'],
+    ['PAUSED', '5.000'],
+    ['RUNNING', '000000000000000005'],
+  ] as const)(
+    'preserves malformed budget text across polls when %s (%s)',
+    async (status, malformed) => {
+      const { fixture, component, api } = runPage('IN_PROGRESS', status);
+      await fixture.whenStable();
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      input.value = malformed;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fixture.detectChanges();
+      component.loadTournament();
+      fixture.detectChanges();
+      expect(component.runBudget).toBe(malformed);
+      expect(fixture.nativeElement.querySelector('#run-budget-error')).not.toBeNull();
+      const action = status === 'RUNNING' ? '.save-run' : '.start-run';
+      expect(fixture.nativeElement.querySelector(action).disabled).toBe(true);
+      component.runTournament();
+      component.saveRunSettings();
+      expect(api.runTournament).not.toHaveBeenCalled();
+      expect(api.updateTournamentRun).not.toHaveBeenCalled();
     },
   );
 
@@ -571,7 +641,6 @@ describe('TournamentBracket', () => {
     }
     component.runTournament();
     expect(api.runTournament).toHaveBeenCalledExactlyOnceWith('t-1', {
-      maxConcurrentGames: 2,
       budgetUsd: 1.25,
     });
   });
@@ -579,7 +648,6 @@ describe('TournamentBracket', () => {
   it('keeps drafts across polls and ignores a poll predating a run change', () => {
     const { component, api, current } = runPage();
     component.runBudget = '9';
-    component.runDraftDirty = true;
     component.loadTournament();
     expect(component.runBudget).toBe('9');
     const oldPoll = new Subject<Tournament>();
@@ -596,7 +664,7 @@ describe('TournamentBracket', () => {
     oldPoll.next(current);
     expect(component.tournament()?.autoRunStatus).toBe('RUNNING');
     expect(component.runBusy()).toBe(false);
-    expect(component.runDraftDirty).toBe(false);
+    expect(component.runSettingsChanged).toBe(false);
   });
 
   it('surfaces run failures and releases the controls', () => {

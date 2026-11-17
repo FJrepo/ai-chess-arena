@@ -148,7 +148,9 @@ class OpeningTurnIT {
 
         assertEquals(3, model.calls.size(), "initial turn, corrective retry and the opponent's turn");
         assertTrue(model.calls.getFirst().getLast().content().contains("Current game state:"));
-        assertTrue(model.calls.get(1).getLast().content().contains("Your previous response was invalid."));
+        var retry = model.calls.get(1);
+        assertTrue(retry.getLast().content().contains("Your previous response was invalid."));
+        assertEquals(model.calls.getFirst().getFirst(), retry.getFirst());
         for (List<OpenRouterService.ChatMsg> messages : model.calls) {
             assertTrue(messages.getFirst().content().contains(PromptService.NO_HINTS_RULE));
             assertFalse(messages.stream().anyMatch(message -> message.content().contains("Legal moves:")));
@@ -156,7 +158,7 @@ class OpeningTurnIT {
         QuarkusTransaction.requiringNew().run(() -> {
             Move move = moves.findByGameId(id).stream().filter(entry -> !entry.isBook).findFirst().orElseThrow();
             assertEquals("v2-resign-no-hints", move.promptVersion);
-            assertEquals(new PromptService().computePromptHash(model.calls.getFirst().getFirst().content()),
+            assertEquals(new PromptService().computePromptHash(retry.getFirst().content()),
                     move.promptHash);
         });
     }

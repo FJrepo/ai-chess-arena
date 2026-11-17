@@ -2,7 +2,7 @@ import { OpenRouterAccess } from '../../services/openrouter-access';
 import { BoardThemeService } from '../../services/board-theme.service';
 import { MatMenuModule } from '@angular/material/menu';
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -198,6 +198,7 @@ export class GameView implements OnInit, OnDestroy {
       fromCatalog: known != null,
     };
   });
+  @ViewChild(MoveListComponent) private moveList?: MoveListComponent;
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -948,12 +949,13 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   goToMove(index: number) {
+    this.moveList?.revealSelectedMove();
     this.currentMoveIndex.set(index);
   }
 
   goToTimelineEvent(event: TimelineEvent) {
     if (event.moveIndex != null) {
-      this.currentMoveIndex.set(event.moveIndex);
+      this.goToMove(event.moveIndex);
     }
   }
 
@@ -961,13 +963,13 @@ export class GameView implements OnInit, OnDestroy {
     this.currentMoveIndex.set(-1);
   }
   goPrev() {
-    this.currentMoveIndex.update((i) => Math.max(-1, i - 1));
+    this.goToMove(Math.max(-1, this.currentMoveIndex() - 1));
   }
   goNext() {
-    this.currentMoveIndex.update((i) => Math.min(this.moves().length - 1, i + 1));
+    this.goToMove(Math.min(this.moves().length - 1, this.currentMoveIndex() + 1));
   }
   goLast() {
-    this.currentMoveIndex.set(this.moves().length - 1);
+    this.goToMove(this.moves().length - 1);
   }
 
   pauseGame() {

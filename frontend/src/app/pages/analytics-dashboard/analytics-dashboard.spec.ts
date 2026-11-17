@@ -89,6 +89,22 @@ describe('AnalyticsDashboard', () => {
     );
   });
 
+  it('uses singular game counts in Overview for a one-game scope', async () => {
+    const { harness } = await renderDashboard('?tab=overview', {
+      comparison: of({
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        gamesCount: 1,
+        models: [comparisonRow('model.sample', { gamesPlayed: 1, forfeits: 1 })],
+      }),
+    });
+    const element = harness.routeNativeElement!;
+    expect(element.textContent).toContain('1 terminal game in scope.');
+    expect(element.textContent).toContain('across 1 game');
+    expect(element.textContent).not.toContain('1 games');
+  });
+
   it('opens Play quality from the tab query parameter', async () => {
     const { harness, component } = await renderDashboard('?tab=quality');
     expect(component.selectedTabIndex()).toBe(1);

@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 
 /**
  * Loads the games of an analytics window: finished games by completion time, unfinished ones by creation time.
- * Byes are never part of a window. Moves, rejected attempts and chat messages follow the selected games.
+ * Byes are never part of a window. Related rows follow the selected games.
  */
 @ApplicationScoped
 public class AnalyticsWindowLoader {
@@ -37,11 +37,15 @@ public class AnalyticsWindowLoader {
     @Inject
     ChatMessageRepository chatMessageRepository;
 
-    AnalyticsScope loadScope(int days, UUID tournamentId) {
-        return loadScope(days, tournamentId, null);
+    AnalyticsScope loadHealthScope(int days, UUID tournamentId) {
+        return loadHealthScope(days, tournamentId, null);
     }
 
-    AnalyticsScope loadScope(int days, UUID tournamentId, Boolean legalMoveHints) {
+    AnalyticsScope loadHealthScope(int days, UUID tournamentId, Boolean legalMoveHints) {
+        return loadScope(days, tournamentId, legalMoveHints, false);
+    }
+
+    private AnalyticsScope loadScope(int days, UUID tournamentId, Boolean legalMoveHints, boolean includeModelAnalytics) {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
         List<Game> games = gameRepository.findInWindow(cutoff, tournamentId, legalMoveHints).stream()
                 .filter(game -> !AnalyticsGameOutcomeClassifier.isBye(game))
@@ -51,9 +55,10 @@ public class AnalyticsWindowLoader {
                 games,
                 moveRepository.findInWindow(cutoff, tournamentId),
                 moveAttemptRepository.findRejectedCostsInWindow(cutoff, tournamentId),
-                chatMessageRepository.findPlyMessagesInWindow(cutoff, tournamentId),
-                moveAttemptRepository.findResignationTurnAttemptsInWindow(cutoff, tournamentId),
-                moveAttemptRepository.findUsageInWindow(cutoff, tournamentId)
+                includeModelAnalytics ? chatMessageRepository.findPlyMessagesInWindow(cutoff, tournamentId) : List.of(),
+                includeModelAnalytics
+                        ? moveAttemptRepository.findResignationTurnAttemptsInWindow(cutoff, tournamentId) : List.of(),
+                includeModelAnalytics ? moveAttemptRepository.findUsageInWindow(cutoff, tournamentId) : List.of()
         );
     }
 
@@ -62,7 +67,7 @@ public class AnalyticsWindowLoader {
     }
 
     AnalyticsScope loadTerminalScope(int days, UUID tournamentId, Boolean legalMoveHints) {
-        AnalyticsScope scope = loadScope(days, tournamentId, legalMoveHints);
+        AnalyticsScope scope = loadScope(days, tournamentId, legalMoveHints, true);
         List<Game> terminalGames = scope.games().stream()
                 .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status))
                 .toList();

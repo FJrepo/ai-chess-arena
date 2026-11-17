@@ -40,6 +40,9 @@
       </div>
 
       <div class="header-right">
+        <a mat-stroked-button [routerLink]="['/tournaments', t.id, 'rematch']">
+          Run this tournament again
+        </a>
         @for (format of exportFormats; track format) {
           <button
             mat-stroked-button
@@ -89,7 +92,7 @@
               · {{ runningGames() }} {{ runningGames() === 1 ? 'game' : 'games' }} running (limit
               {{ t.maxConcurrentGames ?? 2 }}) · {{ runSpend() | currency: 'USD' }}
               @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
-                of {{ t.budgetUsd | currency: 'USD' }}
+                of {{ t.budgetUsdExact ? '$' + t.budgetUsdExact : (t.budgetUsd | currency: 'USD') }}
               }
               spent
               @if (t.budgetUsd === null || t.budgetUsd === undefined) {
@@ -101,7 +104,12 @@
               @if (!validRunBudget) {
                 budget needs correction
               } @else if (runBudgetUsd !== null) {
-                {{ runBudgetUsd | currency: 'USD' }} budget
+                {{
+                  t.budgetUsdExact && !runBudgetChanged
+                    ? '$' + t.budgetUsdExact
+                    : (runBudgetUsd | currency: 'USD')
+                }}
+                budget
               } @else {
                 no budget cap
               }
@@ -113,11 +121,7 @@
           <div class="run-controls">
             <mat-form-field appearance="outline">
               <mat-label>Concurrent games</mat-label>
-              <mat-select
-                [(ngModel)]="runConcurrency"
-                (ngModelChange)="runDraftDirty = true"
-                [disabled]="!canRun()"
-              >
+              <mat-select [(ngModel)]="runConcurrency" [disabled]="!canRun()">
                 @for (n of concurrencyOptions; track n) {
                   <mat-option [value]="n">{{ n }}</mat-option>
                 }
@@ -132,7 +136,6 @@
                 [attr.aria-invalid]="!validRunBudget"
                 [attr.aria-describedby]="!validRunBudget ? 'run-budget-error' : null"
                 [(ngModel)]="runBudget"
-                (ngModelChange)="runDraftDirty = true"
                 [disabled]="!canRun()"
               />
             </mat-form-field>
@@ -174,8 +177,8 @@
           </div>
           @if (!validRunBudget) {
             <p id="run-budget-error" role="alert">
-              Enter a positive budget with at most two decimal places, or clear the field for no
-              cap.
+              Enter a positive budget with at most two decimal places that can be saved without
+              rounding, or clear the field for no cap.
             </p>
           }
           <p class="run-hint">

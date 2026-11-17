@@ -238,6 +238,55 @@ describe('GameView', () => {
     ).toContain('C60 · Ruy Lopez');
   });
 
+  it('brings the final ply back into view on Last move even when it is still selected', () => {
+    const moves = [storedMove(1, 'WHITE', 'e4', AFTER_E4), storedMove(1, 'BLACK', 'e5', AFTER_E5)];
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () => of(gameWith({ status: 'COMPLETED', moves })),
+            getGameAttempts: () => of([]),
+            getSystemStatus: () => EMPTY,
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => EMPTY,
+            reconnected: () => EMPTY,
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const list = element.querySelector<HTMLElement>('.move-list-scroll')!;
+    const selected = list.querySelector<HTMLElement>('.move.active')!;
+    expect(selected.textContent).toContain('e5');
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 40));
+    vi.spyOn(selected, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 60, 100, 20));
+
+    fixture.componentInstance.moves.set([...moves]);
+    fixture.detectChanges();
+    expect(list.scrollTop).toBe(0);
+
+    element.querySelector<HTMLButtonElement>('button[aria-label="Last move"]')!.click();
+    fixture.detectChanges();
+    expect(list.scrollTop).toBe(40);
+    expect(list.querySelector('.move.active')).toBe(selected);
+  });
+
   it('hides the evaluation bar when stockfish is unavailable', () => {
     const { component } = createComponent();
 

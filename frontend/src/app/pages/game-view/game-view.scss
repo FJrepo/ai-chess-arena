@@ -520,15 +520,20 @@ app-advantage-bar {
 // Narrower than the supported desktop range: one column, natural heights.
 @media (max-width: 1099px) {
   .game-layout {
-    --board-size: clamp(300px, calc(100vw - 96px), 560px);
+    // Leave space for the page padding, evaluation bar and gap even on narrow phones.
+    --board-size: clamp(0px, calc(100vw - 48px - 3.5rem), 560px);
 
     display: flex;
     flex-direction: column;
   }
 
-  .feed-column,
-  .moves-area {
+  .feed-column {
     contain: none;
     max-height: 520px;
+  }
+
+  .moves-area {
+    contain: none;
+    --move-list-max-height: min(28rem, 60dvh);
   }
 }

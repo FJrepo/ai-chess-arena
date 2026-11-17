@@ -14,9 +14,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Tournament setup can hide legal move lists from models on every attempt. Games show the hint mode, and Analytics and Leaderboard can show either mode on its own.
+- Open an editable rematch setup from an existing tournament, with its lineup, rules and run limits prefilled and a preview of changes before creation.
+
+### Changed
+
+- Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 
 ### Fixed
 
+- System Status shows a neutral validation state for untested OpenRouter keys and unavailable checks. Testing the key updates the status card.
+- Analytics Overview uses the singular for a one-game scope.
+- The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
 
 ## [1.7.1] - 2026-11-17

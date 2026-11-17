@@ -1,6 +1,6 @@
 import { OpenRouterSettings } from '../../components/openrouter-settings/openrouter-settings';
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, computed, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
@@ -8,9 +8,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { finalize } from 'rxjs';
 import { ApiService, SystemStatusResponse } from '../../services/api.service';
+import { OpenRouterClient } from '../../services/openrouter-client';
 import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 
-/** Health of a dependency; `unknown` when the backend could not be asked. */
+/** Health of a dependency given the latest check, if available. */
 export type StatusTone = 'healthy' | 'degraded' | 'unknown';
 
 @Component({
@@ -36,17 +37,39 @@ export class SystemStatus implements OnInit {
   backendReachable = computed(() => this.status() !== null && !this.error());
   backendVersion = computed(() => this.status()?.backendVersion ?? 'unknown');
 
-  /** Connection is independent of validation; only a known-invalid key needs attention. */
-  openRouterTone = computed(() => {
-    const status = this.status();
-    if (!status) return 'unknown';
-    return openRouterConnected(status.key) && openRouterValidation(status.key) !== 'invalid'
-      ? 'healthy'
-      : 'degraded';
+  @ViewChild(OpenRouterSettings, { static: true }) private settings?: OpenRouterSettings;
+
+  private openRouterKey = computed(() => {
+    // A read on this visit establishes availability. Follow newer shared results, including a test
+    // that completes after the operator leaves and reopens the page.
+    const key = this.settings?.status()?.key ?? this.status()?.key;
+    return key ? (this.connection.keyStatus() ?? key) : null;
   });
+  openRouterTone = computed<StatusTone>(() => {
+    const key = this.openRouterKey();
+    if (!key) return 'unknown';
+    if (!openRouterConnected(key)) return 'degraded';
+    const validation = openRouterValidation(key);
+    if (validation === 'unknown') return 'unknown';
+    return validation === 'valid' ? 'healthy' : 'degraded';
+  });
+  private openRouterValidationUnknown = computed(
+    () => this.openRouterTone() === 'unknown' && openRouterConnected(this.openRouterKey()),
+  );
+  openRouterLabel = computed(() =>
+    this.openRouterValidationUnknown()
+      ? 'Key configured'
+      : this.dependencyLabel(this.openRouterTone(), 'Connected', 'Needs attention'),
+  );
+  openRouterBadge = computed(() =>
+    this.openRouterValidationUnknown() ? 'validation unknown' : this.openRouterTone(),
+  );
   stockfishTone = computed(() => this.dependencyTone(this.status()?.stockfishAvailable));
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private connection: OpenRouterClient,
+  ) {}
 
   ngOnInit(): void {
     this.refresh();
@@ -90,10 +113,10 @@ export class SystemStatus implements OnInit {
   }
 
   openRouterSummary(): string {
-    const status = this.status();
-    if (!status) return 'Provider status unknown: the backend is unreachable.';
-    if (!openRouterConnected(status.key)) return 'Connect OpenRouter to use a provider key.';
-    switch (status.key.validation) {
+    const key = this.openRouterKey();
+    if (!key) return 'Provider validation status is unknown.';
+    if (!openRouterConnected(key)) return 'Connect OpenRouter to use a provider key.';
+    switch (key.validation) {
       case 'valid':
         return 'OpenRouter API key validated successfully at the last check.';
       case 'invalid':
@@ -101,7 +124,7 @@ export class SystemStatus implements OnInit {
       case 'unavailable':
         return 'OpenRouter is connected. The last key check was unavailable; validation is unknown.';
       default:
-        return 'OpenRouter is connected. This key has not been tested yet.';
+        return 'This key has not been tested yet.';
     }
   }
 
