@@ -89,13 +89,12 @@ class GameConversationServiceTest {
     }
 
     @Test
-    void refreshingAfterAModeChangeReplacesTheSystemPromptsAndKeepsTheHistory() {
+    void refreshingAfterAModeChangeClearsExchangesUnderOldInstructions() {
         Game game = tournamentGame(ChatMode.OPTIONAL);
         GameConversationService service = baseService(Map.of(game.id, game), List.of());
         GameConversationService.ConversationState state = service.initializeConversation(game.id);
         state.whiteHistory().add(new OpenRouterService.ChatMsg("user", "turn 1"));
         state.whiteHistory().add(new OpenRouterService.ChatMsg("assistant", "{\"move\":\"e4\"}"));
-        var originalTurn = state.whiteHistory().get(1);
         String originalSystem = state.whiteHistory().getFirst().content();
 
         game.tournament.chatMode = ChatMode.MANDATORY;
@@ -103,13 +102,45 @@ class GameConversationServiceTest {
 
         assertEquals(ChatMode.MANDATORY, refreshed.chatMode());
         assertEquals("v2-chat-required", refreshed.whitePrompt().version());
-        assertEquals(3, refreshed.whiteHistory().size());
+        assertEquals(1, refreshed.whiteHistory().size());
         assertEquals("system", refreshed.whiteHistory().getFirst().role());
         assertTrue(refreshed.whiteHistory().getFirst().content().contains(PromptService.REQUIRED_MESSAGE_RULE));
-        assertEquals("turn 1", refreshed.whiteHistory().get(1).content());
-        assertSame(originalTurn, refreshed.whiteHistory().get(1));
         assertNotEquals(originalSystem, refreshed.whiteHistory().getFirst().content(), "settings change resets the prefix");
         assertEquals(1, refreshed.blackHistory().size());
+    }
+
+    @Test
+    void sharedInstructionChangesResetOnlySidesWithoutAnOverrideAndOnlyOnce() {
+        Game game = tournamentGame(ChatMode.OPTIONAL);
+        game.whiteParticipant = new TournamentParticipant();
+        game.whiteParticipant.customInstructions = "Keep this override.";
+        GameConversationService service = baseService(Map.of(game.id, game), List.of());
+        var state = service.initializeConversation(game.id);
+        var prior = new OpenRouterService.ChatMsg("assistant", "prior exchange");
+        state.whiteHistory().add(prior);
+        state.blackHistory().add(prior);
+        game.tournament.sharedCustomInstructions = "New shared instructions.";
+
+        var updated = service.refreshSystemPrompts(game, state);
+        assertEquals(state.whitePrompt(), updated.whitePrompt());
+        assertSame(prior, updated.whiteHistory().getLast());
+        assertNotEquals(state.blackPrompt().hash(), updated.blackPrompt().hash());
+        assertEquals(1, updated.blackHistory().size());
+        assertTrue(updated.blackHistory().getFirst().content().contains("New shared instructions."));
+        updated.blackHistory().add(prior);
+        assertSame(prior, service.refreshSystemPrompts(game, updated).blackHistory().getLast());
+
+        game.whiteParticipant.customInstructions = "New override.";
+        var override = service.refreshSystemPrompts(game, updated);
+        assertEquals(1, override.whiteHistory().size());
+        assertTrue(override.whiteHistory().getFirst().content().contains("New override."));
+        assertSame(prior, override.blackHistory().getLast());
+
+        game.whiteParticipant.customSystemPrompt = "New template for %s against %s (%s).";
+        var template = service.refreshSystemPrompts(game, override);
+        assertNotEquals(override.whitePrompt().hash(), template.whitePrompt().hash());
+        assertEquals("legacy-custom-template", template.whitePrompt().version());
+        assertTrue(template.whiteHistory().getFirst().content().startsWith("New template"));
     }
 
     @Test

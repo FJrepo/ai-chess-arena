@@ -166,7 +166,9 @@ The backend settings are:
 
 Environment equivalents are `OPENROUTER_PROMPT_CACHING`, `OPENROUTER_PROMPT_CACHE_MAX_PRIOR_MESSAGES` and `OPENROUTER_PROMPT_CACHE_RETAINED_MESSAGES`; see [deployment configuration](deployment.md#prompt-caching-configuration).
 
-For `anthropic/*`, moving `~anthropic/*` aliases and `google/*` model ids, the backend sends one explicit breakpoint on the final text block of the last prior message, or on the system prompt when there is no history. Only that message uses OpenRouter's content-array form, for example:
+Explicit breakpoints require **catalog evidence**: the exact model ID must have a valid, non-negative `pricing.input_cache_write` price in the backend's cached OpenRouter catalog and belong to Anthropic or Google. Both `~anthropic/*` and `~google/*` moving aliases use their normalized provider, including `~google/gemini-pro-latest` and `~google/gemini-flash-latest`. A cache-read price alone indicates no explicit-cache capability: Gemma and other models without cache-write support receive plain messages, as do unknown models and requests before the catalog is available. Preparing a request never waits for catalog I/O.
+
+For qualifying models, the backend sends one explicit breakpoint on the final text block of the last prior message, or on the system prompt when there is no history. Only that message uses OpenRouter's content-array form, for example:
 
 ```json
 {"role":"assistant","content":[{"type":"text","text":"{\"move\":\"e4\"}","cache_control":{"type":"ephemeral"}}]}
@@ -174,9 +176,13 @@ For `anthropic/*`, moving `~anthropic/*` aliases and `google/*` model ids, the b
 
 The current turn and its retries are never marked. The breakpoint moves forward as history grows; it is request metadata, never part of the stored text. There is at most one marker per request (within Anthropic's four-breakpoint limit, and the final breakpoint Gemini uses). Other providers receive plain string messages with the same stable text prefix for automatic caching. See [OpenRouter's prompt-caching contract](https://openrouter.ai/docs/guides/best-practices/prompt-caching).
 
+Catalog hints cannot guarantee every routed endpoint supports explicit caching. If a marked request receives HTTP 400 or 404 mentioning `cache_control`, cache-control or cache control, the backend retries that same attempt **once with plain messages**, preserving the model, text, generation settings and original move/safety deadlines. The rejection does not consume a model attempt or cause a fatal pause. That exact model ID stays on plain messages until backend restart, even if the catalog refreshes. A repeated cache-control rejection is treated as a retryable provider failure; unrelated errors keep their normal handling.
+
 This sends slightly more history tokens per turn than the former three-turn window. With cache hits, most repeated input is read from cache at a fraction of the normal input price; cache writes can cost extra. Model-specific minimum lengths, expiry, routing and re-anchors can still cause misses, so savings are not guaranteed. The setup cost preview remains a rough heuristic; use the [prompt-caching analytics](#prompt-caching-metrics) and provider-reported costs to measure actual results.
 
-Each side's system prompt stays identical during ordinary play. Chat-mode or resignation changes rebuild both system prompts and **reset the cached prefix**. Reasoning-effort changes can also invalidate provider caching; changing settings or rebuilding/resuming a conversation should be treated as a cache reset. A restart/resume begins fresh in-memory conversation chunks while retaining persisted moves, PGN, attempts and spend. There is no migration or backfill.
+Human turns retain each side's model conversation in memory across waits. After a human submits a move, the loop reloads the board from committed moves and reuses those exchanges: for example, model `e4`, human `e5`, then model `Nf3` sends two messages on the first model request and four on the next. Pause/resume, backend restart, cancellation, completion or loop failure discard retained conversations; they are never persisted.
+
+Each model turn resolves both system prompts and compares their hashes and metadata with the active prompts. Changes to rendered templates/version, participant or shared instructions, opponent details, chat mode or resignation apply from that turn. Only affected sides **reset the cached prefix** and discard exchanges made under the old prompt; the next request starts with the new system instructions and complete current PGN/position. Unchanged prompts keep their prefix. Reasoning-effort changes can also invalidate provider caching. Persisted moves, PGN, attempts and spend remain unchanged; there is no migration or backfill.
 
 ## Time limit per move
 

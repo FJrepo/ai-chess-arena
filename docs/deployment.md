@@ -35,7 +35,7 @@ Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 net
 
 ## Prompt caching configuration
 
-Prompt caching is enabled by default. The backend uses an append-only history per side and explicit cache breakpoints for Anthropic and Google models; see [window limits, provider behavior and pricing trade-offs](how-it-works.md#prompt-caching).
+Prompt caching is enabled by default. The backend uses an append-only history per side, retained across human-turn waits. Anthropic and Google models (including latest aliases) receive explicit breakpoints only with a valid cache-write price in the cached catalog. A cache-control rejection retries once with plain messages and disables explicit caching for that model ID until restart. See [window limits, provider behavior and pricing trade-offs](how-it-works.md#prompt-caching).
 
 Configure the backend with `OPENROUTER_PROMPT_CACHING` (default `true`), `OPENROUTER_PROMPT_CACHE_MAX_PRIOR_MESSAGES` (default `12`) and `OPENROUTER_PROMPT_CACHE_RETAINED_MESSAGES` (default `4`). The limits count prior messages only, excluding system/current-turn/retry messages. Both must be non-negative and retained must not exceed maximum. Disabling caching restores the legacy six-prior-message sliding window and plain messages; it does not disable a provider's automatic caching.
 

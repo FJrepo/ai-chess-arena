@@ -166,7 +166,7 @@ class GameEngineServiceTest {
 
         GameTurnService.TurnRequest unchanged = runOneTurnFor(tournamentWithTimeout(45));
         assertEquals(ChatMode.OPTIONAL, unchanged.chatMode());
-        assertEquals("v1", unchanged.promptVersion(), "the mode did not change, so the prompt is kept");
+        assertEquals("v2", unchanged.promptVersion(), "a stale template hash is refreshed even with the same mode");
     }
 
     @Test

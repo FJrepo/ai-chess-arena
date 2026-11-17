@@ -14,17 +14,32 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Duration;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Actual HTTP request contracts against an ephemeral loopback stub; no OpenRouter access. */
 class OpenRouterPromptCachingTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final List<String> EXPLICIT_MODELS = List.of(
-            "anthropic/claude-sonnet", "~anthropic/claude-sonnet-latest", "google/gemini-pro");
+            "anthropic/claude-sonnet", "~anthropic/claude-sonnet-latest", "google/gemini-pro",
+            "~google/gemini-pro-latest", "~google/gemini-flash-latest");
     private HttpServer server;
     private volatile String lastBody;
+    private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
+    private final AtomicInteger catalogRequests = new AtomicInteger();
+    private String catalog = explicitCatalog();
+    private int rejectionStatus;
+    private String rejectionBody = "{\"error\":{\"message\":\"No endpoints found that support cache control\"}}";
+    private boolean rejectPlain;
+    private Runnable afterRejection = () -> { };
+    private Runnable afterPlain = () -> { };
 
     @AfterEach
     void stopServer() {
@@ -34,7 +49,8 @@ class OpenRouterPromptCachingTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"anthropic/claude-sonnet", "~anthropic/claude-sonnet-latest", "google/gemini-pro"})
+    @ValueSource(strings = {"anthropic/claude-sonnet", "~anthropic/claude-sonnet-latest", "google/gemini-pro",
+            "~google/gemini-pro-latest", "~google/gemini-flash-latest"})
     void singleBreakpointStaysBeforeTheCurrentTurnThroughoutRetries(String model) throws Exception {
         OpenRouterService service = stub();
         List<ChatMsg> history = new ArrayList<>(List.of(new ChatMsg("system", "fixed rules")));
@@ -131,6 +147,112 @@ class OpenRouterPromptCachingTest {
         assertEquals(4, boundaries);
     }
 
+    @ParameterizedTest
+    @CsvSource({"anthropic/claude-sonnet,0,true", "google/gemini-pro,0.000001,true",
+            "~google/gemini-pro-latest,0,true", "~google/gemini-flash-latest,0,true",
+            "google/gemma-2-27b-it,missing,false", "google/gemma-3,missing,false",
+            "google/gemini-pro,null,false", "google/gemini-pro,bad,false",
+            "google/gemini-pro,-1,false", "anthropic/claude-sonnet,missing,false",
+            "openai/gpt,0,false"})
+    void catalogWriteCapabilityIsRequiredAndReadOnlyPricingIsInsufficient(String model, String write, boolean marked)
+            throws Exception {
+        var entry = JSON.createObjectNode().put("id", model);
+        var pricing = entry.putObject("pricing").put("input_cache_read", "0.0000001");
+        if ("null".equals(write)) {
+            pricing.putNull("input_cache_write");
+        } else if (!"missing".equals(write)) {
+            pricing.put("input_cache_write", write);
+        }
+        var data = JSON.createObjectNode();
+        data.putArray("data").add(entry);
+        catalog = data.toString();
+        OpenRouterService service = stub();
+        var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
+        JsonNode wire = send(service, model, messages);
+        if (marked) {
+            assertBreakpoint(wire, 0, messages);
+        } else {
+            assertPlain(wire, messages);
+        }
+        assertEquals(1, catalogRequests.get(), "chat must use cached evidence without catalog I/O");
+    }
+
+    @Test
+    void anUnknownModelOrUnavailableCatalogUsesPlainMessages() throws Exception {
+        catalog = "{\"data\":[]}";
+        OpenRouterService service = stub();
+        var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
+        assertPlain(send(service, "google/gemini-unknown", messages), messages);
+        OpenRouterService cold = new OpenRouterService();
+        cold.objectMapper = JSON;
+        cold.baseUrl = service.baseUrl;
+        cold.apiKey = "test-key";
+        assertPlain(send(cold, "anthropic/claude-sonnet", messages), messages);
+        assertEquals(1, catalogRequests.get());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"400,cache_control is unsupported", "404,No endpoints found that support cache control",
+            "400,Invalid cache-control parameter"})
+    void cacheRejectionRetriesTheSameAttemptPlainAndRemembersTheExactId(int status, String message) throws Exception {
+        OpenRouterService service = stub();
+        rejectionStatus = status;
+        rejectionBody = JSON.createObjectNode().putObject("error").put("message", message).toString();
+        var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
+        assertPlain(send(service, "google/gemini-pro", messages), messages);
+        assertEquals(2, requests.size());
+        assertBreakpoint(requests.getFirst().path("messages"), 0, messages);
+        var marked = (com.fasterxml.jackson.databind.node.ObjectNode) requests.getFirst().deepCopy();
+        marked.set("messages", requests.getLast().path("messages"));
+        assertEquals(marked, requests.getLast(), "the fallback changes only message encoding and markers");
+        // Even a refreshed catalog cannot re-enable a rejected ID during this process.
+        service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
+        assertPlain(send(service, "google/gemini-pro", messages), messages);
+        assertEquals(3, requests.size());
+        assertBreakpoint(send(service, "~google/gemini-pro-latest", messages), 0, messages);
+    }
+
+    @Test
+    void persistentCacheRejectionsRetryOnlyOnceAndAreNeverFatal() throws Exception {
+        OpenRouterService service = stub();
+        rejectionStatus = 404;
+        rejectPlain = true;
+        var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")));
+        assertEquals(OpenRouterService.ProviderOutcome.RETRYABLE, response.outcome());
+        assertEquals(2, requests.size());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"400,Invalid temperature", "404,Model not found", "401,cache_control unsupported"})
+    void unrelatedErrorsKeepTheirClassificationAndAreNotRetried(int status, String message) throws Exception {
+        OpenRouterService service = stub();
+        rejectionStatus = status;
+        rejectionBody = message;
+        var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")));
+        assertEquals(OpenRouterService.ProviderOutcome.FATAL, response.outcome());
+        assertEquals(1, requests.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void plainFallbackSharesTheOriginalMoveAndSafetyDeadlines(boolean timed) throws Exception {
+        OpenRouterService service = stub();
+        AtomicLong nanos = new AtomicLong();
+        service.nanoClock = nanos::get;
+        service.requestSafetyCap = Duration.ofSeconds(10);
+        rejectionStatus = 404;
+        afterRejection = () -> nanos.set(Duration.ofSeconds(6).toNanos());
+        afterPlain = () -> nanos.set(Duration.ofSeconds(11).toNanos());
+        var deadline = timed ? OpenRouterService.AnswerDeadline.after(Duration.ofSeconds(10), 0) : null;
+        if (timed) {
+            service.requestSafetyCap = Duration.ofSeconds(20);
+        }
+        var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")), deadline, 100);
+        assertEquals(timed ? OpenRouterService.ProviderOutcome.TIMEOUT : OpenRouterService.ProviderOutcome.RETRYABLE,
+                response.outcome());
+        assertEquals(2, requests.size());
+    }
+
     private static List<String> messageText(JsonNode messages) {
         List<String> result = new ArrayList<>();
         for (JsonNode message : messages) {
@@ -184,10 +306,27 @@ class OpenRouterPromptCachingTest {
 
     private OpenRouterService stub() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/models", exchange -> {
+            catalogRequests.incrementAndGet();
+            byte[] bytes = catalog.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (var out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+            exchange.close();
+        });
         server.createContext("/chat/completions", exchange -> {
             lastBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            byte[] answer = "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}".getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, answer.length);
+            requests.add(JSON.readTree(lastBody));
+            boolean reject = rejectionStatus != 0 && (requests.size() == 1 || rejectPlain);
+            if (reject) {
+                afterRejection.run();
+            } else {
+                afterPlain.run();
+            }
+            byte[] answer = (reject ? rejectionBody : "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(reject ? rejectionStatus : 200, answer.length);
             try (var out = exchange.getResponseBody()) {
                 out.write(answer);
             }
@@ -199,6 +338,16 @@ class OpenRouterPromptCachingTest {
         service.baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         service.apiKey = "test-key";
         service.defaultMaxTokens = 100;
+        service.listModels(false, null, OpenRouterService.NO_LIMIT, null);
         return service;
+    }
+
+    private static String explicitCatalog() {
+        var catalog = JSON.createObjectNode();
+        var data = catalog.putArray("data");
+        for (String model : EXPLICIT_MODELS) {
+            data.addObject().put("id", model).putObject("pricing").put("input_cache_write", "0.000001");
+        }
+        return catalog.toString();
     }
 }

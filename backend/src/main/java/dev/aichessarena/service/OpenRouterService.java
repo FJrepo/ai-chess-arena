@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -131,6 +132,8 @@ public class OpenRouterService {
 
     private volatile ModelsSnapshot modelsSnapshot = new ModelsSnapshot(null, 0, 0);
     private final AtomicBoolean modelsRefreshScheduled = new AtomicBoolean();
+    /** Endpoint rejections override catalog hints until the backend process restarts. */
+    private final Set<String> explicitCachingRejected = ConcurrentHashMap.newKeySet();
 
     public LlmResponse chat(String modelId, List<ChatMsg> messages) {
         return chat(modelId, messages, (AnswerDeadline) null, defaultMaxTokens);
@@ -182,8 +185,15 @@ public class OpenRouterService {
         AnswerDeadline safetyDeadline = AnswerDeadline.after(requestSafetyCap, startNanos);
         boolean limitedByMoveTime = answerDeadline != null && answerDeadline.isBefore(safetyDeadline);
         AnswerDeadline deadline = limitedByMoveTime ? answerDeadline : safetyDeadline;
-        if (deadline.remainingNanos(startNanos) <= 0) {
-            return deadlineExceeded(modelId, limitedByMoveTime, 0, 0);
+        return sendChatRequest(modelId, messages, maxOutputTokens, reasoningEffort, startNanos, deadline,
+                limitedByMoveTime, true);
+    }
+
+    private LlmResponse sendChatRequest(String modelId, List<ChatMsg> messages, int maxOutputTokens,
+                                        ReasoningEffort reasoningEffort, long startNanos, AnswerDeadline deadline,
+                                        boolean limitedByMoveTime, boolean allowExplicitCaching) {
+        if (deadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
+            return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos));
         }
         // Known as soon as the status line and headers arrive, long before an error body may be complete.
         AtomicInteger responseStatus = new AtomicInteger();
@@ -198,7 +208,8 @@ public class OpenRouterService {
             }
 
             ArrayNode msgs = body.putArray("messages");
-            int breakpoint = promptCaching && needsCacheBreakpoint(modelId) ? stablePrefixEnd(messages) : -1;
+            int breakpoint = allowExplicitCaching && promptCaching && needsCacheBreakpoint(modelId)
+                    ? stablePrefixEnd(messages) : -1;
             for (int i = 0; i < messages.size(); i++) {
                 ChatMsg msg = messages.get(i);
                 ObjectNode m = msgs.addObject();
@@ -246,9 +257,16 @@ public class OpenRouterService {
             long elapsed = elapsedMs(startNanos);
 
             if (response.statusCode() != 200) {
+                boolean cacheRejection = isCacheControlRejection(response.statusCode(), response.body());
+                if (breakpoint >= 0 && cacheRejection) {
+                    explicitCachingRejected.add(modelId);
+                    LOG.warnf("OpenRouter rejected explicit caching for %s; retrying once with plain messages", modelId);
+                    return sendChatRequest(modelId, messages, maxOutputTokens, reasoningEffort, startNanos, deadline,
+                            limitedByMoveTime, false);
+                }
                 LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
                 return withReportedUsage(LlmResponse.providerFailure(
-                        classifyHttpStatus(response.statusCode()),
+                        cacheRejection ? ProviderOutcome.RETRYABLE : classifyHttpStatus(response.statusCode()),
                         response.statusCode(),
                         describeHttpFailure(response.statusCode(), response.body()),
                         elapsed,
@@ -1089,9 +1107,26 @@ public class OpenRouterService {
         return body.substring(0, 500) + "...";
     }
 
-    private static boolean needsCacheBreakpoint(String modelId) {
-        return modelId != null && (modelId.startsWith("anthropic/") || modelId.startsWith("~anthropic/")
-                || modelId.startsWith("google/"));
+    /**
+     * Conservative catalog gate: only Anthropic/Google entries advertising a valid cache-write price qualify.
+     * A read price alone can describe implicit caching. Missing catalog evidence always means plain messages.
+     */
+    private boolean needsCacheBreakpoint(String modelId) {
+        if (modelId == null || explicitCachingRejected.contains(modelId)) {
+            return false;
+        }
+        String provider = extractProvider(modelId);
+        JsonNode model = cachedCatalogEntry(modelId);
+        return ("anthropic".equals(provider) || "google".equals(provider)) && model != null
+                && nonNegativePrice(model.path("pricing").path("input_cache_write")) != null;
+    }
+
+    private static boolean isCacheControlRejection(int status, String body) {
+        if ((status != 400 && status != 404) || body == null) {
+            return false;
+        }
+        String normalized = body.toLowerCase(Locale.ROOT).replace('_', ' ').replace('-', ' ');
+        return normalized.contains("cache control");
     }
 
     /** One moving breakpoint, before the current turn including all of its retries. Never stored in history. */

@@ -36,24 +36,36 @@ public class GameConversationService {
         return refreshSystemPrompts(game, empty);
     }
 
+    /** Retains model exchanges across a human wait, but always restores the committed board. */
+    public ConversationState continueConversation(UUID gameId, ConversationState state) {
+        Game game = gameRepository.findById(gameId);
+        return new ConversationState(initializeBoard(gameId, game), state.whiteHistory(), state.blackHistory(),
+                state.whitePrompt(), state.blackPrompt(), state.chatMode(), state.resignationAllowed());
+    }
+
     /**
-     * Builds both system prompts for the game's current chat mode and resignation setting and puts them at the start
-     * of the histories, replacing earlier ones. The game loop calls this again when either setting changes, so a
-     * side's prompt, the handling of its answers and the prompt version recorded on its moves always agree.
+     * Resolves every rendered input each turn. A changed hash or prompt metadata clears that side's exchanges;
+     * unchanged prompts retain the exact prefix. No history may carry answers under superseded instructions.
      */
     public ConversationState refreshSystemPrompts(Game game, ConversationState state) {
         ChatMode chatMode = configuredChatMode(game);
         boolean resignationAllowed = configuredResignationAllowed(game);
         PromptService.ResolvedPrompt whitePrompt = resolveSystemPrompt(game, "WHITE", chatMode, resignationAllowed);
         PromptService.ResolvedPrompt blackPrompt = resolveSystemPrompt(game, "BLACK", chatMode, resignationAllowed);
-        setSystemPrompt(state.whiteHistory(), whitePrompt.prompt());
-        setSystemPrompt(state.blackHistory(), blackPrompt.prompt());
+        PromptContext whiteContext = promptContext(whitePrompt);
+        PromptContext blackContext = promptContext(blackPrompt);
+        if (!whiteContext.equals(state.whitePrompt())) {
+            setSystemPrompt(state.whiteHistory(), whitePrompt.prompt());
+        }
+        if (!blackContext.equals(state.blackPrompt())) {
+            setSystemPrompt(state.blackHistory(), blackPrompt.prompt());
+        }
         return new ConversationState(
                 state.board(),
                 state.whiteHistory(),
                 state.blackHistory(),
-                promptContext(whitePrompt),
-                promptContext(blackPrompt),
+                whiteContext,
+                blackContext,
                 chatMode,
                 resignationAllowed
         );
@@ -77,12 +89,8 @@ public class GameConversationService {
     }
 
     private static void setSystemPrompt(List<OpenRouterService.ChatMsg> history, String prompt) {
-        OpenRouterService.ChatMsg system = new OpenRouterService.ChatMsg("system", prompt);
-        if (!history.isEmpty() && "system".equals(history.getFirst().role())) {
-            history.set(0, system);
-        } else {
-            history.addFirst(system);
-        }
+        history.clear();
+        history.add(new OpenRouterService.ChatMsg("system", prompt));
     }
 
     private Board initializeBoard(UUID gameId, Game game) {
