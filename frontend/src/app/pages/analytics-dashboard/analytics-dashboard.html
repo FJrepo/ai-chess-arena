@@ -54,27 +54,39 @@
     </mat-form-field>
   </div>
 
-  <mat-tab-group animationDuration="200ms" mat-stretch-tabs="false" mat-align-tabs="start">
+  <ng-template #comparisonStatus>
+    @if (comparisonLoading()) {
+      <div class="loading-state">
+        <mat-spinner diameter="40"></mat-spinner>
+        <span>Comparing model results...</span>
+      </div>
+    }
+
+    @if (comparisonError()) {
+      <div class="error-card">
+        <mat-icon>error_outline</mat-icon>
+        {{ comparisonError() }}
+      </div>
+    }
+  </ng-template>
+
+  <mat-tab-group
+    animationDuration="200ms"
+    mat-stretch-tabs="false"
+    mat-align-tabs="start"
+    [selectedIndex]="selectedTabIndex()"
+    (selectedIndexChange)="onTabChange($event)"
+  >
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="tab-icon">insights</mat-icon>
-        Model Comparison
+        Overview
       </ng-template>
       <section class="tab-content">
-        @if (comparisonLoading()) {
-          <div class="loading-state">
-            <mat-spinner diameter="40"></mat-spinner>
-            <span>Comparing model results...</span>
-          </div>
-        }
-
-        @if (comparisonError()) {
-          <div class="error-card">
-            <mat-icon>error_outline</mat-icon>
-            {{ comparisonError() }}
-          </div>
-        }
-
+        <p class="tab-intro">
+          Who leads on results, reliability, speed and value in the selected sample.
+        </p>
+        <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
         @if (comparison(); as c) {
           <div class="kpi-grid leader-grid">
             @for (card of leaderCards(); track card.label) {
@@ -114,11 +126,10 @@
               </div>
             }
           </div>
-
           <div class="table-card comparison-table-card">
             <div class="section-header">
               <div>
-                <h3>Model Comparison Table</h3>
+                <h2>Model Comparison Table</h2>
                 <p>{{ c.gamesCount }} terminal games in scope.</p>
               </div>
               <mat-form-field appearance="outline" subscriptSizing="dynamic" class="sort-field">
@@ -189,11 +200,75 @@
               </table>
             </div>
           </div>
+          <div class="breakdown-grid">
+            <div class="breakdown-card">
+              <h2>Color Split</h2>
+              <p>Largest gap between white-side and black-side win rate.</p>
+              <ul>
+                @for (row of colorSplitHighlights(); track row.modelId) {
+                  <li>
+                    <strong>{{ row.modelId }}</strong>
+                    <span
+                      >White {{ percent(row.whiteWinRate) }} / Black
+                      {{ percent(row.blackWinRate) }}</span
+                    >
+                  </li>
+                } @empty {
+                  <li>No color-split data yet.</li>
+                }
+              </ul>
+            </div>
 
+            <div class="breakdown-card">
+              <h2>Failure Profile</h2>
+              <p>Models with the fewest forfeits in finished games.</p>
+              <ul>
+                @for (row of failureWatch(); track row.modelId) {
+                  <li>
+                    <strong>{{ row.modelId }}</strong>
+                    <span>{{ row.forfeits }} forfeits across {{ row.gamesPlayed }} games</span>
+                  </li>
+                } @empty {
+                  <li>No failure data yet.</li>
+                }
+              </ul>
+            </div>
+
+            <div class="breakdown-card">
+              <h2>Cost Efficiency</h2>
+              <p>Lowest spend per win among models with complete pricing data.</p>
+              <ul>
+                @for (row of costEfficiencyHighlights(); track row.modelId) {
+                  <li>
+                    <strong>{{ row.modelId }}</strong>
+                    <span>{{ currency(row.costPerWinUsd) }} per win</span>
+                  </li>
+                } @empty {
+                  <li>Pricing data is incomplete for the selected sample.</li>
+                }
+              </ul>
+            </div>
+          </div>
+        }
+      </section>
+    </mat-tab>
+
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">sports_esports</mat-icon>
+        Play quality
+      </ng-template>
+      <section class="tab-content">
+        <p class="tab-intro">
+          How well models play: Stockfish's verdict on each move and whether winning positions get
+          converted.
+        </p>
+        <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
+        @if (comparison()) {
           <div class="table-card quality-table-card">
             <div class="section-header">
               <div>
-                <h3>Move Quality</h3>
+                <h2>Move Quality</h2>
                 <p>
                   Stockfish's verdict on every judged move in finished games, lowest ACPL first.
                 </p>
@@ -249,11 +324,75 @@
             </div>
             <p class="table-footnote">{{ qualityExplanation }}</p>
           </div>
+          <div class="table-card conversion-table-card">
+            <div class="section-header">
+              <div>
+                <h2>Conversion</h2>
+                <p>How often models finish a winning position.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table conversion-table">
+                <thead>
+                  <tr>
+                    <th class="col-model">Model</th>
+                    <th class="num">Winning positions</th>
+                    <th class="num">Converted</th>
+                    <th class="num">Adjudicated wins</th>
+                    <th class="num">Thrown away</th>
+                    <th
+                      class="num"
+                      title="Judged model moves that lost a forced mate; overrides and forced moves excluded"
+                    >
+                      Missed mates
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of conversionRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                        <span class="table-note"
+                          >{{ row.conversion?.evaluatedGames ?? 0 }} of {{ row.gamesPlayed }} games
+                          evaluated</span
+                        >
+                      </td>
+                      <td class="num">
+                        {{ conversionCount(row.conversion?.winningPositionsReached) }}
+                      </td>
+                      <td class="num">{{ conversionCount(row.conversion?.converted) }}</td>
+                      <td class="num">{{ conversionCount(row.conversion?.adjudicatedWins) }}</td>
+                      <td class="num">{{ conversionCount(row.conversion?.thrownAway) }}</td>
+                      <td class="num">{{ conversionCount(row.conversion?.missedMates) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="6" class="empty">No finished model games in this scope.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ conversionExplanation }}</p>
+          </div>
+        }
+      </section>
+    </mat-tab>
 
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">forum</mat-icon>
+        Behaviour
+      </ng-template>
+      <section class="tab-content">
+        <p class="tab-intro">How models communicate and when they choose to give up.</p>
+        <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
+        @if (comparison()) {
           <div class="table-card talk-table-card">
             <div class="section-header">
               <div>
-                <h3>Talkativeness</h3>
+                <h2>Talkativeness</h2>
                 <p>
                   How often each model sent a message with its move, by the tournament's chat mode.
                 </p>
@@ -307,105 +446,10 @@
             </div>
             <p class="table-footnote">{{ talkExplanation }}</p>
           </div>
-
-          <div class="table-card cache-table-card">
-            <div class="section-header">
-              <h3>Prompt caching</h3>
-            </div>
-            <div class="table-wrap">
-              <table class="analytics-table cache-table">
-                <thead>
-                  <tr>
-                    <th class="col-model">Model</th>
-                    <th class="num">Prompt tokens</th>
-                    <th class="num">Cached tokens</th>
-                    <th class="num">Hit rate</th>
-                    <th class="num">Cache writes</th>
-                    <th class="num">Est. savings (USD)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of cacheRows(); track row.modelId) {
-                    <tr>
-                      <td class="col-model">
-                        <strong class="model-id">{{ row.modelId }}</strong>
-                      </td>
-                      <td class="num">{{ cacheTokens(row.promptCaching?.promptTokens) }}</td>
-                      <td class="num">{{ cacheTokens(row.promptCaching?.cachedPromptTokens) }}</td>
-                      <td class="num">{{ percent(row.promptCaching?.cacheHitRate ?? null) }}</td>
-                      <td class="num">{{ cacheTokens(row.promptCaching?.cacheWriteTokens) }}</td>
-                      <td class="num">
-                        {{ cacheSavings(row.promptCaching?.estimatedSavingsUsd) }}
-                      </td>
-                    </tr>
-                  } @empty {
-                    <tr>
-                      <td colspan="6" class="empty">No model data in finished games yet.</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            <p class="table-footnote">{{ cacheExplanation }}</p>
-          </div>
-
-          <div class="table-card conversion-table-card">
-            <div class="section-header">
-              <div>
-                <h3>Conversion</h3>
-                <p>How often models finish a winning position.</p>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table class="analytics-table conversion-table">
-                <thead>
-                  <tr>
-                    <th class="col-model">Model</th>
-                    <th class="num">Winning positions</th>
-                    <th class="num">Converted</th>
-                    <th class="num">Adjudicated wins</th>
-                    <th class="num">Thrown away</th>
-                    <th
-                      class="num"
-                      title="Judged model moves that lost a forced mate; overrides and forced moves excluded"
-                    >
-                      Missed mates
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of conversionRows(); track row.modelId) {
-                    <tr>
-                      <td class="col-model">
-                        <strong class="model-id">{{ row.modelId }}</strong>
-                        <span class="table-note"
-                          >{{ row.conversion?.evaluatedGames ?? 0 }} of {{ row.gamesPlayed }} games
-                          evaluated</span
-                        >
-                      </td>
-                      <td class="num">
-                        {{ conversionCount(row.conversion?.winningPositionsReached) }}
-                      </td>
-                      <td class="num">{{ conversionCount(row.conversion?.converted) }}</td>
-                      <td class="num">{{ conversionCount(row.conversion?.adjudicatedWins) }}</td>
-                      <td class="num">{{ conversionCount(row.conversion?.thrownAway) }}</td>
-                      <td class="num">{{ conversionCount(row.conversion?.missedMates) }}</td>
-                    </tr>
-                  } @empty {
-                    <tr>
-                      <td colspan="6" class="empty">No finished model games in this scope.</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            <p class="table-footnote">{{ conversionExplanation }}</p>
-          </div>
-
           <div class="table-card resign-table-card">
             <div class="section-header">
               <div>
-                <h3>Resignations</h3>
+                <h2>Resignations</h2>
                 <p>Who gave up, who gave up too early, and who got their opponent to give up.</p>
               </div>
             </div>
@@ -450,66 +494,103 @@
             </div>
             <p class="table-footnote">{{ resignationExplanation }}</p>
           </div>
-
-          <div class="breakdown-grid">
-            <div class="breakdown-card">
-              <h3>Color Split</h3>
-              <p>Largest gap between white-side and black-side win rate.</p>
-              <ul>
-                @for (row of colorSplitHighlights(); track row.modelId) {
-                  <li>
-                    <strong>{{ row.modelId }}</strong>
-                    <span
-                      >White {{ percent(row.whiteWinRate) }} / Black
-                      {{ percent(row.blackWinRate) }}</span
-                    >
-                  </li>
-                } @empty {
-                  <li>No color-split data yet.</li>
-                }
-              </ul>
-            </div>
-
-            <div class="breakdown-card">
-              <h3>Failure Profile</h3>
-              <p>Models with the fewest forfeits in finished games.</p>
-              <ul>
-                @for (row of failureWatch(); track row.modelId) {
-                  <li>
-                    <strong>{{ row.modelId }}</strong>
-                    <span>{{ row.forfeits }} forfeits across {{ row.gamesPlayed }} games</span>
-                  </li>
-                } @empty {
-                  <li>No failure data yet.</li>
-                }
-              </ul>
-            </div>
-
-            <div class="breakdown-card">
-              <h3>Cost Efficiency</h3>
-              <p>Lowest spend per win among models with complete pricing data.</p>
-              <ul>
-                @for (row of costEfficiencyHighlights(); track row.modelId) {
-                  <li>
-                    <strong>{{ row.modelId }}</strong>
-                    <span>{{ currency(row.costPerWinUsd) }} per win</span>
-                  </li>
-                } @empty {
-                  <li>Pricing data is incomplete for the selected sample.</li>
-                }
-              </ul>
-            </div>
-          </div>
         }
       </section>
     </mat-tab>
 
     <mat-tab>
       <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">speed</mat-icon>
-        Engine Health
+        <mat-icon class="tab-icon">monitoring</mat-icon>
+        Cost &amp; reliability
       </ng-template>
       <section class="tab-content">
+        <p class="tab-intro">
+          What models cost to run, how efficiently they use the engine and how reliably they
+          respond.
+        </p>
+        <ng-template #healthKpiEmpty>
+          <div class="value">—</div>
+          <div class="sub">
+            {{
+              healthError()
+                ? 'Unavailable'
+                : healthLoading()
+                  ? 'Loading...'
+                  : 'No performance data available.'
+            }}
+          </div>
+        </ng-template>
+        <ng-template #reliabilityKpiEmpty>
+          <div class="value">—</div>
+          <div class="sub">
+            {{
+              reliabilityError()
+                ? 'Unavailable'
+                : reliabilityLoading()
+                  ? 'Loading...'
+                  : 'No reliability data available.'
+            }}
+          </div>
+        </ng-template>
+        <div class="kpi-grid cost-kpi-grid">
+          <div class="kpi-card">
+            <div class="label">Total Cost</div>
+            @if (health(); as h) {
+              <div class="value">{{ h.costTotalUsd | currency: 'USD' }}</div>
+              <div class="sub">Across {{ h.gamesCount }} matches</div>
+            } @else {
+              <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
+            }
+          </div>
+          <div class="kpi-card">
+            <div class="label">Move Volume</div>
+            @if (health(); as h) {
+              <div class="value">{{ h.movesCount | number }}</div>
+              <div class="sub">{{ h.retriesTotal }} retries required</div>
+            } @else {
+              <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
+            }
+          </div>
+          <div class="kpi-card">
+            <div class="label">Avg Latency</div>
+            @if (health(); as h) {
+              <div class="value">{{ formatMs(h.averageResponseTimeMs) }}</div>
+              <div class="sub">P95: {{ formatMs(h.p95ResponseTimeMs) }}</div>
+            } @else {
+              <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
+            }
+          </div>
+          <div class="kpi-card">
+            <div class="label">Total Tokens</div>
+            @if (health(); as h) {
+              <div class="value">{{ h.promptTokensTotal + h.completionTokensTotal | number }}</div>
+              <div class="sub">
+                In: {{ h.promptTokensTotal | number }} / Out: {{ h.completionTokensTotal | number }}
+              </div>
+            } @else {
+              <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
+            }
+          </div>
+          <div class="kpi-card">
+            <div class="label">Trust Index</div>
+            @if (reliability(); as r) {
+              <div class="value">{{ formatScore(reliabilityAverageScore()) }}</div>
+              <div class="sub">Average across {{ r.models.length }} models</div>
+            } @else {
+              <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
+            }
+          </div>
+          <div class="kpi-card">
+            <div class="label">Low Confidence</div>
+            @if (reliability(); as r) {
+              <div class="value">{{ reliabilityLowConfidenceCount() }}</div>
+              <div class="sub">Models with insufficient data</div>
+            } @else {
+              <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
+            }
+          </div>
+        </div>
+
         @if (healthLoading()) {
           <div class="loading-state">
             <mat-spinner diameter="40"></mat-spinner>
@@ -525,33 +606,8 @@
         }
 
         @if (health(); as h) {
-          <div class="kpi-grid">
-            <div class="kpi-card">
-              <div class="label">Total Cost</div>
-              <div class="value">{{ h.costTotalUsd | currency: 'USD' }}</div>
-              <div class="sub">Across {{ h.gamesCount }} matches</div>
-            </div>
-            <div class="kpi-card">
-              <div class="label">Move Volume</div>
-              <div class="value">{{ h.movesCount | number }}</div>
-              <div class="sub">{{ h.retriesTotal }} retries required</div>
-            </div>
-            <div class="kpi-card">
-              <div class="label">Avg Latency</div>
-              <div class="value">{{ formatMs(h.averageResponseTimeMs) }}</div>
-              <div class="sub">P95: {{ formatMs(h.p95ResponseTimeMs) }}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="label">Total Tokens</div>
-              <div class="value">{{ h.promptTokensTotal + h.completionTokensTotal | number }}</div>
-              <div class="sub">
-                In: {{ h.promptTokensTotal | number }} / Out: {{ h.completionTokensTotal | number }}
-              </div>
-            </div>
-          </div>
-
           <div class="table-card">
-            <h3>Per-Model Performance Metrics</h3>
+            <h2>Per-Model Performance Metrics</h2>
             <div class="table-wrap">
               <table class="analytics-table">
                 <thead>
@@ -592,15 +648,51 @@
             </div>
           </div>
         }
-      </section>
-    </mat-tab>
 
-    <mat-tab>
-      <ng-template mat-tab-label>
-        <mat-icon class="tab-icon">verified_user</mat-icon>
-        Model Reliability
-      </ng-template>
-      <section class="tab-content">
+        <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
+        @if (comparison()) {
+          <div class="table-card cache-table-card">
+            <div class="section-header">
+              <h2>Prompt caching</h2>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table cache-table">
+                <thead>
+                  <tr>
+                    <th class="col-model">Model</th>
+                    <th class="num">Prompt tokens</th>
+                    <th class="num">Cached tokens</th>
+                    <th class="num">Hit rate</th>
+                    <th class="num">Cache writes</th>
+                    <th class="num">Est. savings (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of cacheRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                      </td>
+                      <td class="num">{{ cacheTokens(row.promptCaching?.promptTokens) }}</td>
+                      <td class="num">{{ cacheTokens(row.promptCaching?.cachedPromptTokens) }}</td>
+                      <td class="num">{{ percent(row.promptCaching?.cacheHitRate ?? null) }}</td>
+                      <td class="num">{{ cacheTokens(row.promptCaching?.cacheWriteTokens) }}</td>
+                      <td class="num">
+                        {{ cacheSavings(row.promptCaching?.estimatedSavingsUsd) }}
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="6" class="empty">No model data in finished games yet.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="table-footnote">{{ cacheExplanation }}</p>
+          </div>
+        }
+
         @if (reliabilityLoading()) {
           <div class="loading-state">
             <mat-spinner diameter="40"></mat-spinner>
@@ -616,21 +708,8 @@
         }
 
         @if (reliability(); as r) {
-          <div class="kpi-row">
-            <div class="kpi-card">
-              <div class="label">Trust Index</div>
-              <div class="value">{{ formatScore(reliabilityAverageScore()) }}</div>
-              <div class="sub">Average across {{ r.models.length }} models</div>
-            </div>
-            <div class="kpi-card">
-              <div class="label">Low Confidence</div>
-              <div class="value">{{ reliabilityLowConfidenceCount() }}</div>
-              <div class="sub">Models with insufficient data</div>
-            </div>
-          </div>
-
           <div class="table-card reliability-table-card">
-            <h3>Reliability Ranking & Stability</h3>
+            <h2>Reliability Ranking & Stability</h2>
             <div class="table-wrap">
               <table class="analytics-table reliability-table">
                 <thead>

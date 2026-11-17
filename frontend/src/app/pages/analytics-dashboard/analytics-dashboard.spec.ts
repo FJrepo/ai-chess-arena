@@ -1,10 +1,244 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { ApiService } from '../../services/api.service';
-import { AnalyticsComparisonModel } from '../../models/analytics.model';
+import {
+  AnalyticsComparisonModel,
+  AnalyticsComparisonResponse,
+  AnalyticsHealthResponse,
+  ModelReliabilityResponse,
+} from '../../models/analytics.model';
 import { AnalyticsDashboard } from './analytics-dashboard';
 
 describe('AnalyticsDashboard', () => {
+  it.each([
+    {
+      tab: 'overview',
+      label: 'Overview',
+      headings: ['Model Comparison Table', 'Color Split', 'Failure Profile', 'Cost Efficiency'],
+    },
+    { tab: 'quality', label: 'Play quality', headings: ['Move Quality', 'Conversion'] },
+    { tab: 'behaviour', label: 'Behaviour', headings: ['Talkativeness', 'Resignations'] },
+    {
+      tab: 'cost',
+      label: 'Cost & reliability',
+      headings: [
+        'Per-Model Performance Metrics',
+        'Prompt caching',
+        'Reliability Ranking & Stability',
+      ],
+    },
+  ])('renders the sections for $label', async ({ tab, label, headings }) => {
+    const { harness } = await renderDashboard(`?tab=${tab}`);
+    const element = harness.routeNativeElement!;
+    const labels = Array.from(element.querySelectorAll('[role="tab"]')).map((node) =>
+      node.textContent?.replace(node.querySelector('mat-icon')?.textContent ?? '', '').trim(),
+    );
+    expect(labels).toEqual(['Overview', 'Play quality', 'Behaviour', 'Cost & reliability']);
+    expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
+      label,
+    );
+    expect(
+      Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
+    ).toEqual(headings);
+    expect(element.querySelectorAll('h1')).toHaveLength(1);
+    expect(element.querySelectorAll('.tab-intro')).toHaveLength(1);
+    expect(element.querySelector('.tab-intro')?.textContent?.trim()).not.toBe('');
+    if (tab === 'overview') {
+      expect(element.querySelectorAll('.leader-card')).toHaveLength(4);
+      expect(element.querySelectorAll('.breakdown-grid .breakdown-card')).toHaveLength(3);
+      expect(element.querySelectorAll('.comparison-table thead th')).toHaveLength(11);
+    }
+    if (tab === 'cost') {
+      const grid = element.querySelector('.cost-kpi-grid')!;
+      expect(grid.querySelectorAll(':scope > .kpi-card')).toHaveLength(6);
+      expect(
+        Array.from(grid.querySelectorAll('.label')).map((node) => node.textContent?.trim()),
+      ).toEqual([
+        'Total Cost',
+        'Move Volume',
+        'Avg Latency',
+        'Total Tokens',
+        'Trust Index',
+        'Low Confidence',
+      ]);
+      expect(element.querySelector('.kpi-grid, .table-card')).toBe(grid);
+      expect(element.querySelectorAll('.kpi-grid')).toHaveLength(1);
+      expect(element.querySelector('.table-footnote')?.textContent).toContain('All attempts');
+      expect(element.textContent).toContain('Latency is shown but not scored.');
+    }
+  });
+
+  it('opens Play quality from the tab query parameter', async () => {
+    const { harness, component } = await renderDashboard('?tab=quality');
+    expect(component.selectedTabIndex()).toBe(1);
+    expect(harness.routeNativeElement!.querySelector('.quality-table')).not.toBeNull();
+    expect(harness.routeNativeElement!.querySelector('.conversion-table')).not.toBeNull();
+  });
+
+  it('updates the tab query parameter with replaceUrl and keeps other parameters', async () => {
+    const { harness, api } = await renderDashboard('?tab=quality&scope=sample');
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate');
+    const tabs = harness.routeNativeElement!.querySelectorAll<HTMLElement>('[role="tab"]');
+    tabs[2].click();
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(navigate).toHaveBeenCalledExactlyOnceWith([], {
+      relativeTo: TestBed.inject(Router).routerState.root.firstChild,
+      queryParams: { tab: 'behaviour' },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    await vi.waitFor(() => {
+      expect(router.parseUrl(router.url).queryParams).toEqual({
+        tab: 'behaviour',
+        scope: 'sample',
+      });
+    });
+    expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(1);
+    expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(1);
+    expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['', '?tab=unknown', '?tab=QUALITY', '?tab='])(
+    'falls back to Overview for a missing or unknown tab (%s)',
+    async (query) => {
+      const { harness, component } = await renderDashboard(query);
+      expect(component.selectedTabIndex()).toBe(0);
+      expect(
+        harness.routeNativeElement!.querySelector('[role="tab"][aria-selected="true"]')
+          ?.textContent,
+      ).toContain('Overview');
+      expect(harness.routeNativeElement!.querySelector('.comparison-table')).not.toBeNull();
+    },
+  );
+
+  it('restores selection on query changes and keeps shared filters across tabs', async () => {
+    const { harness, component, api } = await renderDashboard();
+    component.selectedDays = 7;
+    component.selectedTournamentId = 'tournament-sample';
+    component.minGames = 3;
+    component.onCommonFiltersChanged();
+    await harness.navigateByUrl('/analytics?tab=cost');
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(component.selectedTabIndex()).toBe(3);
+    expect(component.selectedDays).toBe(7);
+    expect(component.selectedTournamentId).toBe('tournament-sample');
+    expect(component.minGames).toBe(3);
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith({
+      days: 7,
+      tournamentId: 'tournament-sample',
+      minGames: 3,
+    });
+    expect(api.getAnalyticsHealth).toHaveBeenLastCalledWith({
+      days: 7,
+      tournamentId: 'tournament-sample',
+    });
+    expect(api.getAnalyticsReliability).toHaveBeenLastCalledWith({
+      days: 7,
+      tournamentId: 'tournament-sample',
+      minGames: 3,
+    });
+    expect(api.getAnalyticsComparison).toHaveBeenCalledTimes(2);
+    expect(api.getAnalyticsHealth).toHaveBeenCalledTimes(2);
+    expect(api.getAnalyticsReliability).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(harness.routeNativeElement!.querySelector('.cache-table')).not.toBeNull();
+    });
+  });
+
+  it('keeps health and reliability visible when comparison data fails in the merged tab', async () => {
+    const { harness, component } = await renderDashboard('?tab=cost');
+    component.comparison.set(null);
+    component.comparisonError.set('Failed to load model comparison metrics.');
+    harness.detectChanges();
+    expect(harness.routeNativeElement!.textContent).toContain(
+      'Failed to load model comparison metrics.',
+    );
+    expect(harness.routeNativeElement!.textContent).toContain('Per-Model Performance Metrics');
+    expect(harness.routeNativeElement!.textContent).toContain('Reliability Ranking & Stability');
+  });
+
+  it.each([
+    {
+      source: 'health' as const,
+      loading: 'Analyzing engine performance...',
+      error: 'Failed to load engine health metrics.',
+      headings: ['Prompt caching', 'Reliability Ranking & Stability'],
+      missingCards: [0, 1, 2, 3],
+    },
+    {
+      source: 'reliability' as const,
+      loading: 'Calculating reliability scores...',
+      error: 'Failed to load model reliability metrics.',
+      headings: ['Per-Model Performance Metrics', 'Prompt caching'],
+      missingCards: [4, 5],
+    },
+    {
+      source: 'comparison' as const,
+      loading: 'Comparing model results...',
+      error: 'Failed to load model comparison metrics.',
+      headings: ['Per-Model Performance Metrics', 'Reliability Ranking & Stability'],
+      missingCards: [],
+    },
+  ])(
+    'preserves the KPI grid and other tables while $source loads or fails',
+    async ({ source, loading, error, headings, missingCards }) => {
+      const response = new Subject<never>();
+      const { harness } = await renderDashboard('?tab=cost', { [source]: response });
+      const element = harness.routeNativeElement!;
+      const grid = element.querySelector('.cost-kpi-grid')!;
+      const cards = Array.from(grid.querySelectorAll('.kpi-card'));
+      expect(cards).toHaveLength(6);
+      expect(element.querySelector('.kpi-grid, .loading-state, .table-card')).toBe(grid);
+      expect(element.textContent).toContain(loading);
+      expect(
+        Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
+      ).toEqual(headings);
+      for (const index of missingCards) {
+        expect(cards[index].querySelector('.value')?.textContent).toBe('—');
+        expect(cards[index].querySelector('.sub')?.textContent).toContain('Loading...');
+      }
+
+      response.error(new Error('Request failed'));
+      harness.detectChanges();
+      expect(element.textContent).toContain(error);
+      expect(element.querySelector('.cost-kpi-grid')).toBe(grid);
+      expect(Array.from(grid.querySelectorAll('.kpi-card'))).toEqual(cards);
+      for (const index of missingCards) {
+        expect(cards[index].querySelector('.sub')?.textContent).toContain('Unavailable');
+      }
+      expect(
+        Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
+      ).toEqual(headings);
+    },
+  );
+
+  it('replaces reliability placeholders when its response arrives without moving the cards', async () => {
+    const response = new Subject<ModelReliabilityResponse>();
+    const { harness } = await renderDashboard('?tab=cost', { reliability: response });
+    const element = harness.routeNativeElement!;
+    const cards = Array.from(element.querySelectorAll('.cost-kpi-grid .kpi-card'));
+
+    response.next({ windowDays: 30, tournamentId: null, minGames: 0, models: [] });
+    response.complete();
+    harness.detectChanges();
+
+    expect(Array.from(element.querySelectorAll('.cost-kpi-grid .kpi-card'))).toEqual(cards);
+    expect(cards[4].querySelector('.value')?.textContent).toBe('0.0');
+    expect(cards[4].querySelector('.sub')?.textContent).toContain('Average across 0 models');
+    expect(cards[5].querySelector('.value')?.textContent).toBe('0');
+    expect(element.textContent).not.toContain('Calculating reliability scores...');
+    expect(element.textContent).toContain('No reliability data available for current criteria.');
+  });
+
   it('renders conversion counts, coverage and n/a in the selected comparison scope', async () => {
     const response = {
       windowDays: 30,
@@ -39,6 +273,11 @@ describe('AnalyticsDashboard', () => {
     TestBed.configureTestingModule({
       imports: [AnalyticsDashboard],
       providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { queryParamMap: of(convertToParamMap({ tab: 'quality' })) },
+        },
         {
           provide: ApiService,
           useValue: {
@@ -87,14 +326,14 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('distinguishes unknown conversion counts from observed zero', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     expect(component.conversionCount(null)).toBe('n/a');
     expect(component.conversionCount(undefined)).toBe('n/a');
     expect(component.conversionCount(0)).toBe('0');
   });
 
   it('sorts comparison rows by win rate by default', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -113,7 +352,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('sorts comparison rows by first-try legal rate', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -137,7 +376,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('explains the reliability score without latency', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
 
     expect(component.scoreExplanation).toBe(
       'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.',
@@ -145,7 +384,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('picks best value only from models with pricing and wins', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -174,7 +413,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('shows the score as the most reliable value and only that card carries the grade', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -194,7 +433,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('rounds the most reliable card and the table score the same way', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -210,7 +449,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('formats latency with thousands separators', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
 
     expect(component.formatMs(10196.4)).toBe('10,196 ms');
     expect(component.formatMs(812)).toBe('812 ms');
@@ -218,7 +457,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('lists move quality for models with judged moves, lowest ACPL first', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -260,7 +499,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('lists talkativeness per chat mode, most talkative first, with n/a for modes without moves', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -310,7 +549,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('lists caching metrics, reported zeros and n/a for legacy or incomplete usage', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -361,7 +600,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('explains talkativeness in one line', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
 
     expect(component.talkExplanation).toContain('non-empty message');
     expect(component.talkExplanation).toContain('Mandatory');
@@ -369,7 +608,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('lists resignations, those while not losing and wins by resignation, with gaps in evaluation', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
       tournamentId: null,
@@ -413,7 +652,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('explains resignations and "not losing" in one line', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
 
     expect(component.resignationExplanation).toContain('35% winning chances');
     expect(component.resignationExplanation).toContain('10th move');
@@ -421,7 +660,7 @@ describe('AnalyticsDashboard', () => {
   });
 
   it('explains the move-quality metrics in one line', () => {
-    const component = new AnalyticsDashboard({} as any);
+    const component = createDashboard();
 
     expect(component.qualityExplanation).toContain('average centipawn loss');
     expect(component.qualityExplanation).toContain('5 / 10 / 15 percentage points');
@@ -493,4 +732,69 @@ function baseRow(modelId: string): AnalyticsComparisonRow {
     reliabilityBand: 'B',
     insufficientData: false,
   };
+}
+
+function createDashboard(): AnalyticsDashboard {
+  return new AnalyticsDashboard({} as ApiService, {} as ActivatedRoute, {} as Router);
+}
+
+async function renderDashboard(
+  query = '',
+  responses: {
+    comparison?: Observable<AnalyticsComparisonResponse>;
+    health?: Observable<AnalyticsHealthResponse>;
+    reliability?: Observable<ModelReliabilityResponse>;
+  } = {},
+) {
+  const api = {
+    getTournaments: vi.fn(() => of([])),
+    getAnalyticsComparison: vi.fn(
+      () =>
+        responses.comparison ??
+        of({
+          windowDays: 30,
+          tournamentId: null,
+          minGames: 0,
+          gamesCount: 3,
+          models: [comparisonRow('model.sample')],
+        }),
+    ),
+    getAnalyticsHealth: vi.fn(
+      () =>
+        responses.health ??
+        of({
+          windowDays: 30,
+          tournamentId: null,
+          gamesCount: 3,
+          activeGamesCount: 0,
+          completedGamesCount: 3,
+          forfeitGamesCount: 0,
+          movesCount: 30,
+          retriesTotal: 2,
+          averageRetriesPerMove: 0.067,
+          averageResponseTimeMs: 1000,
+          p95ResponseTimeMs: 1500,
+          promptTokensTotal: 1000,
+          completionTokensTotal: 100,
+          costTotalUsd: 0.01,
+          models: [],
+        }),
+    ),
+    getAnalyticsReliability: vi.fn(
+      () =>
+        responses.reliability ??
+        of({ windowDays: 30, tournamentId: null, minGames: 0, models: [] }),
+    ),
+  };
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([{ path: 'analytics', component: AnalyticsDashboard }]),
+      { provide: ApiService, useValue: api },
+    ],
+  });
+  const harness = await RouterTestingHarness.create(`/analytics${query}`);
+  await harness.fixture.whenStable();
+  harness.detectChanges();
+  const component = harness.routeDebugElement!.componentInstance as AnalyticsDashboard;
+  return { harness, component, api };
 }

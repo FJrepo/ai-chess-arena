@@ -9,7 +9,15 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
-import { CurrencyPipe, DatePipe, DecimalPipe, formatNumber } from '@angular/common';
+import {
+  CurrencyPipe,
+  DatePipe,
+  DecimalPipe,
+  formatNumber,
+  NgTemplateOutlet,
+} from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import {
@@ -45,11 +53,14 @@ type ComparisonSortOption =
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
+    NgTemplateOutlet,
   ],
   templateUrl: './analytics-dashboard.html',
   styleUrl: './analytics-dashboard.scss',
 })
 export class AnalyticsDashboard implements OnInit, OnDestroy {
+  readonly tabIds = ['overview', 'quality', 'behaviour', 'cost'] as const;
+  selectedTabIndex = signal(0);
   readonly dayOptions = [7, 30, 90];
   readonly scoreExplanation =
     'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
@@ -256,19 +267,40 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   });
 
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private tabSubscription: Subscription | null = null;
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private route: ActivatedRoute,
+    private router: Router,
+  ) {}
 
   ngOnInit(): void {
+    this.tabSubscription = this.route.queryParamMap.subscribe((params) => {
+      const index = this.tabIds.findIndex((tab) => tab === params.get('tab'));
+      this.selectedTabIndex.set(index < 0 ? 0 : index);
+    });
     this.loadTournaments();
     this.refreshAll();
     this.startAutoRefresh();
   }
 
   ngOnDestroy(): void {
+    this.tabSubscription?.unsubscribe();
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
     }
+  }
+
+  onTabChange(index: number): void {
+    if (index === this.selectedTabIndex()) return;
+    this.selectedTabIndex.set(index);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: this.tabIds[index] },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   onCommonFiltersChanged(): void {
