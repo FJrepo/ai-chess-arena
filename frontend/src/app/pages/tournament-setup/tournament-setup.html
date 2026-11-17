@@ -11,242 +11,23 @@
 
   <div class="setup-layout">
     <div class="setup-main">
-      <mat-card class="panel settings-card">
-        <mat-card-header>
-          <h2 mat-card-title>Tournament Settings</h2>
-          <mat-card-subtitle>Name, move limits and match format.</mat-card-subtitle>
-        </mat-card-header>
-        <mat-card-content>
-          <mat-form-field appearance="outline" floatLabel="always" class="full-width">
-            <mat-label>Tournament Name</mat-label>
-            <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
-          </mat-form-field>
-
-          <section class="field-group" aria-labelledby="setup-moves-heading">
-            <h3 class="group-heading" id="setup-moves-heading">Moves</h3>
-            <div class="toggle-row">
-              <mat-slide-toggle [(ngModel)]="limitMoveTime">Limit time per move</mat-slide-toggle>
-            </div>
-            <div class="settings-grid">
-              @if (limitMoveTime) {
-                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
-                  <mat-label>Move Timeout (seconds)</mat-label>
-                  <input matInput type="number" min="10" max="3600" [(ngModel)]="moveTimeout" />
-                  @if (showShortMoveTimeoutWarning()) {
-                    <mat-hint class="timeout-warning"
-                      >Reasoning models often need more than a minute per move; running out of time
-                      forfeits the game</mat-hint
-                    >
-                  } @else {
-                    <mat-hint>10–3600; a model that runs out of time forfeits</mat-hint>
-                  }
-                </mat-form-field>
-              }
-
-              <mat-form-field appearance="outline" floatLabel="always">
-                <mat-label>Max attempts per move</mat-label>
-                <input matInput type="number" [(ngModel)]="maxRetries" />
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
-                <mat-label>Max output tokens per answer</mat-label>
-                <input
-                  matInput
-                  type="number"
-                  min="128"
-                  max="262144"
-                  step="128"
-                  [(ngModel)]="maxOutputTokens"
-                />
-                <mat-hint
-                  >Includes reasoning tokens; answers cut off at this limit pause the game.
-                  OpenRouter checks your credit balance against max_tokens × output price before a
-                  request. Very high limits with expensive models can fail on a low balance even if
-                  far fewer tokens are used.</mat-hint
-                >
-              </mat-form-field>
-
-              <mat-form-field
-                appearance="outline"
-                floatLabel="always"
-                subscriptSizing="dynamic"
-                class="reasoning-effort-field"
-              >
-                <mat-label>Reasoning effort</mat-label>
-                <mat-select [(ngModel)]="reasoningEffort" placeholder="Model default">
-                  <mat-option [value]="null">Model default</mat-option>
-                  @for (option of reasoningEffortOptions; track option.value) {
-                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
-                  }
-                </mat-select>
-                <mat-hint class="reasoning-effort-hint">{{ reasoningEffortHint }}</mat-hint>
-              </mat-form-field>
-            </div>
-          </section>
-
-          <section class="field-group" aria-labelledby="setup-matches-heading">
-            <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
-            <div class="settings-grid">
-              <mat-form-field appearance="outline" floatLabel="always">
-                <mat-label>Draw Policy</mat-label>
-                <mat-select [(ngModel)]="drawPolicy">
-                  @for (option of drawPolicyOptions; track option.value) {
-                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
-                  }
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" floatLabel="always">
-                <mat-label>Matchups</mat-label>
-                <mat-select [(ngModel)]="matchupBestOf">
-                  @for (bestOf of bestOfOptions; track bestOf) {
-                    <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
-                  }
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" floatLabel="always">
-                <mat-label>Final round</mat-label>
-                <mat-select [(ngModel)]="finalsBestOf" placeholder="Same as matchups">
-                  <mat-option [value]="null">Same as matchups</mat-option>
-                  @for (bestOf of bestOfOptions; track bestOf) {
-                    <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
-                  }
-                </mat-select>
-              </mat-form-field>
-            </div>
-          </section>
-
-          <section class="field-group" aria-labelledby="setup-opening-heading">
-            <h3 class="group-heading" id="setup-opening-heading">Opening</h3>
-            <div class="settings-grid opening-controls">
-              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
-                <mat-label>Opening mode</mat-label>
-                <mat-select [(ngModel)]="openingMode" aria-describedby="opening-hint">
-                  <mat-option value="STANDARD">Standard</mat-option>
-                  <mat-option value="RANDOM_BOOK">Random book</mat-option>
-                  <mat-option value="FIXED">Fixed book line</mat-option>
-                </mat-select>
-                <mat-hint id="opening-hint">{{ openingHint() }}</mat-hint>
-              </mat-form-field>
-              @if (openingMode() === 'FIXED') {
-                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
-                  <mat-label>Book line</mat-label>
-                  <mat-select [(ngModel)]="openingId" required>
-                    @for (line of openings(); track line.id) {
-                      <mat-option [value]="line.id">{{ line.eco }} · {{ line.name }}</mat-option>
-                    }
-                  </mat-select>
-                  <mat-hint>Choose a line before creating the tournament.</mat-hint>
-                </mat-form-field>
-              }
-            </div>
-            @if (openingsError()) {
-              <p class="caption" role="status">
-                {{ openingsError() }}
-                <button mat-button (click)="loadOpenings()">Retry opening book</button>
-              </p>
-            }
-          </section>
-
-          <section class="field-group" aria-labelledby="setup-chat-heading">
-            <h3 class="group-heading" id="setup-chat-heading">Chat</h3>
-            <div class="chat-mode-row">
-              <mat-button-toggle-group
-                class="chat-mode-toggle"
-                [(ngModel)]="chatMode"
-                [hideSingleSelectionIndicator]="true"
-                aria-labelledby="setup-chat-heading"
-                aria-describedby="chat-mode-hint"
-              >
-                @for (option of chatModeOptions; track option.value) {
-                  <mat-button-toggle [value]="option.value">{{ option.label }}</mat-button-toggle>
-                }
-              </mat-button-toggle-group>
-              <span class="caption chat-mode-hint" id="chat-mode-hint">{{ chatModeHint() }}</span>
-            </div>
-            <div class="resignation-row">
-              <mat-slide-toggle
-                class="adjudication-toggle"
-                [(ngModel)]="adjudicationEnabled"
-                aria-describedby="adjudication-hint"
-                >Adjudicate decisive wins</mat-slide-toggle
-              >
-              <span class="caption resignation-hint" id="adjudication-hint"
-                >Model games only: award a win after 10 plies of forced mate or +10 pawns; off by
-                default.</span
-              >
-            </div>
-            <div class="resignation-row">
-              <mat-slide-toggle
-                class="resignation-toggle"
-                [(ngModel)]="resignationAllowed"
-                aria-describedby="resignation-hint"
-                >Allow resignation</mat-slide-toggle
-              >
-              <span class="caption resignation-hint" id="resignation-hint">{{
-                resignationHint()
-              }}</span>
-            </div>
-          </section>
-
-          <section class="field-group rules-block" aria-labelledby="setup-rules-heading">
-            <div class="group-heading-row">
-              <h3 class="group-heading" id="setup-rules-heading">System Rules</h3>
-              @if (systemRulesVersion()) {
-                <span class="caption">Template version: {{ systemRulesVersion() }}</span>
-              }
-            </div>
-            @if (promptTemplateLoadError()) {
-              <p class="prompt-warning" role="alert">{{ promptTemplateLoadError() }}</p>
-            }
-            <pre class="rules-preview" aria-hidden="true">{{ systemRulesTemplate }}</pre>
-            <details class="rules-details">
-              <summary class="rules-toggle">
-                <mat-icon aria-hidden="true">expand_more</mat-icon>
-                <span class="when-closed">Show full system rules</span>
-                <span class="when-open">Hide full system rules</span>
-              </summary>
-              <mat-form-field
-                appearance="outline"
-                floatLabel="always"
-                class="full-width rules-field"
-              >
-                <mat-label>System Rules (read-only)</mat-label>
-                <textarea matInput [ngModel]="systemRulesTemplate" rows="16" readonly></textarea>
-              </mat-form-field>
-            </details>
-          </section>
-
-          <section class="field-group" aria-labelledby="setup-shared-heading">
-            <h3 class="group-heading" id="setup-shared-heading">Shared Custom Instructions</h3>
-            <mat-form-field
-              appearance="outline"
-              floatLabel="always"
-              subscriptSizing="dynamic"
-              class="full-width"
-            >
-              <mat-label>Instructions for all participants</mat-label>
-              <textarea
-                matInput
-                [(ngModel)]="sharedCustomInstructions"
-                rows="4"
-                placeholder="Optional guidance for all participants, e.g. prefer tactical play or avoid draws."
-              ></textarea>
-              <mat-hint>
-                These instructions are appended after the fixed system rules. They cannot override
-                the required JSON/SAN format.
-              </mat-hint>
-            </mat-form-field>
-          </section>
-        </mat-card-content>
-      </mat-card>
-
       <mat-card class="panel participants-card">
         <mat-card-header>
-          <h2 mat-card-title>Participants</h2>
+          <h2 mat-card-title>Add participant</h2>
           <mat-card-subtitle
-            >Choose from OpenRouter models instead of typing model IDs manually.</mat-card-subtitle
+            >Choose an OpenRouter
+            <span class="hint-tail"
+              >model.
+              <button
+                mat-icon-button
+                type="button"
+                class="hint-help"
+                aria-label="About model selection"
+                matTooltip="Choose from OpenRouter models instead of typing model IDs manually."
+              >
+                <mat-icon>help_outline</mat-icon>
+              </button></span
+            ></mat-card-subtitle
           >
         </mat-card-header>
         <mat-card-content>
@@ -322,7 +103,19 @@
                   </mat-form-field>
                 } @else {
                   <span class="caption participant-effort-na"
-                    >Reasoning effort: n/a (this model offers no effort levels)</span
+                    >Reasoning effort:
+                    <span class="hint-tail"
+                      >n/a
+                      <button
+                        mat-icon-button
+                        type="button"
+                        class="hint-help"
+                        aria-label="About participant reasoning effort"
+                        matTooltip="This model offers no effort levels."
+                      >
+                        <mat-icon>help_outline</mat-icon>
+                      </button></span
+                    ></span
                   >
                 }
               </div>
@@ -330,15 +123,44 @@
           }
 
           @if (newControlType === 'AI') {
-            <mat-form-field appearance="outline" floatLabel="always" class="full-width">
-              <mat-label>Participant Custom Instructions</mat-label>
-              <textarea
-                matInput
-                [(ngModel)]="newCustomInstructions"
-                rows="3"
-                placeholder="Optional override for this participant only. Leave blank to use shared tournament instructions."
-              ></textarea>
-            </mat-form-field>
+            <button
+              mat-button
+              type="button"
+              class="instructions-toggle"
+              [attr.aria-expanded]="showParticipantInstructions"
+              aria-controls="participant-instructions"
+              (click)="showParticipantInstructions = !showParticipantInstructions"
+            >
+              {{ showParticipantInstructions ? '−' : '+' }} Custom instructions
+            </button>
+            @if (showParticipantInstructions) {
+              <mat-form-field appearance="outline" floatLabel="always" class="full-width">
+                <mat-label>Participant Custom Instructions</mat-label>
+                <textarea
+                  matInput
+                  #participantInstructions
+                  id="participant-instructions"
+                  [(ngModel)]="newCustomInstructions"
+                  rows="3"
+                  placeholder="Optional instructions for this participant"
+                ></textarea>
+                <mat-hint
+                  >Overrides shared
+                  <span class="hint-tail"
+                    >instructions.
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="hint-help"
+                      aria-label="About participant instructions"
+                      matTooltip="Optional override for this participant only. Leave blank to use shared tournament instructions."
+                    >
+                      <mat-icon>help_outline</mat-icon>
+                    </button></span
+                  ></mat-hint
+                >
+              </mat-form-field>
+            }
           }
 
           <div class="add-row">
@@ -366,12 +188,389 @@
               </button>
             </div>
           </div>
+        </mat-card-content>
+      </mat-card>
+      <mat-card class="panel settings-card">
+        <mat-card-header>
+          <h2 mat-card-title>Tournament Settings</h2>
+          <mat-card-subtitle>Move limits and match format.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <section class="field-group" aria-labelledby="setup-moves-heading">
+            <h3 class="group-heading" id="setup-moves-heading">Moves</h3>
+            <div class="toggle-row">
+              <mat-slide-toggle [(ngModel)]="limitMoveTime">Limit time per move</mat-slide-toggle>
+            </div>
+            <div class="settings-grid moves-grid">
+              @if (limitMoveTime) {
+                <mat-form-field
+                  appearance="outline"
+                  floatLabel="always"
+                  subscriptSizing="dynamic"
+                  class="move-timeout-field"
+                >
+                  <mat-label>Move Timeout (seconds)</mat-label>
+                  <input matInput type="number" min="10" max="3600" [(ngModel)]="moveTimeout" />
+                  @if (showShortMoveTimeoutWarning()) {
+                    <mat-hint class="timeout-warning"
+                      >Short limits risk
+                      <span class="hint-tail"
+                        >forfeits.
+                        <button
+                          mat-icon-button
+                          type="button"
+                          class="hint-help"
+                          aria-label="About move timeouts"
+                          matTooltip="Reasoning models often need more than a minute per move; running out of time forfeits the game."
+                        >
+                          <mat-icon>help_outline</mat-icon>
+                        </button></span
+                      ></mat-hint
+                    >
+                  } @else {
+                    <mat-hint>10–3600s; timeout forfeits.</mat-hint>
+                  }
+                </mat-form-field>
+              }
 
-          <div class="participants-list-head">
-            <h3 class="group-heading">Added</h3>
-            <span class="caption">{{ participants().length }} of at least 2</span>
-          </div>
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Max attempts per move</mat-label>
+                <input matInput type="number" [(ngModel)]="maxRetries" />
+                <mat-hint
+                  >Attempts for invalid
+                  <span class="hint-tail"
+                    >moves.
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="hint-help"
+                      aria-label="About move attempts"
+                      matTooltip="Invalid moves use attempts; exhausting the allowed attempts forfeits the game."
+                    >
+                      <mat-icon>help_outline</mat-icon>
+                    </button></span
+                  ></mat-hint
+                >
+              </mat-form-field>
 
+              <mat-form-field
+                appearance="outline"
+                floatLabel="always"
+                subscriptSizing="dynamic"
+                class="token-limit-field"
+              >
+                <mat-label>Max output tokens per answer</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  min="128"
+                  max="262144"
+                  step="128"
+                  [(ngModel)]="maxOutputTokens"
+                />
+                <mat-hint
+                  >Cut-off answers pause the
+                  <span class="hint-tail"
+                    >game.
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="hint-help"
+                      aria-label="About the output token limit"
+                      matTooltip="Includes reasoning tokens. OpenRouter checks the credit balance against max_tokens × output price before a request. Very high limits with expensive models can fail on a low balance even if far fewer tokens are used."
+                    >
+                      <mat-icon>help_outline</mat-icon>
+                    </button></span
+                  ></mat-hint
+                >
+              </mat-form-field>
+
+              <mat-form-field
+                appearance="outline"
+                floatLabel="always"
+                subscriptSizing="dynamic"
+                class="reasoning-effort-field"
+              >
+                <mat-label>Reasoning effort</mat-label>
+                <mat-select [(ngModel)]="reasoningEffort" placeholder="Model default">
+                  <mat-option [value]="null">Model default</mat-option>
+                  @for (option of reasoningEffortOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+                <mat-hint class="reasoning-effort-hint"
+                  >Lower is faster and
+                  <span class="hint-tail"
+                    >cheaper.
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="hint-help"
+                      aria-label="About reasoning effort"
+                      [matTooltip]="reasoningEffortHint"
+                    >
+                      <mat-icon>help_outline</mat-icon>
+                    </button></span
+                  ></mat-hint
+                >
+              </mat-form-field>
+            </div>
+          </section>
+
+          <section class="field-group" aria-labelledby="setup-matches-heading">
+            <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
+            <div class="settings-grid matches-grid">
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Draw Policy</mat-label>
+                <mat-select [(ngModel)]="drawPolicy">
+                  @for (option of drawPolicyOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Matchups</mat-label>
+                <mat-select [(ngModel)]="matchupBestOf">
+                  @for (bestOf of bestOfOptions; track bestOf) {
+                    <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" floatLabel="always">
+                <mat-label>Final round</mat-label>
+                <mat-select [(ngModel)]="finalsBestOf" placeholder="Same as matchups">
+                  <mat-option [value]="null">Same as matchups</mat-option>
+                  @for (bestOf of bestOfOptions; track bestOf) {
+                    <mat-option [value]="bestOf">Best of {{ bestOf }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            </div>
+          </section>
+
+          <section class="field-group" aria-labelledby="setup-opening-heading">
+            <h3 class="group-heading" id="setup-opening-heading">Opening</h3>
+            <div class="settings-grid opening-controls">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Opening mode</mat-label>
+                <mat-select [(ngModel)]="openingMode" aria-describedby="opening-hint">
+                  <mat-option value="STANDARD">Standard</mat-option>
+                  <mat-option value="RANDOM_BOOK">Random book</mat-option>
+                  <mat-option value="FIXED">Fixed book line</mat-option>
+                </mat-select>
+                @let openingHintParts = hintParts(openingCaptions[openingMode()]);
+                <mat-hint id="opening-hint">
+                  {{ openingHintParts[0] }}
+                  <span class="hint-tail"
+                    >{{ openingHintParts[1] }}
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="hint-help"
+                      aria-label="About opening modes"
+                      [matTooltip]="openingHint()"
+                    >
+                      <mat-icon>help_outline</mat-icon>
+                    </button></span
+                  ></mat-hint
+                >
+              </mat-form-field>
+              @if (openingMode() === 'FIXED') {
+                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                  <mat-label>Book line</mat-label>
+                  <mat-select [(ngModel)]="openingId" required>
+                    @for (line of openings(); track line.id) {
+                      <mat-option [value]="line.id">{{ line.eco }} · {{ line.name }}</mat-option>
+                    }
+                  </mat-select>
+                  <mat-hint>Choose a line to continue.</mat-hint>
+                </mat-form-field>
+              }
+            </div>
+            @if (openingsError()) {
+              <p class="caption" role="status">
+                {{ openingsError() }}
+                <button mat-button (click)="loadOpenings()">Retry opening book</button>
+              </p>
+            }
+          </section>
+
+          <section class="field-group" aria-labelledby="setup-chat-heading">
+            <h3 class="group-heading" id="setup-chat-heading">Chat</h3>
+            <div class="chat-mode-row">
+              <mat-button-toggle-group
+                class="chat-mode-toggle"
+                [(ngModel)]="chatMode"
+                [hideSingleSelectionIndicator]="true"
+                aria-labelledby="setup-chat-heading"
+                aria-describedby="chat-mode-hint"
+              >
+                @for (option of chatModeOptions; track option.value) {
+                  <mat-button-toggle [value]="option.value">{{ option.label }}</mat-button-toggle>
+                }
+              </mat-button-toggle-group>
+              @let chatHintParts = hintParts(chatModeCaptions[chatMode]);
+              <span class="caption chat-mode-hint" id="chat-mode-hint">
+                {{ chatHintParts[0] }}
+                <span class="hint-tail"
+                  >{{ chatHintParts[1] }}
+                  <button
+                    mat-icon-button
+                    type="button"
+                    class="hint-help"
+                    aria-label="About chat modes"
+                    [matTooltip]="chatModeHint()"
+                  >
+                    <mat-icon>help_outline</mat-icon>
+                  </button></span
+                ></span
+              >
+            </div>
+            <div class="resignation-row">
+              <mat-slide-toggle
+                class="adjudication-toggle"
+                [(ngModel)]="adjudicationEnabled"
+                aria-describedby="adjudication-hint"
+                >Adjudicate decisive wins</mat-slide-toggle
+              >
+              <span class="caption resignation-hint" id="adjudication-hint"
+                >Model games only; off by
+                <span class="hint-tail"
+                  >default.
+                  <button
+                    mat-icon-button
+                    type="button"
+                    class="hint-help"
+                    aria-label="About adjudication"
+                    matTooltip="Award a win after 10 plies of forced mate or +10 pawns. Applies only to model games; off by default."
+                  >
+                    <mat-icon>help_outline</mat-icon>
+                  </button></span
+                ></span
+              >
+            </div>
+            <div class="resignation-row">
+              <mat-slide-toggle
+                class="resignation-toggle"
+                [(ngModel)]="resignationAllowed"
+                aria-describedby="resignation-hint"
+                >Allow resignation</mat-slide-toggle
+              >
+              @let resignationHintParts =
+                hintParts(
+                  resignationAllowed
+                    ? 'Both models may resign from their 10th move.'
+                    : 'Games are played to the end.'
+                );
+              <span class="caption resignation-hint" id="resignation-hint">
+                {{ resignationHintParts[0] }}
+                <span class="hint-tail"
+                  >{{ resignationHintParts[1] }}
+                  <button
+                    mat-icon-button
+                    type="button"
+                    class="hint-help"
+                    aria-label="About resignation"
+                    [matTooltip]="resignationHint()"
+                  >
+                    <mat-icon>help_outline</mat-icon>
+                  </button></span
+                ></span
+              >
+            </div>
+          </section>
+
+          <details class="advanced-prompt">
+            <summary class="advanced-summary">
+              <span>Advanced: prompt</span>
+              <span class="caption">Prompt rules and shared instructions</span>
+              @if (hasSharedInstructions()) {
+                <span class="custom-badge">custom</span>
+              }
+            </summary>
+            <section class="field-group rules-block" aria-labelledby="setup-rules-heading">
+              <div class="group-heading-row">
+                <h3 class="group-heading" id="setup-rules-heading">System Rules</h3>
+                @if (systemRulesVersion()) {
+                  <span class="caption">Template version: {{ systemRulesVersion() }}</span>
+                }
+              </div>
+              @if (promptTemplateLoadError()) {
+                <p class="prompt-warning" role="alert">{{ promptTemplateLoadError() }}</p>
+              }
+              <pre class="rules-preview" aria-hidden="true">{{ systemRulesTemplate }}</pre>
+              <details class="rules-details">
+                <summary class="rules-toggle">
+                  <mat-icon aria-hidden="true">expand_more</mat-icon>
+                  <span class="when-closed">Show full system rules</span>
+                  <span class="when-open">Hide full system rules</span>
+                </summary>
+                <mat-form-field
+                  appearance="outline"
+                  floatLabel="always"
+                  class="full-width rules-field"
+                >
+                  <mat-label>System Rules (read-only)</mat-label>
+                  <textarea matInput [ngModel]="systemRulesTemplate" rows="3" readonly></textarea>
+                </mat-form-field>
+              </details>
+            </section>
+
+            <section class="field-group" aria-labelledby="setup-shared-heading">
+              <h3 class="group-heading" id="setup-shared-heading">Shared Custom Instructions</h3>
+              <mat-form-field
+                appearance="outline"
+                floatLabel="always"
+                subscriptSizing="dynamic"
+                class="full-width"
+              >
+                <mat-label>Instructions for all participants</mat-label>
+                <textarea
+                  matInput
+                  [(ngModel)]="sharedCustomInstructions"
+                  rows="3"
+                  placeholder="Optional guidance for all participants, e.g. prefer tactical play or avoid draws."
+                ></textarea>
+                <mat-hint>
+                  Appended after system rules; JSON/SAN stays
+                  <span class="hint-tail"
+                    >required.
+                    <button
+                      mat-icon-button
+                      type="button"
+                      class="hint-help"
+                      aria-label="About shared instructions"
+                      matTooltip="These instructions are appended after the fixed system rules. They cannot override the required JSON/SAN format."
+                    >
+                      <mat-icon>help_outline</mat-icon>
+                    </button></span
+                  >
+                </mat-hint>
+              </mat-form-field>
+            </section>
+          </details>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <aside class="setup-aside" tabindex="0" aria-label="Tournament preview and launch">
+      <mat-card class="panel lineup-card">
+        <mat-card-header class="participants-list-head">
+          <h2 mat-card-title>Tournament lineup</h2>
+          <span class="caption">{{ participants().length }} of at least 2</span>
+        </mat-card-header>
+        <mat-card-content>
+          <mat-form-field
+            appearance="outline"
+            floatLabel="always"
+            subscriptSizing="dynamic"
+            class="full-width lineup-name"
+          >
+            <mat-label>Tournament Name</mat-label>
+            <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
+          </mat-form-field>
           <ul class="participant-list">
             @for (p of participants(); track $index) {
               <li class="participant-row">
@@ -379,22 +578,32 @@
                   $index + 1
                 }}</span>
                 <app-provider-logo [modelId]="p.modelId || null" [size]="24" />
-                <div class="participant-text">
-                  <span class="participant-name">{{ p.playerName }}</span>
-                  <span class="participant-meta">
+                <div
+                  class="participant-text"
+                  [title]="
+                    participantInstructionLabel(p) +
+                    (p.reasoningEffort
+                      ? ' · Reasoning effort: ' + reasoningEffortLabel(p.reasoningEffort)
+                      : '')
+                  "
+                >
+                  <span class="participant-name" [title]="p.playerName">{{ p.playerName }}</span>
+                  <span
+                    class="participant-meta"
+                    [title]="p.controlType === 'HUMAN' ? 'Human-controlled' : p.modelId"
+                  >
                     @if (p.controlType === 'HUMAN') {
                       Human-controlled
                     } @else {
                       <span class="mono">{{ p.modelId }}</span>
-                      <span class="meta-sep" aria-hidden="true">·</span>
-                      {{ providerDisplayName(null, p.modelId || null) }}
                     }
                   </span>
-                  <span class="participant-meta">{{ participantInstructionLabel(p) }}</span>
-                  @if (p.reasoningEffort) {
-                    <span class="participant-meta participant-effort-meta"
-                      >Reasoning effort: {{ reasoningEffortLabel(p.reasoningEffort) }}</span
-                    >
+                  @if (
+                    p.controlType === 'AI' && (p.customInstructions || hasSharedInstructions())
+                  ) {
+                    <span class="participant-meta participant-instructions">{{
+                      p.customInstructions ? 'Custom instructions' : 'Shared instructions'
+                    }}</span>
                   }
                 </div>
                 <button
@@ -410,129 +619,6 @@
               <li class="participant-empty">No participants added yet.</li>
             }
           </ul>
-        </mat-card-content>
-      </mat-card>
-    </div>
-
-    <aside class="setup-aside" aria-label="Tournament preview and launch">
-      <mat-card class="panel confidence-panel">
-        <mat-card-header>
-          <h2 mat-card-title>Tournament Confidence</h2>
-          <mat-card-subtitle>Heuristic runtime and cost preview before launch.</mat-card-subtitle>
-        </mat-card-header>
-        <mat-card-content
-          class="preview-scroll"
-          tabindex="0"
-          role="region"
-          aria-label="Tournament preview"
-        >
-          @if (confidenceSummary(); as summary) {
-            <div class="confidence-band-row">
-              <span
-                class="confidence-band"
-                [class.safe]="summary.riskBand === 'Safe'"
-                [class.moderate]="summary.riskBand === 'Moderate'"
-                [class.expensive]="summary.riskBand === 'Expensive'"
-              >
-                {{ summary.riskBand }}
-              </span>
-              <span class="confidence-note">{{ summary.riskReason }}</span>
-            </div>
-
-            <div class="confidence-grid">
-              <div class="confidence-metric">
-                <span class="metric-label">Series</span>
-                <strong>{{ summary.totalSeries }}</strong>
-                <span>{{ summary.participantCount }} participants</span>
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Projected Games</span>
-                <strong>{{ summary.likelyGames }}</strong>
-                <span
-                  >{{ summary.minGames }} min · {{ summary.maxGames
-                  }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
-                >
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Estimated Runtime</span>
-                <strong>{{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
-                <span>
-                  @if (summary.maxRuntimeMinutes !== null) {
-                    {{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
-                    {{ formatDuration(summary.maxRuntimeMinutes) }}
-                  } @else {
-                    open-ended
-                  }
-                </span>
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Move Pace</span>
-                <strong>{{ summary.paceLabel }}</strong>
-                <span>{{ limitMoveTime ? moveTimeout + 's timeout' : 'no time limit' }}</span>
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Estimated Spend</span>
-                <strong>
-                  @if (summary.likelyCostUsd !== null) {
-                    {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
-                  } @else {
-                    n/a
-                  }
-                </strong>
-                <span>
-                  @if (summary.maxCostUsd !== null) {
-                    {{ summary.drawCanExtendSeries ? 'at least' : 'up to' }}
-                    {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
-                  } @else {
-                    add priced models for an estimate
-                  }
-                </span>
-              </div>
-              <div class="confidence-metric">
-                <span class="metric-label">Pricing Coverage</span>
-                <strong>{{ pricingCoverageLabel(summary) }}</strong>
-                <span>based on OpenRouter list prices</span>
-              </div>
-            </div>
-
-            <div class="confidence-footnotes">
-              <p>
-                Estimates assume roughly 70 moves per game, about 1,400 prompt and 140 output tokens
-                per move, and current OpenRouter list pricing. Actual usage depends on model
-                behavior and retries.
-              </p>
-              <p>
-                Reasoning models can use far more output tokens per answer, up to the tournament's
-                max output tokens ({{ maxOutputTokens }}), so their cost can be many times higher.
-              </p>
-              @if (!limitMoveTime) {
-                <p>
-                  Without a time limit per move, runtime is open-ended: the estimate assumes about
-                  {{ typicalMoveSeconds }} seconds per answer, and reasoning models can take much
-                  longer.
-                </p>
-              }
-              @if (summary.drawCanExtendSeries) {
-                <p class="confidence-warning">
-                  With `Replay Game`, a match that is still level after its regular games continues
-                  with extra games until one is decisive, so there is no fixed maximum for games,
-                  runtime or cost. Other draw policies end every match after at most its best-of
-                  games.
-                </p>
-              }
-            </div>
-          } @else {
-            <div class="confidence-empty">
-              <mat-icon>insights</mat-icon>
-              <div>
-                <strong>Add at least two participants</strong>
-                <p>
-                  Once the bracket is viable, this panel will estimate series count, runtime, and
-                  rough spend.
-                </p>
-              </div>
-            </div>
-          }
         </mat-card-content>
         <div class="launch-footer">
           @let ready = readiness();
@@ -573,6 +659,124 @@
             <p class="create-error" role="alert">{{ error }}</p>
           }
         </div>
+      </mat-card>
+      <mat-card class="panel confidence-panel">
+        <mat-card-header>
+          <h2 mat-card-title>Tournament Estimate</h2>
+          <mat-card-subtitle>Rough heuristic, not a quote.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          @if (confidenceSummary(); as summary) {
+            <div class="confidence-band-row">
+              <span
+                class="confidence-band"
+                [class.low-risk]="summary.riskBand === 'Safe'"
+                [class.moderate-risk]="summary.riskBand === 'Moderate'"
+                [class.high-cost]="summary.riskBand === 'Expensive'"
+              >
+                {{ riskBandLabels[summary.riskBand] }}
+              </span>
+              <span class="confidence-note">{{ summary.riskReason }}</span>
+            </div>
+
+            <div class="confidence-grid">
+              <div class="confidence-metric">
+                <span class="metric-label">Series</span>
+                <strong>{{ summary.totalSeries }}</strong>
+                <span>{{ summary.participantCount }} participants</span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Projected Games</span>
+                <strong>{{ summary.likelyGames }}</strong>
+                <span
+                  >{{ summary.minGames }} min · {{ summary.maxGames
+                  }}{{ summary.drawCanExtendSeries ? '+' : '' }} max</span
+                >
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Estimated Runtime</span>
+                <strong>about {{ formatDuration(summary.likelyRuntimeMinutes) }}</strong>
+                <span>
+                  @if (summary.maxRuntimeMinutes !== null) {
+                    {{ summary.drawCanExtendSeries ? 'at least about' : 'up to about' }}
+                    {{ formatDuration(summary.maxRuntimeMinutes) }}
+                  } @else {
+                    open-ended
+                  }
+                </span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Move Pace</span>
+                <strong>{{ summary.paceLabel }}</strong>
+                <span>{{ limitMoveTime ? moveTimeout + 's timeout' : 'no time limit' }}</span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Estimated Spend</span>
+                <strong>
+                  @if (summary.likelyCostUsd !== null) {
+                    about {{ summary.likelyCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                  } @else {
+                    n/a
+                  }
+                </strong>
+                <span>
+                  @if (summary.maxCostUsd !== null) {
+                    @if (
+                      summary.maxCostUsd === summary.likelyCostUsd && !summary.drawCanExtendSeries
+                    ) {
+                      can be higher with reasoning models
+                    } @else {
+                      {{ summary.drawCanExtendSeries ? 'at least about' : 'up to about' }}
+                      {{ summary.maxCostUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                    }
+                  } @else {
+                    add priced models for an estimate
+                  }
+                </span>
+              </div>
+              <div class="confidence-metric">
+                <span class="metric-label">Pricing Coverage</span>
+                <strong>{{ pricingCoverageLabel(summary) }}</strong>
+                <span>based on OpenRouter list prices</span>
+              </div>
+            </div>
+
+            <div class="confidence-footnotes">
+              <p>
+                Rough estimates use 70 moves per game, 1,400 prompt and 140 output tokens per move,
+                and OpenRouter list prices. Model behavior and retries change actual usage.
+              </p>
+              <p>
+                Reasoning can cost many times this rough estimate, using up to {{ maxOutputTokens }}
+                output tokens per answer.
+              </p>
+              @if (!limitMoveTime) {
+                <p>
+                  Without move limits, runtime is open-ended. This rough estimate uses
+                  {{ typicalMoveSeconds }} seconds per answer; reasoning can take much longer.
+                </p>
+              }
+              @if (summary.drawCanExtendSeries) {
+                <p class="confidence-warning">
+                  Replay Game adds games until a tied series has a decisive result, with no fixed
+                  maximum games, runtime or cost. Other draw policies cap games at the best-of
+                  count; runtime and spend remain rough estimates.
+                </p>
+              }
+            </div>
+          } @else {
+            <div class="confidence-empty">
+              <mat-icon>insights</mat-icon>
+              <div>
+                <strong>Add at least two participants</strong>
+                <p>
+                  Once the bracket is viable, this panel will estimate series count, runtime, and
+                  rough spend.
+                </p>
+              </div>
+            </div>
+          }
+        </mat-card-content>
       </mat-card>
     </aside>
   </div>

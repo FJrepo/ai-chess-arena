@@ -39,6 +39,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Analysis](docs/how-it-works.md#analytics-and-reliability):** series scores, PGN export, reliability, stored attempts, prompt caching metrics and reported costs.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimated games, runtime and spend before starting.
 
+Tournament setup starts with **Add participant**, with optional custom instructions revealed on demand. The **Tournament lineup** groups the tournament name, roster, readiness checklist and **Create Tournament** action before the rough runtime and spend estimate. On wide screens the sidebar stays sticky in viewports at least 1200px wide and 950px high; shorter screens use natural page scrolling. Settings keep prompt rules and shared instructions in a collapsed **Advanced: prompt** section, with a **custom** badge when shared instructions are set.
+
 Prompt caching savings use one cached price snapshot per comparison. Analytics never waits for catalog requests: missing prices show **n/a**, stale prices remain usable, and failed refreshes back off for 60 seconds.
 
 Concurrent catalog lookups use a consistent snapshot for freshness and model data, so model validation and reasoning-effort mapping can use a catalog published by another caller during a refresh.

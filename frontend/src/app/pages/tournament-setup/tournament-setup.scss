@@ -16,14 +16,18 @@
     var(--mat-sys-surface-container-low),
     var(--mat-sys-surface-container)
   );
-  --setup-caption: var(--mat-sys-on-surface-variant);
+  --setup-caption: light-dark(
+    var(--mat-sys-on-surface-variant),
+    color-mix(in srgb, var(--mat-sys-on-surface-variant) 65%, var(--mat-sys-on-surface))
+  );
   // Placeholders and disabled labels: clearly quieter than values, still 4.5:1 on the card
   // in both themes (every label floats, so placeholders stay visible).
-  --setup-muted: color-mix(in srgb, var(--mat-sys-on-surface) 62%, transparent);
+  --setup-muted: var(--mat-sys-on-surface-variant);
   --setup-mono: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
   @include mat.form-field-overrides(
     (
       outlined-input-text-placeholder-color: var(--setup-muted),
+      disabled-input-text-placeholder-color: var(--setup-muted),
     )
   );
   @include mat.select-overrides(
@@ -60,31 +64,52 @@
 
 .setup-main,
 .setup-aside {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
+  display: contents;
+}
+
+.participants-card {
+  order: 1;
+}
+.lineup-card {
+  order: 2;
+}
+.settings-card {
+  order: 3;
+}
+.confidence-panel {
+  order: 4;
 }
 
 @media (min-width: 1200px) {
   .setup-layout {
-    grid-template-columns: minmax(0, 1fr) clamp(360px, 28vw, 420px);
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 28vw, 460px);
   }
 
-  // The preview card, with the launch action in its footer, stays in view; a tall preview
-  // scrolls inside the card so the action never leaves the viewport.
+  .setup-main {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+  }
+
+  // Both cards use their natural height and the page scrolls as a whole.
+  .setup-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .setup-aside > .panel {
+    order: 0;
+    flex: none;
+  }
+}
+
+// Short viewports keep the full estimate in normal document flow.
+@media (min-width: 1200px) and (min-height: 950px) {
   .setup-aside {
     position: sticky;
     top: var(--setup-sticky-top);
-  }
-
-  .confidence-panel {
-    max-height: calc(100vh - var(--setup-sticky-top) - 16px);
-  }
-
-  .preview-scroll {
-    flex: 0 1 auto;
-    min-height: 0;
-    overflow-y: auto;
   }
 }
 
@@ -103,7 +128,8 @@
   box-shadow: var(--setup-card-shadow);
 
   mat-card-header {
-    padding: 20px 24px 0;
+    flex: none;
+    padding: 16px 20px 0;
   }
 
   mat-card-subtitle {
@@ -114,13 +140,15 @@
 
   // The first floating label sits on the field's outline, so the header gets real space.
   mat-card-content {
-    padding: 20px 24px 24px;
+    padding: 16px 20px 18px;
   }
 }
 
-// The scrolling preview is keyboard-reachable; its ring sits inside the card edge.
-.preview-scroll:focus-visible,
-.rules-toggle:focus-visible {
+// Focus rings stay inside the controls.
+.hint-help:focus-visible,
+.setup-aside:focus-visible,
+.rules-toggle:focus-visible,
+.advanced-summary:focus-visible {
   outline: 2px solid var(--mat-sys-primary);
   outline-offset: -2px;
 }
@@ -129,6 +157,7 @@
   width: 100%;
 }
 
+mat-hint,
 .caption,
 .participant-meta,
 .participant-empty,
@@ -183,7 +212,7 @@
 }
 
 .group-heading-row,
-.participants-list-head {
+.panel .participants-list-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -191,28 +220,31 @@
 }
 
 .field-group,
-.participants-list-head,
 .launch-footer {
   border-top: 1px solid var(--setup-line);
 }
 
 .field-group {
   display: grid;
-  gap: 14px;
-  padding-top: 18px;
+  gap: 10px;
+  padding-top: 14px;
   margin-top: 6px;
 
   & + .field-group {
-    margin-top: 18px;
+    margin-top: 14px;
   }
 }
 
 // Equal columns that always reach the card edge.
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  column-gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   align-items: start;
+
+  mat-form-field {
+    min-width: 0;
+  }
 }
 
 .toggle-row,
@@ -227,6 +259,54 @@
 
 .toggle-row {
   min-height: 40px;
+}
+
+.move-timeout-field {
+  grid-column: 1 / -1;
+}
+
+.hint-help {
+  @include mat.icon-button-overrides(
+    (
+      icon-size: 18px,
+      state-layer-size: 24px,
+      touch-target-size: 24px,
+    )
+  );
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  vertical-align: middle;
+  color: var(--setup-caption);
+}
+
+.hint-tail {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.advanced-prompt {
+  margin-top: 14px;
+  border-top: 1px solid var(--setup-line);
+  padding-top: 14px;
+}
+
+.advanced-summary {
+  cursor: pointer;
+  font: var(--mat-sys-title-small);
+
+  .caption {
+    margin-left: 8px;
+  }
+}
+
+.custom-badge {
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font: var(--mat-sys-label-small);
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
 }
 
 // Chat mode: a compact segmented control with the selected mode's one-line hint beside it.
@@ -252,7 +332,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
-  margin-top: 12px;
+  margin-top: 9px;
 }
 
 .resignation-toggle {
@@ -278,7 +358,7 @@
 
 .rules-block:has(> [open]) > .rules-preview,
 .rules-details:not([open]) .when-open,
-[open] .when-closed {
+.rules-details[open] .when-closed {
   display: none;
 }
 
@@ -365,7 +445,6 @@
 
 .participant-text {
   display: grid;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -373,7 +452,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px 24px;
-  margin-bottom: 20px;
+  margin-top: 9px;
 }
 
 .add-action {
@@ -391,8 +470,8 @@
   );
 }
 
-.participants-list-head {
-  padding-top: 16px;
+.lineup-name {
+  margin-bottom: 8px;
 }
 
 .participant-list,
@@ -402,16 +481,11 @@
   padding: 0;
 }
 
-.participant-list {
-  margin-top: 8px;
-}
-
 .participant-row {
   display: grid;
   grid-template-columns: 28px 24px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 14px;
-  padding: 12px 4px;
+  column-gap: 8px;
 
   & + & {
     border-top: 1px solid var(--setup-line);
@@ -428,14 +502,42 @@
   color: var(--setup-caption);
 }
 
-// Long unbroken names and model ids wrap inside the row.
+// Long model IDs wrap within their roster row.
 .participant-name,
 .participant-meta {
+  display: block;
   overflow-wrap: anywhere;
 }
 
-.meta-sep {
-  margin: 0 6px;
+.participant-name {
+  font: var(--mat-sys-label-large);
+}
+
+.participant-meta {
+  font: var(--mat-sys-body-small);
+}
+
+.remove-button {
+  @include mat.icon-button-overrides(
+    (
+      state-layer-size: 32px,
+      touch-target-size: 32px,
+    )
+  );
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+}
+
+.lineup-card,
+.confidence-panel {
+  mat-card-header {
+    padding: 8px 16px 0;
+  }
+
+  mat-card-content {
+    padding: 6px 16px 8px;
+  }
 }
 
 .participant-empty {
@@ -446,7 +548,7 @@
 
 .confidence-band-row {
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .confidence-band {
@@ -458,17 +560,17 @@
   font: var(--mat-sys-label-large);
   letter-spacing: var(--mat-sys-label-large-tracking);
 
-  &.safe {
+  &.low-risk {
     background: #22a06b2e;
     color: light-dark(#0b6b44, #6fd6a4);
   }
 
-  &.moderate {
+  &.moderate-risk {
     background: #f0a2022e;
     color: light-dark(#8a5a00, #f3c25a);
   }
 
-  &.expensive {
+  &.high-cost {
     background: #d143432e;
     color: light-dark(#a32f2f, #ff9d9d);
   }
@@ -477,17 +579,19 @@
 .confidence-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 4px;
 }
 
 .confidence-metric {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: baseline;
   align-content: start;
-  gap: 2px;
-  padding: 10px 12px;
+  gap: 1px;
+  padding: 3px 8px;
 
   strong {
-    font: var(--mat-sys-title-medium);
+    font: var(--mat-sys-title-small);
     font-weight: 600;
   }
 }
@@ -499,9 +603,9 @@
 }
 
 .confidence-footnotes {
-  margin-top: 14px;
+  margin-top: 4px;
   display: grid;
-  gap: 8px;
+  gap: 4px;
 
   p {
     margin: 0;
@@ -527,15 +631,17 @@
 .launch-footer {
   flex: none;
   display: grid;
-  gap: 12px;
-  padding: 16px 24px 20px;
+  gap: 6px;
+  padding: 8px 16px;
 }
 
 .launch-checklist {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 
   li {
+    font: var(--mat-sys-body-small);
     gap: 8px;
   }
 
@@ -568,5 +674,18 @@
 
   &:disabled {
     border: 1px solid var(--mat-sys-outline);
+  }
+}
+
+@media (min-width: 1200px) {
+  .moves-grid,
+  .matches-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 599px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

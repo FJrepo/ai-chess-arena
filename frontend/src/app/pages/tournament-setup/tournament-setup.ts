@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, computed, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -10,6 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService, PromptTemplateResponse } from '../../services/api.service';
 import {
@@ -23,7 +24,6 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
 import { ModelDetails } from '../../components/model-details/model-details';
-import { providerDisplayName as resolveProviderDisplayName } from '../../utils/provider-brand';
 import {
   REASONING_EFFORT_HINT,
   REASONING_EFFORTS,
@@ -90,6 +90,7 @@ type TournamentConfidence = {
     MatButtonToggleModule,
     MatSelectModule,
     MatProgressSpinnerModule,
+    MatTooltipModule,
     CurrencyPipe,
     ProviderLogoComponent,
     ModelPicker,
@@ -138,6 +139,17 @@ Your opponent is %s (%s).`;
     value,
     label: reasoningEffortLabel(value),
   }));
+  readonly riskBandLabels = { Safe: 'Low risk', Moderate: 'Moderate risk', Expensive: 'High cost' };
+  readonly openingCaptions: Record<OpeningMode, string> = {
+    STANDARD: 'Start from the standard position.',
+    RANDOM_BOOK: 'Random line per pairing.',
+    FIXED: 'Use the selected book line.',
+  };
+  readonly chatModeCaptions: Record<ChatMode, string> = {
+    OFF: 'Models stay silent.',
+    OPTIONAL: 'Models may send a message.',
+    MANDATORY: 'Messages requested; never penalized.',
+  };
   readonly reasoningEffortHint = REASONING_EFFORT_HINT;
   readonly reasoningEffortLabel = reasoningEffortLabel;
   /** Whether models talk; sent as chatMode. */
@@ -207,6 +219,18 @@ Your opponent is %s (%s).`;
   newControlType: Participant['controlType'] = 'AI';
   newModelId = '';
   newCustomInstructions = '';
+  showParticipantInstructions = false;
+
+  @ViewChild('participantInstructions')
+  set participantInstructions(field: ElementRef<HTMLTextAreaElement> | undefined) {
+    field?.nativeElement.focus();
+  }
+
+  hintParts(text: string): [string, string] {
+    const lastSpace = text.lastIndexOf(' ');
+    return [text.slice(0, lastSpace), text.slice(lastSpace + 1)];
+  }
+
   /** The new participant's override; null follows the tournament's level. Reset when the model changes. */
   newReasoningEffort: ReasoningEffort | null = null;
 
@@ -422,10 +446,6 @@ Your opponent is %s (%s).`;
     return `Tournament setting (${level})`;
   }
 
-  providerDisplayName(provider?: string | null, modelId?: string | null): string {
-    return resolveProviderDisplayName(provider, modelId);
-  }
-
   canAddParticipant(): boolean {
     if (this.newPlayerName.trim().length === 0) {
       return false;
@@ -473,6 +493,7 @@ Your opponent is %s (%s).`;
     this.newControlType = 'AI';
     this.newModelId = '';
     this.newCustomInstructions = '';
+    this.showParticipantInstructions = false;
     this.newReasoningEffort = null;
   }
 
@@ -669,7 +690,7 @@ Your opponent is %s (%s).`;
       riskBand === 'Expensive'
         ? 'A larger field, longer series, or pricier models make this a heavier run.'
         : riskBand === 'Moderate'
-          ? 'This should be manageable, but it is no longer a quick smoke test.'
+          ? 'Longer series or higher costs may need a closer look.'
           : 'Good fit for a first pass or low-risk validation run.';
 
     return {
