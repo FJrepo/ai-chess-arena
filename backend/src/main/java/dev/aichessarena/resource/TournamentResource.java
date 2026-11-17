@@ -61,6 +61,9 @@ public class TournamentResource {
         }
         Tournament t = new Tournament();
         t.name = req.name();
+        if (req.runSettings() != null && !req.runSettings().isNull()) {
+            TournamentAutoRunService.applyRunSettings(t, req.runSettings(), true);
+        }
         t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
         // null keeps the default of 60 seconds; 0 means no time limit per move.
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());

@@ -47,6 +47,83 @@ class TournamentCreationIT {
         assertEquals(gameIds(created), gameIds(get(created.id())));
     }
 
+    @Test
+    void appliesRunSettingsOnCreateWithoutStartingAndKeepsThemOnRetry() {
+        var body = request(2);
+        body.put("generateBracket", true);
+        body.put("clientRequestId", UUID.randomUUID());
+        body.put("runSettings", Map.of("maxConcurrentGames", 5, "budgetUsd", 2.50));
+        TournamentDto created = create(body, 201);
+
+        assertReady(created, 1);
+        assertEquals("OFF", created.autoRunStatus());
+        assertEquals("WAITING", created.games().getFirst().status());
+        assertEquals(5, get(created.id()).maxConcurrentGames());
+        assertEquals("2.50", get(created.id()).budgetUsd().toPlainString());
+        assertEquals("ORDER", created.creationDrawMode());
+
+        body.put("runSettings", Map.of("maxConcurrentGames", 1));
+        TournamentDto retried = create(body, 200);
+        assertEquals(created.id(), retried.id());
+        assertEquals(5, retried.maxConcurrentGames());
+        assertEquals(created.budgetUsd(), retried.budgetUsd());
+    }
+
+    @Test
+    void keepsExactBudgetCentsBeyondJavaScriptNumberPrecision() {
+        var body = request(2);
+        String exactBudget = "99999999999999999.99";
+        body.put("runSettings", Map.of("budgetUsd", exactBudget));
+        TournamentDto created = create(body, 201);
+
+        assertEquals(exactBudget, created.budgetUsdExact());
+        assertEquals(exactBudget, get(created.id()).budgetUsd().toPlainString());
+    }
+
+    @Test
+    void validatesNumericBudgetLiteralsWithExactDecimalPrecision() {
+        String path = "/api/tournaments";
+        String body = """
+                {"name":"Exact numeric budget","runSettings":{"budgetUsd":%s}}
+                """;
+        given().contentType("application/json").body(body.formatted("9007199254740992.01"))
+                .post(path).then().statusCode(201)
+                .body("budgetUsdExact", org.hamcrest.Matchers.equalTo("9007199254740992.01"));
+        given().contentType("application/json").body(body.formatted("9007199254740992.001"))
+                .post(path).then().statusCode(400);
+    }
+
+    @Test
+    void rejectsInvalidRunSettingsBeforeReservingTheCreationId() {
+        var body = request(2);
+        body.put("clientRequestId", UUID.randomUUID());
+        for (var invalid : List.of(Map.of("maxConcurrentGames", 1.5), Map.of("budgetUsd", 1.111),
+                Map.of("budgetUsd", "1.250"), Map.of("autoRunStatus", "RUNNING"))) {
+            body.put("runSettings", invalid);
+            given().contentType("application/json").body(body).post("/api/tournaments").then().statusCode(400);
+        }
+        body.remove("runSettings");
+        TournamentDto draft = create(body, 201);
+        assertDraft(draft);
+        assertEquals(2, draft.maxConcurrentGames());
+        assertEquals("OFF", draft.autoRunStatus());
+    }
+
+    @Test
+    void exposesLegacyTemplatePresenceWithoutExposingItsText() {
+        TournamentDto original = create(request(2), 201);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Tournament tournament = tournaments.findById(original.id());
+            tournament.defaultSystemPrompt = "private legacy tournament template";
+            tournament.participants.getFirst().customSystemPrompt = "private legacy participant template";
+        });
+        var response = given().get("/api/tournaments/{id}", original.id()).then().statusCode(200).extract();
+        TournamentDto loaded = response.as(TournamentDto.class);
+        assertTrue(loaded.legacySystemPrompt());
+        assertEquals(1, loaded.participants().stream().filter(p -> p.legacySystemPrompt()).count());
+        assertFalse(response.asString().contains("private legacy"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"ORDER", "RANDOM", " random "})
     void createAcceptsDrawModesAndKeepsOneBracketOnReplay(String mode) {
