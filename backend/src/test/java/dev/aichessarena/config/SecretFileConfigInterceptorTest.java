@@ -21,6 +21,7 @@ import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SecretFileConfigInterceptorTest {
@@ -69,14 +70,64 @@ class SecretFileConfigInterceptorTest {
     }
 
     @Test
-    void configuredFileWinsOverFallbackButSystemPropertiesCanStillOverride() throws Exception {
+    void configuredFileWinsOverApplicationDefaultButSystemPropertiesCanStillOverride() throws Exception {
         Path file = Files.writeString(directory.resolve("password"), "file-password");
         var source = source(Map.of("DB_PASSWORD_FILE", file.toString()));
-        assertEquals("file-password", config(source, Map.of("quarkus.datasource.password", "${DB_PASSWORD:fallback}"))
+        assertEquals("file-password", config(source, Map.of("quarkus.datasource.password", "${DB_PASSWORD:chess}"))
                 .getValue("quarkus.datasource.password", String.class));
         SmallRyeConfig config = new SmallRyeConfigBuilder().addDefaultInterceptors().withInterceptors(source).withSources(
                 new PropertiesConfigSource(Map.of("quarkus.datasource.password", "system-override"), "system", 400)).build();
         assertEquals("system-override", config.getValue("quarkus.datasource.password", String.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DB_PASSWORD", "OPENROUTER_API_KEY"})
+    void higherPriorityAlternateExpressionsWinOverEnvironmentAndFiles(String name) {
+        Map<String, String> environment = Map.of(name, "original-env-secret", name + "_FILE", "invalid\0path");
+        SmallRyeConfig config = new SmallRyeConfigBuilder().addDefaultInterceptors()
+                .withInterceptors(source(environment)).withSources(new EnvConfigSource(environment, 300),
+                        new PropertiesConfigSource(Map.of(property(name), "${" + name + "}"), "application", 250),
+                        new PropertiesConfigSource(Map.of(property(name), "${" + name + "_ALTERNATE}",
+                                name + "_ALTERNATE", "alternate-secret"), "system", 400)).build();
+        assertEquals("alternate-secret", config.getValue(property(name), String.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DB_PASSWORD", "OPENROUTER_API_KEY"})
+    void higherPriorityExactPlaceholdersKeepNormalExpressionResolution(String name) {
+        Map<String, String> environment = Map.of(name, "original-env-secret", name + "_FILE", "invalid\0path");
+        SmallRyeConfig config = new SmallRyeConfigBuilder().addDefaultInterceptors()
+                .withInterceptors(source(environment)).withSources(new EnvConfigSource(environment, 300),
+                        new PropertiesConfigSource(Map.of(property(name), "${" + name + "}",
+                                name, "system-secret"), "system", 400)).build();
+        assertEquals("system-secret", config.getValue(property(name), String.class));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"DB_PASSWORD, 250", "DB_PASSWORD, 400", "OPENROUTER_API_KEY, 250", "OPENROUTER_API_KEY, 400"})
+    void otherExpressionsKeepTheirOwnDefaultsAndSurroundingText(String name, int ordinal) {
+        var source = source(Map.of(name + "_FILE", "invalid\0path"));
+        Map<String, String> expressions = Map.of(
+                "${" + name + "_ALTERNATE:fallback}", "fallback",
+                "${" + name + ":custom-default}", "custom-default",
+                "${" + name + ":}suffix", "suffix");
+        expressions.forEach((expression, expected) -> {
+            SmallRyeConfig config = new SmallRyeConfigBuilder().addDefaultInterceptors().withInterceptors(source)
+                    .withSources(new PropertiesConfigSource(Map.of(property(name), expression), "override", ordinal))
+                    .build();
+            assertEquals(expected, config.getValue(property(name), String.class), expression);
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DB_PASSWORD", "OPENROUTER_API_KEY"})
+    void higherPriorityExplicitValuesWinWithoutReadingSecretFiles(String name) {
+        var source = source(Map.of(name, "env-secret", name + "_FILE", "invalid\0path"));
+        for (String value : new String[]{"explicit-override", ""}) {
+            SmallRyeConfig config = new SmallRyeConfigBuilder().addDefaultInterceptors().withInterceptors(source)
+                    .withSources(new PropertiesConfigSource(Map.of(property(name), value), "system", 400)).build();
+            assertEquals(value, config.getConfigValue(property(name)).getValue());
+        }
     }
 
     @ParameterizedTest
@@ -150,6 +201,6 @@ class SecretFileConfigInterceptorTest {
 
     private SmallRyeConfig config(ConfigSourceInterceptor source, Map<String, String> properties) {
         return new SmallRyeConfigBuilder().addDefaultInterceptors().withInterceptors(source).withSources(
-                new PropertiesConfigSource(properties, "test", 300)).build();
+                new PropertiesConfigSource(properties, "application", 250)).build();
     }
 }

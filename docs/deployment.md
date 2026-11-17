@@ -138,8 +138,10 @@ make setup
 IMAGE_NAMESPACE=fjrepo         # published images; use your own namespace for a fork
 IMAGE_TAG=v1.6.0               # choose an exact tag from GitHub Releases
 OPENROUTER_API_KEY=sk-or-...
-# Existing install only: keep its original DB_PASSWORD unchanged.
+DB_PASSWORD=replace-with-a-long-random-password  # required by v1.6.0; keep existing passwords unchanged
 ```
+
+Generated secrets require **v1.7.0+ images**. With v1.6.0 or older images, set `DB_PASSWORD` explicitly even for a new install, as above. For a new install using v1.7.0 or newer, you may omit it. Existing installs must always keep their original `DB_PASSWORD` unchanged.
 
 Start the released images using the production Compose file:
 

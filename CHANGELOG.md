@@ -21,6 +21,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Make the two-file release-asset setup the README quick start, with latest-release download URLs, version pinning, and PowerShell and source-checkout instructions in the deployment guide.
 - New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; configure its env value or file before starting the backend.
 
+### Fixed
+- Match only the application's exact secret placeholders and preserve higher-priority Quarkus values and other expressions. Keep an explicit database password in the v1.6.0 source-checkout example; generated secrets require v1.7.0+ images.
+
 ## [1.6.0] - 2026-11-17
 
 Hands-off tournaments: auto-run a whole bracket with a concurrency and budget cap, an all-time Elo leaderboard, PGN/CSV/JSON export, cache-friendly prompts that roughly halved Sonnet's cost per answer in a live test, a two-file setup from release assets, a redesigned setup page and a new logo.

@@ -37,11 +37,14 @@ public final class SecretFileConfigInterceptor implements ConfigSourceIntercepto
             return context.proceed(name);
         }
         ConfigValue configured = Expressions.withoutExpansion(() -> context.proceed(name));
+        if (configured != null && configured.getConfigSourceOrdinal() > 300) {
+            return context.proceed(name);
+        }
         // Preserve direct Quarkus overrides, while handling EnvConfigSource's automatic
         // OPENROUTER_API_KEY -> openrouter.api-key alias (including Compose's empty value).
         if (configured != null && configured.getValue() != null
                 && !configured.getValue().isEmpty()
-                && !configured.getValue().startsWith("${" + environmentName)
+                && !isApplicationPlaceholder(environmentName, configured.getValue())
                 && !(configured.getConfigSourceOrdinal() == 300
                 && configured.getValue().equals(environment.apply(environmentName)))) {
             return context.proceed(name);
@@ -53,6 +56,14 @@ public final class SecretFileConfigInterceptor implements ConfigSourceIntercepto
         // Resolve after expression expansion, so '$', '${...}' and backslashes stay literal.
         return ConfigValue.builder().withName(name).withValue(secret)
                 .withConfigSourceName("Secret files").withConfigSourceOrdinal(310).build();
+    }
+
+    private static boolean isApplicationPlaceholder(String environmentName, String value) {
+        return switch (environmentName) {
+            case "DB_PASSWORD" -> value.equals("${DB_PASSWORD}") || value.equals("${DB_PASSWORD:chess}");
+            case "OPENROUTER_API_KEY" -> value.equals("${OPENROUTER_API_KEY}") || value.equals("${OPENROUTER_API_KEY:}");
+            default -> false;
+        };
     }
 
     String resolve(String propertyName) {

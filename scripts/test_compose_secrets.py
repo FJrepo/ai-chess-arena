@@ -146,6 +146,14 @@ class ComposeSecretsTest(unittest.TestCase):
         for document in ['README.md', 'docs/deployment.md']:
             self.assertIn('docker compose up -d --wait', (ROOT / document).read_text())
 
+    def test_source_checkout_example_keeps_explicit_password_for_older_images(self):
+        guide = (ROOT / 'docs/deployment.md').read_text()
+        checkout = guide.split('### Run from a source checkout\n', 1)[1].split('\n## ', 1)[0]
+        self.assertIn('IMAGE_TAG=v1.6.0', checkout)
+        self.assertRegex(checkout, r'(?m)^DB_PASSWORD=\S+')
+        self.assertIn('Generated secrets require **v1.7.0+ images**', checkout)
+        self.assertIn('set `DB_PASSWORD` explicitly even for a new install', checkout)
+
 
 if __name__ == '__main__':
     unittest.main()
