@@ -122,6 +122,7 @@ class OpeningBookServiceTest {
         GameEngineService engine = new GameEngineService();
         engine.chessService = chess;
         engine.gameRepository = games;
+        engine.moveRepository = conversation.moveRepository;
         engine.gameConversationService = conversation;
         List<GameTurnService.TurnRequest> requests = new ArrayList<>();
         engine.gameTurnService = new GameTurnService() {
@@ -138,9 +139,13 @@ class OpeningBookServiceTest {
         assertEquals(game.currentFen, turn.fen());
         assertEquals(game.pgn, turn.pgn());
         assertFalse(turn.isFirstMove());
+        assertEquals(book.require(id).moves().getLast(), turn.lastMoveSan());
+        assertNull(turn.lastMessage());
         String prompt = new PromptService().buildTurnPrompt(turn.pgn(), turn.fen(), chess.toAsciiBoard(turn.board()),
-                turn.sideToMove(), turn.moveNumber(), turn.legalMoves(), "Opponent", null, null, false);
+                turn.sideToMove(), turn.moveNumber(), turn.legalMoves(), "Opponent", turn.lastMoveSan(), null, false);
         assertTrue(prompt.contains(game.pgn));
+        assertTrue(prompt.contains("Your opponent (Opponent) played " + turn.lastMoveSan() + "."));
+        assertFalse(prompt.contains("null"));
         assertEquals(game.currentFen, conversation.initializeConversation(game.id).board().getFen(), "resume preserves book");
     }
 

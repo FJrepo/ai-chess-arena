@@ -15,6 +15,11 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
         return list("game.id = ?1 order by moveNumber, color desc, createdAt", gameId);
     }
 
+    /** Completed moves played by a side, excluding the authored opening. */
+    public long countNonBookByGameIdAndColor(UUID gameId, String color) {
+        return count("game.id = ?1 and color = ?2 and isBook = false", gameId, color);
+    }
+
     public List<Move> findByTournamentId(UUID tournamentId) {
         return list("game.tournament.id = ?1", tournamentId);
     }

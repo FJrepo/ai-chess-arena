@@ -72,7 +72,7 @@ Opening settings apply only to **games created after the change**, never to runn
 
 ### History, evaluation and analytics
 
-Book moves are actual stored move rows marked `isBook: true`. The board, PGN export and every model's turn prompt include the full opening history. Models (and humans) begin after the last book ply, on the correct side and move number. Resume replays the same history. The game view and bracket show the opening name/ECO, and the move list marks book plies in grey with **book**; those moves remain selectable for reviewing the board.
+Book moves are actual stored move rows marked `isBook: true`. The board, PGN export and every model's turn prompt include the full opening history. Models (and humans) begin after the last book ply, on the correct side and move number. Start and resume initialize the opponent's last move from the final stored ply, including book moves; a message is restored only when attached to that exact ply. Without a last move, the opponent-played sentence is omitted. Resume replays the same history. The game view and bracket show the opening name/ECO, and the move list marks book plies in grey with **book**; those moves remain selectable for reviewing the board.
 
 Book plies have no model, chat mode, prompt, attempts, usage, response time or cost. They never count toward model move totals, reliability, move quality, missed mates, talkativeness, Conversion or the ten-ply adjudication window. Only the final book position is evaluated in the background, as the baseline for judging the first played move; a missing baseline leaves that move unjudged until evaluation arrives. Paid prompt tokens still include the book history. Normal board-ending rules, including repetition and the fifty-move counter, use the complete game history.
 
@@ -232,11 +232,11 @@ A legacy custom system prompt stored with a tournament or participant is used as
 
 Resignation is off by default, so every game is played to the end.
 
-With *Allow resignation* in the setup page (next to *Chat*; API field `resignationAllowed` on `POST`/`PUT /api/tournaments`, a boolean, default `false`; omitted keeps the current value on update) both models may resign instead of moving, from their own 10th move on (a fixed minimum, `Tournament.MIN_RESIGNATION_MOVE`, so a game cannot end on move 3 because a model loses its nerve).
+With *Allow resignation* in the setup page (next to *Chat*; API field `resignationAllowed` on `POST`/`PUT /api/tournaments`, a boolean, default `false`; omitted keeps the current value on update) both models may resign instead of moving, from their own 10th non-book move on (a fixed minimum, `Tournament.MIN_RESIGNATION_MOVE`). A side must have completed at least nine non-book plies; authored book moves do not count. With an eight-ply opening (four book moves per side), resignation first becomes eligible at fullmove 14, each side's tenth played move. Standard games retain the fullmove-10 minimum.
 
-The system prompt then gets rule 9, which says that both players may resign from their 10th move on, so the opponent can resign too, and shows the answer that resigns; it states this as a rule and neither encourages nor discourages resigning or talking the opponent into it.
+The system prompt then gets rule 9, which says that both players may resign from their own 10th move on, explicitly excluding book moves, so the opponent can resign too, and shows the answer that resigns; it states this as a rule and neither encourages nor discourages resigning or talking the opponent into it.
 
-From move 10 the turn prompt adds "You may resign instead of moving (rule 9)."
+From the side's tenth non-book move the turn prompt adds "You may resign instead of moving (rule 9)." The same eligibility check controls whether a resignation is accepted. The turn prompt's chess move number still uses the board's fullmove number, including the opening.
 
 ### Answer format
 
@@ -256,7 +256,7 @@ The answer is recorded in `GET /api/games/{id}/attempts` as `RESIGNED`, with tok
 
 ### Not allowed
 
-When resignation is not offered, or before the side's 10th move: if the answer also has a legal move, the move is played and the flag ignored; otherwise it is an invalid answer, recorded as `RESIGN_NOT_ALLOWED`, and retried with "Resigning is not allowed in this game; send a legal move." (or "... before move 10 ...").
+When resignation is not offered, or before the side's 10th non-book move: if the answer also has a legal move, the move is played and the flag ignored; otherwise it is an invalid answer, recorded as `RESIGN_NOT_ALLOWED`, and retried with "Resigning is not allowed in this game; send a legal move." (or "Resigning is not allowed before your own move 10 (book moves do not count); send a legal move.").
 
 It counts against reliability exactly like an illegal move: it uses up an attempt, makes the move that follows a retried one, and repeated it forfeits the game.
 

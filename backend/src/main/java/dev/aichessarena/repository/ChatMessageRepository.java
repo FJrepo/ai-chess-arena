@@ -17,6 +17,12 @@ public class ChatMessageRepository implements PanacheRepositoryBase<ChatMessage,
         return list("game.id = ?1 order by createdAt", gameId);
     }
 
+    /** The message attached to this exact ply, never an older message from the same player. */
+    public ChatMessage findByPly(UUID gameId, int moveNumber, String color) {
+        return find("game.id = ?1 and moveNumber = ?2 and senderColor = ?3 order by createdAt desc",
+                gameId, moveNumber, color).firstResult();
+    }
+
     /**
      * The ply and length (characters, without surrounding whitespace) of every chat message in the games of an
      * analytics window (see {@link GameRepository#findInWindow}), oldest first; the text itself is not loaded.
