@@ -1,0 +1,123 @@
+<div class="leaderboard-page desktop-page">
+  <header class="leaderboard-header">
+    <div>
+      <h1>Leaderboard</h1>
+      <p>Which model plays best here? All tournaments, all time.</p>
+    </div>
+    <button mat-stroked-button (click)="refresh()" [disabled]="loading()">
+      <mat-icon>refresh</mat-icon>
+      Refresh
+    </button>
+  </header>
+
+  <mat-card class="leaderboard-card">
+    <mat-card-content>
+      <div class="controls">
+        <mat-slide-toggle
+          [checked]="includeForfeits()"
+          (change)="setIncludeForfeits($event.checked)"
+        >
+          Include forfeits
+        </mat-slide-toggle>
+        <a mat-button routerLink="/analytics">Move quality &amp; reliability</a>
+      </div>
+      <p class="explanation">
+        Elo starts at 1500, with expected scores on a logistic /400 scale. K is 32 for a model's
+        first 30 rated games, then 16. Finished model-vs-model games count: checkmate, resignation,
+        adjudication and draws (½ point), plus forfeits as losses when enabled. Byes, cancelled
+        games, human games and unfinished games are excluded. Results replay by completion time;
+        fewer than 10 rated games is provisional. Aliases (~) stay separate. Disabling forfeits
+        recalculates ratings and counts using over-the-board results only.
+      </p>
+
+      @if (loading()) {
+        <div class="state" role="status">
+          <mat-spinner diameter="28" />
+          Loading leaderboard…
+        </div>
+      } @else if (error()) {
+        <p class="state" role="alert">Could not load the leaderboard. Use Refresh to try again.</p>
+      } @else if (response(); as data) {
+        @if (data.models.length === 0) {
+          <p class="state empty-state">
+            No rated games yet for this forfeit setting. Finish a model-vs-model game to see
+            ratings.
+          </p>
+        } @else {
+          <div class="table-wrap">
+            <table>
+              <caption>
+                {{
+                  data.gamesCount
+                }}
+                rated games ·
+                {{
+                  data.includeForfeits ? 'Including forfeits' : 'Excluding forfeits'
+                }}
+                · Recent form: last 50 rated results, each sparkline scaled independently
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="rank">Rank</th>
+                  <th scope="col" class="model">Model</th>
+                  <th scope="col" class="num">Elo</th>
+                  <th scope="col" class="num">W / D / L</th>
+                  <th scope="col" class="num">Games</th>
+                  <th scope="col" class="num" title="Losses by this model's own forfeits">
+                    Forfeits
+                  </th>
+                  <th scope="col">Last played</th>
+                  <th scope="col" class="trend">Recent form</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of data.models; track row.modelId; let index = $index) {
+                  <tr>
+                    <td class="rank">{{ index + 1 }}</td>
+                    <th scope="row" class="model">
+                      <div class="model-name">
+                        <app-provider-logo [modelId]="row.modelId.replace('~', '')" />
+                        <span>{{ row.displayName }}</span>
+                      </div>
+                      <span class="model-id">{{ row.modelId }}</span>
+                      <div class="badges">
+                        @if (row.provisional) {
+                          <span class="badge provisional" title="Fewer than 10 rated games"
+                            >Provisional</span
+                          >
+                        }
+                        @if (row.alias) {
+                          <span
+                            class="badge alias"
+                            title="Moving alias; results may span model versions"
+                            >Latest alias</span
+                          >
+                        }
+                      </div>
+                    </th>
+                    <td class="num rating">{{ row.rating }}</td>
+                    <td class="num record">{{ row.wins }} / {{ row.draws }} / {{ row.losses }}</td>
+                    <td class="num">{{ row.games }}</td>
+                    <td class="num">{{ row.forfeits }}</td>
+                    <td class="last-played">{{ row.lastPlayed | date: 'MMM d, y' }}</td>
+                    <td class="trend">
+                      <svg
+                        viewBox="0 0 100 28"
+                        role="img"
+                        [attr.aria-label]="
+                          row.displayName + ': recent ratings ending at ' + row.rating
+                        "
+                      >
+                        <polyline [attr.points]="sparklinePoints(row.ratingHistory)" />
+                      </svg>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      }
+    </mat-card-content>
+  </mat-card>
+</div>

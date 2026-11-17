@@ -38,6 +38,25 @@ describe('ApiService bracket draw', () => {
     expect(received).toHaveBeenCalledWith('[Event "Arena"]\n\n*');
   });
 
+  it.each([true, false])('loads leaderboard with includeForfeits=%s', (includeForfeits) => {
+    const received = vi.fn();
+    api.getLeaderboard(includeForfeits).subscribe(received);
+    const request = http.expectOne(`/api/analytics/leaderboard?includeForfeits=${includeForfeits}`);
+    expect(request.request.method).toBe('GET');
+    const response = { includeForfeits, gamesCount: 0, models: [] };
+    request.flush(response);
+    expect(received).toHaveBeenCalledWith(response);
+  });
+
+  it('includes forfeits by default on the leaderboard', () => {
+    api.getLeaderboard().subscribe();
+    http.expectOne('/api/analytics/leaderboard?includeForfeits=true').flush({
+      includeForfeits: true,
+      gamesCount: 0,
+      models: [],
+    });
+  });
+
   it('sends the run, edit and pause API contracts', () => {
     const settings = { maxConcurrentGames: 3, budgetUsd: null };
     api.runTournament('cup', settings).subscribe();

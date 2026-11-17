@@ -2,6 +2,7 @@ package dev.aichessarena.resource;
 
 import dev.aichessarena.dto.ModelReliabilityDetailDto;
 import dev.aichessarena.service.AnalyticsService;
+import dev.aichessarena.service.LeaderboardService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
@@ -9,8 +10,10 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import java.util.UUID;
 
 @Path("/api/analytics")
@@ -19,6 +22,21 @@ public class AnalyticsResource {
 
     @Inject
     AnalyticsService analyticsService;
+
+    @Inject
+    LeaderboardService leaderboardService;
+
+    @GET
+    @Path("/leaderboard")
+    public Response getLeaderboard(@Context UriInfo uriInfo) {
+        // Read the query map to distinguish an omitted parameter from an explicitly empty one.
+        var query = uriInfo.getQueryParameters();
+        String includeForfeits = query.containsKey("includeForfeits") ? query.getFirst("includeForfeits") : "true";
+        if (!"true".equalsIgnoreCase(includeForfeits) && !"false".equalsIgnoreCase(includeForfeits)) {
+            throw new IllegalArgumentException("includeForfeits must be true or false");
+        }
+        return Response.ok(leaderboardService.getLeaderboard(Boolean.parseBoolean(includeForfeits))).build();
+    }
 
     @GET
     @Path("/health")
