@@ -17,7 +17,7 @@ import {
   NgTemplateOutlet,
 } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import {
@@ -266,8 +266,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return (this.reliability()?.models ?? []).filter((m) => m.insufficientData).length;
   });
 
+  private readonly subscriptions = new Subscription();
+  private reports = new Subscription();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  private tabSubscription: Subscription | null = null;
 
   constructor(
     private api: ApiService,
@@ -276,18 +277,21 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.tabSubscription = this.route.queryParamMap.subscribe((params) => {
-      const index = this.tabIds.findIndex((tab) => tab === params.get('tab'));
-      this.selectedTabIndex.set(index < 0 ? 0 : index);
-    });
+    this.subscriptions.add(
+      this.route.queryParamMap.subscribe((params) => {
+        const index = this.tabIds.findIndex((tab) => tab === params.get('tab'));
+        this.selectedTabIndex.set(index < 0 ? 0 : index);
+      }),
+    );
     this.loadTournaments();
     this.refreshAll();
     this.startAutoRefresh();
   }
 
   ngOnDestroy(): void {
-    this.tabSubscription?.unsubscribe();
-    if (this.refreshTimer) {
+    this.reports.unsubscribe();
+    this.subscriptions.unsubscribe();
+    if (this.refreshTimer !== null) {
       clearInterval(this.refreshTimer);
     }
   }
@@ -304,11 +308,11 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   onCommonFiltersChanged(): void {
+    this.comparison.set(null);
+    this.health.set(null);
+    this.reliability.set(null);
+    this.lastUpdated.set(null);
     this.refreshAll();
-  }
-
-  onReliabilityFiltersChanged(): void {
-    this.loadReliability();
   }
 
   manualRefresh(): void {
@@ -383,15 +387,21 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   private refreshAll(): void {
-    this.loadComparison();
-    this.loadHealth();
-    this.loadReliability();
+    this.reports.unsubscribe();
+    this.reports = new Subscription();
+    this.refreshIdleReports();
   }
 
   private startAutoRefresh(): void {
     this.refreshTimer = setInterval(() => {
-      this.refreshAll();
+      this.refreshIdleReports();
     }, 15000);
+  }
+
+  private refreshIdleReports(): void {
+    if (!this.comparisonLoading()) this.reports.add(this.loadComparison());
+    if (!this.healthLoading()) this.reports.add(this.loadHealth());
+    if (!this.reliabilityLoading()) this.reports.add(this.loadReliability());
   }
 
   private currentTournamentFilter(): string | null {
@@ -399,21 +409,24 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   private loadTournaments(): void {
-    this.api.getTournaments().subscribe({
-      next: (tournaments) => this.tournaments.set(tournaments),
-      error: () => this.tournaments.set([]),
-    });
+    this.subscriptions.add(
+      this.api.getTournaments().subscribe({
+        next: (tournaments) => this.tournaments.set(tournaments),
+        error: () => this.tournaments.set([]),
+      }),
+    );
   }
 
-  private loadHealth(): void {
+  private loadHealth(): Subscription {
     this.healthLoading.set(true);
     this.healthError.set(null);
 
-    this.api
+    return this.api
       .getAnalyticsHealth({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
       })
+      .pipe(finalize(() => this.healthLoading.set(false)))
       .subscribe({
         next: (response) => {
           this.health.set(response);
@@ -422,20 +435,20 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         error: () => {
           this.healthError.set('Failed to load engine health metrics.');
         },
-        complete: () => this.healthLoading.set(false),
       });
   }
 
-  private loadComparison(): void {
+  private loadComparison(): Subscription {
     this.comparisonLoading.set(true);
     this.comparisonError.set(null);
 
-    this.api
+    return this.api
       .getAnalyticsComparison({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
         minGames: Math.max(0, this.minGames),
       })
+      .pipe(finalize(() => this.comparisonLoading.set(false)))
       .subscribe({
         next: (response) => {
           this.comparison.set(response);
@@ -444,20 +457,20 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         error: () => {
           this.comparisonError.set('Failed to load model comparison metrics.');
         },
-        complete: () => this.comparisonLoading.set(false),
       });
   }
 
-  private loadReliability(): void {
+  private loadReliability(): Subscription {
     this.reliabilityLoading.set(true);
     this.reliabilityError.set(null);
 
-    this.api
+    return this.api
       .getAnalyticsReliability({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
         minGames: Math.max(0, this.minGames),
       })
+      .pipe(finalize(() => this.reliabilityLoading.set(false)))
       .subscribe({
         next: (response) => {
           this.reliability.set(response);
@@ -466,7 +479,6 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         error: () => {
           this.reliabilityError.set('Failed to load model reliability metrics.');
         },
-        complete: () => this.reliabilityLoading.set(false),
       });
   }
 

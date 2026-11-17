@@ -441,7 +441,9 @@ The analytics page shares its analysis window, tournament and minimum-games filt
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 
-Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries; shared filters and the existing data-refresh schedule stay in place.
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries. Shared filters and the refresh schedule stay in place.
+
+Changing a shared filter clears the previous results and cancels pending report requests. Each report loads the new selection independently. Every 15 seconds, the dashboard refreshes each report that has no request in progress. **Refresh** replaces any pending requests immediately.
 
 Every model answer is stored, including rejected ones: the game feed lists failed attempts per move (for example "2 failed attempts: illegal Qxh7, unparseable answer") and, separately, answers cut off at the token limit, which are not counted as the model's failures, and `GET /api/games/{id}/attempts` returns them with tokens, cost and finish reason.
 
