@@ -11,6 +11,7 @@
     color-mix(in srgb, var(--mat-sys-surface-container-high) 96%, transparent)
   );
   --app-table-rule: var(--mat-sys-primary);
+  --app-row-hover: color-mix(in srgb, var(--mat-sys-on-surface) 6%, var(--mat-sys-surface));
   --app-card-border: var(--mat-sys-outline-variant);
   --app-divider: var(--mat-sys-outline-variant);
   --app-info-fill: color-mix(in srgb, var(--app-accent-info) 7%, var(--app-card-bg));

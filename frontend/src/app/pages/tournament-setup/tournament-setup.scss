@@ -517,18 +517,18 @@ mat-hint,
   letter-spacing: var(--mat-sys-label-large-tracking);
 
   &.low-risk {
-    background: #22a06b2e;
-    color: light-dark(#0b6b44, #6fd6a4);
+    background: var(--app-success-fill);
+    color: var(--app-success-text);
   }
 
   &.moderate-risk {
-    background: #f0a2022e;
-    color: light-dark(#8a5a00, #f3c25a);
+    background: var(--app-warning-fill);
+    color: var(--app-warning-text);
   }
 
   &.high-cost {
-    background: #d143432e;
-    color: light-dark(#a32f2f, #ff9d9d);
+    background: color-mix(in srgb, var(--mat-sys-error) 18%, transparent);
+    color: var(--mat-sys-error);
   }
 }
 
@@ -547,8 +547,9 @@ mat-hint,
   padding: 3px 8px;
 
   strong {
-    font: var(--mat-sys-title-small);
+    font-size: var(--mat-sys-title-small-size);
     font-weight: 600;
+    line-height: var(--mat-sys-title-small-line-height);
   }
 }
 

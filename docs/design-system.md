@@ -37,6 +37,7 @@ chess or shared page patterns need a name. Consume semantic roles rather than pa
 | `--app-text-secondary-size` | Minimum secondary text and footnote size. |
 | `--app-table-heading-size`, `--app-table-heading-tracking` | Compact but readable table headers. |
 | `--app-table-rule`, `--app-table-zebra` | Header rule and alternate body rows. |
+| `--app-row-hover` | Subtle neutral hover surface for selectable moves, table rows and timeline entries; preserves text contrast. |
 | `--app-rule-width`, `--app-focus-offset` | Shared rule and keyboard focus geometry. |
 | `--app-hero-bar`, `--app-hero-bar-width`, `--app-hero-glow` | Page introduction accent and restrained glow, softer in dark mode. Independent of the board preference. |
 | `--app-card-bg`, `--app-card-border`, `--app-card-shadow`, `--app-divider` | Shared neutral cards and internal boundaries. |

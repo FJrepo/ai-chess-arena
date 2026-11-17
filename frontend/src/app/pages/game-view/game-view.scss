@@ -210,7 +210,7 @@
   }
 
   &.clickable:hover {
-    background: color-mix(in srgb, var(--mat-sys-on-surface) 6%, transparent);
+    background: var(--app-row-hover);
   }
 
   &:focus-visible {
