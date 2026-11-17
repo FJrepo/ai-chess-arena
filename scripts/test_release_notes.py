@@ -418,6 +418,13 @@ class ReleaseNotesWorkflowTest(unittest.TestCase):
         for component in ['BACKEND', 'FRONTEND']:
             self.assertIn(f'- `{self.env[component + "_IMAGE"]}:v1.4.0` '
                           f'(`{self.env[component + "_DIGEST"]}`)', verification)
+        self.assertIn('\n### Assets\n\n', verification)
+        for asset in ['docker-compose.yml', 'env.example']:
+            self.assertIn(f'[{asset}](https://github.com/example/chess/releases/download/v1.4.0/{asset})',
+                          verification)
+        self.assertEqual(1, verification.count('/env.example)'))
+        self.assertNotIn('/.env.example', verification)
+        self.assertNotIn('original filename', verification)
         self.assertTrue(notes.endswith('[Full Changelog](https://github.com/example/chess/compare/v1.3.1...v1.4.0)\n'))
         self.assertEqual('Verification', headings(notes)[-1])
 
@@ -438,6 +445,8 @@ class ReleaseNotesWorkflowTest(unittest.TestCase):
         notes = (self.root / 'release-notes.md').read_text(encoding='utf-8')
         self.assertIn('[docs/deployment.md](https://github.com/Example/Fork/blob/v1.4.0/'
                       'docs/deployment.md#backups-and-rollback)', notes)
+        self.assertIn('[docker-compose.yml](https://github.com/Example/Fork/releases/download/'
+                      'v1.4.0/docker-compose.yml)', notes)
 
     def test_publish_step_also_rejects_missing_entry(self):
         result = self.run_step('Build release notes', version='v9.9.9')

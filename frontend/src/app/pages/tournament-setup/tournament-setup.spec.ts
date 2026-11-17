@@ -1,3 +1,5 @@
+import { By } from '@angular/platform-browser';
+import { MatTooltip } from '@angular/material/tooltip';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
@@ -7,6 +9,79 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('sticks only while the measured aside fits and cleans up observation on destroy', async () => {
+    let measureAside!: () => void;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private callback: () => void) {}
+        observe(element: Element) {
+          if (element.classList.contains('setup-aside')) {
+            measureAside = this.callback;
+            observe(element);
+          }
+        }
+        unobserve() {}
+        disconnect = disconnect;
+      },
+    );
+    vi.stubGlobal('innerWidth', 1200);
+    vi.stubGlobal('innerHeight', 1000);
+    const fixture = await renderSetup();
+    const aside: HTMLElement = fixture.nativeElement.querySelector('.setup-aside');
+    const height = vi.spyOn(aside, 'offsetHeight', 'get').mockReturnValue(888);
+    expect(observe).toHaveBeenCalledWith(aside);
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+
+    measureAside();
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(true);
+    height.mockReturnValue(889);
+    measureAside();
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+    height.mockReturnValue(888);
+    measureAside();
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(true);
+
+    vi.stubGlobal('innerHeight', 999);
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+    vi.stubGlobal('innerHeight', 1000);
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(true);
+    vi.stubGlobal('innerWidth', 1199);
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(aside.classList.contains('aside-sticky')).toBe(false);
+
+    fixture.destroy();
+    expect(disconnect).toHaveBeenCalled();
+    vi.stubGlobal('innerWidth', 1200);
+    window.dispatchEvent(new Event('resize'));
+    expect(fixture.componentInstance.asideSticky()).toBe(false);
+  });
+
+  it('keeps the aside in normal flow without ResizeObserver', async () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const fixture = await renderSetup();
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    expect(fixture.componentInstance.asideSticky()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.aside-sticky')).toBeNull();
+    fixture.destroy();
+  });
+
   it('defaults to Standard, sends fixed book selection, and omits stale ids in other modes', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());
@@ -43,7 +118,7 @@ describe('TournamentSetup', () => {
     expect(component.openingsError()).toBeNull();
   });
 
-  it('renders mode hints and requires a known fixed line through the setup control', async () => {
+  it('disables Create in the lineup for Fixed until a known book line is picked', async () => {
     TestBed.configureTestingModule({
       imports: [TournamentSetup],
       providers: [
@@ -57,6 +132,14 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     const component = fixture.componentInstance;
     const element: HTMLElement = fixture.nativeElement;
+    component.name = 'Opening Arena';
+    component.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ]);
+    fixture.detectChanges();
+    const create = element.querySelector<HTMLButtonElement>('.lineup-card .create-button')!;
+    expect(create.disabled).toBe(false);
     expect(element.querySelector('#opening-hint')?.textContent).toContain('standard position');
     element.querySelector<HTMLElement>('.opening-controls mat-select')!.click();
     fixture.detectChanges();
@@ -68,6 +151,7 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     expect(component.openingMode()).toBe('FIXED');
     expect(component.openingValid()).toBe(false);
+    expect(create.disabled).toBe(true);
     expect(element.querySelector('#opening-hint')?.textContent).toContain('selected book line');
     element.querySelectorAll<HTMLElement>('.opening-controls mat-select')[1].click();
     fixture.detectChanges();
@@ -79,6 +163,7 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     expect(component.openingId()).toBe('ruy-lopez');
     expect(component.openingValid()).toBe(true);
+    expect(create.disabled).toBe(false);
   });
 
   it('adds participant-specific custom instructions when provided', () => {
@@ -118,6 +203,7 @@ describe('TournamentSetup', () => {
 
     component.create();
 
+    expect(api.createTournamentPayload?.['name']).toBe('Prompt Arena');
     expect(api.createTournamentPayload?.['sharedCustomInstructions']).toBe(
       'Prefer tactical complications.',
     );
@@ -149,10 +235,16 @@ describe('TournamentSetup', () => {
     expect(input.min).toBe('128');
     expect(input.value).toBe('16384');
     const hint = input.closest('mat-form-field')?.textContent?.replace(/\s+/g, ' ');
-    expect(hint).toContain(
-      'OpenRouter checks your credit balance against max_tokens × output price',
+    expect(hint).toContain('Cut-off answers pause the game.');
+    const help = fixture.debugElement.query(
+      By.css('button[aria-label="About the output token limit"]'),
     );
-    expect(hint).toContain('even if far fewer tokens are used');
+    expect(help.nativeElement.querySelector('mat-icon').textContent).toBe('help_outline');
+    expect(help.injector.get(MatTooltip).message).toContain('Includes reasoning tokens.');
+    expect(help.injector.get(MatTooltip).message).toContain(
+      'OpenRouter checks the credit balance against max_tokens × output price',
+    );
+    expect(help.injector.get(MatTooltip).message).toContain('even if far fewer tokens are used');
     for (const [value, valid] of [
       [127, false],
       [128, true],
@@ -366,18 +458,21 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.limitMoveTime).toBe(true);
     expect(movesSection()?.querySelector<HTMLInputElement>('input[max="3600"]')?.value).toBe('120');
-    expect(movesSection()?.textContent).toContain(
-      '10–3600; a model that runs out of time forfeits',
-    );
+    expect(movesSection()?.textContent).toContain('10–3600s; timeout forfeits.');
 
     fixture.componentInstance.moveTimeout = 60;
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(movesSection()?.querySelector('.timeout-warning')?.textContent?.trim()).toBe(
-      'Reasoning models often need more than a minute per move; running out of time forfeits the game',
+    expect(movesSection()?.querySelector('.timeout-warning')?.textContent).toContain(
+      'Short limits risk forfeits.',
     );
+    expect(
+      fixture.debugElement
+        .query(By.css('[aria-label="About move timeouts"]'))
+        .injector.get(MatTooltip).message,
+    ).toContain('running out of time forfeits the game');
     expect(movesSection()?.textContent).not.toContain('10–3600');
   });
 
@@ -648,7 +743,7 @@ describe('TournamentSetup', () => {
     expect(component.confidenceSummary()?.pricingCoverage).toBe(2);
   });
 
-  it('allows a single human participant without a model id', () => {
+  it('rejects a second human and allows one again after removing the first', () => {
     const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
     component.newPlayerName = 'Human Challenger';
     component.newControlType = 'HUMAN';
@@ -657,6 +752,23 @@ describe('TournamentSetup', () => {
 
     expect(component.participants()[0].controlType).toBe('HUMAN');
     expect(component.participants()[0].modelId).toBeNull();
+
+    component.newPlayerName = 'Second Human';
+    component.newControlType = 'HUMAN';
+    expect(component.canAddParticipant()).toBe(false);
+    component.addParticipant();
+    expect(component.participants()).toHaveLength(1);
+    expect(component.participants()[0].playerName).toBe('Human Challenger');
+
+    component.removeParticipant(0);
+    expect(component.canAddParticipant()).toBe(true);
+    component.addParticipant();
+    expect(component.participants()).toHaveLength(1);
+    expect(component.participants()[0]).toMatchObject({
+      playerName: 'Second Human',
+      controlType: 'HUMAN',
+      modelId: null,
+    });
   });
 
   it('derives launch readiness from the name, the participant count and the submitting state', () => {
@@ -698,6 +810,309 @@ describe('TournamentSetup', () => {
     component.name = 'Ready Arena';
     component.create();
     expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
+  });
+
+  it('reveals and focuses instructions, submits a collapsed draft and resets after adding', async () => {
+    const fixture = await renderSetup();
+    const component = fixture.componentInstance;
+    const element: HTMLElement = fixture.nativeElement;
+    const toggle = element.querySelector<HTMLButtonElement>('.instructions-toggle')!;
+    const refresh = async () => {
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+    expect(element.querySelector('.participants-card h2')?.textContent).toBe('Add participant');
+    expect(toggle.textContent?.trim()).toBe('+ Custom instructions');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(element.querySelector('#participant-instructions')).toBeNull();
+    toggle.click();
+    await refresh();
+    const textarea = element.querySelector<HTMLTextAreaElement>('#participant-instructions')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.rows).toBe(3);
+    expect(textarea.closest('mat-form-field')?.textContent).toContain(
+      'Overrides shared instructions.',
+    );
+    textarea.value = 'Play actively.';
+    textarea.dispatchEvent(new Event('input'));
+    await refresh();
+    toggle.click();
+    await refresh();
+    expect(element.querySelector('#participant-instructions')).toBeNull();
+    expect(component.newCustomInstructions).toBe('Play actively.');
+    toggle.click();
+    await refresh();
+    expect(element.querySelector<HTMLTextAreaElement>('#participant-instructions')?.value).toBe(
+      'Play actively.',
+    );
+    component.addParticipant();
+    await refresh();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    component.newPlayerName = 'Alpha';
+    component.newModelId = 'example/alpha';
+    await refresh();
+    toggle.click();
+    await refresh();
+    expect(element.querySelector('#participant-instructions')).toBeNull();
+    element.querySelector<HTMLButtonElement>('.add-button')!.click();
+    await refresh();
+    expect(component.participants()[0].customInstructions).toBe('Play actively.');
+    expect(component.newCustomInstructions).toBe('');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(element.querySelector('#participant-instructions')).toBeNull();
+    toggle.click();
+    await refresh();
+    component.newPlayerName = 'Beta';
+    component.newModelId = 'example/beta';
+    await refresh();
+    element.querySelector<HTMLButtonElement>('.add-button')!.click();
+    await refresh();
+    expect(component.participants()[1].customInstructions).toBeNull();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    component.name = 'Instruction Arena';
+    await refresh();
+    element.querySelector<HTMLButtonElement>('.lineup-card .create-button')!.click();
+    await refresh();
+    const api = TestBed.inject(ApiService) as FakeTournamentSetupApi;
+    expect(api.createTournamentPayload?.['participants']).toEqual([
+      expect.objectContaining({ playerName: 'Alpha', customInstructions: 'Play actively.' }),
+      expect.objectContaining({ playerName: 'Beta', customInstructions: null }),
+    ]);
+  });
+
+  it('starts advanced prompt collapsed and marks shared instructions even while closed', async () => {
+    const fixture = await renderSetup();
+    const component = fixture.componentInstance;
+    const element: HTMLElement = fixture.nativeElement;
+    const details = element.querySelector<HTMLDetailsElement>('.advanced-prompt')!;
+    const summary = details.querySelector<HTMLElement>('summary')!;
+    expect(details.open).toBe(false);
+    expect(summary.textContent).toContain('Prompt rules and shared instructions');
+    expect(summary.querySelector('.custom-badge')).toBeNull();
+    expect(element.querySelector('.settings-card mat-card-content')?.lastElementChild).toBe(
+      details,
+    );
+    summary.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(details.open).toBe(true);
+    expect(details.querySelector('#setup-rules-heading')?.textContent).toBe('System Rules');
+    expect(details.querySelector('#setup-shared-heading')?.textContent).toBe(
+      'Shared Custom Instructions',
+    );
+    const fullRules = details.querySelector<HTMLDetailsElement>('.rules-details')!;
+    expect(fullRules.open).toBe(false);
+    fullRules.querySelector<HTMLElement>('summary')!.click();
+    expect(fullRules.open).toBe(true);
+    const shared = details.querySelector<HTMLTextAreaElement>('textarea:not([readonly])')!;
+    expect(shared.rows).toBe(3);
+    shared.value = 'Prefer active play.';
+    shared.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.sharedCustomInstructions).toBe('Prefer active play.');
+    summary.click();
+    expect(details.open).toBe(false);
+    expect(summary.querySelector('.custom-badge')?.textContent?.trim()).toBe('custom');
+    component.sharedCustomInstructions = '   ';
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(summary.querySelector('.custom-badge')).toBeNull();
+  });
+
+  it('keeps the seeded roster, labelled removal and launch action in the aside', async () => {
+    const fixture = await renderSetup();
+    const component = fixture.componentInstance;
+    const element: HTMLElement = fixture.nativeElement;
+    const aside = element.querySelector('aside')!;
+    const refresh = async () => {
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+    expect(element.querySelector('.setup-main > mat-card')?.classList).toContain(
+      'participants-card',
+    );
+    expect(element.querySelector('.participants-card .participant-list')).toBeNull();
+    expect(aside.querySelector('.participant-empty')?.textContent).toContain('No participants');
+    expect(aside.getAttribute('aria-label')).toBe('Tournament preview and launch');
+    expect(aside.getAttribute('tabindex')).toBe('0');
+    expect(Array.from(aside.children).map((card) => card.querySelector('h2')?.textContent)).toEqual(
+      ['Tournament lineup', 'Tournament Estimate'],
+    );
+    expect(aside.querySelector('mat-card-content[tabindex]')).toBeNull();
+    const nameInput = aside.querySelector<HTMLInputElement>('.lineup-card input')!;
+    expect(nameInput.placeholder).toBe('e.g. AI Chess Championship 2026');
+    expect(nameInput.closest('mat-form-field')?.querySelector('mat-label')?.textContent).toBe(
+      'Tournament Name',
+    );
+    expect(nameInput.closest('mat-card-content')?.firstElementChild).toBe(
+      nameInput.closest('mat-form-field'),
+    );
+    expect(
+      element.querySelectorAll('input[placeholder="e.g. AI Chess Championship 2026"]'),
+    ).toHaveLength(1);
+    expect(
+      element.querySelector('.settings-card input[placeholder="e.g. AI Chess Championship 2026"]'),
+    ).toBeNull();
+    expect(aside.querySelector('.lineup-card .create-button')).not.toBeNull();
+    expect(aside.querySelector('.confidence-panel .create-button')).toBeNull();
+    const create = aside.querySelector<HTMLButtonElement>('.create-button')!;
+    expect(create.disabled).toBe(true);
+    nameInput.value = 'Test bracket';
+    nameInput.dispatchEvent(new Event('input'));
+    await refresh();
+    expect(component.name).toBe('Test bracket');
+    expect(create.disabled).toBe(true);
+    component.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      { ...pricedParticipant('Beta', 'example/beta', 1, 2), customInstructions: 'Play actively.' },
+    ]);
+    await refresh();
+    expect(create.disabled).toBe(false);
+    expect(aside.querySelector('.launch-checklist')?.textContent).toContain('Tournament named');
+    expect(aside.querySelector('.participants-list-head')?.textContent).toContain(
+      '2 of at least 2',
+    );
+    expect(
+      Array.from(aside.querySelectorAll('.participant-seed')).map((seed) =>
+        seed.textContent?.trim(),
+      ),
+    ).toEqual(['1', '2']);
+    expect(aside.querySelectorAll('.participant-row app-provider-logo')).toHaveLength(2);
+    expect(aside.querySelector('.participant-row')?.textContent).toContain('example/alpha');
+    const rows = aside.querySelectorAll('.participant-row');
+    expect(rows[0].querySelector('.participant-name')?.getAttribute('title')).toBe('Alpha');
+    expect(rows[0].querySelector('.participant-meta')?.getAttribute('title')).toBe('example/alpha');
+    expect(rows[0].querySelector('.participant-text')?.getAttribute('title')).toBe(
+      'Uses default instructions only',
+    );
+    expect(rows[0].querySelector('.provider-logo')?.getAttribute('title')).toBe('Example');
+    expect(rows[0].querySelector('.participant-meta')?.textContent).not.toContain('·');
+    expect(rows[0].querySelector('.participant-instructions')).toBeNull();
+    expect(rows[0].textContent).not.toContain('Uses default instructions only');
+    expect(rows[1].querySelector('.participant-instructions')?.textContent?.trim()).toBe(
+      'Custom instructions',
+    );
+    component.sharedCustomInstructions = 'Play carefully.';
+    await refresh();
+    expect(rows[0].querySelector('.participant-instructions')?.textContent?.trim()).toBe(
+      'Shared instructions',
+    );
+    expect(rows[1].querySelector('.participant-instructions')?.textContent?.trim()).toBe(
+      'Custom instructions',
+    );
+    const remove = Array.from(aside.querySelectorAll<HTMLButtonElement>('.remove-button'));
+    expect(remove.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Remove Alpha',
+      'Remove Beta',
+    ]);
+    component.creating.set(true);
+    await refresh();
+    expect(create.disabled).toBe(true);
+    component.creating.set(false);
+    await refresh();
+    remove[0].click();
+    await refresh();
+    expect(component.participants().map((p) => p.playerName)).toEqual(['Beta']);
+    expect(create.disabled).toBe(true);
+    expect(aside.querySelector('.participant-seed')?.textContent?.trim()).toBe('1');
+    expect(element.querySelector('.settings-card #setup-opening-heading')).not.toBeNull();
+    const groups = Array.from(element.querySelectorAll('.settings-card .field-group')).map(
+      (group) => group.getAttribute('aria-labelledby'),
+    );
+    expect(groups.indexOf('setup-opening-heading')).toBe(
+      groups.indexOf('setup-matches-heading') + 1,
+    );
+  });
+
+  it('shows labelled effort overrides in the roster and omits effort for tournament defaults', async () => {
+    const fixture = await renderSetup();
+    const component = fixture.componentInstance;
+    component.sharedCustomInstructions = 'Play carefully.';
+    component.participants.set([
+      { ...pricedParticipant('Alpha', 'example/alpha', 1, 2), reasoningEffort: 'high' },
+      { playerName: 'Human', controlType: 'HUMAN' },
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ]);
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const rows: NodeListOf<HTMLElement> =
+      fixture.nativeElement.querySelectorAll('.participant-row');
+    expect(rows[0].querySelector('.participant-text')?.getAttribute('title')).toBe(
+      'Uses shared tournament instructions · Reasoning effort: High',
+    );
+    expect(
+      rows[0].querySelector('.participant-meta')?.textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe('example/alpha · effort: High');
+    expect(rows[1].querySelector('.participant-meta')?.textContent?.trim()).toBe(
+      'Human-controlled',
+    );
+    expect(rows[1].querySelector('.participant-instructions')).toBeNull();
+    expect(rows[1].querySelector('.participant-effort-meta')).toBeNull();
+    expect(rows[2].querySelector('.participant-meta')?.textContent?.trim()).toBe('example/beta');
+    expect(rows[2].querySelector('.participant-effort-meta')).toBeNull();
+  });
+
+  it('renders heuristic band labels and approximate spend and runtime', async () => {
+    const fixture = await renderSetup();
+    const component = fixture.componentInstance;
+    const element: HTMLElement = fixture.nativeElement;
+    component.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ]);
+    const refresh = async () => {
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+    const metric = (label: string) =>
+      Array.from(element.querySelectorAll('.confidence-metric')).find(
+        (m) => m.querySelector('.metric-label')?.textContent === label,
+      )!;
+    await refresh();
+    expect(element.querySelector('.confidence-panel h2')?.textContent).toBe('Tournament Estimate');
+    expect(element.querySelector('.confidence-panel mat-card-subtitle')?.textContent).toBe(
+      'Rough heuristic, not a quote.',
+    );
+    expect(element.querySelector('.confidence-band')?.textContent?.trim()).toBe('Low risk');
+    expect(element.querySelector('.confidence-band')?.classList).toContain('low-risk');
+    expect(metric('Estimated Spend').querySelector('strong')?.textContent).toContain('about $');
+    expect(metric('Estimated Spend').textContent).toContain('can be higher with reasoning models');
+    expect(metric('Estimated Runtime').querySelector('strong')?.textContent).toContain('about ');
+    expect(metric('Estimated Runtime').textContent).toContain('open-ended');
+    component.limitMoveTime = true;
+    component.moveTimeout = 120;
+    component.matchupBestOf = 3;
+    await refresh();
+    expect(metric('Estimated Spend').textContent).toContain('up to about $');
+    expect(metric('Estimated Runtime').textContent).toContain('up to about ');
+    component.drawPolicy = 'REPLAY_GAME';
+    await refresh();
+    expect(metric('Estimated Spend').textContent).toContain('at least about $');
+    expect(metric('Estimated Runtime').textContent).toContain('at least about ');
+    component.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 0, 0),
+      pricedParticipant('Beta', 'example/beta', 0, 0),
+    ]);
+    component.matchupBestOf = 1;
+    await refresh();
+    expect(metric('Estimated Spend').textContent).toContain('at least about $0.00');
+    for (const [riskBand, label, className] of [
+      ['Moderate', 'Moderate risk', 'moderate-risk'],
+      ['Expensive', 'High cost', 'high-cost'],
+    ] as const) {
+      const summary = component.confidenceSummary()!;
+      component.confidenceSummary = () => ({ ...summary, riskBand });
+      await refresh();
+      expect(element.querySelector('.confidence-band')?.textContent?.trim()).toBe(label);
+      expect(element.querySelector('.confidence-band')?.classList).toContain(className);
+    }
   });
 
   it('sends chat mode Optional by default and the chosen mode otherwise, without the old flag', () => {
@@ -843,8 +1258,11 @@ describe('TournamentSetup', () => {
     await fixture.whenStable();
     const element: HTMLElement = fixture.nativeElement;
     expect(element.querySelector('#adjudication-hint')?.textContent).toContain('Model games only');
-    expect(element.querySelector('#adjudication-hint')?.textContent).toContain('10 plies');
-    expect(element.querySelector('#adjudication-hint')?.textContent).toContain('+10 pawns');
+    const tooltip = fixture.debugElement
+      .query(By.css('[aria-label="About adjudication"]'))
+      .injector.get(MatTooltip).message;
+    expect(tooltip).toContain('10 plies');
+    expect(tooltip).toContain('+10 pawns');
     element.querySelector<HTMLButtonElement>('.adjudication-toggle button')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -1110,8 +1528,13 @@ describe('TournamentSetup', () => {
       element.querySelector('.reasoning-effort-field .mat-mdc-select-value')?.textContent?.trim(),
     ).toBe('Model default');
     expect(element.querySelector('.reasoning-effort-hint')?.textContent).toContain(
-      'some models think without end at their default',
+      'Lower is faster and cheaper.',
     );
+    expect(
+      fixture.debugElement
+        .query(By.css('[aria-label="About reasoning effort"]'))
+        .injector.get(MatTooltip).message,
+    ).toContain('some models think without end at their default');
     expect(element.querySelector('.participant-effort')).toBeNull();
 
     fixture.componentInstance.onModelChanged('moonshotai/kimi-k3.1-pro');
@@ -1127,9 +1550,9 @@ describe('TournamentSetup', () => {
     fixture.componentInstance.onModelChanged('acme/plain');
     await settle();
     expect(element.querySelector('.participant-effort-field')).toBeNull();
-    expect(element.querySelector('.participant-effort-na')?.textContent?.trim()).toBe(
-      'Reasoning effort: n/a (this model offers no effort levels)',
-    );
+    expect(
+      element.querySelector('.participant-effort-na')?.textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe('Reasoning effort: n/a help_outline');
   });
 });
 
@@ -1211,4 +1634,19 @@ function pricedParticipant(
     promptPricePerMillion,
     completionPricePerMillion,
   };
+}
+
+async function renderSetup() {
+  TestBed.configureTestingModule({
+    imports: [TournamentSetup],
+    providers: [
+      { provide: ApiService, useValue: createApiService() },
+      { provide: Router, useValue: createRouter() },
+      { provide: ActivatedRoute, useValue: createRoute() },
+    ],
+  });
+  const fixture = TestBed.createComponent(TournamentSetup);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  return fixture;
 }

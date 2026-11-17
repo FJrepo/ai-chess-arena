@@ -40,6 +40,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Analysis](docs/how-it-works.md#analytics-and-reliability):** series scores, PGN export, reliability, stored attempts, prompt caching metrics and reported costs.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimated games, runtime and spend before starting.
 
+Tournament setup starts with **Add participant**, with optional custom instructions revealed on demand; collapsing the field preserves its draft when adding a participant. The **Tournament lineup** groups the tournament name, roster, visible participant reasoning-effort overrides, readiness checklist and **Create Tournament** action before the rough runtime and spend estimate. At widths of at least 1200px, the sidebar stays sticky only when its measured height fits the window with an 88px top offset and a 24px bottom gap; otherwise it uses natural page scrolling. Without ResizeObserver support, it also uses natural page scrolling. Below 1200px, the order is add participant, settings, lineup, then estimate, matching keyboard navigation. Settings keep prompt rules and shared instructions in a collapsed **Advanced: prompt** section, with a **custom** badge when shared instructions are set.
+
 Prompt caching savings use one cached price snapshot per comparison. Analytics never waits for catalog requests: missing prices show **n/a**, stale prices remain usable, and failed refreshes back off for 60 seconds.
 
 Concurrent catalog lookups use a consistent snapshot for freshness and model data, so model validation and reasoning-effort mapping can use a catalog published by another caller during a refresh.
@@ -80,6 +82,8 @@ Everything binds to `127.0.0.1` only; set `FRONTEND_PORT` in `.env` to change th
 The frontend accepts `localhost`, `127.0.0.1` and `[::1]`; other host names need [`ALLOWED_HOSTS`](docs/deployment.md#host-names-allowed_hosts).
 
 See [docs/deployment.md](docs/deployment.md) for upgrades, backups, password rotation and troubleshooting.
+
+From v1.6.0: two-file setup, see the [5-minute start](docs/deployment.md#5-minute-start-from-v160).
 
 ## How it works
 
@@ -124,6 +128,7 @@ cd frontend && npm ci && npm start
 make test                               # backend unit + frontend tests
 (cd backend && mvn verify)              # + PostgreSQL integration tests (Docker required)
 (cd frontend && npm run lint && npm run typecheck && npm run format:check)
+python3 -m pip install -r scripts/requirements-test.txt # YAML parser for script tests
 python3 -B -m unittest discover -s scripts -p 'test_*.py' # offline installer and release tests
 ```
 
@@ -154,7 +159,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
 Releases use `vX.Y.Z`. The workflow runs full CI, builds both images and smoke-tests them together before publishing to GHCR as the version tag and `latest`. Deploy a pinned version; `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases) and [CHANGELOG.md](CHANGELOG.md).
 
-Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. Documentation links and images point to the released tag, used Markdown references are retained, and fenced code examples stay intact. See [release publishing notes](docs/deployment.md#release-publishing-notes).
+Release notes use the matching changelog entry, with upgrade notes first and image index digests at the bottom; missing entries stop the release before builds. From v1.6.0, releases will include `docker-compose.yml` pinned to the release tag and `env.example`, attached when the immutable release is created. See [release publishing notes](docs/deployment.md#release-publishing-notes).
 
 Release builds preserve the backend Dockerfile's `MIT, GPL-3.0-or-later` licence label for bundled Stockfish. Frontend and other generated OCI labels are unchanged.
 
