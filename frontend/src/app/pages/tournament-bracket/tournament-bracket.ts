@@ -9,6 +9,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
+import { MatMenuModule } from '@angular/material/menu';
 import { Observable } from 'rxjs';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { CurrencyPipe } from '@angular/common';
@@ -32,6 +33,7 @@ import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget'
     MatButtonModule,
     MatIconModule,
     MatExpansionModule,
+    MatMenuModule,
     CurrencyPipe,
     BracketDisplay,
   ],
@@ -53,7 +55,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   runBudget = '';
   readonly concurrencyOptions = [1, 2, 3, 4, 5, 6, 7, 8];
   readonly runningGames = computed(
-    () => this.tournament()?.games.filter((g) => g.status === 'IN_PROGRESS').length ?? 0,
+    () => this.tournament()?.games.filter((g) => g.status === 'IN_PROGRESS') ?? [],
   );
   readonly attentionGames = computed(
     () =>

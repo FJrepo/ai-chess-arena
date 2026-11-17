@@ -62,6 +62,8 @@ Choose **Bracket draw** under **Tournament Settings → Matches** on the setup p
 
 Participants are paired in seed order, lowest first. When the field is not a power of two, the lowest seed numbers receive byes; the rest are paired in seed order. For example, with five participants, seeds 0, 1 and 2 receive byes and seeds 3 and 4 play. The **Participants by seed** panel shows the stored seeds after generation. A random draw can happen to produce the original order.
 
+**Watch live** beside the running-game count opens the only live game directly. When several games are running, choose a matchup from the menu. The shortcut appears while at least one game is running, including manually started games. Choose **Review** on a finished matchup to open the game.
+
 API creation: `POST /api/tournaments` accepts `drawMode: "RANDOM" | "ORDER"`. Omitted or null defaults to **ORDER**, matching the existing generation API's seed-order compatibility rule; the UI explicitly sends RANDOM by default. Invalid modes (including an empty string) return 400 even when generation is disabled; modes are case-insensitive. `generateBracket: true` requires at least two participants and returns 400 before storing anything otherwise. `generateBracket` omitted, null or false creates a draft with no bracket, regardless of lineup size. This preserves API clients that create with participants, add more participants and then request manual generation, including a random draw. The flag accepts JSON booleans or null, rejecting strings and numbers. The UI explicitly sends true.
 
 Participant array order in API responses is unspecified; use each participant’s `seed` for draw order and `id` for identity. The tournament and participants commit together before generation takes the tournament row lock. When generation is requested, the create response includes the bracket and drawn seeds, with games ready to start (creation does not start play). Repeating a `clientRequestId` returns the same tournament (200 rather than the initial 201), never a second bracket. Its original generation/draw choice wins even if a retry supplies different choices. If generation was interrupted after the tournament committed, retry the same request ID to finish it; a failure can leave a committed draft until retried. Concurrent creates and generation requests cannot reshuffle an existing bracket. Use a `clientRequestId` for safe recovery from a lost response.
@@ -541,7 +543,7 @@ In the game view, use **Board** beside the flip and export controls to choose **
 
 ## Export
 
-Use **PGN**, **CSV** or **JSON** on the tournament page to download your data. The download icon in the game view exports that game's PGN. Exports read existing records without calling a model or Stockfish, changing results or requiring a migration/backfill.
+Open **Export** on the tournament page and choose **PGN**, **CSV** or **JSON**. The download icon in the game view exports that game's PGN. Exports read existing records without calling a model or Stockfish, changing results or requiring a migration/backfill.
 
 | Endpoint | Contents |
 |---|---|

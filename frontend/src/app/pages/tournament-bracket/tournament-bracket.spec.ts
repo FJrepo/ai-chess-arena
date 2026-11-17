@@ -1,6 +1,7 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { MatMenuHarness } from '@angular/material/menu/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { EMPTY, of, Subject, throwError } from 'rxjs';
@@ -55,7 +56,7 @@ describe('TournamentBracket', () => {
     expect(element.querySelector('.start-run')?.textContent).toContain('Run tournament');
   });
 
-  it('links to setup with only the tournament ID in the rematch URL', () => {
+  it('opens rematch setup with only the tournament ID in the URL', () => {
     const original = {
       ...tournament('COMPLETED', 'Winner', finalGame({ status: 'COMPLETED' })),
       sharedCustomInstructions: 'Private instructions',
@@ -65,6 +66,10 @@ describe('TournamentBracket', () => {
       (link) => link.textContent.trim() === 'Run this tournament again',
     );
     expect(action?.getAttribute('href')).toBe('/tournaments/' + original.id + '/rematch');
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    action?.click();
+    expect(navigate.mock.calls[0][0].toString()).toBe('/tournaments/t-1/rematch');
   });
 
   function runPage(
@@ -107,6 +112,83 @@ describe('TournamentBracket', () => {
     return { fixture, api, component: fixture.componentInstance, current };
   }
 
+  it.each(['RUNNING', 'OFF'] as const)(
+    'links directly to the only live game with auto-run %s',
+    (runStatus) => {
+      const { fixture, component, current } = runPage('IN_PROGRESS', runStatus);
+      const game = finalGame({ status: 'IN_PROGRESS' });
+      component.tournament.set({ ...current, games: [game] });
+      fixture.detectChanges();
+
+      const action = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>(
+        '.run-summary a',
+      )!;
+      expect(action.textContent?.trim()).toBe('Watch live');
+      expect(runBanner(fixture)).toContain('1 game running');
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+      action.click();
+      expect(navigate.mock.calls[0][0].toString()).toBe('/games/' + game.id);
+    },
+  );
+
+  it('lists each live matchup in Watch live and opens the selected game', async () => {
+    const { fixture, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+    const games = [
+      finalGame({ status: 'IN_PROGRESS', whitePlayerName: 'Aster', blackPlayerName: 'Birch' }),
+      finalGame({
+        id: 'live-2',
+        seriesId: 'live-2',
+        bracketRound: 'Semifinal',
+        status: 'IN_PROGRESS',
+        whitePlayerName: 'Cedar',
+        blackPlayerName: 'Elm',
+      }),
+      finalGame({
+        id: 'queued-1',
+        seriesId: 'queued-1',
+        bracketRound: 'Semifinal',
+        bracketPosition: 1,
+        status: 'PAUSED',
+        resumeRequestedAt: '2026-11-17T20:00:00Z',
+      }),
+    ];
+    component.tournament.set({ ...current, games });
+    fixture.detectChanges();
+
+    expect(runBanner(fixture)).toContain('2 games running');
+    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatMenuHarness.with({ triggerText: /^Watch live/ }),
+    );
+    await menu.open();
+    expect(await Promise.all((await menu.getItems()).map((item) => item.getText()))).toEqual([
+      'Aster vs Birch',
+      'Cedar vs Elm',
+    ]);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    await menu.clickItem({ text: 'Cedar vs Elm' });
+    expect(navigate.mock.calls[0][0].toString()).toBe('/games/live-2');
+  });
+
+  it('hides Watch live when the tournament has no running games', () => {
+    const element = render(tournament('COMPLETED', 'White', finalGame()));
+    expect(element.querySelector('.run-summary')?.textContent).not.toContain('Watch live');
+  });
+
+  it('keeps Review focusable and opens the completed game', () => {
+    const game = finalGame();
+    const element = render(tournament('COMPLETED', 'White', game));
+    const review = [...element.querySelectorAll<HTMLButtonElement>('.card-footer button')].find(
+      (action) => action.textContent?.includes('Review'),
+    )!;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    review.focus();
+    expect(document.activeElement).toBe(review);
+    review.click();
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(['/games', game.id]);
+  });
+
   it('starts with an unchanged large cap and never rounds an edited amount into a patch', () => {
     const { api, component, current } = runPage();
     const exact = '99999999999999999.99';
@@ -145,9 +227,10 @@ describe('TournamentBracket', () => {
   });
 
   function runBanner(fixture: ComponentFixture<TournamentBracket>): string {
-    return fixture.nativeElement
-      .querySelector('.run-status')
-      .textContent.replace(/\s+/g, ' ')
+    return [...(fixture.nativeElement as HTMLElement).querySelectorAll('.run-status')]
+      .map((part) => part.textContent)
+      .join(' ')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
@@ -281,42 +364,53 @@ describe('TournamentBracket', () => {
     expect(component.tournament()?.games[0]).toEqual(replacement);
   });
 
-  it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the tournament page', (format) => {
+  it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the Export menu', async (format) => {
     const { fixture, component, api } = runPage();
-    vi.useFakeTimers();
     const createObjectURL = vi.fn().mockReturnValue('blob:export');
-    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static override createObjectURL = createObjectURL;
+        static override revokeObjectURL = vi.fn();
+      },
+    );
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    const button = fixture.nativeElement.querySelector(
-      `[aria-label="Download tournament ${format.toUpperCase()}"]`,
-    ) as HTMLButtonElement;
-    button.click();
+    const exportTournament = vi.spyOn(component, 'exportTournament');
+    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatMenuHarness.with({ triggerText: /^Export/ }),
+    );
+    await menu.open();
+    const [item] = await menu.getItems({ text: format.toUpperCase() });
+    expect(await (await item.host()).getAttribute('aria-label')).toBe(
+      'Download tournament ' + format.toUpperCase(),
+    );
+    await item.click();
+    expect(exportTournament).toHaveBeenCalledExactlyOnceWith(format);
     expect(api.getTournamentExport).toHaveBeenCalledWith('t-1', format);
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe(
       `tournament-t-1.${format}`,
     );
     expect(component.exporting()).toBe(false);
-    vi.advanceTimersByTime(1000);
-    vi.useRealTimers();
   });
 
-  it('disables duplicate exports while downloading and reports failures without a download', () => {
+  it('disables the Export menu during a download and enables it again after a failure', async () => {
     const { fixture, component, api } = runPage();
     const pending = new Subject<Blob>();
     api.getTournamentExport.mockReturnValue(pending);
     const snackbar = vi.spyOn(TestBed.inject(MatSnackBar), 'open');
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
-    component.exportTournament('json');
+    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatMenuHarness.with({ triggerText: /^Export/ }),
+    );
+    await menu.open();
+    await menu.clickItem({ text: 'JSON' });
     component.exportTournament('csv');
-    fixture.detectChanges();
-    const buttons = Array.from(
-      fixture.nativeElement.querySelectorAll('.export-tournament'),
-    ) as HTMLButtonElement[];
-    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(await menu.isDisabled()).toBe(true);
+    expect(await menu.isOpen()).toBe(false);
     expect(api.getTournamentExport).toHaveBeenCalledOnce();
     pending.error(new Error('offline'));
-    expect(component.exporting()).toBe(false);
+    expect(await menu.isDisabled()).toBe(false);
     expect(click).not.toHaveBeenCalled();
     expect(snackbar).toHaveBeenCalledWith(
       'Could not export tournament. Please try again.',
