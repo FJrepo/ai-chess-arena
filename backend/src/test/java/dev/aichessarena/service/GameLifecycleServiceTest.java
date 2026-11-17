@@ -192,6 +192,7 @@ class GameLifecycleServiceTest {
         assertEquals(10, chats.getFirst().moveNumber);
         assertEquals("BLACK", chats.getFirst().senderColor);
         assertEquals("model-b", chats.getFirst().senderModel);
+        assertEquals(chats.getFirst().id, websocket.lastChatId);
         assertEquals("Good game", websocket.lastChat);
         assertEquals("COMPLETED", websocket.lastStatus);
         assertEquals("WHITE_WINS", websocket.lastResult);
@@ -434,6 +435,7 @@ class GameLifecycleServiceTest {
 
         @Override
         public void persist(ChatMessage entity) {
+            entity.id = UUID.randomUUID();
             stored.add(entity);
         }
     }
@@ -539,6 +541,7 @@ class GameLifecycleServiceTest {
 
         private String lastResult;
         private String lastResultReason;
+        private UUID lastChatId;
         private String lastChat;
         /** Every status change in the order it was sent, as "STATUS@revision". */
         private final List<String> statusChanges = new ArrayList<>();
@@ -558,8 +561,9 @@ class GameLifecycleServiceTest {
         }
 
         @Override
-        public void broadcastChat(UUID gameId, int moveNumber, String senderColor, String senderModel,
+        public void broadcastChat(UUID gameId, UUID chatId, int moveNumber, String senderColor, String senderModel,
                                   String senderName, String message) {
+            lastChatId = chatId;
             lastChat = message;
         }
 

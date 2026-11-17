@@ -182,9 +182,9 @@ API: `GET /api/models?featuredOnly=false&limit=0` returns the whole catalog (`li
 
 ## Model turns and prompts
 
-Models are asked to answer in JSON, but the parser also extracts a move from other formats; the move must be legal and, if the tournament has a time limit per move, arrive within it.
+Models are asked to answer in JSON, but the parser also extracts moves from plain text. A move must be legal and arrive within the tournament's move time limit when one is set. Attempt history preserves the proposed check (`+`) or mate (`#`) suffix, including on castling. The scoresheet uses the board's notation for the legal move.
 
-*Max attempts per move* (API field `maxRetries`) accepts whole numbers from 1 to 20 and defaults to 3, which allows two retries. A model forfeits if it exhausts its attempts or its move time. Games with a stored attempt limit below 1 get one attempt.
+*Max attempts per move* (API field `maxRetries`) accepts whole numbers from 1 to 20 and defaults to 3, which allows two retries. A model forfeits if it exhausts its attempts or its move time. For older tournaments, the game loop clamps the stored limit to 1–20 on each turn.
 
 Each model gets its system prompt, an append-only chunk of its own prior exchanges and the current turn. Every new turn prompt contains the moves so far (PGN, including book moves) and the full position (FEN, board, legal moves), plus the opponent's latest move/message when present. New position and opponent data go only in that newest user message; earlier messages are replayed verbatim.
 
@@ -216,7 +216,7 @@ For qualifying models, the backend sends one explicit breakpoint on the final te
 
 The current turn and its retries are never marked. The breakpoint moves forward as history grows; it is request metadata, never part of the stored text. There is at most one marker per request (within Anthropic's four-breakpoint limit, and the final breakpoint Gemini uses). Other providers receive plain string messages with the same stable text prefix for automatic caching. See [OpenRouter's prompt-caching contract](https://openrouter.ai/docs/guides/best-practices/prompt-caching).
 
-Catalog hints cannot guarantee every routed endpoint supports explicit caching. If a marked request receives HTTP 400 or 404 mentioning `cache_control`, cache-control or cache control, the backend retries that same attempt **once with plain messages**, preserving the model, text, generation settings and original move/safety deadlines. The rejection does not consume a model attempt or cause a fatal pause. If the plain retry exhausts the original deadline, the rejection remains a retryable provider failure: the game pauses instead of forfeiting on a model timeout. That exact model ID stays on plain messages until backend restart, even if the catalog refreshes. A repeated cache-control rejection is treated as a retryable provider failure; unrelated errors keep their normal handling.
+Catalog hints cannot guarantee every routed endpoint supports explicit caching. If a marked request receives HTTP 400 or 404 mentioning `cache_control`, cache-control or cache control, the backend retries that same attempt **once with plain messages**, preserving the model, text, generation settings and original move/safety deadlines. The rejection does not consume a model attempt or cause a fatal pause. If the plain retry or a later attempt in that turn runs out of time, the game records a retryable provider failure and pauses. This also applies when the plain retry returned an illegal move. That exact model ID stays on plain messages until backend restart, even if the catalog refreshes. A repeated cache-control rejection is treated as a retryable provider failure; unrelated errors keep their normal handling.
 
 This sends slightly more history tokens per turn than the former three-turn window. With cache hits, most repeated input is read from cache at a fraction of the normal input price; cache writes can cost extra. Model-specific minimum lengths, expiry, routing and re-anchors can still cause misses, so savings are not guaranteed. The setup cost preview remains a rough heuristic; use the [prompt-caching analytics](#prompt-caching-metrics) and provider-reported costs to measure actual results.
 
@@ -457,7 +457,7 @@ A time window selects finished games by when they finished and unfinished ones b
 
 The reliability score (0–100) is based on finished games: 50% first-try legal moves (moves played without a retry, out of all moves plus turns lost to an invalid-move forfeit and resigned turns that needed retries), 30% games not forfeited and 20% few retries (100 minus 50 per average retry).
 
-Reliability and comparison use the earliest stored move for each ply, with the row ID breaking timestamp ties. Reported spend includes paid duplicate rows. When provider retries consume the move deadline, the game pauses and the timed-out attempt is recorded as a retryable provider failure.
+Reliability and comparison use the earliest stored move for each ply, with the row ID breaking timestamp ties. Both views return a null average cost per move when a move price is missing or there are no priced plies. Reported spend still includes paid duplicate rows and rejected answers. When provider retries consume the move deadline, the game pauses and the timed-out attempt is recorded as a retryable provider failure.
 
 With fewer than 60 moves it is pulled toward 60 in proportion to the moves played, and below 3 games it is marked *Insufficient data*.
 
@@ -572,7 +572,7 @@ API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true`
 
 Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar.
 
-Viewers receive a move after its database transaction commits, with any accompanying chat delivered first. A rollback suppresses both updates.
+Viewers receive a move after its database transaction commits, with any accompanying chat delivered first. A rollback suppresses both updates. Each `chat` event carries the persisted message UUID in `id`, matching the game's chat snapshot, including a resigning player's last words. Each `move` event identifies its ply by `moveNumber` and `color` and carries the game's `statusRevision` at the move. Several plies can share a status revision.
 
 Background refreshes preserve the historical position being reviewed; viewers at the latest move keep following new moves.
 

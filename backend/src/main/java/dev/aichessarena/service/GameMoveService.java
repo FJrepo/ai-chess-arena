@@ -3,7 +3,6 @@ package dev.aichessarena.service;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
-import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
@@ -233,23 +232,21 @@ public class GameMoveService {
         String san = move.san;
         String fen = move.fen;
         updateGameState(game, fen, san, moveNumber, color);
-        boolean hasChat = message != null && !message.isBlank();
-        if (hasChat) {
-            persistChatMessage(game, moveNumber, move.modelId, color, message);
-        }
+        UUID chatId = chatMessageRepository.persistMessage(game, moveNumber, color, move.modelId, message);
 
         // Capture this ply's scoresheet while attached. Chat and move share one ordered callback.
         String pgn = game.pgn;
+        long statusRevision = game.statusRevision;
         boolean isOverride = move.isOverride;
         String modelId = isOverride ? "admin-override" : move.modelId;
         long responseTimeMs = move.responseTimeMs == null ? 0 : move.responseTimeMs;
         int retryCount = move.retryCount;
         AfterCommit.run(transactionRegistry, () -> {
-            if (hasChat) {
-                gameWebSocket.broadcastChat(gameId, moveNumber, color, modelId, playerName, message);
+            if (chatId != null) {
+                gameWebSocket.broadcastChat(gameId, chatId, moveNumber, color, modelId, playerName, message);
             }
             gameWebSocket.broadcastMove(gameId, moveNumber, color, san, fen, pgn, modelId,
-                    responseTimeMs, retryCount, isOverride);
+                    responseTimeMs, retryCount, isOverride, statusRevision);
         });
         moveEvaluationEvents.fire(new MoveEvaluationRequested(move.id, gameId, moveNumber, color, fen));
     }
@@ -276,15 +273,5 @@ public class GameMoveService {
         String moveStr = "WHITE".equals(color) ? moveNumber + ". " + san : san;
         game.pgn = (game.pgn == null ? "" : game.pgn + " ") + moveStr;
         gameRepository.persist(game);
-    }
-
-    private void persistChatMessage(Game game, int moveNumber, String modelId, String color, String message) {
-        ChatMessage chat = new ChatMessage();
-        chat.game = game;
-        chat.moveNumber = moveNumber;
-        chat.senderModel = modelId;
-        chat.senderColor = color;
-        chat.message = message;
-        chatMessageRepository.persist(chat);
     }
 }

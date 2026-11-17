@@ -3,7 +3,6 @@ package dev.aichessarena.service;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
-import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -294,15 +293,7 @@ public class GameLifecycleService {
         }
         String color = resignation.color();
         String message = resignation.message();
-        if (message != null && !message.isBlank()) {
-            ChatMessage chat = new ChatMessage();
-            chat.game = game;
-            chat.moveNumber = resignation.moveNumber();
-            chat.senderModel = resignation.modelId();
-            chat.senderColor = color;
-            chat.message = message;
-            chatMessageRepository.persist(chat);
-        }
+        UUID chatId = chatMessageRepository.persistMessage(game, resignation.moveNumber(), color, resignation.modelId(), message);
         game.status = GameStatus.COMPLETED;
         game.resumeRequestedAt = null;
         game.result = "WHITE".equals(color) ? GameResult.BLACK_WINS : GameResult.WHITE_WINS;
@@ -314,8 +305,8 @@ public class GameLifecycleService {
         LOG.infof("Game %s: %s resigned at move %d", gameId, color, resignation.moveNumber());
 
         // The last words go out before the game-over update, in the same callback, so their order is kept.
-        Runnable lastWords = message == null || message.isBlank() ? null
-                : () -> gameWebSocket.broadcastChat(gameId, resignation.moveNumber(), color,
+        Runnable lastWords = chatId == null ? null
+                : () -> gameWebSocket.broadcastChat(gameId, chatId, resignation.moveNumber(), color,
                         resignation.modelId(), resignation.playerName(), message);
         announceStatus(game, lastWords, null);
         advanceTournamentWinnerIfNeeded(game);

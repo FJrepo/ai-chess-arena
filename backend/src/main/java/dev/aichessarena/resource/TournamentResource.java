@@ -312,7 +312,8 @@ public class TournamentResource {
 
     private static int parseMaxRetries(JsonNode value, int current) {
         if (value == null || value.isNull()) return current;
-        if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < 1 || value.intValue() > 20) {
+        if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < Tournament.MIN_MOVE_ATTEMPTS
+                || value.intValue() > Tournament.MAX_MOVE_ATTEMPTS) {
             throw new IllegalArgumentException("maxRetries must be a whole number from 1 to 20");
         }
         return value.intValue();

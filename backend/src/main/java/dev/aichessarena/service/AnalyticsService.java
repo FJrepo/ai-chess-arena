@@ -360,7 +360,6 @@ public class AnalyticsService {
             Long avgResponseTimeMs = accumulator.responseTimeCount == 0
                     ? null
                     : Math.round((double) accumulator.responseTimeTotal / (double) accumulator.responseTimeCount);
-            BigDecimal avgCostPerMove = divide(accumulator.totalCostUsd, accumulator.pricedPlies);
             AnalyticsReliabilityScorer.ReliabilityScore score = reliabilityScorer.score(
                     accumulator.gamesPlayed,
                     accumulator.movesSampled,
@@ -379,7 +378,7 @@ public class AnalyticsService {
                     decimal(avgRetriesPerMove, 4),
                     decimal(firstTryLegalRate, 4),
                     avgResponseTimeMs,
-                    avgCostPerMove,
+                    averageCostPerPly(accumulator),
                     accumulator.movesSampled,
                     decimal(score.finalScore(), 2),
                     score.band(),
@@ -449,11 +448,6 @@ public class AnalyticsService {
 
             BigDecimal forfeitRate = divide(accumulator.forfeits, accumulator.gamesPlayed);
             BigDecimal timeoutForfeitRate = divide(accumulator.timeoutForfeits, accumulator.gamesPlayed);
-            // The total is known even without moves (e.g. only rejected answers, then a forfeit); the average per
-            // move needs at least one move.
-            BigDecimal averageCostPerMoveUsd = pricingAvailable(accumulator) && accumulator.movesSampled > 0
-                    ? divide(accumulator.totalCostUsd, accumulator.pricedPlies)
-                    : null;
             BigDecimal totalCostUsd = pricingAvailable(accumulator)
                     ? scale(accumulator.totalCostUsd, 6)
                     : null;
@@ -496,7 +490,7 @@ public class AnalyticsService {
                     averageRetriesPerMove,
                     decimal(firstTryLegalRate, 4),
                     totalCostUsd,
-                    averageCostPerMoveUsd,
+                    averageCostPerPly(accumulator),
                     costPerWinUsd,
                     pricingAvailable(accumulator),
                     decimal(score.finalScore(), 2),
@@ -942,8 +936,14 @@ public class AnalyticsService {
      * Whether the model's total cost is known: every move is priced and there is at least one priced answer
      * (a move, or a rejected attempt with a reported cost).
      */
-    private boolean pricingAvailable(ComparisonAccumulator accumulator) {
+    private boolean pricingAvailable(ModelMoveAccumulator accumulator) {
         return accumulator.hasReportedCost && !accumulator.missingMovePrice;
+    }
+
+    private BigDecimal averageCostPerPly(ModelMoveAccumulator accumulator) {
+        return pricingAvailable(accumulator) && accumulator.pricedPlies > 0
+                ? divide(accumulator.totalCostUsd, accumulator.pricedPlies)
+                : null;
     }
 
     private BigDecimal divide(long numerator, long denominator) {

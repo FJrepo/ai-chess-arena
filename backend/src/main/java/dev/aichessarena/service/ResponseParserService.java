@@ -15,7 +15,7 @@ public class ResponseParserService {
     /** Any flat JSON object with a "resign" field; its value is judged by {@link #isResignation}. */
     private static final Pattern RESIGN_OBJECT = Pattern.compile("\\{[^{}]*\"resign\"\\s*:[^{}]*}");
     private static final Pattern MOVE_PATTERN = Pattern.compile(
-            "\\b([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?)\\b"
+            "\\b((?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?|O-O(?:-O)?)[+#]?)(?![\\w+#])"
     );
 
     @Inject

@@ -241,9 +241,10 @@ public class GameWebSocket {
 
     public void broadcastMove(UUID gameId, int moveNumber, String color, String san,
                                String fen, String pgn, String modelId,
-                               long responseTimeMs, int retryCount, boolean isOverride) {
+                               long responseTimeMs, int retryCount, boolean isOverride, long statusRevision) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "move");
+        msg.put("statusRevision", statusRevision);
         msg.put("gameId", gameId.toString());
         msg.put("moveNumber", moveNumber);
         msg.put("color", color);
@@ -261,10 +262,11 @@ public class GameWebSocket {
         broadcast(gameId, msg.toString());
     }
 
-    public void broadcastChat(UUID gameId, int moveNumber, String senderColor,
+    public void broadcastChat(UUID gameId, UUID chatId, int moveNumber, String senderColor,
                                String senderModel, String senderName, String message) {
         ObjectNode msg = objectMapper.createObjectNode();
         msg.put("type", "chat");
+        msg.put("id", chatId.toString());
         msg.put("gameId", gameId.toString());
         msg.put("moveNumber", moveNumber);
         msg.put("senderColor", senderColor);

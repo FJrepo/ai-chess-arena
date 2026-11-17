@@ -125,12 +125,13 @@ public class GameTurnService {
         broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), turnStartedAt, turnDeadlineAt,
                 request.tournamentChatMode(), request.tournamentBanterLevel());
 
-        int maxAttempts = Math.max(1, request.maxRetries());
-        if (request.maxRetries() < 1) {
-            LOG.warnf("Game %s: invalid stored maxRetries %d, allowing one attempt", request.gameId(), request.maxRetries());
+        int maxAttempts = Math.clamp(request.maxRetries(), Tournament.MIN_MOVE_ATTEMPTS, Tournament.MAX_MOVE_ATTEMPTS);
+        if (maxAttempts != request.maxRetries()) {
+            LOG.warnf("Game %s: clamped stored maxRetries from %d to %d", request.gameId(), request.maxRetries(), maxAttempts);
         }
         int providerFailures = 0;
         String lastProviderFailure = null;
+        int unrecordedCacheRejectionAttempt = 0;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             if (!request.shouldContinue().getAsBoolean()) {
                 return TurnResult.stopped();
@@ -142,7 +143,11 @@ public class GameTurnService {
 
             if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
                 if (lastProviderFailure != null) {
-                    // The deadline was eaten by provider outages, not by the model.
+                    // No next request was sent. Attribute an unrecorded marker rejection to its actual attempt.
+                    if (unrecordedCacheRejectionAttempt != 0) {
+                        recordAttempt(request, effort, unrecordedCacheRejectionAttempt, Outcome.PROVIDER_RETRYABLE,
+                                null, lastProviderFailure, null);
+                    }
                     return pauseForProvider(request, lastProviderFailure);
                 }
                 gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
@@ -175,6 +180,7 @@ public class GameTurnService {
                 long delayMs = providerRetryBackoffMs[providerFailures];
                 providerFailures++;
                 lastProviderFailure = detail;
+                unrecordedCacheRejectionAttempt = 0;
                 if (turnDeadline != null
                         && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= TimeUnit.MILLISECONDS.toNanos(delayMs)) {
                     return pauseForProvider(request, detail);
@@ -189,6 +195,10 @@ public class GameTurnService {
                 continue;
             }
 
+            if (llmResponse.cacheRejectionStatus() != null) {
+                lastProviderFailure = "OpenRouter rejected cache control (HTTP " + llmResponse.cacheRejectionStatus() + ")";
+                unrecordedCacheRejectionAttempt = attempt;
+            }
             if (llmResponse.timedOut()) {
                 if (lastProviderFailure != null || moveTimeoutSeconds == null) {
                     String detail = lastProviderFailure != null

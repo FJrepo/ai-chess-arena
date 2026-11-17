@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ResponseParserServiceTest {
 
@@ -47,13 +49,14 @@ class ResponseParserServiceTest {
         assertEquals("JSON", result.parseMethod());
     }
 
-    @Test
-    void parseFallsBackToPlainTextMoveExtraction() {
-        String content = "I will play Qh5+ now.";
+    @ParameterizedTest
+    @ValueSource(strings = {"Qh5+", "e4#", "O-O+", "O-O-O#"})
+    void parseFallsBackToPlainTextMoveExtraction(String proposed) {
+        String content = "My move is " + proposed + ".";
         ResponseParserService.ParseResult result = parser.parse(content);
 
         assertFalse(result.isFailure());
-        assertEquals("Qh5", result.move());
+        assertEquals(proposed, result.move());
         assertEquals("PLAIN_TEXT_EXTRACTION", result.parseMethod());
     }
 

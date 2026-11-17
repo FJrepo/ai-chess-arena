@@ -270,7 +270,8 @@ public class OpenRouterService {
                     explicitCachingRejected.add(modelId);
                     LOG.warnf("OpenRouter rejected explicit caching for %s; retrying once with plain messages", modelId);
                     return sendChatRequest(modelId, messages, maxOutputTokens, reasoningEffort, startNanos, deadline,
-                            limitedByMoveTime, new CacheRejection(response.statusCode(), response.body()));
+                            limitedByMoveTime, new CacheRejection(response.statusCode(), response.body()))
+                            .withCacheRejectionStatus(response.statusCode());
                 }
                 LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
                 return withReportedUsage(LlmResponse.providerFailure(
@@ -1204,7 +1205,9 @@ public class OpenRouterService {
             Integer modelMaxCompletionTokens,
             Integer cachedPromptTokens,
             Integer cacheWriteTokens,
-            boolean promptTokensReported
+            boolean promptTokensReported,
+            // A plain fallback can return a model answer after a marker rejection used part of the turn deadline.
+            Integer cacheRejectionStatus
     ) {
         public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,
                            long responseTimeMs, String rawResponse, boolean timedOut, String errorMessage,
@@ -1212,7 +1215,7 @@ public class OpenRouterService {
                            Integer effectiveMaxOutputTokens, Integer modelMaxCompletionTokens) {
             this(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse, timedOut,
                     errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effectiveMaxOutputTokens,
-                    modelMaxCompletionTokens, null, null, promptTokens > 0);
+                    modelMaxCompletionTokens, null, null, promptTokens > 0, null);
         }
 
         LlmResponse withUsage(JsonNode usage) {
@@ -1224,7 +1227,7 @@ public class OpenRouterService {
                     effectiveMaxOutputTokens, modelMaxCompletionTokens,
                     tokenCount(usage.path("prompt_tokens_details").path("cached_tokens")),
                     tokenCount(usage.path("prompt_tokens_details").path("cache_write_tokens")),
-                    tokenCount(usage.path("prompt_tokens")) != null);
+                    tokenCount(usage.path("prompt_tokens")) != null, cacheRejectionStatus);
         }
 
         private static Integer tokenCount(JsonNode node) {
@@ -1241,7 +1244,13 @@ public class OpenRouterService {
         LlmResponse withOutputTokenLimits(int effective, Integer maximum) {
             return new LlmResponse(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse,
                     timedOut, errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effective, maximum,
-                    cachedPromptTokens, cacheWriteTokens, promptTokensReported);
+                    cachedPromptTokens, cacheWriteTokens, promptTokensReported, cacheRejectionStatus);
+        }
+
+        private LlmResponse withCacheRejectionStatus(int status) {
+            return new LlmResponse(content, promptTokens, completionTokens, costUsd, responseTimeMs, rawResponse,
+                    timedOut, errorMessage, outcome, httpStatus, finishReason, reasoningTokens, effectiveMaxOutputTokens,
+                    modelMaxCompletionTokens, cachedPromptTokens, cacheWriteTokens, promptTokensReported, status);
         }
 
         public LlmResponse(String content, int promptTokens, int completionTokens, Double costUsd,

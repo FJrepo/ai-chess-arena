@@ -290,6 +290,23 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    void pricedDuplicateContributesSpendButCannotPriceAnUnpricedPly() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Move first = move(game, "model.alpha", 1000L, null);
+        Move duplicate = move(game, "model.alpha", 3000L, "0.02");
+        duplicate.createdAt = first.createdAt.plusSeconds(1);
+        AnalyticsService service = service(List.of(game), List.of(duplicate, first), List.of());
+
+        ModelReliabilityDto reliability = reliabilityRow(service.getReliability(30, null, 0), "model.alpha");
+        AnalyticsModelComparisonRowDto comparison = row(service.getComparison(30, null, 0), "model.alpha");
+        assertEquals(1, reliability.movesSampled());
+        assertEquals(1, comparison.movesSampled());
+        assertEquals(new BigDecimal("0.020000"), service.getHealth(30, null).costTotalUsd());
+        assertNull(comparison.averageCostPerMoveUsd());
+        assertNull(reliability.averageCostPerMoveUsd());
+    }
+
+    @Test
     void firstTryLegalRateCountsRetriedMovesAndInvalidMoveForfeits() {
         Game won = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
         Game forfeited = finishedGame(

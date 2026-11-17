@@ -46,6 +46,7 @@ class OpenRouterPromptCachingTest {
     private int rejectionStatus;
     private String rejectionBody = "{\"error\":{\"message\":\"No endpoints found that support cache control\"}}";
     private boolean rejectPlain;
+    private String plainMove = "e4";
     private Runnable afterRejection = () -> { };
     private Runnable afterPlain = () -> { };
 
@@ -291,43 +292,9 @@ class OpenRouterPromptCachingTest {
         rejectionStatus = 404;
         afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
         afterPlain = () -> nanos.set(Duration.ofSeconds(11).toNanos());
-        GameTurnService turn = new GameTurnService();
-        turn.nanoClock = nanos::get;
-        turn.openRouterService = router;
-        turn.chessService = new ChessService();
-        turn.promptService = new PromptService();
-        turn.moveRepository = new MoveRepository() {
-            @Override
-            public long count(String query, Object... params) { return 0; }
-        };
         List<String> pauses = new ArrayList<>();
-        turn.gameLifecycleService = new GameLifecycleService() {
-            @Override
-            public void pauseForProviderFailure(UUID id, String detail) { pauses.add(detail); }
-
-            @Override
-            public void forfeitTimeout(UUID id, String color, int seconds) {
-                throw new AssertionError("Cache rejection must not cause a timeout loss");
-            }
-        };
         List<MoveAttemptService.AttemptRecord> attempts = new ArrayList<>();
-        turn.moveAttemptService = new MoveAttemptService() {
-            @Override
-            public void record(AttemptRecord record) { attempts.add(record); }
-        };
-        turn.gameWebSocket = new GameWebSocket() {
-            @Override
-            public void broadcastGameStatus(UUID id, String status, String result, String reason, int count,
-                                            BigDecimal cost, String color, java.time.Instant start,
-                                            java.time.Instant deadline, String detail, String mode, String banterLevel) { }
-        };
-        Board board = new Board();
-        var request = new GameTurnService.TurnRequest(UUID.randomUUID(), "", board.getFen(), board, "WHITE", 1,
-                List.of("e4"), "google/gemini-pro", "White", "Black",
-                new ArrayList<>(List.of(new ChatMsg("system", "rules"))), null, null, true, 3, 10,
-                "v2", "hash", BigDecimal.ZERO, () -> true, 100, ChatMode.OPTIONAL, ChatMode.OPTIONAL);
-
-        var result = turn.playTurn(request);
+        var result = playTimedTurn(router, nanos, 10, pauses, attempts);
 
         assertTrue(result.pausedGame());
         assertFalse(result.isTerminal());
@@ -337,6 +304,77 @@ class OpenRouterPromptCachingTest {
                 .map(MoveAttemptService.AttemptRecord::outcome).toList());
         assertEquals(404, attempts.getFirst().response().httpStatus());
         assertEquals(2, requests.size(), "only the marked request and its plain fallback are sent");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"29,3", "30,2"})
+    void markerRejectionStillCountsWhenAnIllegalPlainAnswerLeavesNoTimeForARetry(int plainAt, int expectedRequests)
+            throws Exception {
+        OpenRouterService router = stub();
+        AtomicLong nanos = new AtomicLong();
+        router.nanoClock = nanos::get;
+        rejectionStatus = 404;
+        afterRejection = () -> nanos.set(Duration.ofSeconds(28).toNanos());
+        plainMove = "Ke2";
+        afterPlain = () -> nanos.set(Duration.ofSeconds(requests.size() == 2 ? plainAt : 31).toNanos());
+        List<String> pauses = new ArrayList<>();
+        List<MoveAttemptService.AttemptRecord> attempts = new ArrayList<>();
+
+        var result = playTimedTurn(router, nanos, 30, pauses, attempts);
+
+        assertTrue(result.pausedGame());
+        assertEquals(expectedRequests, requests.size());
+        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.PROVIDER_RETRYABLE), attempts.stream()
+                .map(MoveAttemptService.AttemptRecord::outcome).toList());
+        assertEquals("Ke2", attempts.getFirst().proposedMove());
+        assertEquals(expectedRequests == 3 ? 2 : 1, attempts.getLast().attemptNumber());
+        assertEquals(1, pauses.size());
+        assertTrue(pauses.getFirst().contains("cache"));
+        assertEquals(pauses.getFirst(), attempts.getLast().errorMessage());
+    }
+
+    private GameTurnService.TurnResult playTimedTurn(OpenRouterService router, AtomicLong nanos, int timeoutSeconds,
+                                                      List<String> pauses, List<MoveAttemptService.AttemptRecord> attempts) {
+        GameTurnService turn = new GameTurnService();
+        turn.nanoClock = nanos::get;
+        turn.openRouterService = router;
+        turn.chessService = new ChessService();
+        turn.promptService = new PromptService();
+        turn.responseParserService = new ResponseParserService();
+        turn.responseParserService.objectMapper = JSON;
+        turn.moveRepository = new MoveRepository() {
+            @Override
+            public long count(String query, Object... params) { return 0; }
+        };
+        turn.gameLifecycleService = new GameLifecycleService() {
+            @Override
+            public void pauseForProviderFailure(UUID id, String detail) { pauses.add(detail); }
+
+            @Override
+            public void forfeitTimeout(UUID id, String color, int seconds) {
+                throw new AssertionError("Cache rejection must not cause a timeout loss");
+            }
+        };
+        turn.moveAttemptService = new MoveAttemptService() {
+            @Override
+            public void record(AttemptRecord record) { attempts.add(record); }
+        };
+        turn.gameWebSocket = new GameWebSocket() {
+            @Override
+            public void broadcastRetry(UUID id, String color, int number, String reason, String outcome, String proposed) { }
+
+            @Override
+            public void broadcastGameStatus(UUID id, String status, String result, String reason, int count,
+                                            BigDecimal cost, String color, java.time.Instant start,
+                                            java.time.Instant deadline, String detail, String mode, String banterLevel) { }
+        };
+        Board board = new Board();
+        var request = new GameTurnService.TurnRequest(UUID.randomUUID(), "", board.getFen(), board, "WHITE", 1,
+                List.of("e4"), "google/gemini-pro", "White", "Black",
+                new ArrayList<>(List.of(new ChatMsg("system", "rules"))), null, null, true, 3, timeoutSeconds,
+                "v2", "hash", BigDecimal.ZERO, () -> true, 100, ChatMode.OPTIONAL, ChatMode.OPTIONAL);
+
+        return turn.playTurn(request);
     }
 
     private static List<String> messageText(JsonNode messages) {
@@ -410,7 +448,7 @@ class OpenRouterPromptCachingTest {
             } else {
                 afterPlain.run();
             }
-            byte[] answer = (reject ? rejectionBody : "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]}")
+            byte[] answer = (reject ? rejectionBody : "{\"choices\":[{\"message\":{\"content\":\"%s\"}}]}".formatted(plainMove))
                     .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(reject ? rejectionStatus : 200, answer.length);
             try (var out = exchange.getResponseBody()) {

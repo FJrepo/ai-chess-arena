@@ -1,6 +1,7 @@
 package dev.aichessarena.repository;
 
 import dev.aichessarena.entity.ChatMessage;
+import dev.aichessarena.entity.Game;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -12,6 +13,19 @@ import java.util.UUID;
 
 @ApplicationScoped
 public class ChatMessageRepository implements PanacheRepositoryBase<ChatMessage, UUID> {
+
+    /** Returns the persisted ID used in snapshots and live events, or null for a silent move or resignation. */
+    public UUID persistMessage(Game game, int moveNumber, String color, String modelId, String message) {
+        if (message == null || message.isBlank()) return null;
+        ChatMessage chat = new ChatMessage();
+        chat.game = game;
+        chat.moveNumber = moveNumber;
+        chat.senderColor = color;
+        chat.senderModel = modelId;
+        chat.message = message;
+        persist(chat);
+        return chat.id;
+    }
 
     public List<ChatMessage> findByGameId(UUID gameId) {
         return list("game.id = ?1 order by createdAt", gameId);

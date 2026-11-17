@@ -54,6 +54,25 @@ class GameTurnServiceTest {
     }
 
     @Test
+    void legacyLimitOfTwentyOneStopsAfterTwentyInvalidAnswers() {
+        Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"));
+
+        assertTrue(fixture.service.playTurn(request(new ArrayList<>(), 21, 30)).isTerminal());
+        assertEquals(20, fixture.openRouter.calls);
+        assertEquals(20, fixture.attempts.recorded.size());
+        assertEquals(20, fixture.lifecycle.forfeitAttempts);
+    }
+
+    @Test
+    void plainTextProposalKeepsItsMateSuffixInTheAttempt() {
+        Fixture fixture = new Fixture(answer("My move is e4#."));
+
+        assertTrue(fixture.service.playTurn(request(new ArrayList<>(), 3, 30)).moveRecorded());
+        assertEquals("e4", fixture.moves.lastRecordedSan);
+        assertEquals("e4#", fixture.attempts.recorded.getFirst().proposedMove());
+    }
+
+    @Test
     void timedOutModelResponseForfeitsTheTurn() {
         Fixture fixture = new Fixture(new LlmResponse(null, 0, 0, null, 0, null, true, "timeout"));
 

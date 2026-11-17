@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
@@ -81,7 +82,7 @@ class LiveUpdateTransactionIT {
 
     private final ExecutorService eventLoop = Executors.newSingleThreadExecutor();
     private final List<String> callbackTransactions = Collections.synchronizedList(new ArrayList<>());
-    private final List<String> moveAndChat = Collections.synchronizedList(new ArrayList<>());
+    private final List<JsonNode> moveAndChat = Collections.synchronizedList(new ArrayList<>());
     private final CountDownLatch callbackStarted = new CountDownLatch(1);
     private final CountDownLatch releaseCallback = new CountDownLatch(1);
     private WebSocketConnection viewer;
@@ -152,7 +153,19 @@ class LiveUpdateTransactionIT {
             play.run();
             assertTrue(moveAndChat.isEmpty(), "the outer transaction is still open");
         });
-        assertEquals(source == MoveSource.OVERRIDE ? List.of("1. e4") : List.of("Hello", "1. e4"), moveAndChat);
+        assertEquals(source == MoveSource.OVERRIDE ? List.of("move") : List.of("chat", "move"),
+                moveAndChat.stream().map(event -> event.path("type").asText()).toList());
+        if (source != MoveSource.OVERRIDE) {
+            var chat = moveAndChat.getFirst();
+            UUID storedId = QuarkusTransaction.requiringNew().call(() -> chatRepository.findByGameId(id).getFirst().id);
+            assertEquals("Hello", chat.path("message").asText());
+            assertEquals(storedId.toString(), chat.path("id").asText());
+        }
+        var move = moveAndChat.getLast();
+        assertEquals("1. e4", move.path("pgn").asText());
+        assertEquals(1, move.path("moveNumber").asInt());
+        assertEquals("WHITE", move.path("color").asText());
+        assertEquals(7, move.path("statusRevision").asLong(-1));
         assertEquals(1L, QuarkusTransaction.requiringNew().call(() -> moveRepository.count("game.id", id)));
         assertEquals(source == MoveSource.OVERRIDE ? 0L : 1L,
                 QuarkusTransaction.requiringNew().call(() -> chatRepository.count("game.id", id)));
@@ -180,8 +193,7 @@ class LiveUpdateTransactionIT {
                     case "sendText" -> {
                         var message = json.readTree(args[0].toString());
                         switch (message.path("type").asText()) {
-                            case "chat" -> moveAndChat.add(message.get("message").asText());
-                            case "move" -> moveAndChat.add(message.get("pgn").asText());
+                            case "chat", "move" -> moveAndChat.add(message);
                         }
                         yield slowSend();
                     }
@@ -241,6 +253,7 @@ class LiveUpdateTransactionIT {
             game.blackPlayerName = "Black";
             game.blackModelId = "test/black";
             game.status = status;
+            game.statusRevision = 7;
             gameRepository.persist(game);
             return game.id;
         });

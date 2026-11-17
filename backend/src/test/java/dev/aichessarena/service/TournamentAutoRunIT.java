@@ -979,7 +979,7 @@ class TournamentAutoRunIT {
                     String banterLevel) {}
 
             @Override public void broadcastMove(UUID changedId, int moveNumber, String color, String san,
-                    String fen, String pgn, String model, long responseTimeMs, int retries, boolean override) {}
+                    String fen, String pgn, String model, long responseTimeMs, int retries, boolean override, long statusRevision) {}
 
             @Override public void broadcastAttemptsUpdated(UUID changedId) {}
 
