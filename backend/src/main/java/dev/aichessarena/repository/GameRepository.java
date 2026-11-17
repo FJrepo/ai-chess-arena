@@ -1,5 +1,6 @@
 package dev.aichessarena.repository;
 
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Tournament.TournamentStatus;
@@ -26,6 +27,15 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
 
     public List<Game> findByTournamentId(UUID tournamentId) {
         return list("tournament.id = ?1", tournamentId);
+    }
+
+    public long countRunning(UUID tournamentId) {
+        return count("tournament.id = ?1 and status = ?2", tournamentId, GameStatus.IN_PROGRESS);
+    }
+
+    public RunCapacity queuedResumeCapacity(Game game) {
+        return game.resumeRequestedAt == null ? null
+                : new RunCapacity(countRunning(game.tournament.id), game.tournament.maxConcurrentGames);
     }
 
     /** IDs for post-delete cleanup, without attaching game entities that a bulk delete would leave stale. */

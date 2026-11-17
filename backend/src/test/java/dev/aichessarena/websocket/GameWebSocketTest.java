@@ -2,6 +2,7 @@ package dev.aichessarena.websocket;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.MoveQualityDto;
 import dev.aichessarena.dto.PlyQualityDto;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +64,27 @@ class GameWebSocketTest {
         assertEquals(7L, change.get("statusRevision").asLong());
         assertEquals("Rate limited", change.get("detail").asText());
         assertFalse(turn.has("statusRevision"));
+    }
+
+    @Test
+    void statusChangesCarryQueuedResumeAndExplicitlyClearIt() throws Exception {
+        UUID game = gameRepository.addGame();
+        List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        endpoint.onMessage(recordingConnection("spectator", sent), subscribeMessage(game));
+        Instant requestedAt = Instant.parse("2026-11-17T20:00:00Z");
+
+        endpoint.broadcastStatusChange(game, "PAUSED", null, null, 4, BigDecimal.ZERO,
+                "Answer cut off", 7, requestedAt, new RunCapacity(3, 3));
+        endpoint.broadcastStatusChange(game, "IN_PROGRESS", null, null, 4, BigDecimal.ZERO,
+                null, 8, null, null);
+
+        var queued = endpoint.objectMapper.readTree(sent.get(sent.size() - 2));
+        var resumed = endpoint.objectMapper.readTree(sent.getLast());
+        assertEquals(requestedAt.toString(), queued.get("resumeRequestedAt").asText());
+        assertEquals(3, queued.at("/runCapacity/runningGames").asInt());
+        assertEquals(3, queued.at("/runCapacity/maxConcurrentGames").asInt());
+        assertTrue(resumed.get("resumeRequestedAt").isNull());
+        assertFalse(resumed.has("runCapacity"));
     }
 
     @Test

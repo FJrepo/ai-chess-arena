@@ -48,7 +48,7 @@ class GameResourceTest {
         resource.moveRepository = new MoveRepository();
         resource.gameEngineService = engine;
 
-        Response response = resource.startGame(game.id);
+        Response response = resource.startGame(game.id, "false");
 
         assertEquals(200, response.getStatus());
         assertEquals(game.id, engine.startedGameId);

@@ -145,13 +145,23 @@
                           Review
                         </button>
                       } @else if (series.currentGame.status === 'PAUSED') {
-                        <button
-                          mat-flat-button
-                          color="primary"
-                          (click)="battle.emit(series.currentGame)"
-                        >
-                          <mat-icon>play_arrow</mat-icon>
-                          Resume
+                        @if (series.currentGame.resumeRequestedAt) {
+                          <app-queued-resume
+                            [capacity]="series.currentGame.runCapacity ?? runCapacity"
+                            (cancelRequest)="cancelResume.emit(series.currentGame)"
+                          />
+                        } @else {
+                          <button
+                            mat-flat-button
+                            color="primary"
+                            (click)="battle.emit(series.currentGame)"
+                          >
+                            <mat-icon>play_arrow</mat-icon>
+                            Resume
+                          </button>
+                        }
+                        <button mat-button (click)="view.emit(series.currentGame)">
+                          View game
                         </button>
                       } @else {
                         <span class="footer-note"

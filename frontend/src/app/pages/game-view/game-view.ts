@@ -33,12 +33,13 @@ import {
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
 import { ChatPanel } from '../../components/chat-panel/chat-panel';
+import { QueuedResume } from '../../components/queued-resume/queued-resume';
 import {
   GameInfoBar,
   RaiseLimitRequest,
   TruncationEffortChoice,
 } from '../../components/game-info-bar/game-info-bar';
-import { forkJoin, Observable, of, Subscription, switchMap, tap } from 'rxjs';
+import { forkJoin, Observable, of, Subscription, switchMap, tap, timer } from 'rxjs';
 import { deriveCapturedMaterial } from '../../utils/captured-material';
 import { pieceImage, pieceName } from '../../utils/piece-assets';
 import { sortMovesInPlayOrder } from '../../utils/move-order';
@@ -109,6 +110,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
     MoveListComponent,
     ChatPanel,
     GameInfoBar,
+    QueuedResume,
     AdvantageBar,
   ],
   templateUrl: './game-view.html',
@@ -219,6 +221,7 @@ export class GameView implements OnInit, OnDestroy {
   private wsSub?: Subscription;
 
   private reconnectSub?: Subscription;
+  private queueRefreshSub?: Subscription;
   /**
    * Only the latest game load counts: a newer load cancels the older request, and a response from a
    * superseded load is ignored. Live moves that arrive while it is in flight are buffered and merged afterwards.
@@ -487,12 +490,16 @@ export class GameView implements OnInit, OnDestroy {
 
     this.wsSub = this.ws.getMessages(this.gameId).subscribe((msg) => this.handleWsMessage(msg));
     this.reconnectSub = this.ws.reconnected().subscribe(() => this.loadGame());
+    this.queueRefreshSub = timer(15000, 15000).subscribe(() => {
+      if (this.game()?.resumeRequestedAt && !this.loadInFlight) this.loadGame(true);
+    });
   }
 
   ngOnDestroy() {
     this.ws.unsubscribeFromGame(this.gameId);
     this.wsSub?.unsubscribe();
     this.reconnectSub?.unsubscribe();
+    this.queueRefreshSub?.unsubscribe();
     this.loadSub?.unsubscribe();
     this.attemptsSub?.unsubscribe();
     this.pauseSettingsSub?.unsubscribe();
@@ -500,11 +507,15 @@ export class GameView implements OnInit, OnDestroy {
     this.turnState.stopTicker();
   }
 
-  loadGame() {
+  loadGame(queuePoll = false) {
     const generation = ++this.loadGeneration;
-    const settingsGeneration = ++this.settingsGeneration;
-    this.pauseSettingsSub?.unsubscribe();
-    this.refreshingPauseSettings.set(true);
+    const polledRevision = this.knownStatusRevision;
+    if (!queuePoll) {
+      ++this.settingsGeneration;
+      this.pauseSettingsSub?.unsubscribe();
+      this.refreshingPauseSettings.set(true);
+    }
+    const settingsGeneration = this.settingsGeneration;
     this.loadInFlight = true;
     this.loadSub?.unsubscribe();
     this.loadSub = this.api.getGame(this.gameId).subscribe({
@@ -513,6 +524,21 @@ export class GameView implements OnInit, OnDestroy {
           return;
         }
         this.loadInFlight = false;
+        if (
+          queuePoll &&
+          (game.statusRevision == null ||
+            game.statusRevision <= (polledRevision ?? -1) ||
+            game.statusRevision < (this.knownStatusRevision ?? -1))
+        ) {
+          if (game.statusRevision === this.knownStatusRevision) {
+            this.applyResumeSnapshot(game);
+          }
+          this.replayBufferedLiveMessages();
+          return;
+        }
+        if (queuePoll && game.statusRevision !== this.knownStatusRevision) {
+          this.turnState.clearServerTurnState();
+        }
         // Respect navigation while the request was in flight; only a live-following viewer advances.
         const selectedMoveIndex = this.currentMoveIndex();
         const wasAtLatest = this.game() === null || selectedMoveIndex === this.moves().length - 1;
@@ -548,6 +574,10 @@ export class GameView implements OnInit, OnDestroy {
         this.replayBufferedLiveMessages();
         this.loadAttempts();
 
+        if (queuePoll) {
+          if (this.game()?.status === 'PAUSED') this.refreshPauseSettings();
+          return;
+        }
         if (game.tournamentId) {
           this.api.getTournament(game.tournamentId).subscribe({
             next: (tournament) => {
@@ -589,6 +619,7 @@ export class GameView implements OnInit, OnDestroy {
         }
         this.loadInFlight = false;
         this.replayBufferedLiveMessages();
+        if (queuePoll) return;
         this.snackbar.open('Failed to load the game.', 'Dismiss', {
           duration: 4000,
           horizontalPosition: 'right',
@@ -626,6 +657,8 @@ export class GameView implements OnInit, OnDestroy {
       result: previous.result,
       resultReason: previous.resultReason,
       statusDetail: previous.statusDetail ?? null,
+      resumeRequestedAt: previous.resumeRequestedAt,
+      runCapacity: previous.runCapacity,
       completedAt: previous.completedAt ?? loaded.completedAt,
       statusRevision: previous.statusRevision ?? known ?? loaded.statusRevision,
     };
@@ -754,6 +787,11 @@ export class GameView implements OnInit, OnDestroy {
         }
         this.knownStatusRevision = msg.statusRevision;
         const status = msg.status;
+        const previous = this.game();
+        const queueChangedWhilePaused =
+          status === 'PAUSED' &&
+          previous?.status === 'PAUSED' &&
+          (previous.resumeRequestedAt || msg.resumeRequestedAt);
         if (status && isFinishedStatus(status)) this.pendingPromotion.set(null);
         this.game.update((g) =>
           g
@@ -768,6 +806,8 @@ export class GameView implements OnInit, OnDestroy {
                     : null
                   : g.statusDetail,
                 totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
+                resumeRequestedAt: msg.resumeRequestedAt ?? null,
+                runCapacity: msg.runCapacity ?? null,
                 statusRevision: msg.statusRevision ?? g.statusRevision,
                 startedAt:
                   status === 'IN_PROGRESS'
@@ -795,7 +835,10 @@ export class GameView implements OnInit, OnDestroy {
         ) {
           // Result evidence is carried by the game details; reload it and the attempts.
           this.loadGame();
-        } else if (status === 'PAUSED' || (status && isFinishedStatus(status))) {
+        } else if (
+          !queueChangedWhilePaused &&
+          (status === 'PAUSED' || (status && isFinishedStatus(status)))
+        ) {
           if (status === 'PAUSED') {
             this.refreshPauseSettings();
           }
@@ -1043,7 +1086,7 @@ export class GameView implements OnInit, OnDestroy {
       .pipe(
         switchMap(() => {
           if (!effortChoice || !side) {
-            return this.api.startGame(this.gameId);
+            return this.api.startGame(this.gameId, true);
           }
           return this.api
             .updateParticipant(tournamentId, effortChoice.participantId, {
@@ -1060,13 +1103,16 @@ export class GameView implements OnInit, OnDestroy {
                       : { ...game, blackReasoningEffort: asked }
                     : game,
                 );
-                return this.api.startGame(this.gameId);
+                return this.api.startGame(this.gameId, true);
               }),
             );
         }),
       )
       .subscribe({
-        next: () => this.savingLimit.set(false),
+        next: (game) => {
+          this.savingLimit.set(false);
+          this.applyResumeSnapshot(game);
+        },
         error: (err) => {
           this.savingLimit.set(false);
           this.showServerError(err, 'Failed to save the limit and resume the game.');
@@ -1083,10 +1129,46 @@ export class GameView implements OnInit, OnDestroy {
     if (this.savingLimit()) {
       return;
     }
-    this.api.startGame(this.gameId).subscribe({
+    this.api.startGame(this.gameId, true).subscribe({
+      next: (game) => this.applyResumeSnapshot(game),
       error: (err) => {
         this.showServerError(err, 'Failed to resume the game.');
       },
+    });
+  }
+
+  cancelResumeRequest(displayed: Game): void {
+    if (displayed.statusRevision == null) {
+      this.loadGame();
+      return;
+    }
+    this.api.cancelResumeRequest(displayed.id, displayed.statusRevision).subscribe({
+      next: (game) => this.applyResumeSnapshot(game),
+      error: (err) => {
+        this.showServerError(err, 'Failed to cancel the queued resume.');
+        if (err.status === 409) this.loadGame();
+      },
+    });
+  }
+
+  private applyResumeSnapshot(game: Game): void {
+    const current = this.game();
+    if (!current || game?.statusRevision == null) return;
+    if (game.statusRevision === this.knownStatusRevision) {
+      if (current.resumeRequestedAt) this.game.set({ ...current, runCapacity: game.runCapacity });
+      return;
+    }
+    this.handleWsMessage({
+      type: 'gameStatus',
+      gameId: game.id,
+      status: game.status,
+      statusRevision: game.statusRevision,
+      detail: game.statusDetail,
+      result: game.result,
+      resultReason: game.resultReason,
+      totalCostUsd: game.totalCostUsd,
+      resumeRequestedAt: game.resumeRequestedAt,
+      runCapacity: game.runCapacity,
     });
   }
 

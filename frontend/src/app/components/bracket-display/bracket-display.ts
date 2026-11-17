@@ -15,8 +15,9 @@ import {
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { Game } from '../../models/tournament.model';
+import { Game, RunCapacity } from '../../models/tournament.model';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
+import { QueuedResume } from '../queued-resume/queued-resume';
 import { gameStatusLabel } from '../../utils/status-labels';
 
 interface ConnectorPath {
@@ -113,7 +114,7 @@ function isFinished(game: Game): boolean {
 
 @Component({
   selector: 'app-bracket-display',
-  imports: [MatCardModule, MatButtonModule, MatIconModule, ProviderLogoComponent],
+  imports: [MatCardModule, MatButtonModule, MatIconModule, ProviderLogoComponent, QueuedResume],
   templateUrl: './bracket-display.html',
   styleUrl: './bracket-display.scss',
 })
@@ -124,8 +125,10 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
   }
   /** Champion of a completed tournament; shown as the bracket's closing element. */
   @Input() champion: string | null = null;
+  @Input() runCapacity: RunCapacity | null = null;
   @Output() battle = new EventEmitter<Game>();
   @Output() view = new EventEmitter<Game>();
+  @Output() cancelResume = new EventEmitter<Game>();
   @ViewChild('bracketContent') bracketContent?: ElementRef<HTMLElement>;
   @ViewChildren('matchCard', { read: ElementRef }) matchCards?: QueryList<ElementRef<HTMLElement>>;
 

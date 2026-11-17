@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
@@ -19,6 +20,7 @@ import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -382,7 +384,8 @@ class AdjudicationIT {
         List<String> announcements = Collections.synchronizedList(new ArrayList<>());
         QuarkusMock.installMockForType(new GameWebSocket() {
             @Override public void broadcastStatusChange(UUID id, String status, String result, String reason,
-                                                        int totalMoves, BigDecimal cost, String detail, long revision) {
+                                                        int totalMoves, BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 if (!"COMPLETED".equals(status)) return;
                 // A different transaction must already see exactly the state announced after commit.
                 String stored = QuarkusTransaction.requiringNew().call(() -> {

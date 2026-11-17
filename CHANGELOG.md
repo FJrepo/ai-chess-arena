@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Flyway `V23__queued_game_resume.sql` adds nullable `games.resume_requested_at` with no backfill. Rebuild and recreate the backend and frontend to enable queued resumes.
+
+### Added
+
+### Changed
+
+### Fixed
+
+- Resume actions queue while auto-run slots are occupied or reserved. Older requests reserve slots first, and a stopping loop leaves surplus slots available. API clients can opt in with `queueIfFull=true` on `/start`.
+- Cancel queued resumes by revision from the bracket or game view. The bracket keeps newer queue updates when saving run limits, and game polling refreshes the board and move history when a queued game resumes or finishes.
+
 ## [1.7.0] - 2026-11-17
 
 Zero-config start: download two files, start with generated secrets, then connect OpenRouter via OAuth in the app instead of adding a key to `.env`. The Club Scoresheet theme brings a new look and board colours, while analytics are organised into four tabs. Choose a banter level, get a bracket when creating a tournament, and use the more compact setup page (round 3).

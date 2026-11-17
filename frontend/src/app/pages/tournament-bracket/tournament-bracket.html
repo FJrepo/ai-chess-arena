@@ -175,8 +175,8 @@
             </p>
           }
           <p class="run-hint">
-            Paused games need manual attention in the game view after resuming the run. Human games
-            start manually. In-flight answers can exceed the budget.
+            Queued resumes get the next slots. Human games start manually. In-flight answers can
+            exceed the budget.
           </p>
         </mat-card-content>
       </mat-card>
@@ -274,8 +274,13 @@
       <div class="bracket-container">
         <app-bracket-display
           [games]="t.games"
+          [runCapacity]="{
+            runningGames: runningGames(),
+            maxConcurrentGames: t.maxConcurrentGames ?? 2,
+          }"
           [champion]="t.status === 'COMPLETED' ? (t.winnerName ?? null) : null"
           (battle)="startGame($event)"
+          (cancelResume)="cancelResumeRequest($event)"
           (view)="viewGame($event)"
         />
       </div>

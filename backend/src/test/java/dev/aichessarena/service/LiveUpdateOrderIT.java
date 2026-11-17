@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.dto.GameQualitySummaryDto;
 import dev.aichessarena.dto.PlyQualityDto;
 import dev.aichessarena.entity.Game;
@@ -18,6 +19,7 @@ import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -63,7 +65,8 @@ class LiveUpdateOrderIT {
             @Override
             public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
                                               int totalMoves, BigDecimal totalCostUsd, String detail,
-                                              long statusRevision) {
+                                              long statusRevision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 if ("PAUSED".equals(status)) {
                     try {
                         resumeDelivered.await(10, TimeUnit.SECONDS);
@@ -137,7 +140,8 @@ class LiveUpdateOrderIT {
             @Override
             public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
                                               int totalMoves, BigDecimal totalCostUsd, String detail,
-                                              long statusRevision) {
+                                              long statusRevision, Instant resumeRequestedAt,
+                                              RunCapacity capacity) {
                 delivered.add(id.equals(committed) ? "committed " + status : "rolled back " + status);
             }
         }, GameWebSocket.class);
