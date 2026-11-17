@@ -49,6 +49,12 @@ public class GameLifecycleService {
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
+    @Inject
+    TournamentAutoRunService autoRuns;
+
+    @Inject
+    TournamentRunScheduler runScheduler;
+
     /**
      * Moves a WAITING or PAUSED game to IN_PROGRESS under the tournament and game row locks.
      *
@@ -57,6 +63,11 @@ public class GameLifecycleService {
      */
     @Transactional
     public GameDto markGameStarted(UUID gameId) {
+        return markGameStarted(gameId, false);
+    }
+
+    @Transactional
+    public GameDto markGameStarted(UUID gameId, boolean automatic) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null) {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
@@ -65,6 +76,7 @@ public class GameLifecycleService {
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
+        if (autoRuns != null) autoRuns.requireStartAllowed(game, automatic);
         game.status = GameStatus.IN_PROGRESS;
         game.startedAt = game.startedAt != null ? game.startedAt : LocalDateTime.now();
         game.statusDetail = null;
@@ -299,6 +311,11 @@ public class GameLifecycleService {
      * Everything sent is read now, while the game is attached.
      */
     private void announceStatus(Game game, Runnable first, Runnable then) {
+        if (runScheduler != null && game.tournament != null) {
+            UUID tournamentId = game.tournament.id;
+            AfterCommit.run(transactionRegistry, () -> runScheduler.changed(tournamentId));
+        }
+
         UUID gameId = game.id;
         String status = game.status.name();
         String result = game.result != null ? game.result.name() : null;
@@ -339,7 +356,7 @@ public class GameLifecycleService {
         return game;
     }
 
-    private static boolean isTerminal(Game game) {
+    static boolean isTerminal(Game game) {
         return game.status == GameStatus.COMPLETED || game.status == GameStatus.FORFEIT
                 || game.status == GameStatus.CANCELLED;
     }

@@ -13,6 +13,7 @@ import dev.aichessarena.service.AnalyticsService;
 import dev.aichessarena.service.OpeningBookService;
 import dev.aichessarena.service.TournamentCreationService;
 import dev.aichessarena.service.TournamentService;
+import dev.aichessarena.service.TournamentAutoRunService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
@@ -152,6 +153,31 @@ public class TournamentResource {
             return Response.status(404).build();
         }
         return Response.noContent().build();
+    }
+
+    @Inject
+    TournamentAutoRunService autoRuns;
+
+    @POST
+    @Path("/{id}/run")
+    @Transactional
+    public Response run(@PathParam("id") UUID id, JsonNode body) {
+        return Response.ok(DtoMapper.toDto(autoRuns.configure(id, body, true))).build();
+    }
+
+    @PUT
+    @Path("/{id}/run")
+    @Transactional
+    public Response updateRun(@PathParam("id") UUID id, JsonNode body) {
+        return Response.ok(DtoMapper.toDto(autoRuns.configure(id, body, false))).build();
+    }
+
+    @POST
+    @Path("/{id}/run/pause")
+    @Consumes(MediaType.WILDCARD)
+    @Transactional
+    public Response pauseRun(@PathParam("id") UUID id) {
+        return Response.ok(DtoMapper.toDto(autoRuns.pause(id))).build();
     }
 
     @POST

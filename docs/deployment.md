@@ -33,6 +33,14 @@ Docker Engine releases older than 28.0.0 can allow hosts on the same layer-2 net
 - For native development, `make install-stockfish` installs checksum-verified Stockfish 19 for Linux (x86-64 or ARM64) or macOS (universal). An explicit `--version sf_18` selection remains supported on the previously supported platforms.
 - Rebuild/recreate the backend to use the upgraded binary. No migration or backfill is needed; existing evaluations remain unchanged.
 
+## Auto-run migration (V20)
+
+Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend startup and adds tournament run state (`OFF` for every existing tournament), concurrency (default 2), optional budget (null/no cap), and pause reason. Existing game positions, attempts, results and spend remain unchanged; no historical backfill is needed. No bundled third-party software changes.
+
+Rebuild/recreate both backend and frontend to deploy the scheduler, API and bracket controls. Previously running auto-runs pause on every backend restart with **Backend restarted**; interrupted games are paused by GameRecovery. Resume the run from the tournament page, then resume its paused games explicitly. A 10-second safety tick recovers missed scheduling notifications. This remains the single-backend deployment model: row locks serialize starts, but game-loop ownership and startup recovery belong to that backend JVM.
+
+Budget checks use reported tournament spend before each model request and after each recorded attempt. Terminal answers complete and advance before their attempt pauses unfinished games at the cap, including resignation and eligible stored-evaluation adjudication; cancellation remains final. Deploy this fix by rebuilding/recreating both application services. No additional migration or backfill is needed; existing persisted games remain unchanged, including any terminal positions paused by an older version, which still need manual resume after raising/removing the cap. In-flight answers can still add spend after the cap pauses a run. See [Auto-run](how-it-works.md#auto-run) for manual-play boundaries, human games, concurrency reductions and the API contract. Restore the pre-upgrade database backup when rolling back; older versions do not enforce run controls.
+
 ## Opening variety migration (V19)
 
 Back up before upgrading. Flyway V19 adds `tournaments.opening_mode` (Standard by default), its optional Fixed `opening_id`, game opening metadata and `moves.is_book` (false for all existing rows). Existing game positions, moves, results and spend are unchanged; no backfill or external opening-data download is required. The authored book is bundled in the backend resources.

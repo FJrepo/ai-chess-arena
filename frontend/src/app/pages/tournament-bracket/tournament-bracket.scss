@@ -321,3 +321,21 @@
     height: 18px;
   }
 }
+
+.auto-run-panel {
+  margin-bottom: 20px;
+
+  .run-status {
+    font-weight: 600;
+  }
+  .run-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .run-hint {
+    color: var(--mat-sys-on-surface-variant);
+    font-size: 13px;
+  }
+}

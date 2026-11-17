@@ -35,7 +35,8 @@ public final class DtoMapper {
                                 .findFirst()
                                 .orElse(null)
                         : null,
-                t.openingMode.name(), t.openingId
+                t.openingMode.name(), t.openingId,
+                t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd, t.autoRunPauseReason
         );
     }
 

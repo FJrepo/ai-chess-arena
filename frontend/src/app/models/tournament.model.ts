@@ -19,7 +19,16 @@ export interface Opening {
   moves: string[];
 }
 
+export interface TournamentRunSettings {
+  maxConcurrentGames: number;
+  budgetUsd: number | null;
+}
+
 export interface Tournament {
+  autoRunStatus?: 'OFF' | 'RUNNING' | 'PAUSED' | 'FINISHED';
+  maxConcurrentGames?: number;
+  budgetUsd?: number | null;
+  autoRunPauseReason?: string | null;
   /** Champion of a completed tournament. */
   winnerName?: string | null;
   id: string;
