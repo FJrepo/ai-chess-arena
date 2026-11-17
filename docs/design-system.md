@@ -63,8 +63,9 @@ counts and currency. Do not make prose or model names monospace just because the
 a number. Tabular numerals keep columns stable. The body fallback remains readable if fonts
 cannot load.
 
-Table headers must be at least 12.5 px with slight tracking. Secondary text, captions and
-footnotes must be at least 13 px. Use the shared size tokens; never shrink a note to fit.
+Table headers use `--app-table-heading-size` and `--app-table-heading-tracking`; secondary text,
+captions and footnotes use at least `--app-text-secondary-size`. Never shrink a note below these
+tokens to make it fit.
 All text must meet at least 4.5:1 contrast in both themes, including secondary text and text on
 banners, zebra rows or selected states. Do not fade text with opacity.
 

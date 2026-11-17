@@ -392,7 +392,9 @@ app-advantage-bar {
 .material-edge {
   margin-left: auto;
   padding-right: 6px;
-  font: var(--mat-sys-label-large);
+  font-size: var(--mat-sys-label-large-size);
+  font-weight: var(--mat-sys-label-large-weight);
+  line-height: var(--mat-sys-label-large-line-height);
   color: var(--mat-sys-on-surface);
 }
 
