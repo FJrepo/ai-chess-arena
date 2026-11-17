@@ -23,7 +23,7 @@ public final class DtoMapper {
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
                 t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
                 t.banterLevel != null ? t.banterLevel.name() : null,
-                t.resignationAllowed, t.adjudicationEnabled,
+                t.resignationAllowed, t.legalMoveHints, t.adjudicationEnabled,
                 t.maxOutputTokens,
                 apiValue(t.reasoningEffort),
                 t.createdAt, t.updatedAt,
@@ -37,7 +37,10 @@ public final class DtoMapper {
                                 .orElse(null)
                         : null,
                 t.openingMode.name(), t.openingId,
-                t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd, t.autoRunPauseReason
+                t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd, t.autoRunPauseReason,
+                t.creationDrawMode != null ? t.creationDrawMode.name() : null,
+                t.defaultSystemPrompt != null && !t.defaultSystemPrompt.isBlank(),
+                t.budgetUsd == null ? null : t.budgetUsd.toPlainString()
         );
     }
 
@@ -49,7 +52,8 @@ public final class DtoMapper {
                 p.modelId,
                 p.customInstructions,
                 p.seed,
-                apiValue(p.reasoningEffort)
+                apiValue(p.reasoningEffort),
+                p.customSystemPrompt != null && !p.customSystemPrompt.isBlank()
         );
     }
 
@@ -63,6 +67,11 @@ public final class DtoMapper {
     }
 
     public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity) {
+        return toDto(g, includeMoves, runCapacity, null, null);
+    }
+
+    public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity,
+                                List<MoveAttemptDto> attempts, String streamId) {
         List<MoveDto> moves = List.of();
         GameQualitySummaryDto qualitySummary = null;
         ResignationDto resignation = null;
@@ -107,7 +116,11 @@ public final class DtoMapper {
                 g.statusRevision,
                 apiValue(g.requestedReasoningEffort("WHITE")),
                 apiValue(g.requestedReasoningEffort("BLACK")),
-                g.openingId, g.openingName, g.openingEco
+                g.openingId, g.openingName, g.openingEco, g.hasLegalMoveHints(), g.liveRevision, g.activeColor(),
+                g.turnStartedAt, g.turnDeadlineAt,
+                g.turnChatMode != null ? g.turnChatMode.name() : null,
+                g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
+                attempts, streamId
         );
     }
 
@@ -166,7 +179,8 @@ public final class DtoMapper {
                 a.id, a.moveNumber, a.color, a.attemptNumber, a.modelId, a.outcome.name(), a.proposedMove,
                 a.promptTokens, a.completionTokens, a.reasoningTokens, a.costUsd, a.responseTimeMs,
                 a.finishReason, a.errorMessage, a.createdAt, apiValue(a.reasoningEffort),
-                a.effectiveMaxOutputTokens, a.modelMaxCompletionTokens, a.cachedPromptTokens, a.cacheWriteTokens
+                a.effectiveMaxOutputTokens, a.modelMaxCompletionTokens, a.cachedPromptTokens, a.cacheWriteTokens,
+                a.turnStatusRevision
         );
     }
 

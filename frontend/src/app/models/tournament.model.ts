@@ -29,9 +29,15 @@ export interface Tournament {
   autoRunStatus?: 'OFF' | 'RUNNING' | 'PAUSED' | 'FINISHED';
   maxConcurrentGames?: number;
   budgetUsd?: number | null;
+  /** Exact decimal spelling of a non-null budget, for clients that need to preserve cents. */
+  budgetUsdExact?: string;
   autoRunPauseReason?: string | null;
   /** Champion of a completed tournament. */
   winnerName?: string | null;
+  /** Known only for tournaments generated as part of creation. */
+  creationDrawMode?: BracketDrawMode | null;
+  /** A historical full system template that current setup cannot recreate. */
+  legacySystemPrompt?: boolean;
   id: string;
   name: string;
   status: 'CREATED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -57,6 +63,8 @@ export interface Tournament {
   chatMode?: ChatMode;
   /** Null retains the original tone; ignored while chat is Off. */
   banterLevel?: BanterLevel | null;
+  /** Creation-only, defaults to true, including tournaments from older backends. */
+  legalMoveHints?: boolean;
   /**
    * Whether models may resign instead of moving, from their 10th move on (default false). Absent from
    * backends before 1.4.
@@ -91,6 +99,7 @@ export interface Participant {
   modelId: string | null;
   customInstructions: string | null;
   seed: number;
+  legacySystemPrompt?: boolean;
   /** Overrides the tournament's reasoning effort; null or absent uses the tournament's. */
   reasoningEffort?: ReasoningEffort | null;
 }
@@ -100,6 +109,8 @@ export interface Game {
   openingId?: string | null;
   openingName?: string | null;
   openingEco?: string | null;
+  /** Whether AI turn prompts include the legal move list. */
+  legalMoveHints?: boolean;
   id: string;
   tournamentId: string | null;
   whitePlayerName: string | null;
@@ -153,6 +164,14 @@ export interface Game {
    * update that arrives late can be ignored. Absent from older backends.
    */
   statusRevision?: number;
+  liveRevision?: number;
+  streamId?: string | null;
+  activeColor?: 'WHITE' | 'BLACK' | null;
+  turnStartedAt?: string | null;
+  turnDeadlineAt?: string | null;
+  turnChatMode?: ChatMode | null;
+  turnBanterLevel?: BanterLevel | null;
+  attempts?: MoveAttempt[] | null;
   /**
    * The reasoning effort each side asks for (participant override, else the tournament's); null or absent for
    * the model default and human sides. The backend sends the nearest level the model supports.
@@ -213,6 +232,7 @@ export interface GameQualitySummary {
 /** The quality of the move with this move number and color; null when it is not judged. */
 export interface PlyQuality {
   moveNumber: number;
+  moveId?: string | null;
   color: 'WHITE' | 'BLACK';
   quality: MoveQuality | null;
 }
@@ -265,6 +285,8 @@ export interface MoveAttempt {
   color: 'WHITE' | 'BLACK';
   attemptNumber: number;
   modelId: string | null;
+  /** The status revision of the model turn that made this attempt. */
+  turnStatusRevision?: number | null;
   outcome: MoveAttemptOutcome;
   proposedMove: string | null;
   promptTokens: number | null;
@@ -313,6 +335,8 @@ export interface MoveWsMessage {
 export interface EvaluationUpdateWsMessage {
   type: 'evaluationUpdate';
   gameId: string;
+  /** Identifies the exact stored row for games with historical duplicate plies. */
+  moveId?: string;
   moveNumber: number;
   color: 'WHITE' | 'BLACK';
   evaluationCp?: number | null;
@@ -381,7 +405,7 @@ export interface AttemptsUpdatedWsMessage {
   gameId: string;
 }
 
-export type WsMessage =
+export type LegacyGameMessage =
   | MoveWsMessage
   | EvaluationUpdateWsMessage
   | ChatWsMessage
@@ -390,9 +414,40 @@ export type WsMessage =
   | ForfeitWsMessage
   | AttemptsUpdatedWsMessage;
 
+export type GameChange =
+  | GameStatusWsMessage
+  | EvaluationUpdateWsMessage
+  | {
+      type: 'gameState';
+      gameId: string;
+      totalCostUsd: number;
+      activeColor: 'WHITE' | 'BLACK' | null;
+      turnStartedAt: string | null;
+      turnDeadlineAt: string | null;
+      turnChatMode: ChatMode | null;
+      turnBanterLevel: BanterLevel | null;
+    }
+  | { type: 'gameDetailsChanged'; gameId: string }
+  | { type: 'committedMove'; gameId: string; move: Move; pgn: string }
+  | { type: 'committedChat'; gameId: string; chat: ChatMessage }
+  | { type: 'committedAttempt'; gameId: string; attempt: MoveAttempt };
+
+export type WsMessage =
+  | LegacyGameMessage
+  | { type: 'subscribed' | 'heartbeat'; gameId: string; revision: number; streamId?: string }
+  | {
+      type: 'gameRevision';
+      gameId: string;
+      revision: number;
+      streamId?: string;
+      changes: GameChange[];
+    }
+  | { type: 'subscriptionUnavailable'; gameId: string };
+
 export interface WsOutgoingMessage {
-  type: 'subscribe' | 'unsubscribe';
+  type: 'subscribe' | 'unsubscribe' | 'heartbeat';
   gameId: string;
+  protocol?: 2;
 }
 
 export interface CreateTournamentRequest extends Partial<
@@ -400,6 +455,7 @@ export interface CreateTournamentRequest extends Partial<
 > {
   participants?: Array<Partial<Participant>>;
   clientRequestId?: string;
+  runSettings?: { maxConcurrentGames: number; budgetUsd: string | number | null };
   /** Create-only draw choice; API default ORDER preserves seeds, setup defaults to RANDOM. */
   drawMode?: BracketDrawMode;
   /** Only true generates on create (requires >=2); omitted, null or false keeps a draft. */

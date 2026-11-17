@@ -35,16 +35,18 @@ public class AnalyticsResource {
         if (!"true".equalsIgnoreCase(includeForfeits) && !"false".equalsIgnoreCase(includeForfeits)) {
             throw new IllegalArgumentException("includeForfeits must be true or false");
         }
-        return Response.ok(leaderboardService.getLeaderboard(Boolean.parseBoolean(includeForfeits))).build();
+        return Response.ok(leaderboardService.getLeaderboard(Boolean.parseBoolean(includeForfeits),
+                parseLegalMoveHints(uriInfo))).build();
     }
 
     @GET
     @Path("/health")
     public Response getHealth(
             @QueryParam("days") @DefaultValue("30") int days,
-            @QueryParam("tournamentId") UUID tournamentId
+            @QueryParam("tournamentId") UUID tournamentId,
+            @Context UriInfo uriInfo
     ) {
-        return Response.ok(analyticsService.getHealth(days, tournamentId)).build();
+        return Response.ok(analyticsService.getHealth(days, tournamentId, parseLegalMoveHints(uriInfo))).build();
     }
 
     @GET
@@ -53,9 +55,10 @@ public class AnalyticsResource {
             @QueryParam("days") @DefaultValue("30") int days,
             @QueryParam("tournamentId") UUID tournamentId,
             @QueryParam("minGames") @DefaultValue("0") int minGames,
-            @QueryParam("reasoningEffort") String reasoningEffort
+            @Context UriInfo uriInfo
     ) {
-        return Response.ok(analyticsService.getComparison(days, tournamentId, minGames, reasoningEffort)).build();
+        return Response.ok(analyticsService.getComparison(days, tournamentId, minGames,
+                parseLegalMoveHints(uriInfo), parseReasoningEffort(uriInfo))).build();
     }
 
     @GET
@@ -63,9 +66,11 @@ public class AnalyticsResource {
     public Response getReliability(
             @QueryParam("days") @DefaultValue("30") int days,
             @QueryParam("tournamentId") UUID tournamentId,
-            @QueryParam("minGames") @DefaultValue("0") int minGames
+            @QueryParam("minGames") @DefaultValue("0") int minGames,
+            @Context UriInfo uriInfo
     ) {
-        return Response.ok(analyticsService.getReliability(days, tournamentId, minGames)).build();
+        return Response.ok(analyticsService.getReliability(days, tournamentId, minGames,
+                parseLegalMoveHints(uriInfo))).build();
     }
 
     @GET
@@ -73,12 +78,36 @@ public class AnalyticsResource {
     public Response getReliabilityForModel(
             @PathParam("modelId") String modelId,
             @QueryParam("days") @DefaultValue("30") int days,
-            @QueryParam("tournamentId") UUID tournamentId
+            @QueryParam("tournamentId") UUID tournamentId,
+            @Context UriInfo uriInfo
     ) {
-        ModelReliabilityDetailDto detail = analyticsService.getReliabilityForModel(modelId, days, tournamentId);
+        ModelReliabilityDetailDto detail = analyticsService.getReliabilityForModel(modelId, days, tournamentId,
+                parseLegalMoveHints(uriInfo));
         if (detail == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
         return Response.ok(detail).build();
+    }
+
+    private static Boolean parseLegalMoveHints(UriInfo uriInfo) {
+        var values = uriInfo.getQueryParameters().get("legalMoveHints");
+        if (values == null) return null;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("legalMoveHints must be true or false");
+        }
+        return switch (values.getFirst()) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalArgumentException("legalMoveHints must be true or false");
+        };
+    }
+
+    private static String parseReasoningEffort(UriInfo uriInfo) {
+        var values = uriInfo.getQueryParameters().get("reasoningEffort");
+        if (values == null) return null;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("reasoningEffort must be specified at most once");
+        }
+        return values.getFirst();
     }
 }

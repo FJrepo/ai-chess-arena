@@ -73,13 +73,13 @@ class LeaderboardServiceTest {
         service.ratings = new EloRatingService();
         service.moveRepository = new MoveRepository() {
             @Override
-            public List<ReasoningPly> findFinishedReasoningPlies() {
+            public List<ReasoningPly> findRatedReasoningPlies(boolean includeForfeits, Boolean legalMoveHints) {
                 return List.of();
             }
         };
         service.moveAttemptRepository = new MoveAttemptRepository() {
             @Override
-            public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId) {
+            public List<ReasoningAttempt> findRatedReasoningAttempts(boolean includeForfeits, Boolean legalMoveHints) {
                 return List.of(
                         new ReasoningAttempt(finished.id, "WHITE", "a", 1, 1, Outcome.ACCEPTED,
                                 ReasoningEffort.MEDIUM, 4096, 100, true),
@@ -89,7 +89,7 @@ class LeaderboardServiceTest {
         };
         service.repository = new LeaderboardRepository() {
             @Override
-            public List<Game> findFinishedModelGames() {
+            public List<Game> findFinishedModelGames(boolean includeForfeits, Boolean legalMoveHints) {
                 return List.of(finished, waiting);
             }
         };

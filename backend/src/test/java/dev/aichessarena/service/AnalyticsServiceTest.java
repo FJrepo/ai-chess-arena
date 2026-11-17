@@ -27,6 +27,7 @@ import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.MoveAttempt;
+import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.ChatMessageRepository.PlyMessage;
@@ -60,6 +61,43 @@ import org.junit.jupiter.api.Test;
 class AnalyticsServiceTest {
 
     private static final LocalDateTime YESTERDAY = LocalDateTime.now().minusDays(1);
+
+    @Test
+    void hintsFiltersSeparateCachedFinishedSamplesAndOperationalHealth() {
+        Game hinted = finishedGame("model.hinted", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Tournament tournament = new Tournament();
+        tournament.legalMoveHints = false;
+        Game unhinted = finishedGame("model.unhinted", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        unhinted.tournament = tournament;
+        Game active = new Game();
+        active.id = UUID.randomUUID();
+        active.tournament = tournament;
+        active.whitePlayerName = "Alpha";
+        active.blackPlayerName = "Beta";
+        active.createdAt = YESTERDAY;
+        active.status = Game.GameStatus.IN_PROGRESS;
+        AnalyticsService service = service(List.of(hinted, unhinted, active), List.of(), List.of());
+
+        assertEquals(2, service.getComparison(30, null, 0).gamesCount());
+        assertEquals(1, row(service.getComparison(30, null, 0, true), "model.hinted").gamesPlayed());
+        assertEquals(1, row(service.getComparison(30, null, 0, false), "model.unhinted").gamesPlayed());
+        assertEquals(1, service.getComparison(30, null, 0, false).gamesCount());
+        assertEquals(3, service.getHealth(30, null).gamesCount());
+        assertEquals(0, service.getHealth(30, null, true).activeGamesCount());
+        assertEquals(1, service.getHealth(30, null, false).activeGamesCount());
+        assertNotNull(service.getReliabilityForModel("model.hinted", 30, null, true));
+        assertNull(service.getReliabilityForModel("model.hinted", 30, null, false));
+        assertNotNull(service.getReliabilityForModel("model.unhinted", 30, null, false));
+
+        for (Boolean hints : java.util.Arrays.asList(null, true, false)) {
+            assertSame(service.getComparison(30, null, 0, hints), service.getComparison(30, null, 0, hints));
+            assertSame(service.getHealth(30, null, hints), service.getHealth(30, null, hints));
+            assertSame(service.getReliability(30, null, 0, hints), service.getReliability(30, null, 0, hints));
+        }
+        assertEquals(2, service.getComparison(30, null, 0).gamesCount());
+        assertEquals(0, service.getHealth(30, null, true).activeGamesCount());
+        assertEquals(1, service.getHealth(30, null, false).activeGamesCount());
+    }
 
     @Test
     void analyticsCacheBoundsFilterCombinations() {
@@ -98,7 +136,7 @@ class AnalyticsServiceTest {
         var failure = new CompletionException(new IllegalStateException("analytics database unavailable"));
         service.windowLoader.gameRepository = new GameRepository() {
             @Override
-            public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
                 if (tournamentId == null && calls.incrementAndGet() == 1) {
                     loadStarted.countDown();
                     try {
@@ -1310,8 +1348,9 @@ class AnalyticsServiceTest {
         }
 
         @Override
-        public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
             return games.stream()
+                    .filter(game -> legalMoveHints == null || game.hasLegalMoveHints() == legalMoveHints)
                     .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status)
                             ? game.completedAt != null && !game.completedAt.isBefore(cutoff)
                             : !game.createdAt.isBefore(cutoff))
@@ -1353,7 +1392,7 @@ class AnalyticsServiceTest {
         }
 
         @Override
-        public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId) {
+        public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
             reasoningCutoff = cutoff;
             return List.of();
         }

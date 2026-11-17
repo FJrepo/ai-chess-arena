@@ -48,13 +48,18 @@ export class OpenRouterAccess {
     return this.dialog.open(ConnectOpenRouterDialog, { width: '560px', maxWidth: '95vw' });
   }
 
-  withKey(action: () => void) {
+  withKey(action: () => void, isCurrent: () => boolean = () => true) {
     this.client.status().subscribe({
       next: (status) => {
+        if (!isCurrent()) return;
         if (openRouterConnected(status.key)) action();
         else this.openConnectDialog();
       },
-      error: () => this.snackbar.open('Cannot check OpenRouter connection. Try again.', 'Dismiss'),
+      error: () => {
+        if (isCurrent()) {
+          this.snackbar.open('Cannot check OpenRouter connection. Try again.', 'Dismiss');
+        }
+      },
     });
   }
 }

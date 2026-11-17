@@ -25,6 +25,15 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
 
     private static final List<GameStatus> TERMINAL_STATUSES = List.of(GameStatus.COMPLETED, GameStatus.FORFEIT);
 
+    public void beginSnapshotRead() {
+        getEntityManager().createNativeQuery("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY").executeUpdate();
+    }
+
+    public Long liveRevision(UUID id) {
+        return getEntityManager().createQuery("select g.liveRevision from Game g where g.id = :id", Long.class)
+                .setParameter("id", id).getResultStream().findFirst().orElse(null);
+    }
+
     public List<Game> findByTournamentId(UUID tournamentId) {
         return list("tournament.id = ?1", tournamentId);
     }
@@ -77,11 +86,27 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
      *
      * @param tournamentId restricts the window to one tournament, or {@code null} for all tournaments
      */
-    public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
-        return list(
-                "from Game g where " + windowPredicate("g") + tournamentPredicate("g", tournamentId),
-                windowParameters(cutoff, tournamentId)
-        );
+    public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+        String where = windowPredicate("g") + tournamentPredicate("g", tournamentId);
+        Parameters parameters = windowParameters(cutoff, tournamentId);
+        if (legalMoveHints == null) {
+            return list("from Game g where " + where, parameters);
+        }
+        return list("select g from Game g" + hintsJoin(legalMoveHints) + " where " + where
+                + hintsPredicate(legalMoveHints), hintsParameters(parameters, legalMoveHints));
+    }
+
+    // Analytics queries alias the game as g, including those that start from a move or attempt.
+    static String hintsJoin(Boolean legalMoveHints) {
+        return legalMoveHints == null ? "" : " left join g.tournament hintsTournament";
+    }
+
+    static String hintsPredicate(Boolean legalMoveHints) {
+        return legalMoveHints == null ? "" : " and coalesce(hintsTournament.legalMoveHints, true) = :legalMoveHints";
+    }
+
+    static Parameters hintsParameters(Parameters parameters, Boolean legalMoveHints) {
+        return legalMoveHints == null ? parameters : parameters.and("legalMoveHints", legalMoveHints);
     }
 
     /**

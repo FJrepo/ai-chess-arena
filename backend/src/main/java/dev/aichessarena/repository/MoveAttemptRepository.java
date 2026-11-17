@@ -28,20 +28,34 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
         return list("game.id = ?1 order by moveNumber, color desc, createdAt, attemptNumber", gameId);
     }
 
-    /** Request telemetry only, without raw responses. The caller selects eligible finished model sides. */
-    public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId) {
-        String condition = cutoff == null ? "" : " and " + GameRepository.windowPredicate("a.game")
-                + GameRepository.tournamentPredicate("a.game", tournamentId);
+    /** Request telemetry in the comparison window, without loading response bodies. */
+    public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId,
+                                                        Boolean legalMoveHints) {
+        String condition = GameRepository.hintsJoin(legalMoveHints)
+                + " where g.status in :reasoningStatuses and g.completedAt >= :cutoff"
+                + GameRepository.tournamentPredicate("g", tournamentId)
+                + GameRepository.hintsPredicate(legalMoveHints);
+        var parameters = Parameters.with("cutoff", cutoff)
+                .and("reasoningStatuses", List.of(Game.GameStatus.COMPLETED, Game.GameStatus.FORFEIT));
+        if (tournamentId != null) {
+            parameters.and("tournamentId", tournamentId);
+        }
+        return reasoningAttempts(condition, GameRepository.hintsParameters(parameters, legalMoveHints));
+    }
+
+    public List<ReasoningAttempt> findRatedReasoningAttempts(boolean includeForfeits, Boolean legalMoveHints) {
+        return reasoningAttempts(LeaderboardRepository.rankedGameWhere(includeForfeits, legalMoveHints),
+                LeaderboardRepository.rankedGameParameters(includeForfeits, legalMoveHints));
+    }
+
+    private List<ReasoningAttempt> reasoningAttempts(String gameCondition, Parameters parameters) {
         var query = getEntityManager().createQuery(
-                "select a.game.id, a.color, a.modelId, a.moveNumber, a.attemptNumber, a.outcome, "
+                "select g.id, a.color, a.modelId, a.moveNumber, a.attemptNumber, a.outcome, "
                         + "a.reasoningEffort, a.effectiveMaxOutputTokens, a.reasoningTokens, "
                         + "case when a.rawResponse is not null or a.promptTokens is not null then true else false end "
-                        + "from MoveAttempt a where a.modelId is not null and a.game.status in :terminal" + condition
+                        + "from MoveAttempt a join a.game g" + gameCondition + " and a.modelId is not null"
                         + " order by a.createdAt, a.id", Object[].class);
-        query.setParameter("terminal", List.of(Game.GameStatus.COMPLETED, Game.GameStatus.FORFEIT));
-        if (cutoff != null) {
-            GameRepository.windowParameters(cutoff, tournamentId).map().forEach(query::setParameter);
-        }
+        parameters.map().forEach(query::setParameter);
         return query.getResultList().stream()
                 .map(row -> new ReasoningAttempt((UUID) row[0], (String) row[1], (String) row[2],
                         (Integer) row[3], (Integer) row[4], (Outcome) row[5], (ReasoningEffort) row[6],

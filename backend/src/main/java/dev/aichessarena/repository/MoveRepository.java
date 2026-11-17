@@ -1,6 +1,5 @@
 package dev.aichessarena.repository;
 
-import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -25,16 +24,15 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
         return list("game.tournament.id = ?1", tournamentId);
     }
 
-    /** Lightweight plies for all-time reasoning coverage, without game or move payloads. */
-    public List<ReasoningPly> findFinishedReasoningPlies() {
-        return getEntityManager().createQuery("""
-                select m.game.id, m.color, m.modelId, m.moveNumber, m.retryCount, m.isBook, m.isOverride,
+    /** Lightweight plies from the selected rating sample, including potential earlier legacy duplicates. */
+    public List<ReasoningPly> findRatedReasoningPlies(boolean includeForfeits, Boolean legalMoveHints) {
+        var query = getEntityManager().createQuery("""
+                select g.id, m.color, m.modelId, m.moveNumber, m.retryCount, m.isBook, m.isOverride,
                        m.createdAt, m.id
-                from Move m where m.game.status in :terminal and m.game.completedAt is not null
-                and m.game.whiteModelId is not null and m.game.blackModelId is not null
-                """, Object[].class)
-                .setParameter("terminal", List.of(GameStatus.COMPLETED, GameStatus.FORFEIT))
-                .getResultList().stream()
+                from Move m join m.game g""" + LeaderboardRepository.rankedGameWhere(includeForfeits, legalMoveHints),
+                Object[].class);
+        LeaderboardRepository.rankedGameParameters(includeForfeits, legalMoveHints).map().forEach(query::setParameter);
+        return query.getResultList().stream()
                 .map(row -> new ReasoningPly((UUID) row[0], (String) row[1], (String) row[2], (Integer) row[3],
                         (Integer) row[4], (Boolean) row[5], (Boolean) row[6], (LocalDateTime) row[7], (UUID) row[8]))
                 .toList();

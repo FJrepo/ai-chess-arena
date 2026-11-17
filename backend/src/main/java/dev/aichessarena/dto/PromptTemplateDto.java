@@ -15,8 +15,12 @@ public record PromptTemplateDto(
         Map<String, Variant> chatModes,
         Map<String, Variant> resignationChatModes,
         Map<String, Map<String, Variant>> banterChatModes,
-        Map<String, Map<String, Variant>> resignationBanterChatModes
+        Map<String, Map<String, Variant>> resignationBanterChatModes,
+        NoHintsVariant noHints
 ) {
+    /** Additions to the selected generated rules when legal move hints are disabled. */
+    public record NoHintsVariant(String rule, String versionSuffix) {}
+
     /** The system rules of one chat mode, unformatted (with the %s placeholders). */
     public record Variant(String template, String version, String hash) {}
 }

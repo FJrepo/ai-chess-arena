@@ -1,0 +1,2 @@
+ALTER TABLE tournaments ADD COLUMN legal_move_hints BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE moves ALTER COLUMN prompt_version TYPE VARCHAR(96);

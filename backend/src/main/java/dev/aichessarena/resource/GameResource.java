@@ -9,6 +9,7 @@ import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameEngineService;
 import dev.aichessarena.service.GameLifecycleService;
 import dev.aichessarena.service.ExportService;
+import dev.aichessarena.websocket.GameStream;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
@@ -40,12 +41,20 @@ public class GameResource {
     @Inject
     ExportService exports;
 
+    @Inject
+    GameStream gameStream;
+
     @GET
     @Path("/{id}")
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public Response getGame(@PathParam("id") UUID id) {
+        // Match the game revision, board, history and costs at one PostgreSQL MVCC snapshot.
+        // This is the first statement of this read transaction.
+        gameRepository.beginSnapshotRead();
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
-        return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game))).build();
+        return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game),
+                moveAttemptRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList(), gameStream.id())).build();
     }
 
     @POST

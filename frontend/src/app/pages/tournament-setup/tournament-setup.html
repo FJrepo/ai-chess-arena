@@ -1,19 +1,42 @@
 <div class="tournament-setup desktop-page">
   <section class="page-hero-surface page-hero setup-hero">
     <div class="page-title-block">
-      <span class="page-kicker">New bracket</span>
+      <span class="page-kicker">{{ sourceId() ? 'Rematch' : 'New bracket' }}</span>
       <h1 class="page-title">Create Tournament</h1>
       <p class="page-subtitle">
-        Pick OpenRouter models, configure rules, and launch a bracket in minutes.
+        @if (rematchSource(); as source) {
+          Review the lineup and settings from
+          <a [routerLink]="['/tournaments', source.id]">{{ source.name }}</a>.
+        } @else if (!sourceId()) {
+          Pick OpenRouter models, configure rules, and launch a bracket in minutes.
+        }
       </p>
     </div>
   </section>
 
-  <div class="setup-layout">
+  @if (rematchLoadError(); as error) {
+    <div class="openrouter-status warn" role="alert">
+      {{ error }}
+      <button mat-button type="button" (click)="loadRematch()">Retry</button>
+      <a mat-button routerLink="/tournaments">Tournament list</a>
+    </div>
+  } @else if (sourceId() && !rematchSource()) {
+    <p role="status">Loading source tournament…</p>
+  }
+
+  <div
+    class="setup-layout"
+    [attr.inert]="sourceId() && !rematchSource() ? '' : null"
+    [class.rematch-hidden]="sourceId() && !rematchSource()"
+  >
     <div class="setup-main">
       <mat-card class="panel participants-card">
         <mat-card-header>
-          <h2 mat-card-title>Add participant</h2>
+          @if (editingParticipantIndex() === null) {
+            <h2 mat-card-title>Add participant</h2>
+          } @else {
+            <h2 mat-card-title>Edit participant</h2>
+          }
           <mat-card-subtitle
             >Choose an OpenRouter
             <span class="hint-tail"
@@ -124,7 +147,12 @@
           <div class="add-participant">
             <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
               <mat-label>Display Name</mat-label>
-              <input matInput [(ngModel)]="newPlayerName" placeholder="e.g. Claude Opus 4.6" />
+              <input
+                matInput
+                #participantName
+                [(ngModel)]="newPlayerName"
+                placeholder="e.g. Claude Opus 4.6"
+              />
             </mat-form-field>
 
             <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
@@ -188,12 +216,21 @@
                 [disabled]="!canAddParticipant()"
                 [attr.aria-describedby]="canAddParticipant() ? null : 'add-participant-reason'"
               >
-                <mat-icon>add</mat-icon>
-                <span>Add Participant</span>
+                <mat-icon>{{ editingParticipantIndex() === null ? 'add' : 'check' }}</mat-icon>
+                <span>{{
+                  editingParticipantIndex() === null ? 'Add Participant' : 'Save Participant'
+                }}</span>
               </button>
+              @if (editingParticipantIndex() !== null) {
+                <button mat-button type="button" (click)="resetParticipantForm()">
+                  Cancel edit
+                </button>
+              }
               @if (!canAddParticipant()) {
                 <span class="caption" id="add-participant-reason">
-                  @if (newPlayerName.trim().length === 0) {
+                  @if (sourceId() && !rematchSeedAvailable()) {
+                    Remove the participant with the highest seed before adding a new one.
+                  } @else if (newPlayerName.trim().length === 0) {
                     Enter a display name to add a participant.
                   } @else if (newControlType === 'HUMAN') {
                     Only one human player per tournament.
@@ -342,6 +379,17 @@
             </div>
           </section>
 
+          @if (sourceId() && !rematchTimeoutValid()) {
+            <p class="create-error" role="alert">
+              Turn off the move time limit or enter a whole number from 10 to 3600 seconds.
+            </p>
+          }
+          @if (sourceId() && !rematchOutputTokensValid()) {
+            <p class="create-error" role="alert">
+              Enter a whole output-token limit from 128 to 262144.
+            </p>
+          }
+
           <section class="field-group" aria-labelledby="setup-matches-heading">
             <h3 class="group-heading" id="setup-matches-heading">Matches</h3>
             <div class="settings-grid matches-grid">
@@ -349,7 +397,9 @@
                 <mat-label>Bracket draw</mat-label>
                 <mat-select [(ngModel)]="drawMode">
                   <mat-option value="RANDOM">Random draw</mat-option>
-                  <mat-option value="ORDER">In added order</mat-option>
+                  <mat-option value="ORDER">{{
+                    sourceId() ? 'Use lineup seed order' : 'In added order'
+                  }}</mat-option>
                 </mat-select>
               </mat-form-field>
 
@@ -422,6 +472,18 @@
                 </mat-form-field>
               }
             </div>
+            @if (
+              rematchSource()?.openingMode === 'FIXED' &&
+              openingMode() === 'FIXED' &&
+              openingId() &&
+              !openingValid() &&
+              !openingsError()
+            ) {
+              <p class="caption" role="status">
+                The fixed opening {{ openingId() }} is unavailable. Choose a different line or
+                opening mode.
+              </p>
+            }
             @if (openingsError()) {
               <p class="caption" role="status">
                 {{ openingsError() }}
@@ -429,6 +491,43 @@
               </p>
             }
           </section>
+
+          <div class="resignation-row">
+            <mat-slide-toggle [(ngModel)]="legalMoveHints" aria-describedby="legal-move-hints-help">
+              Legal move hints
+            </mat-slide-toggle>
+            <span class="caption resignation-hint" id="legal-move-hints-help">
+              Show models the list of legal moves, including on retries. This setting is fixed at
+              creation.
+            </span>
+          </div>
+
+          @if (rematchSource()) {
+            <section class="field-group" aria-labelledby="setup-run-heading">
+              <h3 class="group-heading" id="setup-run-heading">Auto-run limits</h3>
+              <div class="settings-grid">
+                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                  <mat-label>Maximum concurrent games</mat-label>
+                  <mat-select [(ngModel)]="rematchConcurrency">
+                    @for (option of concurrencyOptions; track option) {
+                      <mat-option [value]="option">{{ option }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+                <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                  <mat-label>Budget cap (USD)</mat-label>
+                  <input matInput type="text" inputmode="decimal" [(ngModel)]="rematchBudget" />
+                  <mat-hint>Leave blank for no cap.</mat-hint>
+                </mat-form-field>
+              </div>
+              @if (!validRunSettings()) {
+                <p class="create-error" role="alert">
+                  Choose a concurrency limit from 1 to 8 and enter a positive budget with up to two
+                  decimal places, or leave it blank.
+                </p>
+              }
+            </section>
+          }
 
           <section class="field-group" aria-labelledby="setup-chat-heading">
             <h3 class="group-heading" id="setup-chat-heading">Chat</h3>
@@ -631,6 +730,11 @@
             <mat-label>Tournament Name</mat-label>
             <input matInput [(ngModel)]="name" placeholder="e.g. AI Chess Championship 2026" />
           </mat-form-field>
+          @if (sourceId() && !rematchNameValid()) {
+            <p class="create-error" role="alert">
+              Use 255 characters or fewer for the tournament name.
+            </p>
+          }
           <ul class="participant-list">
             @for (p of participants(); track $index) {
               <li class="participant-row">
@@ -671,6 +775,16 @@
                     }}</span>
                   }
                 </div>
+                @if (rematchSource()) {
+                  <button
+                    mat-icon-button
+                    type="button"
+                    (click)="editParticipant($index)"
+                    [attr.aria-label]="'Edit ' + p.playerName"
+                  >
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                }
                 <button
                   mat-icon-button
                   class="remove-button"
@@ -685,6 +799,86 @@
             }
           </ul>
         </mat-card-content>
+        @if (rematchSource(); as source) {
+          <mat-card-content class="rematch-review">
+            <h3 class="group-heading">Before you create</h3>
+            <p class="caption">
+              The new bracket starts with auto-run off. Choose Random draw in Matches to reshuffle
+              the lineup.
+            </p>
+            @let changes = rematchChanges(source);
+            @if (changes.length) {
+              <table class="rematch-diff">
+                <caption class="cdk-visually-hidden">
+                  Differences from the source tournament
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Setting</th>
+                    <th scope="col">Original</th>
+                    <th scope="col">New tournament</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (change of changes; track $index) {
+                    <tr>
+                      <th scope="row">{{ change.setting }}</th>
+                      <td>{{ change.before }}</td>
+                      <td>{{ change.after }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @if (rematchWarnings().length) {
+              <div
+                class="openrouter-status warn"
+                role="group"
+                aria-label="Settings that cannot be carried over"
+              >
+                <div>
+                  <p>Review these differences before creating:</p>
+                  <ul>
+                    @for (warning of rematchWarnings(); track $index) {
+                      <li>{{ warning }}</li>
+                    }
+                  </ul>
+                  <mat-slide-toggle [(ngModel)]="rematchAcknowledged">
+                    Use the settings shown in this draft
+                  </mat-slide-toggle>
+                </div>
+              </div>
+            }
+            @if (unavailableModels().length) {
+              <p class="create-error" role="alert">
+                Replace or remove these unavailable models before creating:
+              </p>
+              <ul>
+                @for (participant of unavailableModels(); track $index) {
+                  <li>{{ participant.playerName }} ({{ participant.modelId || 'no model ID' }})</li>
+                }
+              </ul>
+            } @else if (modelsError()) {
+              <p class="create-error" role="alert">
+                Model availability could not be checked.
+                <button mat-button type="button" (click)="loadModels()">Retry model catalog</button>
+              </p>
+            }
+            @if (
+              unavailableModels().length ||
+              createError()?.startsWith('Model is not allowed by backend policy:')
+            ) {
+              <button mat-button type="button" (click)="loadModels()" [disabled]="modelsLoading()">
+                Refresh model catalog
+              </button>
+            }
+            @if (editingParticipantIndex() !== null) {
+              <p class="caption" role="status">
+                Save or cancel the participant edit before creating.
+              </p>
+            }
+          </mat-card-content>
+        }
         <div class="launch-footer">
           @let ready = readiness();
           <ul class="launch-checklist">

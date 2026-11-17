@@ -19,6 +19,17 @@
         >
           Include forfeits
         </mat-slide-toggle>
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Legal move hints</mat-label>
+          <mat-select
+            [value]="legalMoveHints()"
+            (selectionChange)="setLegalMoveHints($event.value)"
+          >
+            <mat-option value="all">On or off</mat-option>
+            <mat-option [value]="true">On only</mat-option>
+            <mat-option [value]="false">Off only</mat-option>
+          </mat-select>
+        </mat-form-field>
         <a mat-button routerLink="/analytics">Move quality &amp; reliability</a>
       </div>
       <p class="explanation">
@@ -40,8 +51,7 @@
       } @else if (response(); as data) {
         @if (data.models.length === 0) {
           <p class="state empty-state">
-            No rated games yet for this forfeit setting. Finish a model-vs-model game to see
-            ratings.
+            No rated games yet for these filters. Finish a model-vs-model game to see ratings.
           </p>
         } @else {
           <div class="table-wrap">
@@ -53,6 +63,10 @@
                 rated games ·
                 {{
                   data.includeForfeits ? 'Including forfeits' : 'Excluding forfeits'
+                }}
+                · Legal move hints
+                {{
+                  legalMoveHints() === 'all' ? 'on or off' : legalMoveHints() ? 'on' : 'off'
                 }}
                 · Recent form: last 50 rated results, each sparkline scaled independently
               </caption>

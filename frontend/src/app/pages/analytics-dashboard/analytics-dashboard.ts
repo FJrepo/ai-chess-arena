@@ -104,6 +104,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
 
   selectedDays = 30;
   selectedTournamentId = '';
+  selectedLegalMoveHints: boolean | 'all' = 'all';
   minGames = 0;
   comparisonSortBy = signal<ComparisonSortOption>('winRate');
 
@@ -446,6 +447,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       .getAnalyticsHealth({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
+        ...(this.selectedLegalMoveHints === 'all'
+          ? {}
+          : { legalMoveHints: this.selectedLegalMoveHints }),
       })
       .pipe(
         timeout(AnalyticsDashboard.REPORT_TIMEOUT_MS),
@@ -470,6 +474,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       .getAnalyticsComparison({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
+        ...(this.selectedLegalMoveHints === 'all'
+          ? {}
+          : { legalMoveHints: this.selectedLegalMoveHints }),
         minGames: Math.max(0, this.minGames),
         ...(this.selectedReasoningEffort && { reasoningEffort: this.selectedReasoningEffort }),
       })
@@ -496,6 +503,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       .getAnalyticsReliability({
         days: this.selectedDays,
         tournamentId: this.currentTournamentFilter(),
+        ...(this.selectedLegalMoveHints === 'all'
+          ? {}
+          : { legalMoveHints: this.selectedLegalMoveHints }),
         minGames: Math.max(0, this.minGames),
       })
       .pipe(

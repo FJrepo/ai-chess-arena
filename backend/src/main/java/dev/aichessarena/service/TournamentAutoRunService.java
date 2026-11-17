@@ -51,10 +51,8 @@ public class TournamentAutoRunService {
             .comparing((Game g) -> g.resumeRequestedAt)
             .thenComparing(g -> g.id);
 
-    @Transactional
-    public Tournament configure(UUID id, JsonNode body, boolean resume) {
-        Tournament t = editable(id);
-        if (resume && keys != null) keys.requireKey();
+    /** Validates and applies settings without changing run state or scheduling games. */
+    public static void applyRunSettings(Tournament t, JsonNode body, boolean allowExactBudget) {
         if (body == null || !body.isObject()) {
             throw new IllegalArgumentException("Request body must be a JSON object");
         }
@@ -75,8 +73,17 @@ public class TournamentAutoRunService {
             if (value.isNull()) {
                 t.budgetUsd = null;
             } else {
-                if (!value.isNumber()) throw new IllegalArgumentException("budgetUsd must be a number or null");
-                BigDecimal budget = value.decimalValue();
+                BigDecimal budget;
+                if (value.isNumber()) {
+                    budget = value.decimalValue();
+                } else if (allowExactBudget && value.isTextual()
+                        && value.asText().matches("[0-9]{1,17}(\\.[0-9]{1,2})?")) {
+                    budget = new BigDecimal(value.asText());
+                } else {
+                    throw new IllegalArgumentException(allowExactBudget
+                            ? "budgetUsd must be a number, an exact decimal string or null"
+                            : "budgetUsd must be a number or null");
+                }
                 if (budget.signum() <= 0 || budget.stripTrailingZeros().scale() > 2
                         || budget.compareTo(new BigDecimal("99999999999999999.99")) > 0) {
                     throw new IllegalArgumentException("budgetUsd must be positive with at most 2 decimal places");
@@ -84,6 +91,13 @@ public class TournamentAutoRunService {
                 t.budgetUsd = budget.setScale(2);
             }
         }
+    }
+
+    @Transactional
+    public Tournament configure(UUID id, JsonNode body, boolean resume) {
+        Tournament t = editable(id);
+        if (resume && keys != null) keys.requireKey();
+        applyRunSettings(t, body, false);
         if (resume) {
             t.autoRunStatus = AutoRunStatus.RUNNING;
             t.autoRunPauseReason = null;

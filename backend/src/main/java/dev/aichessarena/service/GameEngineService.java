@@ -300,7 +300,6 @@ public class GameEngineService {
 
             String sideToMove = chessService.getSideToMove(board);
             int moveNumber = chessService.getMoveNumber(board);
-            List<String> legalMoves = chessService.getLegalMovesAsSan(board);
             String fen = board.getFen();
             // This loop's request context, and with it its Hibernate session, lasts for the whole game, while moves,
             // costs and tournament settings are committed by other transactions. The session would keep returning the
@@ -346,7 +345,7 @@ public class GameEngineService {
                     board,
                     sideToMove,
                     moveNumber,
-                    legalMoves,
+                    game.hasLegalMoveHints() ? chessService.getLegalMovesAsSan(board) : null,
                     modelId,
                     playerName,
                     opponentName,
@@ -366,7 +365,8 @@ public class GameEngineService {
                     prompt.resignationOffered(),
                     // Read with the game this turn, so a changed tournament level or participant override applies now.
                     game.requestedReasoningEffort(sideToMove),
-                    game.tournament != null ? game.tournament.banterLevel : null
+                    game.tournament != null ? game.tournament.banterLevel : null,
+                    game.statusRevision
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

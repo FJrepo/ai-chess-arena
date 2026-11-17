@@ -13,6 +13,8 @@ import java.util.UUID;
  * The original creation's bracket choice is retained on retries. {@code drawMode} defaults to ORDER;
  * {@code generateBracket} generates only when explicitly true, which requires at least two participants.
  * Omitted, null or false preserves draft creation for API clients. These fields are create-only.
+ * Optional {@code runSettings} sets the same limits accepted by the run configuration endpoint without starting it.
+ * On create, {@code budgetUsd} also accepts an exact decimal string so clients can preserve stored cents.
  *
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
@@ -56,7 +58,10 @@ public record CreateTournamentRequest(
         String drawMode,
         @JsonDeserialize(using = StrictBooleanDeserializer.class) Boolean generateBracket,
         // Omitted retains the current tone on update; explicit JSON null clears it. Only strings/null are valid.
-        JsonNode banterLevel
+        JsonNode banterLevel,
+        // Omitted defaults to true on create. Explicit null and other non-boolean values are invalid.
+        JsonNode legalMoveHints,
+        @JsonDeserialize(using = ExactDecimalTreeDeserializer.class) JsonNode runSettings
 ) {
     /** Compatibility constructor for callers without creation-time bracket or banter settings. */
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
@@ -68,7 +73,7 @@ public record CreateTournamentRequest(
                                    String openingMode, String openingId) {
         this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries == null ? null : IntNode.valueOf(maxRetries),
                 matchupBestOf, finalsBestOf, trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null);
+                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null, null, null);
     }
 
     public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,

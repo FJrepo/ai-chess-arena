@@ -4,18 +4,355 @@ import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { MatTooltip } from '@angular/material/tooltip';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
 import { OpenRouterKeyStatus } from '../../services/openrouter-client';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
-import { DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
+import { Tournament, DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('uses the saved lineup and settings for a new tournament only after Create', async () => {
+    const api = createApiService();
+    const create = vi.spyOn(api, 'createTournament');
+    const source = { ...rematchSource(), legalMoveHints: false };
+    const getTournament = vi.fn(() => of(source));
+    Object.assign(api, {
+      getTournament,
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(getTournament).toHaveBeenCalledWith('old');
+    expect(setup.legalMoveHints).toBe(false);
+    expect(create).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Original');
+    expect(setup.readiness().canCreate).toBe(true);
+    setup.create();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Original (rematch)',
+        drawMode: 'ORDER',
+        generateBracket: true,
+        runSettings: { maxConcurrentGames: 5, budgetUsd: '2.5' },
+        moveTimeoutSeconds: 120,
+        maxRetries: 9,
+        openingMode: 'FIXED',
+        openingId: 'ruy-lopez',
+        sharedCustomInstructions: 'Shared',
+        resignationAllowed: true,
+        adjudicationEnabled: true,
+        legalMoveHints: false,
+        reasoningEffort: 'medium',
+        maxOutputTokens: 8192,
+        matchupBestOf: 3,
+        finalsBestOf: 5,
+        chatMode: 'MANDATORY',
+        banterLevel: 'PLAYFUL',
+        drawPolicy: 'HIGHER_SEED_ADVANCES',
+        clientRequestId: expect.any(String),
+        participants: [
+          {
+            playerName: 'Model',
+            controlType: 'AI',
+            modelId: 'a/one',
+            seed: 3,
+            reasoningEffort: 'high',
+            customInstructions: 'My instructions',
+          },
+          {
+            playerName: 'Human',
+            controlType: 'HUMAN',
+            modelId: null,
+            seed: 4,
+            reasoningEffort: null,
+            customInstructions: null,
+          },
+        ],
+      }),
+    );
+    expect(create.mock.calls[0][0]).not.toHaveProperty('autoRunStatus');
+    expect(create.mock.calls[0][0]).not.toHaveProperty('games');
+  });
+
+  it('uses hints on for older sources and previews changes to the new draft', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(setup.legalMoveHints).toBe(true);
+    expect(
+      setup.rematchChanges(source).some((change) => change.setting === 'Legal move hints'),
+    ).toBe(false);
+
+    setup.legalMoveHints = false;
+    fixture.detectChanges();
+    expect(setup.rematchChanges(source)).toContainEqual({
+      setting: 'Legal move hints',
+      before: 'On',
+      after: 'Off',
+    });
+    setup.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(false);
+    expect(source.legalMoveHints).toBeUndefined();
+  });
+
+  it('keeps Create blocked when the rematch source cannot be read', async () => {
+    const api = createApiService();
+    Object.assign(api, { getTournament: () => throwError(() => ({ status: 404 })) });
+    const fixture = await renderSetup(api, 'missing');
+    expect(fixture.nativeElement.textContent).toContain('Source tournament not found');
+    fixture.componentInstance.create();
+    expect(api.createTournamentPayload).toBeNull();
+  });
+
+  it('shows unavailable models and legacy prompts, then creates with the edited draft after acknowledgement', async () => {
+    const api = createApiService();
+    const source = {
+      ...rematchSource(),
+      creationDrawMode: 'RANDOM',
+      legacySystemPrompt: true,
+      openingId: 'removed-line',
+      budgetUsd: 1e17,
+      budgetUsdExact: '99999999999999999.99',
+    };
+    source.participants[1].legacySystemPrompt = true;
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('b/two', 'Two')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Tournament-wide legacy system template');
+    expect(text).toContain('Legacy system template for Model');
+    expect(text).toContain('Random draw');
+    expect(text).toContain('Stored seed order');
+    expect(text).toContain('The fixed opening removed-line is unavailable');
+    expect(text).toContain('Model (a/one)');
+    expect(setup.readiness().canCreate).toBe(false);
+
+    const edit = fixture.nativeElement.querySelector(
+      'button[aria-label="Edit Model"]',
+    ) as HTMLButtonElement;
+    edit.click();
+    fixture.detectChanges();
+    expect(setup.newCustomInstructions).toBe('My instructions');
+    setup.onModelChanged('b/two');
+    setup.newPlayerName = 'New Model';
+    setup.addParticipant();
+    setup.openingMode.set('STANDARD');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.rematch-diff').textContent).toContain('New Model');
+    expect(fixture.nativeElement.querySelector('.rematch-diff').textContent).toContain(
+      'removed-line',
+    );
+    setup.create();
+    expect(api.createTournamentPayload).toBeNull();
+
+    setup.rematchAcknowledged.set(true);
+    expect(setup.readiness().canCreate).toBe(true);
+    setup.create();
+    expect(api.createTournamentPayload).toMatchObject({
+      openingMode: 'STANDARD',
+      runSettings: { maxConcurrentGames: 5, budgetUsd: '99999999999999999.99' },
+      participants: [
+        {
+          playerName: 'New Model',
+          modelId: 'b/two',
+          customInstructions: 'My instructions',
+          seed: 3,
+          reasoningEffort: null,
+        },
+        { playerName: 'Human', seed: 4 },
+      ],
+    });
+    expect(api.createTournamentPayload).not.toHaveProperty('openingId');
+  });
+
+  it('waits for the model catalog and keeps the loaded lineup on failure and retry', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    const getModels = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('offline')))
+      .mockReturnValueOnce(of({ data: [catalogModel('a/one', 'One')] }));
+    Object.assign(api, { getTournament: () => of(source), getModels });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(fixture.nativeElement.textContent).toContain('Model availability could not be checked');
+    expect(setup.readiness().canCreate).toBe(false);
+    setup.loadModels();
+    fixture.detectChanges();
+    expect(getModels).toHaveBeenCalledTimes(2);
+    expect(setup.participants().map((p) => p.modelId)).toEqual(['a/one', null]);
+    expect(setup.readiness().canCreate).toBe(true);
+  });
+
+  it('refreshes a missing model without clearing the draft and submits the trimmed name', async () => {
+    const api = createApiService();
+    const getModels = vi
+      .fn()
+      .mockReturnValueOnce(of({ data: [catalogModel('b/two', 'Two')] }))
+      .mockReturnValueOnce(of({ data: [catalogModel('a/one', 'One')] }));
+    Object.assign(api, { getTournament: () => of(rematchSource()), getModels });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    const normalizedName = 'A'.repeat(255);
+    setup.name = '\u00a0' + normalizedName;
+    const refresh = (
+      Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]
+    ).find((button) => button.textContent.trim() === 'Refresh model catalog');
+    expect(refresh).toBeDefined();
+    refresh?.click();
+    fixture.detectChanges();
+    expect(setup.name).toBe('\u00a0' + normalizedName);
+    expect(setup.unavailableModels()).toHaveLength(0);
+    setup.create();
+    expect(api.createTournamentPayload?.['name']).toBe(normalizedName);
+  });
+
+  it('disowns creation when the same setup route opens a different source', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    const response = new Subject<Tournament>();
+    const params = new Subject<ReturnType<typeof convertToParamMap>>();
+    Object.assign(api, {
+      getTournament: (id: string) => of({ ...source, id, name: id }),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+      createTournament: vi.fn(() => response),
+    });
+    const fixture = await renderSetup(api, 'old', params);
+    const setup = fixture.componentInstance;
+    params.next(convertToParamMap({ sourceId: 'old' }));
+    setup.create();
+    expect(setup.creating()).toBe(true);
+    params.next(convertToParamMap({ sourceId: 'other' }));
+    expect(setup.creating()).toBe(false);
+    response.next(source);
+    expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    expect(setup.name).toBe('other (rematch)');
+  });
+
+  it.each([
+    [0, 1],
+    [21, 20],
+  ])('copies the effective attempt limit from legacy %s', async (stored, effective) => {
+    const api = createApiService();
+    const source = { ...rematchSource(), maxRetries: stored };
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(setup.maxRetries()).toBe(effective);
+    expect(setup.rematchChanges(source)).toContainEqual({
+      setting: 'Attempts per move',
+      before: String(stored),
+      after: String(effective),
+    });
+  });
+
+  it('fits the rematch suffix and blocks invalid edited rules before submitting', async () => {
+    const api = createApiService();
+    const source = { ...rematchSource(), name: '♟️'.repeat(127) + ' ', moveTimeoutSeconds: 0 };
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    expect(Array.from(setup.name)).toHaveLength(255);
+    expect(setup.name).toMatch(/ \(rematch\)$/);
+    expect(setup.readiness().canCreate).toBe(false);
+    const timeout = fixture.nativeElement.querySelector('input[min="10"]') as HTMLInputElement;
+    timeout.value = '120';
+    timeout.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(setup.readiness().canCreate).toBe(true);
+    const tokenLimit = fixture.nativeElement.querySelector('input[min="128"]') as HTMLInputElement;
+    tokenLimit.value = '';
+    tokenLimit.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.create-button').disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Enter a whole output-token limit');
+    setup.create();
+    expect(api.createTournamentPayload).toBeNull();
+  });
+
+  it('preserves maximum stored seeds and blocks appending beyond the integer range', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.participants[0].seed = 2147483647;
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    setup.newPlayerName = 'Extra';
+    setup.onModelChanged('a/one');
+    expect(setup.canAddParticipant()).toBe(false);
+    setup.addParticipant();
+    expect(setup.participants()).toHaveLength(2);
+    expect(setup.readiness().canCreate).toBe(true);
+  });
+
+  it('shows seed changes when an otherwise identical player is re-added', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.participants[0].seed = 30;
+    source.participants[1].seed = 10;
+    Object.assign(api, {
+      getTournament: () => of(source),
+      getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    setup.removeParticipant(1);
+    setup.newControlType = 'HUMAN';
+    setup.newPlayerName = 'Human';
+    setup.addParticipant();
+    fixture.detectChanges();
+    const diff = fixture.nativeElement.querySelector('.rematch-diff').textContent;
+    expect(diff).toContain('Seed 30');
+    expect(diff).toContain('Seed 11');
+  });
+
+  it('refreshes model availability after a create rejection while keeping the edited draft', async () => {
+    const api = createApiService();
+    const getModels = vi
+      .fn()
+      .mockReturnValueOnce(of({ data: [catalogModel('a/one', 'One')] }))
+      .mockReturnValueOnce(of({ data: [catalogModel('b/two', 'Two')] }));
+    Object.assign(api, {
+      getTournament: () => of(rematchSource()),
+      getModels,
+      createTournament: () =>
+        throwError(() => ({
+          status: 400,
+          error: { error: 'Model is not allowed by backend policy: a/one' },
+        })),
+    });
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+    setup.name = 'Edited draft';
+    setup.create();
+    expect(getModels).toHaveBeenCalledTimes(2);
+    expect(setup.name).toBe('Edited draft');
+    expect(setup.unavailableModels()[0].modelId).toBe('a/one');
   });
 
   it.each(['env', 'file', 'ui'] as const)(
@@ -1628,6 +1965,31 @@ describe('TournamentSetup', () => {
     expect(element.querySelector('#chat-mode-hint')?.textContent).toContain('never penalized');
   });
 
+  it('sends the tournament hint setting and previews the matching prompt version', () => {
+    const api = createApiService();
+    api.getPromptTemplate = () =>
+      of({
+        template: 'Rules',
+        version: 'v2',
+        hash: 'hash',
+        noHints: { rule: 'Derive the move from the position.', versionSuffix: '-no-hints' },
+      });
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.ngOnInit();
+    component.name = 'Hints Arena';
+
+    component.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(true);
+    expect(component.systemRulesTemplate).toBe('Rules');
+    expect(component.systemRulesVersion()).toBe('v2');
+
+    component.legalMoveHints = false;
+    component.create();
+    expect(api.createTournamentPayload?.['legalMoveHints']).toBe(false);
+    expect(component.systemRulesTemplate).toBe('Rules\n\nDerive the move from the position.');
+    expect(component.systemRulesVersion()).toBe('v2-no-hints');
+  });
+
   it('sends adjudication off by default, on when chosen, and resets it in presets', () => {
     const api = createApiService();
     const component = new TournamentSetup(api, createRouter(), createRoute());
@@ -2032,6 +2394,45 @@ function createApiService(
   return api as unknown as FakeTournamentSetupApi;
 }
 
+function rematchSource(): Tournament {
+  return {
+    id: 'old',
+    name: 'Original',
+    format: 'SINGLE_ELIMINATION',
+    status: 'COMPLETED',
+    drawPolicy: 'HIGHER_SEED_ADVANCES',
+    sharedCustomInstructions: 'Shared',
+    moveTimeoutSeconds: 120,
+    maxRetries: 9,
+    maxOutputTokens: 8192,
+    matchupBestOf: 3,
+    finalsBestOf: 5,
+    chatMode: 'MANDATORY',
+    banterLevel: 'PLAYFUL',
+    resignationAllowed: true,
+    adjudicationEnabled: true,
+    reasoningEffort: 'medium',
+    openingMode: 'FIXED',
+    openingId: 'ruy-lopez',
+    maxConcurrentGames: 5,
+    budgetUsd: 2.5,
+    autoRunStatus: 'FINISHED',
+    participants: [
+      { id: 'old-p2', playerName: 'Human', controlType: 'HUMAN', seed: 4, modelId: null },
+      {
+        id: 'old-p1',
+        playerName: 'Model',
+        controlType: 'AI',
+        seed: 3,
+        modelId: 'a/one',
+        reasoningEffort: 'high',
+        customInstructions: 'My instructions',
+      },
+    ],
+    games: [{ id: 'old-game' }],
+  } as Tournament;
+}
+
 function createRouter() {
   return {
     navigate: () => Promise.resolve(true),
@@ -2078,7 +2479,12 @@ function pricedParticipant(
   };
 }
 
-async function renderSetup(api = createApiService()) {
+async function renderSetup(
+  api = createApiService(),
+  sourceId?: string,
+  params?: Subject<ReturnType<typeof convertToParamMap>>,
+) {
+  const paramMap = convertToParamMap(sourceId ? { sourceId } : {});
   TestBed.configureTestingModule({
     imports: [TournamentSetup],
     providers: [
@@ -2087,10 +2493,14 @@ async function renderSetup(api = createApiService()) {
         useValue: { keyStatus: () => null, withKey: (action: () => void) => action() },
       },
       { provide: ApiService, useValue: api },
-      { provide: Router, useValue: createRouter() },
-      { provide: ActivatedRoute, useValue: createRoute() },
+      provideRouter([]),
+      {
+        provide: ActivatedRoute,
+        useValue: { ...createRoute(), snapshot: { paramMap }, paramMap: params ?? of(paramMap) },
+      },
     ],
   });
+  vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(TournamentSetup);
   fixture.detectChanges();
   await fixture.whenStable();

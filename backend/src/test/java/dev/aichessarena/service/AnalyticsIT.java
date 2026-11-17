@@ -68,10 +68,15 @@ class AnalyticsIT {
      */
     @BeforeEach
     void seed() {
-        tournamentId = QuarkusTransaction.requiringNew().call(() -> {
+        tournamentId = seed(true);
+    }
+
+    private UUID seed(boolean legalMoveHints) {
+        return QuarkusTransaction.requiringNew().call(() -> {
             Tournament tournament = new Tournament();
             tournament.name = "Analytics " + UUID.randomUUID();
             tournament.status = Tournament.TournamentStatus.IN_PROGRESS;
+            tournament.legalMoveHints = legalMoveHints;
             tournamentRepository.persist(tournament);
             TournamentParticipant alpha = participant(tournament, "Alpha", 0);
             TournamentParticipant beta = participant(tournament, "Beta", 1);
@@ -215,6 +220,37 @@ class AnalyticsIT {
                 .body("models[0].modelId", equalTo("model-beta"))
                 .body("models[0].reasoning.effort", equalTo("default"))
                 .body("models[0].reasoning.reportedMoves", equalTo(0));
+    }
+
+    @Test
+    void effortAndHintFiltersAreIndependentCacheDimensions() {
+        UUID unhintedTournament = seed(false);
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", false)
+                .queryParam("reasoningEffort", "medium").get("/api/analytics/comparison")
+                .then().statusCode(200).body("models", hasSize(1)).body("models[0].modelId", equalTo("model-alpha"));
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", true)
+                .queryParam("reasoningEffort", "medium").get("/api/analytics/comparison")
+                .then().statusCode(200).body("gamesCount", equalTo(0));
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", false)
+                .queryParam("reasoningEffort", "unknown").get("/api/analytics/comparison")
+                .then().statusCode(200).body("models", hasSize(1)).body("models[0].modelId", equalTo("model-beta"));
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", false)
+                .queryParam("reasoningEffort", "medium", "nonsense").get("/api/analytics/comparison")
+                .then().statusCode(400);
+    }
+
+    @Test
+    void analyticsHintsFilterCombinesWithTheTournamentAndRejectsInvalidValues() {
+        given().queryParam("tournamentId", tournamentId).queryParam("legalMoveHints", true)
+                .get("/api/analytics/comparison").then().statusCode(200).body("gamesCount", equalTo(1));
+        given().queryParam("tournamentId", tournamentId).queryParam("legalMoveHints", false)
+                .get("/api/analytics/comparison").then().statusCode(200).body("gamesCount", equalTo(0));
+        given().queryParam("legalMoveHints", "").get("/api/analytics/health").then().statusCode(400);
+        given().queryParam("legalMoveHints", "both").get("/api/analytics/reliability").then().statusCode(400);
     }
 
     @Test

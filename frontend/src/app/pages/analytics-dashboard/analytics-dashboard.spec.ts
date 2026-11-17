@@ -71,6 +71,40 @@ describe('AnalyticsDashboard', () => {
     }
   });
 
+  it('uses the selected hint mode in every analytics request', async () => {
+    const { api, component, harness } = await renderDashboard('');
+    expect(harness.routeNativeElement?.querySelector('.filter-hints')?.textContent).toContain(
+      'On or off',
+    );
+    component.selectedLegalMoveHints = false;
+    component.onCommonFiltersChanged();
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legalMoveHints: false }),
+    );
+    expect(api.getAnalyticsHealth).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legalMoveHints: false }),
+    );
+    expect(api.getAnalyticsReliability).toHaveBeenLastCalledWith(
+      expect.objectContaining({ legalMoveHints: false }),
+    );
+  });
+
+  it('uses singular game counts in Overview for a one-game scope', async () => {
+    const { harness } = await renderDashboard('?tab=overview', {
+      comparison: of({
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        gamesCount: 1,
+        models: [comparisonRow('model.sample', { gamesPlayed: 1, forfeits: 1 })],
+      }),
+    });
+    const element = harness.routeNativeElement!;
+    expect(element.textContent).toContain('1 terminal game in scope.');
+    expect(element.textContent).toContain('across 1 game');
+    expect(element.textContent).not.toContain('1 games');
+  });
+
   it('opens Play quality from the tab query parameter', async () => {
     const { harness, component } = await renderDashboard('?tab=quality');
     expect(component.selectedTabIndex()).toBe(1);
@@ -99,6 +133,7 @@ describe('AnalyticsDashboard', () => {
     };
     api.getAnalyticsComparison.mockReturnValueOnce(of(response));
     component.selectedReasoningEffort = 'medium';
+    component.selectedLegalMoveHints = false;
     component.onCommonFiltersChanged();
     harness.detectChanges();
 
@@ -107,12 +142,18 @@ describe('AnalyticsDashboard', () => {
       tournamentId: null,
       minGames: 0,
       reasoningEffort: 'medium',
+      legalMoveHints: false,
     });
-    expect(api.getAnalyticsHealth).toHaveBeenLastCalledWith({ days: 30, tournamentId: null });
+    expect(api.getAnalyticsHealth).toHaveBeenLastCalledWith({
+      days: 30,
+      tournamentId: null,
+      legalMoveHints: false,
+    });
     expect(api.getAnalyticsReliability).toHaveBeenLastCalledWith({
       days: 30,
       tournamentId: null,
       minGames: 0,
+      legalMoveHints: false,
     });
     const quality = harness.routeNativeElement!.querySelector('.quality-table')!;
     const columns = Array.from(quality.querySelectorAll('th')).map((cell) =>

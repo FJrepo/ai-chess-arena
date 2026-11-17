@@ -72,6 +72,14 @@ describe('ApiService bracket draw', () => {
     expect(received).toHaveBeenCalledWith(response);
   });
 
+  it('retains both analytics filters when legal move hints is false', () => {
+    api.getAnalyticsComparison({ legalMoveHints: false, reasoningEffort: 'high' }).subscribe();
+    const request = http.expectOne(({ url }) => url === '/api/analytics/comparison');
+    expect(request.request.params.get('legalMoveHints')).toBe('false');
+    expect(request.request.params.get('reasoningEffort')).toBe('high');
+    request.flush({ gamesCount: 0, models: [] });
+  });
+
   it('includes forfeits by default on the leaderboard', () => {
     api.getLeaderboard().subscribe();
     http.expectOne('/api/analytics/leaderboard?includeForfeits=true').flush({

@@ -43,6 +43,30 @@ class GameTurnServiceTest {
         assertFalse(fixture.lifecycle.invalidMovesForfeited);
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void hintsSettingAppliesToEveryModelRequestAndLegalityIsStillEnforced(boolean hints) {
+        Fixture fixture = new Fixture(answer(null), answer("%%%"), answer("{\"resign\":true}"),
+                answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
+        Board board = new Board();
+        List<String> legalMoves = hints ? List.of("a3", "h3") : null;
+        var request = new GameTurnService.TurnRequest(UUID.randomUUID(), null, board.getFen(), board, "WHITE", 1,
+                legalMoves, "model-a", "Model A", "Model B", new ArrayList<>(), null, null, true, 5, 30,
+                "v2", "hash-1", BigDecimal.ZERO, () -> true, MAX_OUTPUT_TOKENS, ChatMode.OPTIONAL, ChatMode.OPTIONAL);
+
+        assertTrue(fixture.service.playTurn(request).moveRecorded());
+        assertEquals("e4", fixture.moves.lastRecordedSan);
+        assertEquals(List.of(Outcome.EMPTY_RESPONSE, Outcome.PARSE_FAILURE, Outcome.RESIGN_NOT_ALLOWED,
+                Outcome.ILLEGAL_MOVE, Outcome.ACCEPTED), fixture.attempts.outcomes());
+        assertEquals(5, fixture.openRouter.sentMessages.size());
+        for (var messages : fixture.openRouter.sentMessages) {
+            assertEquals("user", messages.getLast().role());
+            assertTrue(messages.getLast().content().contains(request.fen()));
+            assertEquals(hints, messages.getLast().content().contains("Legal moves: a3, h3"));
+            assertEquals(hints, messages.stream().anyMatch(message -> message.content().contains("Legal moves:")));
+        }
+    }
+
     @Test
     void legacyAttemptLimitForfeitsOnlyAfterOneInvalidAnswer() {
         Fixture fixture = new Fixture(answer("{\"move\":\"Ke2\"}"), VALID_MOVE);
@@ -70,6 +94,24 @@ class GameTurnServiceTest {
         assertTrue(fixture.service.playTurn(request(new ArrayList<>(), 3, 30)).moveRecorded());
         assertEquals("e4", fixture.moves.lastRecordedSan);
         assertEquals("e4#", fixture.attempts.recorded.getFirst().proposedMove());
+    }
+
+    @Test
+    void aTimingCommitCannotUseUpTheModelsFirstAnswerBudget() {
+        Fixture fixture = new Fixture(VALID_MOVE);
+        fixture.service.turnTiming = new GameTurnTiming() {
+            @Override
+            TurnTimes record(GameTurnService.TurnRequest request) {
+                TurnTimes stored = TurnTimes.start(request.moveTimeoutSeconds());
+                fixture.openRouter.clockNanos[0] += Duration.ofSeconds(12).toNanos();
+                return stored;
+            }
+        };
+
+        assertTrue(fixture.service.playTurn(request(new ArrayList<>(), 3, 10)).moveRecorded());
+        assertEquals(1, fixture.openRouter.calls);
+        assertEquals(List.of(10000L), fixture.openRouter.remainingMsAtCall);
+        assertNull(fixture.lifecycle.lastForfeitColor);
     }
 
     @Test

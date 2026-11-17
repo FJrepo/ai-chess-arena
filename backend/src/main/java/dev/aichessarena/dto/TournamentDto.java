@@ -24,6 +24,7 @@ public record TournamentDto(
         @JsonInclude(JsonInclude.Include.ALWAYS) String banterLevel,
         // Models may resign instead of moving from their 10th move on (Tournament.MIN_RESIGNATION_MOVE).
         boolean resignationAllowed,
+        boolean legalMoveHints,
         boolean adjudicationEnabled,
         int maxOutputTokens,
         // OpenRouter reasoning effort for all models (lower case); null (omitted) means each model's default.
@@ -38,5 +39,8 @@ public record TournamentDto(
         String autoRunStatus,
         int maxConcurrentGames,
         @JsonInclude(JsonInclude.Include.ALWAYS) BigDecimal budgetUsd,
-        String autoRunPauseReason
+        String autoRunPauseReason,
+        String creationDrawMode,
+        boolean legacySystemPrompt,
+        String budgetUsdExact
 ) {}
