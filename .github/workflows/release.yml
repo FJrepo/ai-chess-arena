@@ -1,7 +1,7 @@
 name: Release
 
 # Release flow:
-#   1. validate the tag (exact vX.Y.Z, commit reachable from main)
+#   1. validate the tag (exact vX.Y.Z, commit reachable from main, changelog entry exists)
 #   2. run the full CI suite on the tagged commit
 #   3. build amd64 + arm64 indexes and push them only under a sha-<12> candidate tag
 #   4. check both platforms, smoke-test the amd64 stack and run arm64 Stockfish under QEMU
@@ -47,6 +47,15 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::Tagged commit $GITHUB_SHA is not reachable from main."
+            exit 1
+          fi
+
+      - name: Validate changelog entry
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if ! python3 scripts/release_notes.py "$VERSION" CHANGELOG.md > /dev/null; then
+            echo "::error::CHANGELOG.md must contain a release section for $VERSION."
             exit 1
           fi
 
@@ -357,11 +366,47 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build release notes
+        env:
+          VERSION: ${{ needs.validate-tag.outputs.version }}
+          BACKEND_IMAGE: ${{ needs.validate-tag.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.validate-tag.outputs.frontend_image }}
+          BACKEND_DIGEST: ${{ needs.smoke-test.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ needs.smoke-test.outputs.frontend_digest }}
+        run: |
+          python3 scripts/release_notes.py "$VERSION" CHANGELOG.md > release-notes.md
+
+          # Find the closest reachable release tag, ignoring candidates and prereleases.
+          matches=()
+          while IFS= read -r tag; do
+            if [[ "$tag" != "$VERSION" && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              matches+=(--match "$tag")
+            fi
+          done < <(git tag --list 'v*')
+          previous_tag=''
+          if (( ${#matches[@]} )); then
+            previous_tag="$(git describe --tags --abbrev=0 "${matches[@]}" "$VERSION" 2>/dev/null || true)"
+          fi
+
+          {
+            printf '\n## Verification\n\n'
+            printf 'Multi-arch images (linux/amd64 + linux/arm64; index digests verified before promotion):\n'
+            printf -- '- `%s:%s` (`%s`)\n' "$BACKEND_IMAGE" "$VERSION" "$BACKEND_DIGEST"
+            printf -- '- `%s:%s` (`%s`)\n' "$FRONTEND_IMAGE" "$VERSION" "$FRONTEND_DIGEST"
+            if [[ -n "$previous_tag" ]]; then
+              printf '\n[Full Changelog](%s/%s/compare/%s...%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous_tag" "$VERSION"
+            else
+              printf '\n[Full Changelog](%s/%s/commits/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION"
+            fi
+          } >> release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          generate_release_notes: true
-          body: |
-            Multi-arch images (linux/amd64 + linux/arm64; index digests verified before promotion):
-            - `${{ needs.validate-tag.outputs.backend_image }}:${{ needs.validate-tag.outputs.version }}` (`${{ needs.smoke-test.outputs.backend_digest }}`)
-            - `${{ needs.validate-tag.outputs.frontend_image }}:${{ needs.validate-tag.outputs.version }}` (`${{ needs.smoke-test.outputs.frontend_digest }}`)
+          generate_release_notes: false
+          body_path: release-notes.md

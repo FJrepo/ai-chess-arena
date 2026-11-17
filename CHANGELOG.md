@@ -18,6 +18,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Bracket draw choice on the tournament page: Random draw (UI default) or In added order, with stored seeds shown after generation. Random draws shuffle once and reassign seeds so byes and Higher seed advances follow the drawn order. The bracket-generation API accepts an optional `drawMode=ORDER|RANDOM` query parameter and defaults to ORDER for existing clients; repeated generation still returns 409. No migration or backfill is required.
 
 ### Changed
+- Build GitHub Release notes from the released version's CHANGELOG entry: highlights, upgrade notes first, then the remaining sections in changelog order. Verified image index digests and a Full Changelog link appear at the bottom; automatic PR lists are disabled. Tag validation rejects missing changelog entries before CI or image builds.
 - Publish backend and frontend release images as multi-arch OCI indexes for `linux/amd64` and `linux/arm64`, including Apple Silicon. Maven and Angular compile on the native builder; release checks verify both platforms, backend license files and labels per platform, and an emulated ARM64 Stockfish UCI handshake before promoting full indexes to version and `latest` tags.
 - Bundle Stockfish 19 (`sf_19`) using checksum-pinned universal `.tar.gz` assets selected by Docker target architecture (amd64 or arm64). The local installer now defaults to Stockfish 19 on Linux and macOS. Existing stored evaluations are unchanged; no migration or backfill is required.
 

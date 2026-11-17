@@ -202,12 +202,14 @@ docker compose -f docker-compose.prod.yml exec backend wget -qO- http://localhos
 ```
 
 ## Release Publishing Notes
+GitHub Release notes come from the tagged version's section in [CHANGELOG.md](../CHANGELOG.md), extracted by `python3 scripts/release_notes.py vX.Y.Z CHANGELOG.md`. The introduction becomes Highlights, Upgrade notes comes first, and other sections retain changelog order. The workflow appends Verification with both image index digests and a Full Changelog comparison to the closest reachable previous `vX.Y.Z` tag (or the tagged commit history for the first release); it does not generate a PR list. A missing version entry fails tag validation before CI, builds or promotion.
+
 - The release workflow runs in this order, and any failure stops it before user-facing tags change:
-  1. validates the tag (exact `vX.Y.Z`, commit reachable from `main`)
+  1. validates the tag (exact `vX.Y.Z`, commit reachable from `main`, matching changelog entry)
   2. runs the full CI suite on the tagged commit
   3. builds both images for `linux/amd64,linux/arm64` and pushes OCI indexes only as `sha-<12-character-commit>` candidates
   4. verifies both platforms in both indexes, checks backend license files and labels per platform, runs the ARM64 Stockfish UCI handshake under QEMU, and starts the amd64 `docker-compose.prod.yml` stack to check health, the frontend, and the proxied API
-  5. copies both verified full indexes to `<tag>` and `latest`, then creates the GitHub Release with index digest lines
+  5. copies both verified full indexes to `<tag>` and `latest`, then creates the GitHub Release with changelog notes and index digest lines
 - Published tags:
   - `ghcr.io/<owner>/chess-backend:<tag>` and `:latest`
   - `ghcr.io/<owner>/chess-frontend:<tag>` and `:latest`
