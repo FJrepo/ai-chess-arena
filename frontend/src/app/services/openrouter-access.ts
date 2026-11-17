@@ -4,6 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { OpenRouterSettings } from '../components/openrouter-settings/openrouter-settings';
 import { OpenRouterClient } from './openrouter-client';
+import { openRouterConnected } from '../utils/openrouter-status';
 
 @Component({
   selector: 'app-connect-openrouter-dialog',
@@ -37,7 +38,7 @@ export class OpenRouterAccess {
   withKey(action: () => void) {
     this.client.status().subscribe({
       next: (status) => {
-        if (status.key.source !== 'none') action();
+        if (openRouterConnected(status.key)) action();
         else this.dialog.open(ConnectOpenRouterDialog, { width: '560px', maxWidth: '95vw' });
       },
       error: () => this.snackbar.open('Cannot check OpenRouter connection. Try again.', 'Dismiss'),

@@ -1,11 +1,12 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { Observable, finalize } from 'rxjs';
 import { OpenRouterClient, OpenRouterStatus } from '../../services/openrouter-client';
+import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 
 @Component({
   selector: 'app-openrouter-settings',
@@ -14,6 +15,8 @@ import { OpenRouterClient, OpenRouterStatus } from '../../services/openrouter-cl
 })
 export class OpenRouterSettings implements OnInit {
   status = signal<OpenRouterStatus | null>(null);
+  connected = computed(() => openRouterConnected(this.status()?.key));
+  validation = computed(() => openRouterValidation(this.status()?.key));
   error = signal<string | null>(null);
   busy = signal(false);
   manualKey = '';

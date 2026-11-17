@@ -15,6 +15,7 @@ import { ApiService, SystemStatusResponse } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
 import { finalize } from 'rxjs';
 import { tournamentStatusLabel } from '../../utils/status-labels';
+import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 
 @Component({
   selector: 'app-tournament-list',
@@ -71,8 +72,13 @@ export class TournamentList implements OnInit {
   statusFilter = signal<'ALL' | Tournament['status']>('ALL');
   bestOfFilter = signal<'ALL' | Tournament['matchupBestOf']>('ALL');
   sortBy = signal<'newest' | 'oldest' | 'participants' | 'games' | 'name'>('newest');
+  openRouterConnected = computed(() => openRouterConnected(this.systemStatus()?.key));
+  openRouterValidation = computed(() => openRouterValidation(this.systemStatus()?.key));
   onboardingReady = computed(
-    () => this.systemStatus()?.openRouterValid === true && this.systemStatusError() === null,
+    () =>
+      this.openRouterConnected() &&
+      this.openRouterValidation() !== 'invalid' &&
+      this.systemStatusError() === null,
   );
   onboardingCards = computed(() => this.starterPresets);
 
@@ -205,10 +211,14 @@ export class TournamentList implements OnInit {
     if (this.systemStatusError()) {
       return 'System readiness could not be verified yet. Open the System page before launching a tournament.';
     }
+    if (!this.systemStatus()) return 'OpenRouter connection status is unknown.';
     if (this.onboardingReady()) {
       return 'OpenRouter is configured and the stack is ready for a first tournament.';
     }
-    return 'The stack is up, but provider access still needs attention before a tournament can start.';
+    if (this.openRouterValidation() === 'invalid') {
+      return 'OpenRouter key failed its last validation. Test or replace it in System settings.';
+    }
+    return 'Connect OpenRouter when you are ready to create or run a tournament.';
   }
 
   /** Separate so specs can answer the browser confirmation. */

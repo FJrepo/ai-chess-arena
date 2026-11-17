@@ -96,12 +96,14 @@
           <p>{{ onboardingSummary() }}</p>
 
           <div class="onboarding-chip-row">
-            <mat-chip [highlighted]="systemStatus()?.openRouterValid === true">
+            <mat-chip [highlighted]="openRouterConnected()">
               OpenRouter
-              @if (systemStatus()?.openRouterValid === true) {
-                ready
+              @if (openRouterConnected()) {
+                connected
+              } @else if (systemStatus()) {
+                not connected
               } @else {
-                check required
+                status unknown
               }
             </mat-chip>
             <mat-chip [highlighted]="systemStatus()?.stockfishAvailable === true">

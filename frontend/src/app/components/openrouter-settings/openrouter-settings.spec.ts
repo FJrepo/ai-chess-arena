@@ -18,6 +18,46 @@ function client() {
 }
 
 describe('OpenRouter settings', () => {
+  it('shows an untested env key as connected even when its suffix is hidden', () => {
+    const api = client();
+    api.status.mockReturnValue(
+      of({
+        ...status,
+        key: { source: 'env', maskedSuffix: null, lastValidatedAt: null, validation: 'unknown' },
+      }),
+    );
+    TestBed.configureTestingModule({ providers: [{ provide: OpenRouterClient, useValue: api }] });
+    const fixture = TestBed.createComponent(OpenRouterSettings);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Connected');
+    expect(fixture.nativeElement.textContent).toContain('Validation: unknown');
+    expect(fixture.nativeElement.textContent).not.toContain('Not connected');
+    expect(fixture.nativeElement.textContent).not.toContain('Connect OpenRouter');
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('shows an invalid-key hint only for a failed validation, keeping the key connected', () => {
+    const api = client();
+    api.status.mockReturnValue(
+      of({ ...status, key: { ...status.key, source: 'env', validation: 'invalid' } }),
+    );
+    TestBed.configureTestingModule({ providers: [{ provide: OpenRouterClient, useValue: api }] });
+    const fixture = TestBed.createComponent(OpenRouterSettings);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain(
+      'failed its last validation',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain('Not connected');
+    expect(fixture.nativeElement.textContent).not.toContain('Connect OpenRouter');
+    fixture.componentInstance.status.set({
+      ...status,
+      key: { ...status.key, source: 'env', validation: 'unavailable' },
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Validation: unknown');
+  });
+
   it('clears manual input immediately on both success and validation failure', () => {
     const api = client();
     const component = new OpenRouterSettings(api as unknown as OpenRouterClient);

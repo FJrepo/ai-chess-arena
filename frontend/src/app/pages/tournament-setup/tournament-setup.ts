@@ -1,4 +1,6 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
+import { OpenRouterKeyStatus } from '../../services/openrouter-client';
+import { openRouterConnected, openRouterValidation } from '../../utils/openrouter-status';
 import { CurrencyPipe } from '@angular/common';
 import {
   AfterViewInit,
@@ -285,7 +287,11 @@ Your opponent is %s (%s).`;
   featuredProviders = signal<string[]>([]);
   modelsLoading = signal(false);
   modelsError = signal<string | null>(null);
-  openRouterReady = signal<boolean | null>(null);
+  openRouterKey = signal<OpenRouterKeyStatus | null>(null);
+  openRouterReady = computed(() =>
+    this.openRouterKey() === null ? null : openRouterConnected(this.openRouterKey()),
+  );
+  openRouterValidation = computed(() => openRouterValidation(this.openRouterKey()));
   promptTemplateVersion = signal<string | null>(null);
   promptTemplateLoadError = signal<string | null>(null);
   drawPolicyOptions: Array<{ value: Tournament['drawPolicy']; label: string }> = [
@@ -382,8 +388,8 @@ Your opponent is %s (%s).`;
 
   private loadOpenRouterStatus(): void {
     this.api.checkOpenRouterStatus().subscribe({
-      next: (status) => this.openRouterReady.set(status.valid),
-      error: () => this.openRouterReady.set(false),
+      next: (status) => this.openRouterKey.set(status.key),
+      error: () => this.openRouterKey.set(null),
     });
   }
 

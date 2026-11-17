@@ -41,6 +41,14 @@
               <mat-icon>error</mat-icon>
               <span>Connect OpenRouter when you are ready to create or run a tournament.</span>
             </div>
+          } @else if (openRouterValidation() === 'invalid') {
+            <div class="openrouter-status warn" role="alert">
+              <mat-icon>warning</mat-icon>
+              <span
+                >OpenRouter key failed its last validation. Test or replace it in System
+                settings.</span
+              >
+            </div>
           } @else if (modelsError()) {
             <div class="openrouter-status warn" role="alert">
               <mat-icon>warning</mat-icon>

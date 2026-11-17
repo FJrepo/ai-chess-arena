@@ -48,6 +48,31 @@ describe('OpenRouter action prompts', () => {
     expect(dialog.open).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['env', 'file', 'ui'] as const)(
+    'allows actions with an untested %s key without opening a connection prompt',
+    (source) => {
+      const { access, dialog } = harness({
+        ...missing,
+        key: { ...missing.key, source, validation: 'unknown' },
+      });
+      const action = vi.fn();
+      access.withKey(action);
+      expect(action).toHaveBeenCalledOnce();
+      expect(dialog.open).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not prompt connection for a present key whose last validation failed', () => {
+    const { access, dialog } = harness({
+      ...missing,
+      key: { ...missing.key, source: 'env', validation: 'invalid' },
+    });
+    const action = vi.fn();
+    access.withKey(action);
+    expect(action).toHaveBeenCalledOnce();
+    expect(dialog.open).not.toHaveBeenCalled();
+  });
+
   it('fails closed when connection status cannot be loaded', () => {
     const { access, client, snackbar } = harness();
     client.status.mockReturnValue(throwError(() => new Error('offline')));

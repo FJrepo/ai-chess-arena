@@ -16,7 +16,7 @@ import {
 import { OpenRouterModelsResponse } from '../models/openrouter.model';
 import { LeaderboardResponse } from '../models/leaderboard.model';
 import { ReasoningEffort } from '../utils/reasoning-effort';
-import { OpenRouterStatus } from './openrouter-client';
+import { OpenRouterKeyStatus } from './openrouter-client';
 import {
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
@@ -44,14 +44,16 @@ export interface PromptTemplateResponse {
 }
 
 export interface OpenRouterStatusResponse {
+  /** Legacy validation-only flag. False also includes untested/unavailable; use key.source for connection. */
   valid: boolean;
-  key: OpenRouterStatus['key'];
+  key: OpenRouterKeyStatus;
 }
 
 export interface SystemStatusResponse {
   backendVersion: string;
+  /** Legacy validation-only flag; use key.source for connection and key.validation for the last check. */
   openRouterValid: boolean;
-  key: OpenRouterStatus['key'];
+  key: OpenRouterKeyStatus;
   stockfishAvailable: boolean;
   stockfishReason: string | null;
   checkedAt: string;

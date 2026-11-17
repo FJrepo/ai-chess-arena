@@ -8,6 +8,7 @@ import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
+import { OpenRouterKeyStatus } from '../../services/openrouter-client';
 import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
@@ -15,6 +16,75 @@ describe('TournamentSetup', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it.each(['env', 'file', 'ui'] as const)(
+    'shows no connection or invalid-key warning for an untested %s key',
+    async (source) => {
+      const fixture = await renderSetup(
+        createStatusApi({
+          source,
+          maskedSuffix: null,
+          lastValidatedAt: null,
+          validation: 'unknown',
+        }),
+      );
+      expect(fixture.componentInstance.openRouterReady()).toBe(true);
+      expect(fixture.componentInstance.openRouterValidation()).toBe('unknown');
+      expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
+    },
+  );
+
+  it('prompts connection only when the status confirms there is no key', async () => {
+    const fixture = await renderSetup(
+      createStatusApi({
+        source: 'none',
+        maskedSuffix: null,
+        lastValidatedAt: null,
+        validation: 'none',
+      }),
+    );
+    expect(fixture.componentInstance.openRouterReady()).toBe(false);
+    const alert = fixture.nativeElement.querySelector('.openrouter-status[role="alert"]');
+    expect(alert.textContent).toContain('Connect OpenRouter');
+    expect(alert.textContent).not.toContain('failed its last validation');
+  });
+
+  it('shows an invalid-key hint while keeping a failed key connected', async () => {
+    const fixture = await renderSetup(
+      createStatusApi({
+        source: 'env',
+        maskedSuffix: '••••-key',
+        lastValidatedAt: '2026-03-06T18:00:00Z',
+        validation: 'invalid',
+      }),
+    );
+    expect(fixture.componentInstance.openRouterReady()).toBe(true);
+    const alert = fixture.nativeElement.querySelector('.openrouter-status[role="alert"]');
+    expect(alert.textContent).toContain('failed its last validation');
+    expect(alert.textContent).not.toContain('Connect OpenRouter');
+  });
+
+  it('does not warn about an invalid or missing key when a check was unavailable', async () => {
+    const fixture = await renderSetup(
+      createStatusApi({
+        source: 'file',
+        maskedSuffix: '••••-key',
+        lastValidatedAt: '2026-03-06T18:00:00Z',
+        validation: 'unavailable',
+      }),
+    );
+    expect(fixture.componentInstance.openRouterReady()).toBe(true);
+    expect(fixture.componentInstance.openRouterValidation()).toBe('unknown');
+    expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
+  });
+
+  it('does not mistake a failed status fetch for a missing key', async () => {
+    const api = createStatusApi();
+    vi.spyOn(api, 'checkOpenRouterStatus').mockReturnValue(throwError(() => new Error('offline')));
+    const fixture = await renderSetup(api);
+    expect(fixture.componentInstance.openRouterReady()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.openrouter-status[role="alert"]')).toBeNull();
   });
 
   it('sticks only while the measured aside fits and cleans up observation on destroy', async () => {
@@ -1709,7 +1779,34 @@ type FakeTournamentSetupApi = ApiService & {
   createTournamentPayload: Record<string, unknown> | null;
 };
 
-function createApiService(): FakeTournamentSetupApi {
+function createStatusApi(
+  key: OpenRouterKeyStatus = {
+    source: 'ui',
+    maskedSuffix: '••••-key',
+    lastValidatedAt: null,
+    validation: 'unknown',
+  },
+): FakeTournamentSetupApi {
+  const api = createApiService(key);
+  vi.spyOn(api, 'getModels').mockReturnValue(
+    of({
+      data: [catalogModel('acme/model', 'Fixture model')],
+      totalMatched: 1,
+      featuredCount: 0,
+      error: null,
+    }),
+  );
+  return api;
+}
+
+function createApiService(
+  key: OpenRouterKeyStatus = {
+    source: 'ui',
+    maskedSuffix: '••••-key',
+    lastValidatedAt: null,
+    validation: 'valid',
+  },
+): FakeTournamentSetupApi {
   const api = {
     addedParticipants: [] as Array<Record<string, unknown>>,
     createTournamentPayload: null as Record<string, unknown> | null,
@@ -1723,7 +1820,7 @@ function createApiService(): FakeTournamentSetupApi {
         },
       ]),
     getPromptTemplate: () => of({ template: 'Rules', version: 'v2', hash: 'hash' }),
-    checkOpenRouterStatus: () => of({ valid: true }),
+    checkOpenRouterStatus: () => of({ valid: key.validation === 'valid', key }),
     getModels: () => of({ data: [], totalMatched: 0, featuredCount: 0, error: null }),
     createTournament(payload: Record<string, unknown>) {
       api.createTournamentPayload = payload;

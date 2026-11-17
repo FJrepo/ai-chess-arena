@@ -40,15 +40,29 @@ describe('SystemStatus', () => {
     ).toBe('Eval unavailable');
   });
 
-  it('shows an untested configured key as unknown without claiming it is invalid', () => {
+  it('shows an untested env key as connected without a validation warning', () => {
     const status = healthyStatus();
     status.openRouterValid = false;
-    status.key = { ...status.key, validation: 'unknown', lastValidatedAt: null };
+    status.key = { ...status.key, source: 'env', validation: 'unknown', lastValidatedAt: null };
     const component = new SystemStatus(createApiService(() => of(status)));
     component.refresh();
-    expect(component.openRouterTone()).toBe('unknown');
-    expect(component.openRouterSummary()).toContain('has not been checked');
-    expect(component.openRouterSummary()).toContain('Test key');
+    expect(component.openRouterTone()).toBe('healthy');
+    expect(component.openRouterSummary()).toContain('connected');
+    expect(component.openRouterSummary()).toContain('has not been tested yet');
+    expect(component.openRouterSummary()).not.toContain('Connect OpenRouter');
+    expect(component.openRouterSummary()).not.toContain('failed');
+  });
+
+  it('keeps an unavailable check separate from an invalid key', () => {
+    const status = healthyStatus();
+    status.openRouterValid = false;
+    status.key = { ...status.key, validation: 'unavailable' };
+    const component = new SystemStatus(createApiService(() => of(status)));
+    component.refresh();
+    expect(component.openRouterTone()).toBe('healthy');
+    expect(component.openRouterSummary()).toContain('validation is unknown');
+    expect(component.openRouterSummary()).not.toContain('invalid');
+    expect(component.openRouterSummary()).not.toContain('Connect OpenRouter');
   });
 
   it('reports no key as needing a connection', () => {

@@ -27,6 +27,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - New production installs need no `DB_PASSWORD`; image overrides remain optional in release assets. Quick starts wait for healthy services with `docker compose up -d --wait`. Compose accepts an empty OpenRouter setting; connect in System after startup, or use an operator env value/file.
 
 ### Fixed
+- Count untested env/file/UI OpenRouter keys as connected in setup, onboarding and settings after restart. Keep validation separate as valid/invalid/unknown; only missing keys prompt connection, and only a failed validation shows an invalid-key hint. Passive API legacy booleans retain their validation-only meaning. No migration or backfill; persisted data is unchanged.
 - Keep legacy OpenRouter/system status GETs passive, reporting masked metadata and the last stored validation result; only an authorized Test key POST performs an explicit test. Honor Quarkus property precedence without reading losing secret files, and accept nginx-valid underscore host names for credential routes.
 - Remove unsupported TLS reverse-proxy claim instructions; `APP_ORIGIN` only changes the logged HTTP setup link. Keep network exposure unsupported.
 - Replace key-like test fixtures, ignore the exact historical false positive, and compare creation-retry participant DTOs independently of unspecified response order.

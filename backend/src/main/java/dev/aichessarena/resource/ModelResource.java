@@ -118,8 +118,10 @@ public class ModelResource {
         return Response.ok(dto).header("Cache-Control", "no-store").build();
     }
 
+    /** Legacy valid flag describes validation only; key.source determines connection, even when untested. */
     public record OpenRouterStatusResponse(boolean valid, OpenRouterKeyStore.Status key) {}
 
+    /** openRouterValid is validation-only; false also includes unknown/unavailable checks, not just invalid keys. */
     public record SystemStatusResponse(
             String backendVersion,
             boolean openRouterValid,

@@ -2,13 +2,17 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, finalize, shareReplay } from 'rxjs';
 
+export interface OpenRouterKeyStatus {
+  /** Key presence determines connection; validation is independent. */
+  source: 'env' | 'file' | 'ui' | 'none';
+  maskedSuffix: string | null;
+  lastValidatedAt: string | null;
+  /** Raw last-check outcome; unavailable/none carry unknown validity. */
+  validation: 'none' | 'unknown' | 'valid' | 'invalid' | 'unavailable';
+}
+
 export interface OpenRouterStatus {
-  key: {
-    source: 'env' | 'file' | 'ui' | 'none';
-    maskedSuffix: string | null;
-    lastValidatedAt: string | null;
-    validation: 'none' | 'unknown' | 'valid' | 'invalid' | 'unavailable';
-  };
+  key: OpenRouterKeyStatus;
   canManage: boolean;
 }
 
