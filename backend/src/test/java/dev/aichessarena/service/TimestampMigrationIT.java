@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -31,6 +32,7 @@ class TimestampMigrationIT {
     private static final String TOURNAMENT = "00000000-0000-0000-0000-0000000000a1";
     private static final String GAME = "00000000-0000-0000-0000-0000000000b1";
     private static final String WAITING_GAME = "00000000-0000-0000-0000-0000000000b2";
+    private static final String REBUILT_INDEX = "idx_practice_games_created";
 
     @ConfigProperty(name = "quarkus.datasource.jdbc.url")
     String jdbcUrl;
@@ -69,10 +71,20 @@ class TimestampMigrationIT {
                         """.formatted(TOURNAMENT, GAME, WAITING_GAME));
             }
 
+            Map<String, Long> filesBefore = relationFiles(url);
+
             // A source install run with a CET JVM: the migration session uses Europe/Vienna, not UTC.
             TimeZone.setDefault(TimeZone.getTimeZone("Europe/Vienna"));
             flyway(url, "latest").migrate();
             TimeZone.setDefault(original);
+
+            // A rewrite allocates a new file and holds an exclusive lock while copying. No table is rewritten; only
+            // the one index keyed on a converted column (practice games by creation time, a partial index) is rebuilt.
+            Map<String, Long> filesAfter = relationFiles(url);
+            assertNotEquals(filesBefore.get(REBUILT_INDEX), filesAfter.get(REBUILT_INDEX));
+            filesBefore.remove(REBUILT_INDEX);
+            filesAfter.remove(REBUILT_INDEX);
+            assertEquals(filesBefore, filesAfter, "V34 must not rewrite tables or rebuild other indexes");
 
             try (Connection connection = DriverManager.getConnection(url, username, password);
                  Statement statement = connection.createStatement()) {
@@ -97,6 +109,7 @@ class TimestampMigrationIT {
                     assertTrue(rows.next() && rows.getBoolean(1), "missing timestamps stay null");
                 }
             }
+            assertDefaultsStoreTheTransactionInstant(url);
         } finally {
             TimeZone.setDefault(original);
             try (Connection admin = DriverManager.getConnection(jdbcUrl, username, password);
@@ -104,6 +117,53 @@ class TimestampMigrationIT {
                 statement.execute("DROP DATABASE IF EXISTS " + database + " WITH (FORCE)");
             }
         }
+    }
+
+    /** Rows inserted after V34 without timestamps, in a non-UTC session, get the transaction's instant. */
+    private void assertDefaultsStoreTheTransactionInstant(String url) throws SQLException {
+        String tournament = UUID.randomUUID().toString();
+        String game = UUID.randomUUID().toString();
+        try (Connection connection = DriverManager.getConnection(url, username, password);
+             Statement statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+            statement.execute("SET LOCAL TIME ZONE 'Europe/Vienna'");
+            statement.execute("""
+                    INSERT INTO tournaments (id, name) VALUES ('%1$s', 'Defaults');
+                    INSERT INTO games (id, tournament_id) VALUES ('%2$s', '%1$s');
+                    INSERT INTO moves (game_id, move_number, color, san, fen) VALUES ('%2$s', 1, 'WHITE', 'e4', 'fen');
+                    INSERT INTO chat_messages (game_id, move_number, sender_model, sender_color, message)
+                      VALUES ('%2$s', 1, 'model', 'WHITE', 'Hello');
+                    INSERT INTO move_attempts (id, game_id, move_number, color, attempt_number, outcome)
+                      VALUES (gen_random_uuid(), '%2$s', 1, 'WHITE', 1, 'ILLEGAL_MOVE');
+                    """.formatted(tournament, game));
+            Instant transaction = instant(statement, "SELECT now()");
+            for (String select : List.of(
+                    "SELECT created_at FROM tournaments WHERE id = '" + tournament + "'",
+                    "SELECT updated_at FROM tournaments WHERE id = '" + tournament + "'",
+                    "SELECT created_at FROM games WHERE id = '" + game + "'",
+                    "SELECT created_at FROM moves WHERE game_id = '" + game + "'",
+                    "SELECT created_at FROM chat_messages WHERE game_id = '" + game + "'",
+                    "SELECT created_at FROM move_attempts WHERE game_id = '" + game + "'")) {
+                assertEquals(transaction, instant(statement, select), select);
+            }
+            connection.commit();
+        }
+    }
+
+    /** The physical file of each application table and index; it changes when PostgreSQL rewrites one. */
+    private Map<String, Long> relationFiles(String url) throws SQLException {
+        Map<String, Long> files = new java.util.TreeMap<>();
+        try (Connection connection = DriverManager.getConnection(url, username, password);
+             Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("""
+                     SELECT c.relname, c.relfilenode FROM pg_class c
+                     JOIN pg_namespace n ON n.oid = c.relnamespace
+                     WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'i')
+                       AND c.relname <> 'flyway_schema_history' AND c.relname NOT LIKE 'flyway_schema_history%'
+                     """)) {
+            while (rows.next()) files.put(rows.getString(1), rows.getLong(2));
+        }
+        return files;
     }
 
     /** Application columns still without a time zone; Flyway's own history table is not the application's. */
