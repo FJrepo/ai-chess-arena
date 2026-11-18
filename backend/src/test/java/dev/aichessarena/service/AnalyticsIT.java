@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMessage;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
@@ -343,6 +344,51 @@ class AnalyticsIT {
                         org.hamcrest.Matchers.nullValue())
                 .body("models.find { it.modelId == 'model-beta' }.promptCaching.cacheWriteTokens",
                         org.hamcrest.Matchers.nullValue());
+    }
+
+    @Test
+    void comparisonReportsPersuasionFromStoredEvaluationsMessagesAndPromptVersions() {
+        String mindGames = new PromptService().getSystemPromptVersion(ChatMode.OPTIONAL, true,
+                BanterLevel.MIND_GAMES);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Tournament tournament = tournamentRepository.findById(tournamentId);
+            TournamentParticipant alpha = participantRepository.find("tournament.id = ?1 and seed = 0", tournamentId)
+                    .firstResult();
+            TournamentParticipant beta = participantRepository.find("tournament.id = ?1 and seed = 1", tournamentId)
+                    .firstResult();
+            LocalDateTime now = LocalDateTime.now();
+            Game resigned = game(tournament, alpha, beta, 4, GameStatus.COMPLETED, now.minusDays(2), now.minusDays(1));
+            resigned.result = Game.GameResult.WHITE_WINS;
+            resigned.resultReason = Game.ResultReason.RESIGNATION;
+            gameRepository.persist(resigned);
+            Move last = null;
+            for (int number = 1; number <= 10; number++) {
+                last = move(resigned, number, "WHITE", "model-alpha", "0.01", 0);
+                last.promptVersion = mindGames;
+                if (number < 10) {
+                    move(resigned, number, "BLACK", "model-beta", "0.01", 0);
+                }
+            }
+            // Black resigns facing +1.99 for White (−1.99 from its own view): not lost, after alpha's message.
+            last.evaluationCp = 199;
+            chat(resigned, 9, "WHITE", "model-alpha", "Resign now, your king is doomed.");
+        });
+
+        given().queryParam("days", 30).queryParam("tournamentId", tournamentId)
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("persuasionRules.lostThresholdCp", equalTo(-200))
+                .body("persuasionRules.messageWindowMoves", equalTo(3))
+                .body("models.find { it.modelId == 'model-alpha' }.persuasion.asPersuaderMindGames.resignations",
+                        equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.persuasion.asPersuaderMindGames.talkedOut",
+                        equalTo(1))
+                .body("models.find { it.modelId == 'model-alpha' }.persuasion.asPersuaderMindGames.lowSample",
+                        equalTo(true))
+                .body("models.find { it.modelId == 'model-alpha' }.persuasion.asPersuaderOtherLevels.resignations",
+                        equalTo(0))
+                .body("models.find { it.modelId == 'model-beta' }.persuasion.asPersuaded.evaluated", equalTo(1))
+                .body("models.find { it.modelId == 'model-beta' }.persuasion.asPersuaded.talkedOut", equalTo(1));
     }
 
     private Game game(

@@ -460,8 +460,9 @@
   }
 }
 
-// Talkativeness: the chat-mode group headers sit centred over their two columns.
-.talk-table th.group-head {
+// Talkativeness and persuasion: group headers sit centred over their columns.
+.talk-table th.group-head,
+.persuasion-table th.group-head {
   text-align: center;
   border-left: 1px solid var(--app-divider);
 }
