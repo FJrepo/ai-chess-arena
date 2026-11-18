@@ -39,6 +39,32 @@ describe('WebSocketService', () => {
     vi.unstubAllGlobals();
   });
 
+  it('shares the socket for the header and game and resubscribes the header on reconnect', () => {
+    const service = new WebSocketService({ open: vi.fn() } as any);
+    const updates = vi.fn();
+    const game = vi.fn();
+    service.liveGamesChanges().subscribe(updates);
+    service.getMessages('g-1').subscribe(game);
+    service.watchLiveGames();
+    service.subscribeToGame('g-1');
+    FakeSocket.instances[0].open();
+    expect(FakeSocket.instances[0].sent.map((message) => JSON.parse(message).type)).toEqual([
+      'watchLiveGames',
+      'subscribe',
+    ]);
+    FakeSocket.instances[0].onmessage?.({ data: JSON.stringify({ type: 'liveGamesChanged' }) });
+    expect(updates).toHaveBeenCalledOnce();
+    expect(game).not.toHaveBeenCalled();
+    FakeSocket.instances[0].onclose?.();
+    vi.advanceTimersByTime(3000);
+    FakeSocket.instances[1].open();
+    expect(FakeSocket.instances[1].sent.map((message) => JSON.parse(message).type)).toEqual([
+      'watchLiveGames',
+      'subscribe',
+    ]);
+    service.disconnect();
+  });
+
   it('signals a reconnect (not the first connect) and resubscribes to the current game', () => {
     const service = new WebSocketService({ open: vi.fn() } as any);
     const reconnects = vi.fn();

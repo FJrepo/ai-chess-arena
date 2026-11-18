@@ -750,6 +750,7 @@ public class TournamentService {
         gameRepository.delete("tournament.id", tournamentId);
         tournamentRepository.delete(tournament);
         AfterCommit.run(transactionRegistry, () -> gameIds.forEach(gameEngineService::requestStop));
+        if (liveUpdates != null && !gameIds.isEmpty()) liveUpdates.gamesRemoved();
         return true;
     }
 }

@@ -70,6 +70,7 @@ html {
   --app-text-secondary-size: 0.8125rem;
   --app-table-heading-size: 0.78125rem;
   --app-table-heading-tracking: 0.04em;
+  --app-live-games-menu-width: 26rem;
   --app-model-price-width: 5.75rem;
   --app-model-context-width: 4rem;
   --app-model-option-height: 2.75rem;
@@ -507,4 +508,9 @@ $board-themes: (
   &::after {
     background: var(--app-board-dark-square);
   }
+}
+
+.mat-mdc-menu-panel.live-games-menu {
+  max-width: min(var(--app-live-games-menu-width), 90vw);
+  width: var(--app-live-games-menu-width);
 }

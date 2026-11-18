@@ -1,0 +1,51 @@
+<button mat-stroked-button [matMenuTriggerFor]="menu">
+  @if (snapshot()) {
+    Live games ({{ running() }})
+  } @else {
+    Live games
+  }
+  <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
+</button>
+<mat-menu #menu="matMenu" class="live-games-menu">
+  @if (unavailable()) {
+    <div class="menu-note" role="status">Live games unavailable</div>
+  } @else if (!snapshot()) {
+    <div class="menu-note" role="status">Loading live games…</div>
+  } @else if (!running()) {
+    <div class="menu-note">No live games</div>
+  }
+
+  @for (game of rows(); track game.id) {
+    <a mat-menu-item [attr.data-live-game-id]="game.id" [routerLink]="['/games', game.id]">
+      <span
+        class="matchup"
+        [title]="(game.whitePlayerName ?? 'White') + ' vs ' + (game.blackPlayerName ?? 'Black')"
+      >
+        {{ game.whitePlayerName ?? 'White' }} vs {{ game.blackPlayerName ?? 'Black' }}
+      </span>
+      <span class="game-details">
+        <span class="event" [title]="game.tournamentName ?? ''">
+          {{ game.practice ? 'Practice' : (game.tournamentName ?? 'Game') }}
+        </span>
+        @switch (game.status) {
+          @case ('PAUSED') {
+            <span class="attention">Needs attention</span>
+          }
+          @case ('IN_PROGRESS') {
+            @if (game.moveNumber; as number) {
+              <span
+                >Move <span class="num">{{ number }}</span></span
+              >
+            }
+            @if (score(game); as label) {
+              <span title="Evaluation from White’s perspective" class="num">{{ label }}</span>
+            }
+          }
+          @default {
+            <span>Last finished</span>
+          }
+        }
+      </span>
+    </a>
+  }
+</mat-menu>

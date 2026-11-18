@@ -6,6 +6,7 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.LiveGamesRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameConfigurationHistory;
@@ -54,6 +55,16 @@ public class GameResource {
 
     @Inject
     PracticeGameService practice;
+
+    @Inject
+    LiveGamesRepository liveGames;
+
+    @GET
+    @Path("/live")
+    @Transactional
+    public Response listLiveGames() {
+        return Response.ok(liveGames.snapshot()).header("Cache-Control", "no-store").build();
+    }
 
     @GET
     @Path("/practice")

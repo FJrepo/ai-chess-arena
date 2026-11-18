@@ -653,6 +653,14 @@ API: `GET /api/analytics/leaderboard?includeForfeits=true|false` (default `true`
 
 Live games over WebSocket show the board, move list, model chat, retries, and an optional Stockfish 19 evaluation bar. Scores longer than six characters use scientific notation on the bar. The tooltip and screen-reader label show the full score.
 
+### Live games switcher
+
+Choose **Live games** in the header to open any running game. The number counts running games across tournaments and practice. Paused games appear underneath as **Needs attention**, followed by the latest finished or forfeited game with two players. Within the running and paused groups, the most recently started games appear first. Rows show the tournament or **Practice**, both players, and for running games the current full-move number and the latest position's Stockfish evaluation when available. If nothing is running, **No live games** appears above any paused games and the last-finished link.
+
+Keyboard users can open the menu with Enter, move between games with the arrow keys, and open the selected game with Enter. The header refreshes after committed game and evaluation updates, including games playing elsewhere in the Arena. It also refreshes every 15 seconds while a connection is unavailable.
+
+`GET /api/games/live` returns ordered `active` summaries and an optional `lastFinished` summary. For immediate refreshes, send `{"type":"watchLiveGames"}` on the existing game WebSocket. It acknowledges registration with `{"type":"liveGamesChanged"}` and sends the same notification when a new read is needed. This subscription can share the socket with a game's live stream.
+
 ### Live game synchronization
 
 The game view reads its board, move history, chat, evaluations, attempts and spend together from `GET /api/games/{id}`. The same database snapshot provides `liveRevision`, `activeColor`, `turnStartedAt`, `turnDeadlineAt`, `turnChatMode` and `turnBanterLevel`. The chat panel shows the mode and tone captured for the current model turn. A later settings edit takes effect with the next model turn. A started model turn has a deadline when the tournament sets a time limit. The deadline clears on move, pause or game over, and the next timed turn sets its own deadline. A human can move on their active turn without a model countdown. The stored wall-clock countdown is for viewers. The enforced model budget starts when the backend can make the first provider request, after the timing write and admission checks.
