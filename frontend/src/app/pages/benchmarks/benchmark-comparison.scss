@@ -2,41 +2,141 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   gap: var(--app-space-4);
+  align-items: center;
+}
+
+.comparison-state {
+  --state-fill: var(--app-info-fill);
+  --state-border: var(--app-info-border);
+  --state-text: var(--app-accent-info);
+
+  padding: 0;
+
+  &.warning {
+    --state-fill: var(--app-warning-fill);
+    --state-border: var(--app-warning-border);
+    --state-text: var(--app-warning-text);
+  }
+
+  &.blocked {
+    --state-fill: var(--mat-sys-error-container);
+    --state-border: var(--mat-sys-error);
+    --state-text: var(--mat-sys-on-error-container);
+  }
+}
+
+.state-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-3);
+  padding: var(--app-banner-padding);
+  border-inline-start: var(--app-hero-bar-width) solid var(--state-border);
+  border-radius: var(--app-banner-radius);
+  background: var(--state-fill);
+  color: var(--state-text);
+
+  h2 {
+    margin: 0;
+  }
+
+  p {
+    font-size: var(--app-text-secondary-size);
+  }
+}
+
+.state-help {
+  position: relative;
+  display: inline-flex;
+
+  [role='tooltip'] {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 100%;
+    inset-inline-start: 0;
+    width: 38ch;
+    padding: var(--app-space-3);
+    border: var(--app-rule-width) solid var(--app-divider);
+    border-radius: var(--app-banner-radius);
+    background: var(--mat-sys-surface-container-high);
+    box-shadow: var(--app-card-shadow);
+    color: var(--mat-sys-on-surface);
+    font-size: var(--app-text-secondary-size);
+    visibility: hidden;
+  }
+
+  &:is(:hover, :focus-within) [role='tooltip'] {
+    visibility: visible;
+  }
+}
+
+.state-settings {
+  margin: var(--app-space-1) var(--app-space-3) var(--app-space-2);
+
+  table {
+    table-layout: fixed;
+    font-size: var(--app-text-secondary-size);
+  }
+
+  col:first-child {
+    width: 26%;
+  }
+}
+
+.summary-heading {
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+  justify-content: space-between;
+  gap: var(--app-space-2);
+
+  h2 {
+    margin: 0;
+  }
 }
 
-.comparison-warning {
-  background: var(--app-warning-fill);
-  color: var(--app-warning-text);
-  border-color: var(--app-warning-border);
+.summary-table {
+  th:first-child {
+    width: 55%;
+  }
+
+  tbody > tr > .num,
+  .score-swing > .num {
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
 }
 
-.panel p + :is(p, .table-scroll) {
-  margin-block-start: var(--app-space-2);
+.model-identity {
+  overflow-wrap: anywhere;
 }
 
-.comparison-table {
+.score-swing {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--app-space-2);
+
+  .direction {
+    font-size: var(--app-text-secondary-size);
+    font-weight: 500;
+  }
+
+  &.higher {
+    color: var(--app-success-text);
+  }
+
+  &.lower {
+    color: var(--mat-sys-error);
+  }
+}
+
+.comparison-footnote,
+.unmatched-note {
+  margin-block-start: var(--app-space-3);
+}
+
+.detail-table {
   table-layout: fixed;
-
-  .model-name {
-    width: 17%;
-  }
-
-  .model-results {
-    width: 23%;
-  }
-
-  .matchup-name {
-    width: 36%;
-  }
-
-  .game-results {
-    width: 22%;
-  }
-
-  .delta {
-    width: 10%;
-  }
 
   :is(th, td) {
     vertical-align: top;
@@ -51,8 +151,75 @@
   th small {
     font-weight: normal;
   }
+
+  .group-start {
+    border-inline-start: var(--app-rule-width) solid var(--app-divider);
+  }
+
+  thead tr:first-child th[scope='colgroup'] {
+    background: var(--mat-sys-surface-container);
+    border-block-end: 0;
+  }
+
+  .delta-col col {
+    width: 11%;
+  }
 }
 
-.comparison-values {
-  text-align: end;
+.model-detail {
+  .model-col {
+    width: 18%;
+  }
+
+  .run-col col {
+    width: 15%;
+  }
+
+  .metric-value {
+    display: block;
+  }
+}
+
+.matchup-detail {
+  .matchup-col {
+    width: 28%;
+  }
+
+  .game-col {
+    width: 25%;
+  }
+
+  .matchup-heading th {
+    background: var(--mat-sys-surface-container);
+    color: var(--mat-sys-on-surface-variant);
+    font-size: var(--app-text-secondary-size);
+    font-weight: 700;
+  }
+
+  .base-game {
+    padding-inline-end: var(--app-space-4);
+    text-align: end;
+  }
+
+  .candidate-game {
+    position: relative;
+    padding-inline-start: calc(var(--app-space-4) + var(--app-space-2));
+  }
+
+  .outcome-arrow {
+    position: absolute;
+    inset-inline-start: var(--app-space-1);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  .pause-detail {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+[aria-labelledby='comparison-matchups'] > .secondary {
+  margin-block-end: var(--app-space-2);
 }

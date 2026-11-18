@@ -9,7 +9,7 @@
 
   <section class="panel" aria-label="Choose runs">
     <form class="comparison-controls" (ngSubmit)="compare()">
-      <mat-form-field appearance="outline">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Base run</mat-label>
         <select matNativeControl name="base" [(ngModel)]="baseId">
           <option value="">Choose base</option>
@@ -18,7 +18,7 @@
           }
         </select>
       </mat-form-field>
-      <mat-form-field appearance="outline">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Candidate run</mat-label>
         <select matNativeControl name="candidate" [(ngModel)]="candidateId">
           <option value="">Choose candidate</option>
@@ -47,10 +47,14 @@
   </section>
 
   @if (report(); as data) {
+    @let controlled = data.comparisonType === 'CONTROLLED_RERUN';
+    @let multipleSettings = data.comparisonType === 'MULTIPLE_SETTINGS';
     @if (!data.comparable) {
-      <section class="panel comparison-warning" role="alert" aria-labelledby="incompatible">
-        <h2 id="incompatible">Not comparable</h2>
-        <p>The runs have different matchup conditions.</p>
+      <section class="panel comparison-state blocked" role="alert" aria-labelledby="incompatible">
+        <div class="state-heading">
+          <h2 id="incompatible">Not comparable</h2>
+          <p>Scores and deltas are hidden because matchup conditions differ.</p>
+        </div>
         <ng-container
           *ngTemplateOutlet="
             settingsDiff;
@@ -58,32 +62,47 @@
           "
         />
       </section>
-    }
-
-    @if (
-      data.comparable && (data.settingChanges.length || data.comparisonType === 'CONTROLLED_RERUN')
-    ) {
-      <section class="panel" aria-labelledby="setting-changes">
-        <h2 id="setting-changes">
-          {{
-            data.comparisonType === 'CONTROLLED_RERUN' ? 'Controlled rerun' : 'Run settings changes'
-          }}
-        </h2>
-        @if (data.comparisonType === 'MULTIPLE_SETTINGS') {
-          <p>Differences cannot be attributed to a single setting.</p>
-        }
-        @if (data.comparisonType === 'CONTROLLED_RERUN') {
-          <p class="secondary">
-            A controlled rerun repeats the source’s playing settings or makes one recorded change.
-            Playing settings compared are model IDs, requested effort, legal move hints, chat mode,
-            maximum attempts per move, move time limit, and maximum output tokens.
-          </p>
-          <p class="secondary">
-            Both runs must match on opening suite, seed and lines, Stockfish executable and NNUE
-            weights, search nodes, threads and hash size, Stockfish levels, model colors, and
-            underlying prompt version.
-          </p>
-        }
+    } @else {
+      <section
+        class="panel comparison-state"
+        [class.warning]="multipleSettings"
+        aria-labelledby="setting-changes"
+      >
+        <div class="state-heading">
+          <h2 id="setting-changes">
+            @if (controlled) {
+              Controlled rerun
+            } @else if (multipleSettings) {
+              Multiple settings differ
+            } @else {
+              Comparable runs
+            }
+          </h2>
+          @if (controlled) {
+            <p>The rerun repeats the playing settings or makes one recorded change.</p>
+            <span class="state-help">
+              <button
+                class="hint-help"
+                type="button"
+                aria-label="Controlled rerun requirements"
+                aria-describedby="controlled-requirements"
+              >
+                ?
+              </button>
+              <span id="controlled-requirements" role="tooltip">
+                Playing settings are model IDs, requested effort, legal move hints, chat mode,
+                maximum attempts per move, move time limit, and maximum output tokens. The runs must
+                match on opening suite, seed and lines, Stockfish executable and NNUE weights,
+                search nodes, threads and hash size, Stockfish levels, model colors, and underlying
+                prompt version.
+              </span>
+            </span>
+          } @else if (multipleSettings) {
+            <p>Differences cannot be attributed to a single setting.</p>
+          } @else {
+            <p>The runs share the same matchup conditions.</p>
+          }
+        </div>
         @if (data.settingChanges.length) {
           <ng-container
             *ngTemplateOutlet="
@@ -93,19 +112,89 @@
           />
         }
       </section>
+
+      <section class="panel" aria-labelledby="score-summary">
+        <div class="summary-heading">
+          <h2 id="score-summary">Score changes</h2>
+          <p class="secondary">Deltas are candidate minus base.</p>
+        </div>
+        @if (data.models.length) {
+          <div class="table-scroll">
+            <table class="summary-table" aria-labelledby="score-summary">
+              <thead>
+                <tr>
+                  <th scope="col">Model</th>
+                  <th scope="col" class="align-end">Score delta (points)</th>
+                  <th scope="col" class="align-end">Cost delta</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (model of data.models; track model.baseModelId) {
+                  <tr>
+                    <th scope="row" class="model-identity">
+                      <ng-container
+                        *ngTemplateOutlet="modelIdentity; context: { $implicit: model }"
+                      />
+                    </th>
+                    <td class="align-end">
+                      @if (model.scoreDelta !== null) {
+                        @let swing = model.scoreDelta * model.matchedGames;
+                        <div
+                          class="score-swing"
+                          [class.higher]="swing > 0"
+                          [class.lower]="swing < 0"
+                        >
+                          <span class="direction">
+                            @if (swing > 0) {
+                              <span aria-hidden="true">↑</span> Higher
+                            } @else if (swing < 0) {
+                              <span aria-hidden="true">↓</span> Lower
+                            } @else {
+                              No change
+                            }
+                          </span>
+                          <span class="num"
+                            >{{ swing > 0 ? '+' : '' }}{{ swing | number: '1.0-1' }}</span
+                          >
+                        </div>
+                        <small class="secondary">
+                          Over <span class="num">{{ model.matchedGames | number }}</span>
+                          {{ model.matchedGames === 1 ? 'game' : 'games' }} scored in both runs
+                        </small>
+                      } @else {
+                        <span class="secondary">No games scored in both runs</span>
+                      }
+                    </td>
+                    <td class="num">
+                      <ng-container
+                        *ngTemplateOutlet="costDelta; context: { $implicit: model.spendDeltaUsd }"
+                      />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="secondary">Choose runs with a shared model or one clear replacement.</p>
+        }
+        @if (data.unmatchedBaseModels.length || data.unmatchedCandidateModels.length) {
+          <p class="unmatched-note secondary">
+            Unmatched models. Base {{ data.unmatchedBaseModels.join(', ') || '—' }}. Candidate
+            {{ data.unmatchedCandidateModels.join(', ') || '—' }}.
+          </p>
+        }
+      </section>
     }
 
     <section class="panel" aria-labelledby="run-totals">
       <h2 id="run-totals">Run spend</h2>
-      @if (data.operationalLimitsNote) {
-        <p class="secondary">{{ data.operationalLimitsNote }}.</p>
-      }
       <div class="table-scroll">
         <table aria-labelledby="run-totals">
           <thead>
             <tr>
               <th scope="col">Run</th>
-              <th scope="col" class="num">Spend</th>
+              <th scope="col" class="align-end">Spend</th>
             </tr>
           </thead>
           <tbody>
@@ -139,192 +228,221 @@
           </tbody>
         </table>
       </div>
+      @if (data.operationalLimitsNote) {
+        <p class="secondary comparison-footnote">{{ data.operationalLimitsNote }}.</p>
+      }
     </section>
 
-    @if (data.comparable) {
+    @if (data.comparable && data.models.length) {
       <section class="panel" aria-labelledby="comparison-models">
         <h2 id="comparison-models">By model</h2>
-        @if (data.unmatchedBaseModels.length || data.unmatchedCandidateModels.length) {
-          <p class="pause-note">
-            Unmatched models. Base {{ data.unmatchedBaseModels.join(', ') || '—' }}. Candidate
-            {{ data.unmatchedCandidateModels.join(', ') || '—' }}.
-          </p>
-        }
-        @if (data.models.length) {
-          <p class="secondary">
-            Score deltas use games scored in both runs. All deltas are candidate minus base.
-          </p>
-          <div class="table-scroll">
-            <table class="comparison-table" aria-labelledby="comparison-models">
-              <colgroup>
-                <col class="model-name" />
-                <col class="model-results" />
-                <col class="model-name" />
-                <col class="model-results" />
-                <col class="delta" />
-                <col class="delta" />
-              </colgroup>
-              <thead>
+        <div class="table-scroll">
+          <table class="detail-table model-detail" aria-labelledby="comparison-models">
+            <colgroup class="model-col"></colgroup>
+            <colgroup class="run-col">
+              <col />
+              <col />
+            </colgroup>
+            <colgroup class="run-col">
+              <col />
+              <col />
+            </colgroup>
+            <colgroup class="delta-col">
+              <col />
+              <col />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col" rowspan="2">Model</th>
+                <th scope="colgroup" colspan="2" class="group-start">Base run</th>
+                <th scope="colgroup" colspan="2" class="group-start">Candidate run</th>
+                <th scope="colgroup" colspan="2" class="group-start align-end">Delta</th>
+              </tr>
+              <tr>
+                <th scope="col" class="group-start align-end">Results</th>
+                <th scope="col" class="align-end">Telemetry</th>
+                <th scope="col" class="group-start align-end">Results</th>
+                <th scope="col" class="align-end">Telemetry</th>
+                <th scope="col" class="group-start align-end">Score</th>
+                <th scope="col" class="align-end">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (model of data.models; track model.baseModelId) {
                 <tr>
-                  <th scope="col">Base model</th>
-                  <th scope="col" class="num">Base results</th>
-                  <th scope="col">Candidate model</th>
-                  <th scope="col" class="num">Candidate results</th>
-                  <th scope="col" class="num">Score delta</th>
-                  <th scope="col" class="num">Cost delta</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (model of data.models; track model.baseModelId) {
-                  <tr>
-                    <th scope="row">
-                      {{ model.baseModelId }}
-                      @if (model.base.resolvedModelIds.length) {
-                        <small class="secondary"
-                          >Resolved to {{ model.base.resolvedModelIds.join(', ') }}</small
-                        >
-                      }
-                    </th>
-                    <td class="comparison-values">
-                      <ng-container
-                        *ngTemplateOutlet="modelSide; context: { $implicit: model.base }"
-                      />
-                    </td>
-                    <td>
-                      {{ model.candidateModelId }}
-                      @if (model.candidate.resolvedModelIds.length) {
-                        <small class="secondary"
-                          >Resolved to {{ model.candidate.resolvedModelIds.join(', ') }}</small
-                        >
-                      }
-                    </td>
-                    <td class="comparison-values">
-                      <ng-container
-                        *ngTemplateOutlet="modelSide; context: { $implicit: model.candidate }"
-                      />
-                    </td>
-                    <td class="num">
-                      @if (model.scoreDelta !== null) {
-                        {{ model.scoreDelta > 0 ? '+' : ''
-                        }}{{ model.scoreDelta * 100 | number: '1.0-2' }} pp
-                        <small>{{ model.matchedGames | number }} matched</small>
-                      } @else {
-                        —
-                      }
-                    </td>
-                    <td class="num">
-                      <ng-container
-                        *ngTemplateOutlet="costDelta; context: { $implicit: model.spendDeltaUsd }"
-                      />
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        } @else {
-          <p class="secondary">Choose runs with a shared model or one clear replacement.</p>
-        }
-      </section>
-      @if (data.matchups.length) {
-        <section class="panel" aria-labelledby="comparison-matchups">
-          <h2 id="comparison-matchups">By matchup</h2>
-          <p class="secondary">
-            Changed outcomes appear first, with the largest point swings at the top.
-          </p>
-          <div class="table-scroll">
-            <table class="comparison-table" aria-labelledby="comparison-matchups">
-              <colgroup>
-                <col class="matchup-name" />
-                <col class="game-results" />
-                <col class="game-results" />
-                <col class="delta" />
-                <col class="delta" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">Opening / color / Stockfish level</th>
-                  <th scope="col" class="num">Base game</th>
-                  <th scope="col" class="num">Candidate game</th>
-                  <th scope="col" class="num">Point delta</th>
-                  <th scope="col" class="num">Cost delta</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (
-                  row of data.matchups;
-                  track row.baseModelId +
-                    '/' +
-                    row.openingId +
-                    '/' +
-                    row.targetStrength +
-                    '/' +
-                    row.color
-                ) {
-                  <tr>
-                    <th scope="row">
-                      {{ row.openingName }}
-                      <small
-                        >{{ row.color | titlecase }} ·
-                        <span class="num">{{ row.targetStrength | number }}</span></small
-                      >
+                  <th scope="row" class="model-identity">
+                    <ng-container
+                      *ngTemplateOutlet="modelIdentity; context: { $implicit: model }"
+                    />
+                    @if (model.base.resolvedModelIds.length) {
                       <small class="secondary">
-                        {{ row.baseModelId }}
-                        @if (row.baseModelId !== row.candidateModelId) {
-                          → {{ row.candidateModelId }}
-                        }
+                        Base resolved to {{ model.base.resolvedModelIds.join(', ') }}
                       </small>
-                      @if (row.outcomeChanged) {
-                        <small>Outcome changed</small>
-                      }
-                    </th>
-                    <td class="comparison-values">
+                    }
+                    @if (model.candidate.resolvedModelIds.length) {
+                      <small class="secondary">
+                        Candidate resolved to {{ model.candidate.resolvedModelIds.join(', ') }}
+                      </small>
+                    }
+                  </th>
+                  @for (side of [model.base, model.candidate]; track $index) {
+                    <td class="group-start align-end">
+                      <ng-container *ngTemplateOutlet="modelSide; context: { $implicit: side }" />
+                    </td>
+                    <td class="align-end">
                       <ng-container
-                        *ngTemplateOutlet="gameSide; context: { $implicit: row.base }"
+                        *ngTemplateOutlet="telemetry; context: { $implicit: side.telemetry }"
                       />
                     </td>
-                    <td class="comparison-values">
-                      <ng-container
-                        *ngTemplateOutlet="gameSide; context: { $implicit: row.candidate }"
-                      />
-                    </td>
-                    <td class="num">
-                      @if (row.scoreDelta !== null) {
-                        {{ row.scoreDelta > 0 ? '+' : '' }}{{ row.scoreDelta | number: '1.0-1' }}
-                      } @else {
-                        —
-                      }
-                    </td>
-                    <td class="num">
-                      <ng-container
-                        *ngTemplateOutlet="costDelta; context: { $implicit: row.spendDeltaUsd }"
-                      />
-                    </td>
+                  }
+                  <td class="group-start align-end">
+                    @if (model.scoreDelta !== null) {
+                      <span class="num">
+                        {{ model.scoreDelta > 0 ? '+' : ''
+                        }}{{ model.scoreDelta * 100 | number: '1.0-2' }}
+                      </span>
+                      <abbr title="percentage points">pp</abbr>
+                      <small class="secondary">
+                        <span class="num">{{ model.matchedGames | number }}</span> matched
+                      </small>
+                    } @else {
+                      <span class="secondary" title="No games scored in both runs">—</span>
+                    }
+                  </td>
+                  <td class="num">
+                    <ng-container
+                      *ngTemplateOutlet="costDelta; context: { $implicit: model.spendDeltaUsd }"
+                    />
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
+    @if (data.comparable && data.matchups.length) {
+      <section class="panel" aria-labelledby="comparison-matchups">
+        <h2 id="comparison-matchups">By matchup</h2>
+        <p class="secondary">
+          Changed outcomes appear first, with the largest point swings at the top.
+        </p>
+        <div class="table-scroll">
+          <table class="detail-table matchup-detail" aria-labelledby="comparison-matchups">
+            <colgroup class="matchup-col"></colgroup>
+            <colgroup class="game-col"></colgroup>
+            <colgroup class="game-col"></colgroup>
+            <colgroup class="delta-col">
+              <col />
+              <col />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col" rowspan="2">Opening / color / Stockfish level</th>
+                <th scope="colgroup" class="group-start base-game">Base run</th>
+                <th scope="colgroup" class="group-start candidate-game">Candidate run</th>
+                <th scope="colgroup" colspan="2" class="group-start align-end">Delta</th>
+              </tr>
+              <tr>
+                <th scope="col" class="group-start base-game">Game &amp; telemetry</th>
+                <th scope="col" class="group-start candidate-game">Game &amp; telemetry</th>
+                <th scope="col" class="group-start align-end">Points</th>
+                <th scope="col" class="align-end">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (
+                row of data.matchups;
+                track row.baseModelId +
+                  '/' +
+                  row.openingId +
+                  '/' +
+                  row.targetStrength +
+                  '/' +
+                  row.color
+              ) {
+                @if ($first && row.outcomeChanged) {
+                  <tr class="matchup-heading">
+                    <th colspan="5">Changed outcomes</th>
+                  </tr>
+                } @else if (
+                  !row.outcomeChanged && !$first && data.matchups[$index - 1].outcomeChanged
+                ) {
+                  <tr class="matchup-heading">
+                    <th colspan="5">Other matchups</th>
                   </tr>
                 }
-              </tbody>
-            </table>
-          </div>
-        </section>
-      }
+                <tr>
+                  <th scope="row">
+                    {{ row.openingName }}
+                    <small>
+                      {{ row.color | titlecase }} ·
+                      <span class="num">{{ row.targetStrength | number }}</span>
+                    </small>
+                    <small class="secondary">
+                      <ng-container
+                        *ngTemplateOutlet="modelIdentity; context: { $implicit: row }"
+                      />
+                    </small>
+                  </th>
+                  <td class="game-result group-start base-game">
+                    <ng-container *ngTemplateOutlet="gameSide; context: { $implicit: row.base }" />
+                  </td>
+                  <td class="game-result group-start candidate-game">
+                    @if (row.outcomeChanged) {
+                      <span class="outcome-arrow" aria-hidden="true">→</span>
+                    }
+                    <ng-container
+                      *ngTemplateOutlet="gameSide; context: { $implicit: row.candidate }"
+                    />
+                  </td>
+                  <td class="group-start align-end">
+                    @if (row.scoreDelta !== null) {
+                      <span class="num">
+                        {{ row.scoreDelta > 0 ? '+' : '' }}{{ row.scoreDelta | number: '1.0-1' }}
+                      </span>
+                    } @else {
+                      <span class="secondary" title="Pair not scored in both runs">—</span>
+                    }
+                  </td>
+                  <td class="num">
+                    <ng-container
+                      *ngTemplateOutlet="costDelta; context: { $implicit: row.spendDeltaUsd }"
+                    />
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
     }
   }
 </div>
 
+<ng-template #modelIdentity let-model>
+  {{ model.baseModelId }}
+  @if (model.baseModelId !== model.candidateModelId) {
+    → {{ model.candidateModelId }}
+  }
+</ng-template>
+
 <ng-template #modelSide let-side>
   @if (side.score.scoredGames > 0) {
     <span class="num">{{ side.score.points / side.score.scoredGames | percent: '1.0-1' }}</span>
-    <small class="num"
-      >{{ side.score.wins }} W / {{ side.score.draws }} D / {{ side.score.losses }} L</small
-    >
+    <small class="secondary">
+      <span class="num">{{ side.score.wins }}</span> W /
+      <span class="num">{{ side.score.draws }}</span> D /
+      <span class="num">{{ side.score.losses }}</span> L
+    </small>
   } @else {
-    <span aria-label="No scored games">—</span>
+    <span class="secondary" title="No scored games">—</span>
   }
-  <small
-    ><span class="num">{{ side.score.forfeits }}</span> forfeits ·
-    <span class="num">{{ side.incompletePairs }}</span> incomplete pairs</small
-  >
-  <ng-container *ngTemplateOutlet="telemetry; context: { $implicit: side.telemetry }" />
+  <small class="secondary">
+    <span class="num">{{ side.score.forfeits }}</span> forfeits ·
+    <span class="num">{{ side.incompletePairs }}</span> incomplete pairs
+  </small>
   <small
     ><span class="num">{{ side.spendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}</span>
     spend</small
@@ -332,27 +450,35 @@
 </ng-template>
 
 <ng-template #gameSide let-game>
+  @let label = resultLabel(game);
+  @let tone = game.forfeit ? 'Forfeit loss' : label;
   @if (game.gameId) {
-    <a [routerLink]="['/games', game.gameId]">{{ resultLabel(game) }}</a>
+    <a class="game-outcome" [attr.data-outcome]="tone" [routerLink]="['/games', game.gameId]">{{
+      label
+    }}</a>
   } @else {
-    {{ resultLabel(game) }}
+    <span class="game-outcome" [attr.data-outcome]="tone">{{ label }}</span>
   }
   @if (game.reason) {
-    <small>{{ reasonLabel(game.reason) }}</small>
+    <small class="secondary">{{ reasonLabel(game.reason) }}</small>
   }
   @if (game.status === 'PAUSED') {
     @if (game.statusDetail) {
-      <small>{{ game.statusDetail }}</small>
+      <small class="secondary pause-detail" [title]="game.statusDetail">
+        {{ game.statusDetail }}
+      </small>
     }
     @if (game.uncertainRequest) {
-      <small class="pause-note">Displayed spend may be missing this request’s cost.</small>
+      <small class="secondary">Displayed spend may be missing this request’s cost.</small>
     }
   }
   @if (game.pairIncomplete) {
-    <small>Incomplete pair</small>
+    <small class="secondary">Incomplete pair</small>
   }
   @if (game.telemetry) {
     <ng-container *ngTemplateOutlet="telemetry; context: { $implicit: game.telemetry }" />
+  }
+  @if (game.spendUsd !== null) {
     <small
       ><span class="num">{{ game.spendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}</span>
       spend</small
@@ -361,25 +487,27 @@
 </ng-template>
 
 <ng-template #telemetry let-sample>
-  <small>
+  <small class="secondary">
     First-try legal
     @if (sample.firstTryLegalRate !== null) {
-      <span class="num">
-        {{ sample.firstTryLegalRate | percent: '1.0-1' }} ({{ sample.firstTryMoves }}/{{
-          sample.turnsSampled
-        }})
+      <span class="metric-value">
+        <span class="num">{{ sample.firstTryLegalRate | percent: '1.0-1' }}</span>
+        (<span class="num">{{ sample.firstTryMoves }}/{{ sample.turnsSampled }}</span
+        >)
       </span>
     } @else {
-      —
+      <span title="No sampled turns">—</span>
     }
   </small>
-  <small>
+  <small class="secondary">
     Reasoning tok/move
     @if (sample.reasoningTokensPerMove !== null) {
-      <span class="num">{{ sample.reasoningTokensPerMove | number: '1.0-1' }}</span>
-      (<span class="num">{{ sample.reasoningMovesReported }}</span> reported)
+      <span class="metric-value">
+        <span class="num">{{ sample.reasoningTokensPerMove | number: '1.0-1' }}</span>
+        (<span class="num">{{ sample.reasoningMovesReported }}</span> reported)
+      </span>
     } @else {
-      —
+      <span title="No reported reasoning tokens">—</span>
     }
   </small>
 </ng-template>
@@ -388,18 +516,23 @@
   @if (delta !== null) {
     {{ delta > 0 ? '+' : '' }}{{ delta | currency: 'USD' : 'symbol' : '1.2-8' }}
   } @else {
-    —
+    <span class="secondary" title="Cost delta unavailable">—</span>
   }
 </ng-template>
 
 <ng-template #settingsDiff let-rows let-label="label">
-  <div class="table-scroll">
+  <div class="table-scroll state-settings">
     <table [attr.aria-label]="label">
+      <colgroup>
+        <col />
+        <col />
+        <col />
+      </colgroup>
       <thead>
         <tr>
           <th scope="col">Setting</th>
-          <th scope="col">Base</th>
-          <th scope="col">Candidate</th>
+          <th scope="col">Base run</th>
+          <th scope="col">Candidate run</th>
         </tr>
       </thead>
       <tbody>

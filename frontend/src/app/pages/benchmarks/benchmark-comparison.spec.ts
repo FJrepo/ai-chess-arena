@@ -132,6 +132,16 @@ function render(data: object) {
 }
 
 describe('Benchmark comparison', () => {
+  it('labels the score changes summary and gives the signed swing its shared-game denominator', () => {
+    const page = render(report);
+    const summary = page.querySelector('section[aria-labelledby="score-summary"]');
+    expect(summary?.querySelector('h2#score-summary')?.textContent).toBe('Score changes');
+    expect(summary?.querySelector('th[scope="col"]:last-child')?.textContent).toBe('Cost delta');
+    expect(summary?.textContent?.replace(/\s+/g, ' ')).toMatch(
+      /Score delta \(points\).*Lower\s*-1\s*Over 1 game scored in both runs/,
+    );
+  });
+
   it('shows settings, paired scores and telemetry, spend delta, and both changed-game links', () => {
     const page = render(report);
     expect(page.textContent).toContain('Controlled rerun');
