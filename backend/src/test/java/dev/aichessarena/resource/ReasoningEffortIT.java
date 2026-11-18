@@ -116,7 +116,7 @@ class ReasoningEffortIT {
     void updateKeepsTheLevelWhenOmittedAndDefaultClearsIt() {
         String id = create("{\"reasoningEffort\":\"xhigh\"}");
 
-        given().contentType("application/json").body("{\"maxRetries\":2}")
+        given().contentType("application/json").body("{\"maxAttempts\":2}")
                 .when().put("/api/tournaments/{id}", id)
                 .then().statusCode(200)
                 .body("reasoningEffort", equalTo("xhigh"));
@@ -279,7 +279,7 @@ class ReasoningEffortIT {
     }
 
     private static String withName(String body) {
-        String name = "\"name\":\"Effort " + UUID.randomUUID() + "\"";
+        String name = "\"name\":\"Effort " + UUID.randomUUID() + "\",\"generateBracket\":false";
         return "{}".equals(body) ? "{" + name + "}" : "{" + name + "," + body.substring(1);
     }
 

@@ -68,7 +68,7 @@ export function configurationFields(
       setting: 'Move time limit',
       value: settings.moveTimeoutSeconds == null ? 'No limit' : settings.moveTimeoutSeconds + ' s',
     },
-    { setting: 'Attempts per move', value: String(settings.maxRetries) },
+    { setting: 'Attempts per move', value: String(settings.maxAttempts) },
     { setting: 'Output-token cap', value: String(settings.maxOutputTokens) },
     { setting: 'Chat', value: words(settings.chatMode) },
     {

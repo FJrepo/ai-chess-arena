@@ -25,7 +25,7 @@ public final class DtoMapper {
                 t.id, t.name, t.status.name(), t.format.name(),
                 t.drawPolicy.name(),
                 t.sharedCustomInstructions, t.moveTimeoutSeconds,
-                t.maxRetries, t.matchupBestOf, t.finalsBestOf, chatMode != ChatMode.OFF, chatMode.name(),
+                t.maxAttempts, t.matchupBestOf, t.finalsBestOf, chatMode.name(),
                 t.banterLevel != null ? t.banterLevel.name() : null,
                 t.resignationAllowed, t.legalMoveHints, t.adjudicationEnabled,
                 t.maxOutputTokens,

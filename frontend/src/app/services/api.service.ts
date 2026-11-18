@@ -196,14 +196,12 @@ export class ApiService {
     return this.http.get<Game>(`${this.baseUrl}/games/${id}`);
   }
 
-  startGame(id: string, queueIfFull = false): Observable<Game> {
-    return this.http.post<Game>(
-      `${this.baseUrl}/games/${id}/start`,
-      {},
-      {
-        params: queueIfFull ? { queueIfFull: true } : {},
-      },
-    );
+  /**
+   * Starts or resumes a game. In a running tournament, a paused game queues for the next free slot when all
+   * slots are taken (the server default since 2.0) and comes back PAUSED with resumeRequestedAt.
+   */
+  startGame(id: string): Observable<Game> {
+    return this.http.post<Game>(`${this.baseUrl}/games/${id}/start`, {});
   }
 
   cancelResumeRequest(id: string, statusRevision: number): Observable<Game> {

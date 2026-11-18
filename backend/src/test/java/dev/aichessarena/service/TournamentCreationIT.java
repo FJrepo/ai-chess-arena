@@ -38,7 +38,7 @@ class TournamentCreationIT {
 
     @Test
     void legalMoveHintsDefaultOnAndSuppliedOffIsImmutableAcrossGamesAndCreationReplay() {
-        assertTrue(create(request(0), 201).legalMoveHints());
+        assertTrue(create(draft(0), 201).legalMoveHints());
         var body = request(2);
         body.put("legalMoveHints", false);
         body.put("generateBracket", true);
@@ -115,7 +115,7 @@ class TournamentCreationIT {
     void validatesNumericBudgetLiteralsWithExactDecimalPrecision() {
         String path = "/api/tournaments";
         String body = """
-                {"name":"Exact numeric budget","runSettings":{"budgetUsd":%s}}
+                {"name":"Exact numeric budget","generateBracket":false,"runSettings":{"budgetUsd":%s}}
                 """;
         given().contentType("application/json").body(body.formatted("9007199254740992.01"))
                 .post(path).then().statusCode(201)
@@ -126,7 +126,7 @@ class TournamentCreationIT {
 
     @Test
     void rejectsInvalidRunSettingsBeforeReservingTheCreationId() {
-        var body = request(2);
+        var body = draft(2);
         body.put("clientRequestId", UUID.randomUUID());
         for (var invalid : List.of(Map.of("maxConcurrentGames", 1.5), Map.of("budgetUsd", 1.111),
                 Map.of("budgetUsd", "1.250"), Map.of("autoRunStatus", "RUNNING"))) {
@@ -198,13 +198,22 @@ class TournamentCreationIT {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void legacyCreationWithoutOptInAllowsAddingBeforeRandomGeneration(boolean explicitNull) {
-        var body = request(2);
+    void omittedOrNullGenerationFlagGeneratesTheBracketInSeedOrder(boolean explicitNull) {
+        var body = request(4);
         if (explicitNull) {
             body.put("drawMode", null);
             body.put("generateBracket", null);
         }
-        TournamentDto draft = create(body, 201);
+        TournamentDto created = create(body, 201);
+        assertReady(created, 3);
+        assertEquals("ORDER", created.creationDrawMode());
+        assertEquals(List.of(10, 20, 30, 40), seeds(created));
+        assertEquals(gameIds(created), gameIds(get(created.id())));
+    }
+
+    @Test
+    void optOutDraftAllowsAddingBeforeRandomGeneration() {
+        TournamentDto draft = create(draft(2), 201);
         assertDraft(draft);
         assertEquals(List.of(10, 20), seeds(draft));
         assertDraft(get(draft.id()));
@@ -243,8 +252,19 @@ class TournamentCreationIT {
 
     @ParameterizedTest
     @ValueSource(ints = {0, 1})
-    void incompleteLineupDefaultsToDraftForIncrementalClients(int count) {
+    void incompleteLineupWithoutOptOutIsRejectedBeforeStoringAnything(int count) {
         var body = request(count);
+        if (count == 0) body.remove("participants");
+        given().contentType("application/json").body(body).post("/api/tournaments").then().statusCode(400)
+                .body("error", equalTo(
+                        "Need at least 2 participants to generate the bracket; send generateBracket: false to create a draft"));
+        assertNotStored(body);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void incompleteLineupOptOutCreatesADraftForIncrementalClients(int count) {
+        var body = draft(count);
         if (count == 0) body.remove("participants");
         TournamentDto draft = create(body, 201);
         assertDraft(draft);
@@ -399,6 +419,13 @@ class TournamentCreationIT {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", "Create bracket " + UUID.randomUUID());
         body.put("participants", java.util.stream.IntStream.range(0, count).mapToObj(TournamentCreationIT::participant).toList());
+        return body;
+    }
+
+    /** A create request that opts out of bracket generation (2.0 default: generate). */
+    private static Map<String, Object> draft(int count) {
+        Map<String, Object> body = request(count);
+        body.put("generateBracket", false);
         return body;
     }
 

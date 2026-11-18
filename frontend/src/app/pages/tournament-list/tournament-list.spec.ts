@@ -317,10 +317,9 @@ function tournament(
     drawPolicy: 'WHITE_ADVANCES',
     sharedCustomInstructions: null,
     moveTimeoutSeconds: 60,
-    maxRetries: 3,
+    maxAttempts: 3,
     matchupBestOf,
     finalsBestOf: null,
-    trashTalkEnabled: true,
     createdAt,
     updatedAt: createdAt,
     participants: Array.from({ length: participantCount }, (_, index) => ({

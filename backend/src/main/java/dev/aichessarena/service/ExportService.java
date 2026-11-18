@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
 /** Read-only portable exports, independent of analytics aggregation and provider configuration. */
 @ApplicationScoped
 public class ExportService {
+    /** JSON export contract version: 2 since settings.maxRetries became settings.maxAttempts (2.0). */
+    static final int SCHEMA_VERSION = 2;
+
     @Inject
     ExportRepository repository;
 
@@ -141,7 +144,7 @@ public class ExportService {
 
     private TournamentExportDto tournamentJson(Tournament t, Map<UUID, List<TournamentExportDto.Attempt>> attempts) {
         var settings = new TournamentExportDto.Settings(t.format.name(), t.drawPolicy.name(),
-                t.moveTimeoutSeconds, t.maxRetries, t.matchupBestOf, t.finalsBestOf, t.chatMode.name(),
+                t.moveTimeoutSeconds, t.maxAttempts, t.matchupBestOf, t.finalsBestOf, t.chatMode.name(),
                 t.banterLevel != null ? t.banterLevel.name() : null,
                 t.resignationAllowed, t.legalMoveHints, t.adjudicationEnabled, t.maxOutputTokens, effort(t.reasoningEffort),
                 t.openingMode.name(), t.openingId, t.autoRunStatus.name(), t.maxConcurrentGames, t.budgetUsd);
@@ -174,7 +177,7 @@ public class ExportService {
         }
         BigDecimal total = t.games.stream().map(g -> g.totalCostUsd).filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new TournamentExportDto(1, t.id, t.name, t.status.name(), t.createdAt, t.updatedAt,
+        return new TournamentExportDto(SCHEMA_VERSION, t.id, t.name, t.status.name(), t.createdAt, t.updatedAt,
                 settings, participants, exportedGames, total);
     }
 

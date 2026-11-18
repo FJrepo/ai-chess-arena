@@ -307,19 +307,28 @@ class TournamentAutoRunIT {
     }
 
     @Test
-    void startApiRequiresOptInToQueueAndStillStartsImmediatelyWhenThereIsRoom() {
+    void startApiQueuesByDefaultCanOptOutAndStillStartsImmediatelyWhenThereIsRoom() {
         UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
         List<UUID> ids = gameIds(id);
         UUID paused = ids.getLast();
         configure(id, "{\"maxConcurrentGames\":1}", true);
-        given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused).then().statusCode(409)
-                .body("error", equalTo("Tournament concurrency limit reached"));
         given().contentType("application/json").body("{}").queryParam("queueIfFull", false)
-                .post("/api/games/{id}/start", paused).then().statusCode(409);
+                .post("/api/games/{id}/start", paused).then().statusCode(409)
+                .body("error", equalTo("Tournament concurrency limit reached"));
         given().contentType("application/json").body("{}").queryParam("queueIfFull", "yes")
                 .post("/api/games/{id}/start", paused).then().statusCode(400)
                 .body("error", equalTo("queueIfFull must be true or false"));
         assertNull(snapshot(paused).resumeRequestedAt());
+
+        // 2.0: without the parameter a paused game queues for the next free slot.
+        var queued = given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused)
+                .then().statusCode(200)
+                .body("status", equalTo("PAUSED"))
+                .extract().as(GameDto.class);
+        assertNotNull(queued.resumeRequestedAt());
+        assertTrue(starts.isEmpty());
+        given().queryParam("statusRevision", queued.statusRevision())
+                .delete("/api/games/{id}/resume-request", paused).then().statusCode(200);
 
         lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
         given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused).then().statusCode(200)
@@ -360,7 +369,8 @@ class TournamentAutoRunIT {
         assertNotNull(engine.startGame(older, true).resumeRequestedAt());
         lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
 
-        given().contentType("application/json").body("{}").post("/api/games/{id}/start", newer).then().statusCode(409)
+        given().contentType("application/json").body("{}").queryParam("queueIfFull", false)
+                .post("/api/games/{id}/start", newer).then().statusCode(409)
                 .body("error", equalTo("Available slots are reserved for queued resumes"));
         GameDto queued = engine.startGame(newer, true);
         assertEquals("PAUSED", queued.status());

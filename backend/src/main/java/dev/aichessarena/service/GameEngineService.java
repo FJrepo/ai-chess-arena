@@ -346,7 +346,7 @@ public class GameEngineService {
 
             boolean isFirstMove = moveNumber == 1 && "WHITE".equals(sideToMove);
 
-            int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
+            int maxAttempts = game.tournament != null ? game.tournament.maxAttempts : 3;
             Integer moveTimeoutSeconds = moveTimeoutSecondsFor(game);
             int maxOutputTokens = game.tournament != null
                     ? game.tournament.maxOutputTokens : Tournament.DEFAULT_MAX_OUTPUT_TOKENS;
@@ -369,7 +369,7 @@ public class GameEngineService {
                     lastMoveSan,
                     lastMessage,
                     isFirstMove,
-                    maxRetries,
+                    maxAttempts,
                     moveTimeoutSeconds,
                     prompt.version(),
                     prompt.hash(),

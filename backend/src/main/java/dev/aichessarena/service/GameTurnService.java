@@ -131,9 +131,9 @@ public class GameTurnService {
         var attemptContext = new AttemptContext(effort, timing.configurationRevision());
         OpenRouterService.AnswerDeadline turnDeadline = null;
 
-        int maxAttempts = Math.clamp(request.maxRetries(), Tournament.MIN_MOVE_ATTEMPTS, Tournament.MAX_MOVE_ATTEMPTS);
-        if (maxAttempts != request.maxRetries()) {
-            LOG.warnf("Game %s: clamped stored maxRetries from %d to %d", request.gameId(), request.maxRetries(), maxAttempts);
+        int maxAttempts = Math.clamp(request.maxAttempts(), Tournament.MIN_MOVE_ATTEMPTS, Tournament.MAX_MOVE_ATTEMPTS);
+        if (maxAttempts != request.maxAttempts()) {
+            LOG.warnf("Game %s: clamped stored maxAttempts from %d to %d", request.gameId(), request.maxAttempts(), maxAttempts);
         }
         int providerFailures = 0;
         ProviderProblem providerProblem = null;
@@ -581,7 +581,7 @@ public class GameTurnService {
             String lastMoveSan,
             String lastMessage,
             boolean isFirstMove,
-            int maxRetries,
+            int maxAttempts,
             // Seconds for the whole turn (all attempts); null means no move time limit.
             Integer moveTimeoutSeconds,
             String promptVersion,
@@ -607,12 +607,12 @@ public class GameTurnService {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
                            List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
-                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           boolean isFirstMove, int maxAttempts, Integer moveTimeoutSeconds, String promptVersion,
                            String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
                            int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode,
                            boolean resignationAllowed, ReasoningEffort reasoningEffort, BanterLevel banterLevel) {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
-                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxAttempts, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
                     resignationAllowed, reasoningEffort, banterLevel, null, null);
         }
@@ -620,12 +620,12 @@ public class GameTurnService {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
                            List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
-                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           boolean isFirstMove, int maxAttempts, Integer moveTimeoutSeconds, String promptVersion,
                            String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
                            int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode,
                            boolean resignationAllowed, ReasoningEffort reasoningEffort) {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
-                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxAttempts, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
                     resignationAllowed, reasoningEffort, null);
         }
@@ -634,12 +634,12 @@ public class GameTurnService {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
                            List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
-                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           boolean isFirstMove, int maxAttempts, Integer moveTimeoutSeconds, String promptVersion,
                            String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
                            int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode,
                            boolean resignationAllowed) {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
-                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxAttempts, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
                     resignationAllowed, null);
         }
@@ -648,11 +648,11 @@ public class GameTurnService {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
                            List<OpenRouterService.ChatMsg> history, String lastMoveSan, String lastMessage,
-                           boolean isFirstMove, int maxRetries, Integer moveTimeoutSeconds, String promptVersion,
+                           boolean isFirstMove, int maxAttempts, Integer moveTimeoutSeconds, String promptVersion,
                            String promptHash, BigDecimal totalCostUsd, BooleanSupplier shouldContinue,
                            int maxOutputTokens, ChatMode chatMode, ChatMode tournamentChatMode) {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
-                    history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
+                    history, lastMoveSan, lastMessage, isFirstMove, maxAttempts, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode, false,
                     null);
         }

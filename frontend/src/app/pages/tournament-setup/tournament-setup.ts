@@ -167,9 +167,9 @@ Your opponent is %s (%s).`;
   set moveTimeout(value: number) {
     this.moveTimeoutValue.set(value);
   }
-  readonly maxRetries = signal<number | null>(3);
-  private readonly validMaxRetries = computed(() => {
-    const attempts = this.maxRetries();
+  readonly maxAttempts = signal<number | null>(3);
+  private readonly validMaxAttempts = computed(() => {
+    const attempts = this.maxAttempts();
     return attempts !== null && Number.isInteger(attempts) && attempts >= 1 && attempts <= 20
       ? attempts
       : null;
@@ -455,7 +455,7 @@ Your opponent is %s (%s).`;
     {
       name: string;
       moveTimeout: number;
-      maxRetries: number;
+      maxAttempts: number;
       maxOutputTokens: number;
       drawPolicy: Tournament['drawPolicy'];
       matchupBestOf: Tournament['matchupBestOf'];
@@ -467,7 +467,7 @@ Your opponent is %s (%s).`;
     quickstart: {
       name: 'Quick Start Arena',
       moveTimeout: 120,
-      maxRetries: 2,
+      maxAttempts: 2,
       maxOutputTokens: 16384,
       drawPolicy: 'WHITE_ADVANCES',
       matchupBestOf: 1,
@@ -478,7 +478,7 @@ Your opponent is %s (%s).`;
     balanced: {
       name: 'Balanced Ladder',
       moveTimeout: 120,
-      maxRetries: 3,
+      maxAttempts: 3,
       maxOutputTokens: 16384,
       drawPolicy: 'HIGHER_SEED_ADVANCES',
       matchupBestOf: 3,
@@ -489,7 +489,7 @@ Your opponent is %s (%s).`;
     showcase: {
       name: 'Series Showcase',
       moveTimeout: 120,
-      maxRetries: 3,
+      maxAttempts: 3,
       maxOutputTokens: 32768,
       drawPolicy: 'REPLAY_GAME',
       matchupBestOf: 3,
@@ -553,11 +553,11 @@ Your opponent is %s (%s).`;
         this.sharedCustomInstructions = source.sharedCustomInstructions ?? '';
         this.limitMoveTime = source.moveTimeoutSeconds != null;
         this.moveTimeout = source.moveTimeoutSeconds ?? 120;
-        this.maxRetries.set(Math.min(20, Math.max(1, source.maxRetries)));
+        this.maxAttempts.set(Math.min(20, Math.max(1, source.maxAttempts)));
         this.maxOutputTokens = source.maxOutputTokens ?? 16384;
         this.reasoningEffort =
           source.reasoningEffort === 'default' ? null : (source.reasoningEffort ?? null);
-        this.chatMode = source.chatMode ?? (source.trashTalkEnabled ? 'OPTIONAL' : 'OFF');
+        this.chatMode = source.chatMode ?? 'OPTIONAL';
         this.banterLevel = source.banterLevel ?? null;
         this.resignationAllowed = source.resignationAllowed ?? false;
         this.adjudicationEnabled = source.adjudicationEnabled ?? false;
@@ -663,13 +663,9 @@ Your opponent is %s (%s).`;
       this.limitMoveTime ? this.moveTimeout : null,
       (value) => (value == null ? 'No limit' : value + ' s'),
     );
-    compare('Attempts per move', source.maxRetries, this.maxRetries());
+    compare('Attempts per move', source.maxAttempts, this.maxAttempts());
     compare('Output-token cap', source.maxOutputTokens, this.maxOutputTokens, nullable);
-    compare(
-      'Chat',
-      source.chatMode ?? (source.trashTalkEnabled ? 'OPTIONAL' : 'OFF'),
-      this.chatMode,
-    );
+    compare('Chat', source.chatMode ?? 'OPTIONAL', this.chatMode);
     compare('Banter tone', source.banterLevel ?? null, this.banterLevel, (value) =>
       String(value ?? 'Original tone'),
     );
@@ -766,7 +762,7 @@ Your opponent is %s (%s).`;
         openingMode: this.openingMode(),
         configuredOpeningId: this.openingMode() === 'FIXED' ? this.openingId() : null,
         moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : null,
-        maxRetries: this.maxRetries() ?? starting.maxRetries,
+        maxAttempts: this.maxAttempts() ?? starting.maxAttempts,
         maxOutputTokens: this.maxOutputTokens ?? starting.maxOutputTokens,
         chatMode: this.chatMode,
         banterLevel: this.banterLevel,
@@ -1137,7 +1133,7 @@ Your opponent is %s (%s).`;
         !creating &&
         this.rematchReady() &&
         this.openingValid() &&
-        this.validMaxRetries() !== null,
+        this.validMaxAttempts() !== null,
     };
   });
 
@@ -1180,11 +1176,11 @@ Your opponent is %s (%s).`;
   }
 
   private createWithKey() {
-    const maxRetries = this.validMaxRetries();
+    const maxAttempts = this.validMaxAttempts();
     if (
       this.creating() ||
       !this.openingValid() ||
-      maxRetries === null ||
+      maxAttempts === null ||
       (this.sourceId() && !this.readiness().canCreate)
     ) {
       return;
@@ -1198,7 +1194,7 @@ Your opponent is %s (%s).`;
       sharedCustomInstructions: this.normalizeInstructions(this.sharedCustomInstructions),
       // 0 means no time limit per move.
       moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : 0,
-      maxRetries,
+      maxAttempts,
       maxOutputTokens: this.maxOutputTokens,
       matchupBestOf: this.matchupBestOf,
       finalsBestOf: this.finalsBestOf,
@@ -1443,7 +1439,7 @@ Your opponent is %s (%s).`;
     this.name = preset.name;
     this.limitMoveTime = false;
     this.moveTimeout = preset.moveTimeout;
-    this.maxRetries.set(preset.maxRetries);
+    this.maxAttempts.set(preset.maxAttempts);
     this.maxOutputTokens = preset.maxOutputTokens;
     this.drawPolicy = preset.drawPolicy;
     this.matchupBestOf = preset.matchupBestOf;

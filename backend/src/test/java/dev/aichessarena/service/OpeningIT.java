@@ -43,7 +43,7 @@ class OpeningIT {
     void catalogAndApiValidateCreateUpdateAndPreserveOmittedSettings() {
         given().get("/api/openings").then().statusCode(200)
                 .body("size()", equalTo(42)).body("find { it.id == 'ruy-lopez' }.eco", equalTo("C60"));
-        String id = given().contentType("application/json").body("{\"name\":\"Openings\"}")
+        String id = given().contentType("application/json").body("{\"generateBracket\":false,\"name\":\"Openings\"}")
                 .post("/api/tournaments").then().statusCode(201)
                 .body("openingMode", equalTo("STANDARD")).extract().path("id");
         for (String invalid : List.of(
@@ -68,7 +68,7 @@ class OpeningIT {
                 .put("/api/tournaments/{id}", id).then().statusCode(200).body("openingId", equalTo("italian"));
         given().contentType("application/json").body("{\"openingMode\":\"RANDOM_BOOK\"}")
                 .put("/api/tournaments/{id}", id).then().statusCode(200).body("openingId", nullValue());
-        given().contentType("application/json").body("{\"name\":\"Fixed\",\"openingMode\":\"FIXED\",\"openingId\":\"italian\"}")
+        given().contentType("application/json").body("{\"generateBracket\":false,\"name\":\"Fixed\",\"openingMode\":\"FIXED\",\"openingId\":\"italian\"}")
                 .post("/api/tournaments").then().statusCode(201).body("openingId", equalTo("italian"));
     }
 

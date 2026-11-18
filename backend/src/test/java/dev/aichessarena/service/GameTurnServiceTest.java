@@ -346,7 +346,7 @@ class GameTurnServiceTest {
         var r = request(new ArrayList<>(), 1, 30);
         var request = new GameTurnService.TurnRequest(r.gameId(), r.pgn(), r.fen(), r.board(), r.sideToMove(),
                 r.moveNumber(), r.legalMoves(), r.modelId(), r.playerName(), r.opponentName(), r.history(),
-                r.lastMoveSan(), r.lastMessage(), r.isFirstMove(), r.maxRetries(), r.moveTimeoutSeconds(),
+                r.lastMoveSan(), r.lastMessage(), r.isFirstMove(), r.maxAttempts(), r.moveTimeoutSeconds(),
                 r.promptVersion(), r.promptHash(), r.totalCostUsd(), r.shouldContinue(), configured,
                 r.chatMode(), r.tournamentChatMode(), r.resignationAllowed(), r.reasoningEffort());
 
@@ -991,7 +991,7 @@ class GameTurnServiceTest {
     private static GameTurnService.TurnRequest withEffort(GameTurnService.TurnRequest r, ReasoningEffort effort) {
         return new GameTurnService.TurnRequest(r.gameId(), r.pgn(), r.fen(), r.board(), r.sideToMove(), r.moveNumber(),
                 r.legalMoves(), r.modelId(), r.playerName(), r.opponentName(), r.history(), r.lastMoveSan(),
-                r.lastMessage(), r.isFirstMove(), r.maxRetries(), r.moveTimeoutSeconds(), r.promptVersion(),
+                r.lastMessage(), r.isFirstMove(), r.maxAttempts(), r.moveTimeoutSeconds(), r.promptVersion(),
                 r.promptHash(), r.totalCostUsd(), r.shouldContinue(), r.maxOutputTokens(), r.chatMode(),
                 r.tournamentChatMode(), r.resignationAllowed(), effort);
     }
@@ -1001,18 +1001,18 @@ class GameTurnServiceTest {
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
-                                                       int maxRetries, Integer moveTimeoutSeconds) {
-        return request(history, maxRetries, moveTimeoutSeconds, () -> true);
+                                                       int maxAttempts, Integer moveTimeoutSeconds) {
+        return request(history, maxAttempts, moveTimeoutSeconds, () -> true);
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
-                                                       int maxRetries, Integer moveTimeoutSeconds,
+                                                       int maxAttempts, Integer moveTimeoutSeconds,
                                                        java.util.function.BooleanSupplier shouldContinue) {
-        return request(history, maxRetries, moveTimeoutSeconds, shouldContinue, ChatMode.OPTIONAL);
+        return request(history, maxAttempts, moveTimeoutSeconds, shouldContinue, ChatMode.OPTIONAL);
     }
 
     private static GameTurnService.TurnRequest request(List<OpenRouterService.ChatMsg> history,
-                                                       int maxRetries, Integer moveTimeoutSeconds,
+                                                       int maxAttempts, Integer moveTimeoutSeconds,
                                                        java.util.function.BooleanSupplier shouldContinue,
                                                        ChatMode chatMode) {
         Board board = new Board();
@@ -1031,7 +1031,7 @@ class GameTurnServiceTest {
                 null,
                 null,
                 true,
-                maxRetries,
+                maxAttempts,
                 moveTimeoutSeconds,
                 "v1",
                 "hash-1",
@@ -1049,7 +1049,7 @@ class GameTurnServiceTest {
          * was Bc4, so Black has legal moves like Nf6 and Bc5.
          */
         private GameTurnService.TurnRequest resignationRequest(List<OpenRouterService.ChatMsg> history,
-                                                                      int maxRetries, int moveNumber,
+                                                                      int maxAttempts, int moveNumber,
                                                                       boolean resignationAllowed, ChatMode chatMode) {
             ((CountingMoveRepository) service.moveRepository).nonBookMoves = moveNumber - 1;
             Board board = new Board();
@@ -1070,7 +1070,7 @@ class GameTurnServiceTest {
                     "Bc4",
                     "Your move.",
                     false,
-                    maxRetries,
+                    maxAttempts,
                     null,
                     resignationAllowed ? "v2-resign" : "v2",
                     "hash-1",
@@ -1202,9 +1202,9 @@ class GameTurnServiceTest {
         }
 
         @Override
-        public void forfeitInvalidMoves(UUID gameId, String forfeitColor, int maxRetries) {
+        public void forfeitInvalidMoves(UUID gameId, String forfeitColor, int maxAttempts) {
             invalidMovesForfeited = true;
-            forfeitAttempts = maxRetries;
+            forfeitAttempts = maxAttempts;
         }
 
         @Override

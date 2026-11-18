@@ -241,7 +241,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   private startGameWithKey(game: Game) {
-    this.api.startGame(game.id, game.status === 'PAUSED').subscribe({
+    this.api.startGame(game.id).subscribe({
       next: (updated) => {
         if (updated.resumeRequestedAt) {
           this.applyResumeResponse(updated);

@@ -133,10 +133,14 @@ public class GameResource {
                 gameStream.id(), configurations.read(id))).build();
     }
 
+    /**
+     * Starts or resumes a game. In a tournament with an active run, a paused game queues for the next free slot when
+     * all slots are occupied or reserved (default since 2.0); {@code queueIfFull=false} returns 409 instead.
+     */
     @POST
     @Path("/{id}/start")
     public Response startGame(@PathParam("id") UUID id,
-                              @QueryParam("queueIfFull") @DefaultValue("false") String queueIfFull) {
+                              @QueryParam("queueIfFull") @DefaultValue("true") String queueIfFull) {
         if (!"true".equals(queueIfFull) && !"false".equals(queueIfFull)) {
             throw new IllegalArgumentException("queueIfFull must be true or false");
         }

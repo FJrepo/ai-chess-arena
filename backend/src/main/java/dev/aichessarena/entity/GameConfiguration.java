@@ -10,7 +10,7 @@ public record GameConfiguration(
         String configuredOpeningId,
         String gameOpeningId,
         Integer moveTimeoutSeconds,
-        int maxRetries,
+        int maxAttempts,
         int maxOutputTokens,
         String chatMode,
         String banterLevel,

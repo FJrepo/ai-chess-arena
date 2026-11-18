@@ -38,7 +38,7 @@ class MoveTimeoutIT {
     @Test
     void noLimitRoundTripsThroughCreateGetAndUpdate() {
         String id = given().contentType("application/json")
-                .body("{\"name\":\"No limit " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":0}")
+                .body("{\"generateBracket\":false,\"name\":\"No limit " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":0}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
                 .body("moveTimeoutSeconds", nullValue())
@@ -51,7 +51,7 @@ class MoveTimeoutIT {
         assertNull(storedTimeout(id));
 
         // An update without the field leaves "no limit" unchanged.
-        given().contentType("application/json").body("{\"maxRetries\":2}")
+        given().contentType("application/json").body("{\"maxAttempts\":2}")
                 .when().put("/api/tournaments/{id}", id)
                 .then().statusCode(200)
                 .body("moveTimeoutSeconds", nullValue());
@@ -66,7 +66,7 @@ class MoveTimeoutIT {
     @Test
     void omittedOrNullTimeoutDefaultsToNoLimitAndOutOfRangeValuesAreRejected() {
         String omitted = given().contentType("application/json")
-                .body("{\"name\":\"Default " + UUID.randomUUID() + "\"}")
+                .body("{\"generateBracket\":false,\"name\":\"Default " + UUID.randomUUID() + "\"}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
                 .body("moveTimeoutSeconds", nullValue())
@@ -74,7 +74,7 @@ class MoveTimeoutIT {
         assertNull(storedTimeout(omitted));
 
         String explicitNull = given().contentType("application/json")
-                .body("{\"name\":\"Null " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":null}")
+                .body("{\"generateBracket\":false,\"name\":\"Null " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":null}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
                 .body("moveTimeoutSeconds", nullValue())
@@ -82,7 +82,7 @@ class MoveTimeoutIT {
         assertNull(storedTimeout(explicitNull));
 
         given().contentType("application/json")
-                .body("{\"name\":\"Too short " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":5}")
+                .body("{\"generateBracket\":false,\"name\":\"Too short " + UUID.randomUUID() + "\",\"moveTimeoutSeconds\":5}")
                 .when().post("/api/tournaments")
                 .then().statusCode(400)
                 .body(containsString("moveTimeoutSeconds"));

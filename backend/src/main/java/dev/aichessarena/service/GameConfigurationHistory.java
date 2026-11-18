@@ -33,7 +33,7 @@ public class GameConfigurationHistory {
                 tournament == null ? null : tournament.openingId,
                 game.openingId,
                 GameEngineService.moveTimeoutSecondsFor(game),
-                tournament == null ? 3 : tournament.maxRetries,
+                tournament == null ? 3 : tournament.maxAttempts,
                 tournament == null ? Tournament.DEFAULT_MAX_OUTPUT_TOKENS : tournament.maxOutputTokens,
                 GameConversationService.configuredChatMode(game).name(),
                 tournament == null || tournament.banterLevel == null ? null : tournament.banterLevel.name(),

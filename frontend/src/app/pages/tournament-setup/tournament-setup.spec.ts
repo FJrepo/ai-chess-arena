@@ -43,7 +43,7 @@ describe('TournamentSetup', () => {
         generateBracket: true,
         runSettings: { maxConcurrentGames: 5, budgetUsd: '2.5' },
         moveTimeoutSeconds: 120,
-        maxRetries: 9,
+        maxAttempts: 9,
         openingMode: 'FIXED',
         openingId: 'ruy-lopez',
         sharedCustomInstructions: 'Shared',
@@ -99,7 +99,7 @@ describe('TournamentSetup', () => {
         openingMode: source.openingMode,
         configuredOpeningId: source.openingId,
         moveTimeoutSeconds: 120,
-        maxRetries: 9,
+        maxAttempts: 9,
         maxOutputTokens: 8192,
         chatMode: 'MANDATORY',
         banterLevel: 'PLAYFUL',
@@ -326,14 +326,14 @@ describe('TournamentSetup', () => {
     [21, 20],
   ])('copies the effective attempt limit from legacy %s', async (stored, effective) => {
     const api = createApiService();
-    const source = { ...rematchSource(), maxRetries: stored };
+    const source = { ...rematchSource(), maxAttempts: stored };
     Object.assign(api, {
       getTournament: () => of(source),
       getModels: () => of({ data: [catalogModel('a/one', 'One')] }),
     });
     const fixture = await renderSetup(api, 'old');
     const setup = fixture.componentInstance;
-    expect(setup.maxRetries()).toBe(effective);
+    expect(setup.maxAttempts()).toBe(effective);
     expect(setup.rematchChanges(source)).toContainEqual({
       setting: 'Attempts per move',
       before: String(stored),
@@ -793,7 +793,8 @@ describe('TournamentSetup', () => {
       }
     }
     createButton.click();
-    expect(api.createTournamentPayload?.['maxRetries']).toBe(20);
+    expect(api.createTournamentPayload?.['maxAttempts']).toBe(20);
+    expect(api.createTournamentPayload).not.toHaveProperty('maxRetries');
   });
 
   it('renders the token bounds and credit-balance hint and validates the boundaries', async () => {
@@ -3068,7 +3069,7 @@ function rematchSource(): Tournament {
     drawPolicy: 'HIGHER_SEED_ADVANCES',
     sharedCustomInstructions: 'Shared',
     moveTimeoutSeconds: 120,
-    maxRetries: 9,
+    maxAttempts: 9,
     maxOutputTokens: 8192,
     matchupBestOf: 3,
     finalsBestOf: 5,

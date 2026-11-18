@@ -47,7 +47,7 @@ class GameLoopFreshStateIT {
     /** Before answering this turn (0-based), the tournament's settings are changed through the REST API. */
     private static final int SETTINGS_CHANGED_DURING_TURN = 2;
     private static final int CHANGED_MAX_OUTPUT_TOKENS = 2000;
-    private static final int CHANGED_MAX_RETRIES = 5;
+    private static final int CHANGED_MAX_ATTEMPTS = 5;
 
     @Inject
     GameLifecycleService lifecycle;
@@ -125,7 +125,7 @@ class GameLoopFreshStateIT {
             int tokens = model.maxOutputTokens.get(turn);
             checks.add(() -> assertEquals(changed ? CHANGED_MAX_OUTPUT_TOKENS : Tournament.DEFAULT_MAX_OUTPUT_TOKENS,
                     tokens, "output limit" + label));
-            checks.add(() -> assertEquals(changed ? CHANGED_MAX_RETRIES : 3, request.maxRetries(), "retries" + label));
+            checks.add(() -> assertEquals(changed ? CHANGED_MAX_ATTEMPTS : 3, request.maxAttempts(), "retries" + label));
             checks.add(() -> assertEquals(changed ? ChatMode.MANDATORY : ChatMode.OPTIONAL, request.chatMode(),
                     "chat mode" + label));
             checks.add(() -> assertEquals(changed ? ChatMode.MANDATORY : ChatMode.OPTIONAL,
@@ -292,9 +292,9 @@ class GameLoopFreshStateIT {
             efforts.add(reasoningEffort);
             if (turn == SETTINGS_CHANGED_DURING_TURN) {
                 given().contentType("application/json")
-                        .body(("{\"chatMode\":\"MANDATORY\",\"maxOutputTokens\":%d,\"maxRetries\":%d,"
+                        .body(("{\"chatMode\":\"MANDATORY\",\"maxOutputTokens\":%d,\"maxAttempts\":%d,"
                                 + "\"reasoningEffort\":\"HIGH\"}")
-                                .formatted(CHANGED_MAX_OUTPUT_TOKENS, CHANGED_MAX_RETRIES))
+                                .formatted(CHANGED_MAX_OUTPUT_TOKENS, CHANGED_MAX_ATTEMPTS))
                         .when().put("/api/tournaments/{id}", tournamentId.toString())
                         .then().statusCode(200);
                 given().contentType("application/json")

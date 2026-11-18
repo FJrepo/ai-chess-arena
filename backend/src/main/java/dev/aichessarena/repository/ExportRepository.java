@@ -44,7 +44,7 @@ public class ExportRepository {
                    t.format as format,
                    t.drawPolicy as drawPolicy,
                    t.moveTimeoutSeconds as moveTimeoutSeconds,
-                   t.maxRetries as maxRetries,
+                   t.maxAttempts as maxAttempts,
                    t.matchupBestOf as matchupBestOf,
                    t.finalsBestOf as finalsBestOf,
                    t.chatMode as chatMode,
@@ -228,7 +228,7 @@ public class ExportRepository {
         t.format = row.get("format", Tournament.TournamentFormat.class);
         t.drawPolicy = row.get("drawPolicy", Tournament.DrawPolicy.class);
         t.moveTimeoutSeconds = row.get("moveTimeoutSeconds", Integer.class);
-        t.maxRetries = row.get("maxRetries", Integer.class);
+        t.maxAttempts = row.get("maxAttempts", Integer.class);
         t.matchupBestOf = row.get("matchupBestOf", Integer.class);
         t.finalsBestOf = row.get("finalsBestOf", Integer.class);
         t.chatMode = row.get("chatMode", ChatMode.class);

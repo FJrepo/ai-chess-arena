@@ -40,16 +40,15 @@ describe('ApiService bracket draw', () => {
     expect(received).toHaveBeenCalledWith('[Event "Arena"]\n\n*');
   });
 
-  it('opts in to queuing only when requested by the caller', () => {
-    api.startGame('game').subscribe();
-    const immediate = http.expectOne('/api/games/game/start');
-    expect(immediate.request.method).toBe('POST');
-    immediate.flush({ status: 'IN_PROGRESS' });
-
-    api.startGame('game', true).subscribe();
-    const optIn = http.expectOne('/api/games/game/start?queueIfFull=true');
-    expect(optIn.request.method).toBe('POST');
-    optIn.flush({ status: 'PAUSED', resumeRequestedAt: '2026-11-17T20:00:00Z' });
+  it('starts without a queue parameter and relies on the server queuing a full run by default', () => {
+    const received = vi.fn();
+    api.startGame('game').subscribe(received);
+    const request = http.expectOne('/api/games/game/start');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.params.keys()).toEqual([]);
+    const queued = { status: 'PAUSED', resumeRequestedAt: '2026-11-17T20:00:00Z' };
+    request.flush(queued);
+    expect(received).toHaveBeenCalledWith(queued);
   });
 
   it('deletes the displayed revision of a queued resume and returns the current game', () => {

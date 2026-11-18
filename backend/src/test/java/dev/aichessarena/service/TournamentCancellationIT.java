@@ -4,7 +4,7 @@ import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.aichessarena.dto.DtoMapper;
-import dev.aichessarena.dto.CreateTournamentRequest;
+import dev.aichessarena.dto.TournamentRequests;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
 import dev.aichessarena.dto.TournamentDto;
@@ -295,8 +295,8 @@ class TournamentCancellationIT {
         if (participantUpdate) {
             tournamentService.updateParticipantReasoningEffort(id, participantId, ReasoningEffort.LOW);
         } else {
-            tournamentResource.update(id, new CreateTournamentRequest("Renamed", null, null, null, null,
-                    null, null, null, null, null, null, null));
+            tournamentResource.update(id, TournamentRequests.settings("Renamed", null, null, null,
+                    null, null));
         }
     }
 

@@ -59,6 +59,7 @@ public class TournamentResource {
         if (req == null) {
             throw new IllegalArgumentException("Request body is required");
         }
+        req.rejectRemovedFields();
         Tournament t = new Tournament();
         if (req.legalMoveHints() != null) t.legalMoveHints = parseLegalMoveHints(req.legalMoveHints());
         t.name = req.name();
@@ -68,11 +69,10 @@ public class TournamentResource {
         t.sharedCustomInstructions = normalizeInstructions(req.sharedCustomInstructions());
         // null keeps the default of 60 seconds; 0 means no time limit per move.
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());
-        t.maxRetries = parseMaxRetries(req.maxRetries(), t.maxRetries);
+        t.maxAttempts = parseMaxAttempts(req.maxAttempts(), t.maxAttempts);
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
-        ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
-        if (chatMode != null) t.chatMode = chatMode;
+        if (req.chatMode() != null) t.chatMode = parseChatMode(req.chatMode());
         if (req.banterLevel() != null) t.banterLevel = parseBanterLevel(req.banterLevel());
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
         if (req.adjudicationEnabled() != null) t.adjudicationEnabled = req.adjudicationEnabled();
@@ -92,7 +92,8 @@ public class TournamentResource {
             }
         }
         BracketDrawMode mode = parseBracketDrawMode(req.drawMode() == null ? "ORDER" : req.drawMode());
-        boolean generate = Boolean.TRUE.equals(req.generateBracket());
+        // Omitted or null generates (2.0 default); only an explicit false creates a draft.
+        boolean generate = !Boolean.FALSE.equals(req.generateBracket());
         t.creationDrawMode = generate ? mode : null;
         TournamentCreationService.Result result = tournamentCreationService.create(t, participants, req.clientRequestId());
         Response.Status status = result.created() ? Response.Status.CREATED : Response.Status.OK;
@@ -126,6 +127,10 @@ public class TournamentResource {
     public Response update(@PathParam("id") UUID id, CreateTournamentRequest req) {
         Tournament t = tournamentRepository.findByIdForUpdate(id);
         if (t == null) return Response.status(404).build();
+        if (req == null) {
+            throw new IllegalArgumentException("Request body is required");
+        }
+        req.rejectRemovedFields();
         if (req.legalMoveHints() != null) {
             throw new IllegalArgumentException("legalMoveHints can only be set when creating a tournament");
         }
@@ -139,11 +144,10 @@ public class TournamentResource {
         }
         // null leaves the move time limit unchanged; 0 removes it.
         if (req.moveTimeoutSeconds() != null) t.moveTimeoutSeconds = parseMoveTimeout(req.moveTimeoutSeconds());
-        t.maxRetries = parseMaxRetries(req.maxRetries(), t.maxRetries);
+        t.maxAttempts = parseMaxAttempts(req.maxAttempts(), t.maxAttempts);
         if (req.matchupBestOf() != null) t.matchupBestOf = parseBestOf(req.matchupBestOf(), "matchupBestOf");
         if (req.finalsBestOf() != null) t.finalsBestOf = parseBestOf(req.finalsBestOf(), "finalsBestOf");
-        ChatMode chatMode = resolveChatMode(req.chatMode(), req.trashTalkEnabled());
-        if (chatMode != null) t.chatMode = chatMode;
+        if (req.chatMode() != null) t.chatMode = parseChatMode(req.chatMode());
         if (req.banterLevel() != null) t.banterLevel = parseBanterLevel(req.banterLevel());
         // A change applies to running games from their next turn.
         if (req.resignationAllowed() != null) t.resignationAllowed = req.resignationAllowed();
@@ -317,11 +321,11 @@ public class TournamentResource {
         return value;
     }
 
-    private static int parseMaxRetries(JsonNode value, int current) {
+    private static int parseMaxAttempts(JsonNode value, int current) {
         if (value == null || value.isNull()) return current;
         if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < Tournament.MIN_MOVE_ATTEMPTS
                 || value.intValue() > Tournament.MAX_MOVE_ATTEMPTS) {
-            throw new IllegalArgumentException("maxRetries must be a whole number from 1 to 20");
+            throw new IllegalArgumentException("maxAttempts must be a whole number from 1 to 20");
         }
         return value.intValue();
     }
@@ -334,23 +338,17 @@ public class TournamentResource {
         return value;
     }
 
-    /**
-     * The chat mode a request asks for, or null to keep the default (create) or the current mode (update).
-     * {@code chatMode} wins over the older {@code trashTalkEnabled} (false → OFF, true → OPTIONAL).
-     */
-    static ChatMode resolveChatMode(String chatMode, Boolean trashTalkEnabled) {
-        if (chatMode != null) {
-            if (chatMode.isBlank()) {
-                throw new IllegalArgumentException("chatMode must be one of OFF, OPTIONAL or MANDATORY");
-            }
-            try {
-                return ChatMode.valueOf(chatMode.trim().toUpperCase(java.util.Locale.ROOT));
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException(
-                        "Invalid chatMode: " + chatMode + " (must be one of OFF, OPTIONAL or MANDATORY)");
-            }
+    /** A non-null {@code chatMode} (null keeps the default on create and the current mode on update). */
+    static ChatMode parseChatMode(String chatMode) {
+        if (chatMode.isBlank()) {
+            throw new IllegalArgumentException("chatMode must be one of OFF, OPTIONAL or MANDATORY");
         }
-        return trashTalkEnabled != null ? ChatMode.fromTrashTalkEnabled(trashTalkEnabled) : null;
+        try {
+            return ChatMode.valueOf(chatMode.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Invalid chatMode: " + chatMode + " (must be one of OFF, OPTIONAL or MANDATORY)");
+        }
     }
 
     private static boolean parseLegalMoveHints(JsonNode value) {
