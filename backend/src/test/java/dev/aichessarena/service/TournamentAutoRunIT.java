@@ -360,6 +360,31 @@ class TournamentAutoRunIT {
     }
 
     @Test
+    void emptyBareOrRepeatedQueueParametersFailClosedAndNeverQueue() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        UUID paused = gameIds(id).getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        long revision = snapshot(paused).statusRevision();
+
+        // Empty and bare values must not fall back to the queuing default.
+        for (String query : List.of("queueIfFull=", "queueIfFull", "queueIfFull=%20")) {
+            given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                    .post("/api/games/" + paused + "/start?" + query).then().statusCode(400)
+                    .body("error", equalTo("queueIfFull must be true or false"));
+        }
+        for (List<String> values : List.of(List.of("true", "true"), List.of("true", "false"), List.of("false", ""))) {
+            given().contentType("application/json").body("{}").queryParam("queueIfFull", values)
+                    .post("/api/games/{id}/start", paused).then().statusCode(400)
+                    .body("error", equalTo("queueIfFull must be given at most once"));
+        }
+
+        assertNull(snapshot(paused).resumeRequestedAt());
+        assertEquals(revision, snapshot(paused).statusRevision());
+        assertEquals(GameStatus.PAUSED, status(paused));
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
     void newerManualResumeQueuesBehindAnOlderRequestWhenTheOnlySlotFrees() {
         UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED, GameStatus.PAUSED);
         List<UUID> ids = gameIds(id);

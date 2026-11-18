@@ -1,6 +1,7 @@
 package dev.aichessarena.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.aichessarena.dto.HumanMoveRequest;
 import dev.aichessarena.dto.MoveAttemptDto;
@@ -48,10 +49,25 @@ class GameResourceTest {
         resource.moveRepository = new MoveRepository();
         resource.gameEngineService = engine;
 
-        Response response = resource.startGame(game.id, "false");
+        Response response = resource.startGame(game.id, false);
 
         assertEquals(200, response.getStatus());
         assertEquals(game.id, engine.startedGameId);
+    }
+
+    @Test
+    void queueIfFullDefaultsOnlyWhenAbsentAndRejectsEmptyOrRepeatedValues() {
+        assertEquals(true, GameResource.parseQueueIfFull(null));
+        assertEquals(true, GameResource.parseQueueIfFull(List.of("true")));
+        assertEquals(false, GameResource.parseQueueIfFull(List.of("false")));
+        for (List<String> invalid : List.of(List.of(""), List.of(" "), List.of("TRUE"), List.of("1"))) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                    () -> GameResource.parseQueueIfFull(invalid));
+            assertEquals("queueIfFull must be true or false", error.getMessage());
+        }
+        IllegalArgumentException repeated = assertThrows(IllegalArgumentException.class,
+                () -> GameResource.parseQueueIfFull(List.of("true", "true")));
+        assertEquals("queueIfFull must be given at most once", repeated.getMessage());
     }
 
     @Test

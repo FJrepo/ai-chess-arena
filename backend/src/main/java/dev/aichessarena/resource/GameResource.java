@@ -19,9 +19,12 @@ import dev.aichessarena.websocket.GameStream;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 
+import java.util.List;
 import java.util.UUID;
 
 @Path("/api/games")
@@ -139,11 +142,11 @@ public class GameResource {
      */
     @POST
     @Path("/{id}/start")
-    public Response startGame(@PathParam("id") UUID id,
-                              @QueryParam("queueIfFull") @DefaultValue("true") String queueIfFull) {
-        if (!"true".equals(queueIfFull) && !"false".equals(queueIfFull)) {
-            throw new IllegalArgumentException("queueIfFull must be true or false");
-        }
+    public Response startGame(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
+        return startGame(id, parseQueueIfFull(uriInfo.getQueryParameters().get("queueIfFull")));
+    }
+
+    Response startGame(UUID id, boolean queueIfFull) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         if (game.tournament != null
@@ -153,8 +156,24 @@ public class GameResource {
         if (!hasConfiguredPlayer(game, true) || !hasConfiguredPlayer(game, false)) {
             throw new IllegalArgumentException("Both players must be set");
         }
-        return Response.ok("true".equals(queueIfFull)
-                ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id)).build();
+        return Response.ok(queueIfFull ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id))
+                .build();
+    }
+
+    /**
+     * Only an absent parameter means the default (true). Read explicitly because {@code @DefaultValue} would also
+     * replace an empty value, which must fail closed instead of queuing a paid resume.
+     */
+    static boolean parseQueueIfFull(List<String> values) {
+        if (values == null) return true;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("queueIfFull must be given at most once");
+        }
+        String value = values.getFirst();
+        if (!"true".equals(value) && !"false".equals(value)) {
+            throw new IllegalArgumentException("queueIfFull must be true or false");
+        }
+        return "true".equals(value);
     }
 
     @DELETE

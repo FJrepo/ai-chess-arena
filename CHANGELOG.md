@@ -16,8 +16,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
   - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
-  - `generateBracket` omitted or null -> generates the bracket on `POST /api/tournaments` (was: draft). Creating with fewer than two participants now needs `"generateBracket": false`, otherwise HTTP 400.
-  - `POST /api/games/{id}/start` without `queueIfFull` -> queues a paused game when the auto-run's slots are full (was: HTTP 409). Send `?queueIfFull=false` for the old behaviour.
+  - `generateBracket` omitted or null -> generates the bracket on `POST /api/tournaments` (was: draft). Creation still checks the OpenRouter credential first (HTTP 409 without a key); after that, fewer than two participants returns HTTP 400 unless the request sends `"generateBracket": false`.
+  - `POST /api/games/{id}/start` without `queueIfFull` -> queues a paused game when the auto-run's slots are full (was: HTTP 409). Send `?queueIfFull=false` for the old behaviour. An empty, non-boolean or repeated `queueIfFull` returns HTTP 400.
 
 ### Added
 
