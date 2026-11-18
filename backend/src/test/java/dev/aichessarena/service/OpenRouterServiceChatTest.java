@@ -369,9 +369,9 @@ class OpenRouterServiceChatTest {
 
     @Test
     void aTimeoutNeverSeesTheHeaderTimeWithoutItsStatus() throws Exception {
-        // A 429 arrives before the 100 ms deadline. Its callback is held while reading the status code, i.e. after the
-        // header time was recorded but before the status was (the order of the former two separate publications),
-        // and the deadline passes meanwhile. A provider error must never become the model's timeout.
+        // The body subscribes (the connection is ready) and a 429 arrives before the 100 ms deadline. Its callback is held
+        // while reading the status code, before any header evidence of the former versions was published, and the
+        // deadline passes meanwhile. A provider error must never become the model's timeout.
         java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
         long deadlineAt = Duration.ofMillis(100).toNanos();
         java.util.concurrent.CountDownLatch reading = new java.util.concurrent.CountDownLatch(1);
@@ -398,6 +398,16 @@ class OpenRouterServiceChatTest {
         OpenRouterService service = service("http://127.0.0.1:9");
         service.nanoClock = clock::get;
         service.chatSender = (request, handler) -> {
+            clock.set(deadlineAt - 20);
+            request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+                @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) { }
+
+                @Override public void onNext(java.nio.ByteBuffer item) { }
+
+                @Override public void onError(Throwable throwable) { }
+
+                @Override public void onComplete() { }
+            });
             clock.set(deadlineAt - 10);
             Thread.startVirtualThread(() -> handler.apply(heldStatus));
             try {
@@ -415,6 +425,8 @@ class OpenRouterServiceChatTest {
             assertTrue(response.isProviderFailure(), "a provider problem, never the model's timeout");
             assertFalse(response.timedOut());
             assertNotEquals(ProviderOutcome.TIMEOUT, response.outcome());
+            assertTrue(response.deliveryUncertain(), "the response may be an answer: possibly charged");
+            assertFalse(response.connectionPending(), "the connection was ready");
         } finally {
             release.countDown();
         }

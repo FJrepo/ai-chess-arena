@@ -295,6 +295,9 @@ public class OpenRouterService {
             AtomicReference<Long> completedAtNanos = new AtomicReference<>();
             handedToClient.set(true);
             pending = chatSender.send(request, info -> {
+                // Announced before anything is read, so a timeout never sees a ready connection without knowing that a
+                // response (possibly a provider error) is being read.
+                evidence.updateAndGet(ConnectionEvidence::withHeadersArriving);
                 // Known as soon as the status line and headers arrive, long before an error body may be complete.
                 int status = info.statusCode();
                 long at = nanoClock.getAsLong();
@@ -338,6 +341,9 @@ public class OpenRouterService {
         } catch (TimeoutException e) {
             pending.cancel(true);
             ConnectionEvidence known = evidence.get();
+            if (known.headersArriving()) {
+                return responseStatusUnknown(modelId, elapsedMs(startNanos));
+            }
             return deadlineExceeded(modelId, limitedByMoveTime, known.status(), elapsedMs(startNanos), cacheRejection,
                     handedToClient.get(), known.readyBefore(deadline));
         } catch (ExecutionException e) {
@@ -345,6 +351,9 @@ public class OpenRouterService {
                     ? e.getCause().getCause()
                     : e.getCause();
             ConnectionEvidence known = evidence.get();
+            if (known.headersArriving()) {
+                return responseStatusUnknown(modelId, elapsedMs(startNanos));
+            }
             return transportFailure(modelId, cause, limitedByMoveTime, known.status(), elapsedMs(startNanos),
                     cacheRejection, handedToClient.get(), known.readyBefore(deadline));
         } catch (InterruptedException e) {
@@ -630,15 +639,20 @@ public class OpenRouterService {
      * and TLS) is established, when the response headers arrived, and their status (0 before). Status and header time
      * are published together, so no reader sees one without the other.
      */
-    private record ConnectionEvidence(Long connectedAtNanos, Long headersAtNanos, int status) {
-        static final ConnectionEvidence NONE = new ConnectionEvidence(null, null, 0);
+    private record ConnectionEvidence(Long connectedAtNanos, boolean headersArriving, Long headersAtNanos, int status) {
+        static final ConnectionEvidence NONE = new ConnectionEvidence(null, false, null, 0);
 
         ConnectionEvidence withConnection(long at) {
-            return connectedAtNanos != null ? this : new ConnectionEvidence(at, headersAtNanos, status);
+            return connectedAtNanos != null ? this : new ConnectionEvidence(at, headersArriving, headersAtNanos, status);
+        }
+
+        /** The response has started arriving; its status is not known yet. */
+        ConnectionEvidence withHeadersArriving() {
+            return headersAtNanos != null ? this : new ConnectionEvidence(connectedAtNanos, true, null, status);
         }
 
         ConnectionEvidence withHeaders(long at, int headerStatus) {
-            return headersAtNanos != null ? this : new ConnectionEvidence(connectedAtNanos, at, headerStatus);
+            return headersAtNanos != null ? this : new ConnectionEvidence(connectedAtNanos, false, at, headerStatus);
         }
 
         /** Whether the connection was ready strictly before the deadline instant. */
@@ -649,6 +663,17 @@ public class OpenRouterService {
         private static boolean before(Long at, AnswerDeadline deadline) {
             return at != null && deadline.remainingNanos(at) > 0;
         }
+    }
+
+    /**
+     * The response had started arriving but its status was not read yet when the wait ended: it may be a provider
+     * error or an answer, so it is a provider problem (never the model's timeout) and possibly charged.
+     */
+    private LlmResponse responseStatusUnknown(String modelId, long elapsed) {
+        LOG.warnf("OpenRouter's response for model %s was still arriving at the deadline; its status is unknown", modelId);
+        return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
+                "OpenRouter's response was still arriving at the deadline; its status is unknown", elapsed, null)
+                .withDeliveryUncertain();
     }
 
     /** Records when the HTTP client subscribes to the body, i.e. once the connection is established. */
