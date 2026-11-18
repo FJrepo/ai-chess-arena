@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aichessarena.dto.BenchmarkComparisonDto;
 import dev.aichessarena.dto.BenchmarkRunDto;
+import dev.aichessarena.service.BenchmarkComparisonService;
 import dev.aichessarena.service.BenchmarkRunService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -13,6 +15,7 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
@@ -25,10 +28,35 @@ import java.util.UUID;
 public class BenchmarkResource {
     @Inject BenchmarkRunService benchmarks;
     @Inject ObjectMapper json;
+    @Inject BenchmarkComparisonService comparisons;
 
     @POST
     public Response create(String body) {
-        var result = benchmarks.create(readBody(body));
+        return created(benchmarks.create(readBody(body)));
+    }
+
+    @POST
+    @Path("/{id}/rerun")
+    public Response rerun(@PathParam("id") UUID id, String body) {
+        return created(benchmarks.rerun(id, readBody(body)));
+    }
+
+    @GET
+    @Path("/compare")
+    public BenchmarkComparisonDto compare(@QueryParam("base") List<String> base,
+                                          @QueryParam("candidate") List<String> candidate) {
+        return comparisons.compare(runId(base, "base"), runId(candidate, "candidate"));
+    }
+
+    private static UUID runId(List<String> values, String name) {
+        if (values.size() != 1 || !values.getFirst().matches(
+                "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+            throw new IllegalArgumentException(name + " must be a single benchmark run UUID");
+        }
+        return UUID.fromString(values.getFirst());
+    }
+
+    private static Response created(BenchmarkRunService.Creation result) {
         BenchmarkRunDto run = result.run();
         return result.created()
                 ? Response.created(URI.create("/api/benchmarks/" + run.run().id())).entity(run).build()

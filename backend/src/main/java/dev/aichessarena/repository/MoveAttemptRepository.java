@@ -48,6 +48,11 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
                 LeaderboardRepository.rankedGameParameters(includeForfeits, legalMoveHints));
     }
 
+    public List<ReasoningAttempt> findBenchmarkReasoningAttempts(UUID runId) {
+        return reasoningAttempts(" where g.tournament.id = :runId and a.outcome = :accepted",
+                Parameters.with("runId", runId).and("accepted", Outcome.ACCEPTED));
+    }
+
     private List<ReasoningAttempt> reasoningAttempts(String gameCondition, Parameters parameters) {
         var query = getEntityManager().createQuery(
                 "select g.id, a.color, a.modelId, a.moveNumber, a.attemptNumber, a.outcome, "
