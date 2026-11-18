@@ -36,6 +36,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- The Analytics **Behaviour** tab makes persuasion counts easier to compare, with clearer role headers, quieter sample notes and columns that stay put when the table is empty.
 - Benchmark reports lead with model scores and game counts, distinguish opening-pair outcomes, and keep small charges visible.
 - The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
