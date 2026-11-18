@@ -48,7 +48,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -246,7 +245,9 @@ public class OpenRouterService {
         // When (on the deadline's monotonic clock) the HTTP client started on the request body, which it does only once
         // the connection (TCP and TLS) is established; -1 before that. A deadline is judged by the evidence at its own
         // instant: a connection established only afterwards still missed it.
-        AtomicLong connectedAtNanos = new AtomicLong(-1);
+        AtomicReference<Long> connectedAtNanos = new AtomicReference<>();
+        // When the response headers arrived, on the same clock; null before. Also proof of an established connection.
+        AtomicReference<Long> headersAtNanos = new AtomicReference<>();
         CompletableFuture<HttpResponse<String>> pending = null;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -300,6 +301,7 @@ public class OpenRouterService {
             AtomicReference<Long> completedAtNanos = new AtomicReference<>();
             handedToClient.set(true);
             pending = chatSender.send(request, info -> {
+                headersAtNanos.compareAndSet(null, nanoClock.getAsLong());
                 responseStatus.set(info.statusCode());
                 return HttpResponse.BodySubscribers.mapping(HttpResponse.BodyHandlers.ofString().apply(info),
                         responseBody -> {
@@ -340,13 +342,13 @@ public class OpenRouterService {
         } catch (TimeoutException e) {
             pending.cancel(true);
             return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos), cacheRejection,
-                    handedToClient.get(), connectedBefore(connectedAtNanos, deadline));
+                    handedToClient.get(), readyBefore(deadline, connectedAtNanos, headersAtNanos));
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
                     ? e.getCause().getCause()
                     : e.getCause();
             return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos),
-                    cacheRejection, handedToClient.get(), connectedBefore(connectedAtNanos, deadline));
+                    cacheRejection, handedToClient.get(), readyBefore(deadline, connectedAtNanos, headersAtNanos));
         } catch (InterruptedException e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -583,9 +585,10 @@ public class OpenRouterService {
                             detail, elapsed, cacheRejection.body()), cacheRejection.body());
             return sent ? failure.withDeliveryUncertain() : failure;
         }
-        if (sent && !connected && responseStatus == 0) {
-            // Connection setup (TCP or TLS) had not completed: a provider problem, never the model's timeout. The
-            // request was very likely not delivered, but nothing confirms it, so it stays possibly charged.
+        if (sent && !connected) {
+            // No evidence from before the deadline that the connection (TCP and TLS) was ready: a provider problem,
+            // never the model's timeout, even if headers arrived just after it. The request was very likely not
+            // delivered, but nothing confirms it, so it stays possibly charged.
             LOG.warnf("The connection to OpenRouter for model %s was not established before the deadline", modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
                     "The connection to OpenRouter could not be set up before the deadline", elapsed, null)
@@ -623,14 +626,24 @@ public class OpenRouterService {
         return sent ? failure.withDeliveryUncertain() : failure;
     }
 
-    /** Reports when the HTTP client subscribes to the body, i.e. once the connection is established. */
-    /** Whether the connection was established strictly before the deadline instant. */
-    private static boolean connectedBefore(AtomicLong connectedAtNanos, AnswerDeadline deadline) {
-        long connectedAt = connectedAtNanos.get();
-        return connectedAt >= 0 && deadline.remainingNanos(connectedAt) > 0;
+    /**
+     * Whether the connection was ready strictly before the deadline instant: the body subscription or the response
+     * headers, whichever was recorded (absent: null; monotonic timestamps may be negative), happened before it.
+     */
+    @SafeVarargs
+    private static boolean readyBefore(AnswerDeadline deadline, AtomicReference<Long>... evidence) {
+        for (AtomicReference<Long> recorded : evidence) {
+            Long at = recorded.get();
+            if (at != null && deadline.remainingNanos(at) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private HttpRequest.BodyPublisher signalingConnection(HttpRequest.BodyPublisher body, AtomicLong connectedAtNanos) {
+    /** Records when the HTTP client subscribes to the body, i.e. once the connection is established. */
+    private HttpRequest.BodyPublisher signalingConnection(HttpRequest.BodyPublisher body,
+                                                          AtomicReference<Long> connectedAtNanos) {
         return new HttpRequest.BodyPublisher() {
             @Override
             public long contentLength() {
@@ -639,7 +652,7 @@ public class OpenRouterService {
 
             @Override
             public void subscribe(Flow.Subscriber<? super ByteBuffer> subscriber) {
-                connectedAtNanos.compareAndSet(-1, nanoClock.getAsLong());
+                connectedAtNanos.compareAndSet(null, nanoClock.getAsLong());
                 body.subscribe(subscriber);
             }
         };
