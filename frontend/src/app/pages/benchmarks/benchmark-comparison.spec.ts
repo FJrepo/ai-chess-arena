@@ -200,9 +200,7 @@ describe('Benchmark comparison', () => {
     const otherLink = page.querySelector('a[href="/games/unchanged-base"]');
     const disclosure = otherLink?.closest('details');
     expect(disclosure?.open).toBe(false);
-    expect(disclosure?.querySelector('summary')?.textContent).toContain(
-      'Show 2 unchanged matchups',
-    );
+    expect(disclosure?.querySelector('summary')?.textContent).toContain('Show 2 other matchups');
     expect(page.querySelector('a[href="/games/base-game"]')?.closest('details')).toBeNull();
   });
 
