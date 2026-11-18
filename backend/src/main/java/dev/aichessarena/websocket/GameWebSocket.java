@@ -162,20 +162,22 @@ public class GameWebSocket {
             LOG.debugf("Ignoring WebSocket message from connection %s that was not admitted", connection.id());
             return;
         }
+        if ("watchLiveGames".equals(type)) {
+            // A connection registers for the header once, independently of its per-game subscription budget.
+            if (liveGamesSubscriptions.putIfAbsent(connection.id(), connection) == null) {
+                if (connection.isOpen()) {
+                    outsideTransaction(() -> send(connection, liveGamesChangedMessage()));
+                } else {
+                    liveGamesSubscriptions.remove(connection.id(), connection);
+                }
+            }
+            return;
+        }
+
         if (!"unsubscribe".equals(type) && !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
             // Close instead of silently dropping: the client reconnects and resubscribes to its current game.
             LOG.debugf("Closing WebSocket %s: too many subscriptions", connection.id());
             closeQuietly(connection, "Too many subscriptions; reconnect later");
-            return;
-        }
-
-        if ("watchLiveGames".equals(type)) {
-            liveGamesSubscriptions.put(connection.id(), connection);
-            if (connection.isOpen()) {
-                outsideTransaction(() -> send(connection, liveGamesChangedMessage()));
-            } else {
-                liveGamesSubscriptions.remove(connection.id(), connection);
-            }
             return;
         }
 

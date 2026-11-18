@@ -65,6 +65,22 @@ class GameWebSocketTest {
     }
 
     @Test
+    void headerWatchDoesNotConsumeTheOnlyPerGameSubscriptionSlot() {
+        endpoint.maxSubscriptionsPerWindow = 1;
+        List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        WebSocketConnection viewer = recordingConnection("shared-header", sent);
+        UUID game = gameRepository.addGame();
+
+        endpoint.onMessage(viewer, "{\"type\":\"watchLiveGames\"}");
+        endpoint.onMessage(viewer, "{\"type\":\"watchLiveGames\"}");
+        endpoint.onMessage(viewer, subscribeMessage(game));
+
+        assertEquals(List.of("{\"type\":\"liveGamesChanged\"}"), sent);
+        assertEquals(game, endpoint.subscribedGameId(viewer.id()));
+        assertFalse(closedConnections.contains(viewer.id()));
+    }
+
+    @Test
     void messageCallbackActivatesRequestContextForRepositoryLookup() throws Exception {
         assertTrue(GameWebSocket.class
                 .getMethod("onMessage", WebSocketConnection.class, String.class)

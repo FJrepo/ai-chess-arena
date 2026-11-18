@@ -1,8 +1,19 @@
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  Component,
+  DestroyRef,
+  Injector,
+  OnInit,
+  afterNextRender,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatMenuModule } from '@angular/material/menu';
+import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { RouterLink } from '@angular/router';
 import { auditTime, finalize, merge, timer, timeout } from 'rxjs';
 import type { LiveGameSummary, LiveGamesSnapshot } from '../../models/live-games.model';
@@ -20,6 +31,9 @@ export class LiveGamesSwitcher implements OnInit {
   private readonly api = inject(ApiService);
   private readonly socket = inject(WebSocketService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
+  private readonly document = inject(DOCUMENT);
+  private readonly trigger = viewChild(MatMenuTrigger);
   private inFlight = false;
   private refreshPending = false;
 
@@ -55,6 +69,31 @@ export class LiveGamesSwitcher implements OnInit {
         });
   }
 
+  private installSnapshot(snapshot: LiveGamesSnapshot): void {
+    const focused = this.document.activeElement;
+    const focusedId = focused?.getAttribute('data-live-game-id');
+    this.snapshot.set(snapshot);
+    const trigger = this.trigger();
+    if (!focusedId || !trigger?.menuOpen || this.rows().some((row) => row.id === focusedId)) return;
+
+    if (!this.rows().length) {
+      trigger.closeMenu();
+    } else {
+      afterNextRender(
+        () => {
+          if (
+            trigger.menuOpen &&
+            (this.document.activeElement === focused ||
+              this.document.activeElement === this.document.body)
+          ) {
+            trigger.menu?.focusFirstItem('keyboard');
+          }
+        },
+        { injector: this.injector },
+      );
+    }
+  }
+
   private refresh(): void {
     if (this.inFlight) {
       this.refreshPending = true;
@@ -76,7 +115,7 @@ export class LiveGamesSwitcher implements OnInit {
       )
       .subscribe({
         next: (snapshot) => {
-          this.snapshot.set(snapshot);
+          this.installSnapshot(snapshot);
           this.unavailable.set(false);
         },
         error: () => this.unavailable.set(true),

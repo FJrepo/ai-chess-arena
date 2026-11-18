@@ -16,7 +16,7 @@
   }
 
   @for (game of rows(); track game.id) {
-    <a mat-menu-item [routerLink]="['/games', game.id]">
+    <a mat-menu-item [attr.data-live-game-id]="game.id" [routerLink]="['/games', game.id]">
       <span
         class="matchup"
         [title]="(game.whitePlayerName ?? 'White') + ' vs ' + (game.blackPlayerName ?? 'Black')"
