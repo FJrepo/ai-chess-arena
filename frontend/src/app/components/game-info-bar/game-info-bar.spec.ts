@@ -504,7 +504,66 @@ describe('GameInfoBar cancellation', () => {
   });
 });
 
-describe('GameInfoBar spend check', () => {
+describe('GameInfoBar pause banner', () => {
+  it('keeps only the pause reason in the live region across a delayed spend-check snapshot', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    const detail =
+      'A model request was in flight during a backend restart. Check spend, then resume.';
+    fixture.componentRef.setInput('game', { ...pausedGame(null), status: 'IN_PROGRESS' });
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+    const status = element.querySelector('[role="status"]');
+    expect(status?.textContent?.trim()).toBe('');
+
+    fixture.componentRef.setInput('game', pausedGame(detail));
+    fixture.detectChanges();
+    const livePauseText = status?.textContent?.trim();
+
+    fixture.componentRef.setInput('game', { ...pausedGame(detail), uncertainRequest: true });
+    fixture.detectChanges();
+
+    expect(element.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(element.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent?.trim()).toBe(livePauseText);
+    expect(livePauseText).toBe(detail);
+    expect(element.querySelector('.pause-title')?.textContent?.trim()).toBe(
+      'Paused for a spend check',
+    );
+    expect(element.querySelector('.pause-hint')?.textContent?.trim()).toBe(
+      'Find this request in your OpenRouter activity.',
+    );
+  });
+
+  it('offers exactly one primary action for a spend check after a truncated attempt', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentRef.setInput('game', {
+      ...pausedGame('A model request was in flight. Check spend, then resume.'),
+      uncertainRequest: true,
+      uncertainRequestSentAt: '2026-11-18T10:00:00Z',
+    });
+    fixture.componentRef.setInput('truncationLimit', 4096);
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+    const actions = element.querySelectorAll('.pause-panel button[mat-flat-button]');
+    expect(Array.from(actions, (action) => action.textContent?.trim())).toEqual([
+      'Spend checked, resume',
+    ]);
+    expect(element.querySelector('.raise-limit')).toBeNull();
+  });
+
+  it('keeps the warning class on an ordinary pause', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    fixture.componentRef.setInput('game', pausedGame('Paused by user'));
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+    const panel = element.querySelector('.pause-panel');
+    expect(panel?.classList.contains('pause-warning')).toBe(true);
+    expect(panel?.classList.contains('spend-pause')).toBe(false);
+  });
+
   it('offers "Spend checked, resume" only for a game with an unconfirmed request', () => {
     const fixture = TestBed.createComponent(GameInfoBar);
     const emitted: string[] = [];

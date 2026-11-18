@@ -50,6 +50,13 @@ import { ModelDetails } from '../../components/model-details/model-details';
 import { configurationDifferences } from '../../utils/game-configuration';
 import { handoffFocus } from './focus-handoff';
 import {
+  TOURNAMENT_RECIPES,
+  TournamentRecipeSettings,
+  findRecipe,
+  recipeGuideLink,
+  recipeStillApplies,
+} from '../../utils/benchmark-recipes';
+import {
   REASONING_EFFORT_HINT,
   REASONING_EFFORTS,
   ReasoningEffort,
@@ -450,6 +457,10 @@ Your opponent is %s (%s).`;
     { value: 'REPLAY_GAME', label: 'Replay Game' },
   ];
   bestOfOptions: Tournament['matchupBestOf'][] = [1, 3, 5, 7];
+  readonly recipes = TOURNAMENT_RECIPES;
+  readonly recipeLink = recipeGuideLink;
+  /** The chosen test recipe; '' when none. Choosing one only pre-fills fields. */
+  recipeId = '';
 
   private readonly presets: Record<
     string,
@@ -1455,6 +1466,47 @@ Your opponent is %s (%s).`;
     this.openingId.set(null);
     this.reasoningEffort = null;
     this.sharedCustomInstructions = preset.sharedCustomInstructions;
+  }
+
+  get selectedRecipe() {
+    return findRecipe(this.recipes, this.recipeId);
+  }
+
+  /**
+   * Pre-fills the settings of a test recipe from docs/benchmarks.md. Name, participants, match format, openings,
+   * limits and instructions stay as entered; nothing is created until the operator submits.
+   */
+  applyRecipe(id: string): void {
+    this.recipeId = id;
+    const recipe = this.selectedRecipe;
+    if (!recipe) return;
+    const settings = recipe.settings;
+    this.legalMoveHints = settings.legalMoveHints;
+    this.reasoningEffort = settings.reasoningEffort === 'default' ? null : settings.reasoningEffort;
+    this.chatMode = settings.chatMode;
+    this.banterLevel = settings.banterLevel;
+    this.resignationAllowed = settings.resignationAllowed;
+    this.adjudicationEnabled = settings.adjudicationEnabled;
+    this.limitMoveTime = settings.limitMoveTime;
+    this.maxAttempts.set(settings.maxAttempts);
+  }
+
+  private recipeForm(): TournamentRecipeSettings {
+    return {
+      legalMoveHints: this.legalMoveHints,
+      reasoningEffort: this.reasoningEffort ?? 'default',
+      chatMode: this.chatMode,
+      banterLevel: this.banterLevel,
+      resignationAllowed: this.resignationAllowed,
+      adjudicationEnabled: this.adjudicationEnabled,
+      limitMoveTime: this.limitMoveTime,
+      maxAttempts: this.maxAttempts() ?? NaN,
+    };
+  }
+
+  get recipeEdited(): boolean {
+    const recipe = this.selectedRecipe;
+    return !!recipe && !recipeStillApplies(recipe, this.recipeForm());
   }
 
   hasHumanParticipant(): boolean {

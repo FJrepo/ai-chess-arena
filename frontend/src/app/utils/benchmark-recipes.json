@@ -1,0 +1,99 @@
+{
+  "guideUrl": "https://github.com/FJrepo/ai-chess-arena/blob/main/docs/benchmarks.md",
+  "benchmark": [
+    {
+      "id": "raw-strength",
+      "label": "Raw playing strength",
+      "anchor": "raw-playing-strength",
+      "summary": "Hints on, fixed Medium effort, chat off: points scored against Stockfish.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "medium",
+        "chatMode": "OFF",
+        "targetStrengths": [
+          1500,
+          2000
+        ]
+      }
+    },
+    {
+      "id": "board-understanding",
+      "label": "Board understanding",
+      "anchor": "board-understanding",
+      "summary": "Hints off: models must find legal moves from the position themselves.",
+      "settings": {
+        "legalMoveHints": false,
+        "reasoningEffort": "medium",
+        "chatMode": "OFF",
+        "targetStrengths": [
+          1500,
+          2000
+        ]
+      }
+    },
+    {
+      "id": "effort-baseline",
+      "label": "Is more effort worth it?",
+      "anchor": "is-more-effort-worth-it",
+      "summary": "Low-effort baseline; then rerun with only the effort raised and compare.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "low",
+        "chatMode": "OFF",
+        "targetStrengths": [
+          1500,
+          2000
+        ]
+      }
+    },
+    {
+      "id": "cost-efficiency",
+      "label": "Cost efficiency",
+      "anchor": "cost-efficiency",
+      "summary": "Each model's default effort, chat off: points scored for the spend.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "default",
+        "chatMode": "OFF",
+        "targetStrengths": [
+          1500,
+          2000
+        ]
+      }
+    }
+  ],
+  "tournament": [
+    {
+      "id": "reliability",
+      "label": "Reliability and format discipline",
+      "anchor": "reliability-and-format-discipline",
+      "summary": "Plain play, no time limit: first-try legal moves, retries, forfeits.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "default",
+        "chatMode": "OFF",
+        "banterLevel": null,
+        "resignationAllowed": false,
+        "adjudicationEnabled": false,
+        "limitMoveTime": false,
+        "maxAttempts": 3
+      }
+    },
+    {
+      "id": "persuasion",
+      "label": "Personality and persuasion",
+      "anchor": "personality-and-persuasion",
+      "summary": "Mind games chat and resignation on: who talks opponents out of games.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "default",
+        "chatMode": "MANDATORY",
+        "banterLevel": "MIND_GAMES",
+        "resignationAllowed": true,
+        "adjudicationEnabled": false,
+        "limitMoveTime": false,
+        "maxAttempts": 3
+      }
+    }
+  ]
+}

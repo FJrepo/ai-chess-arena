@@ -11,6 +11,7 @@ import { ApiService } from '../../services/api.service';
 import { OpenRouterKeyStatus } from '../../services/openrouter-client';
 import { OpenRouterModelOption, OpenRouterModelsResponse } from '../../models/openrouter.model';
 import { Tournament, DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
+import { TOURNAMENT_RECIPES } from '../../utils/benchmark-recipes';
 
 describe('TournamentSetup', () => {
   afterEach(() => {
@@ -2860,6 +2861,105 @@ describe('TournamentSetup', () => {
       Record<string, unknown>
     >;
     expect(participants[0]['reasoningEffort']).toBe('minimal');
+  });
+
+  it.each(TOURNAMENT_RECIPES.map((recipe) => [recipe.id, recipe] as const))(
+    'the %s recipe pre-fills exactly its documented settings and keeps the rest',
+    (_id, recipe) => {
+      const api = createApiService();
+      const create = vi.spyOn(api, 'createTournament');
+      const component = new TournamentSetup(api, createRouter(), createRoute());
+      component.name = 'Kept name';
+      component.matchupBestOf = 5;
+      component.maxOutputTokens = 32768;
+      component.sharedCustomInstructions = 'Kept instructions';
+      component.legalMoveHints = !recipe.settings.legalMoveHints;
+      component.reasoningEffort = 'max';
+      component.chatMode = 'OPTIONAL';
+      component.banterLevel = 'POLITE';
+      component.resignationAllowed = !recipe.settings.resignationAllowed;
+      component.adjudicationEnabled = !recipe.settings.adjudicationEnabled;
+      component.limitMoveTime = !recipe.settings.limitMoveTime;
+      component.maxAttempts.set(7);
+
+      component.applyRecipe(recipe.id);
+
+      const { reasoningEffort, maxAttempts, ...toggles } = recipe.settings;
+      expect({
+        legalMoveHints: component.legalMoveHints,
+        chatMode: component.chatMode,
+        banterLevel: component.banterLevel,
+        resignationAllowed: component.resignationAllowed,
+        adjudicationEnabled: component.adjudicationEnabled,
+        limitMoveTime: component.limitMoveTime,
+      }).toEqual(toggles);
+      expect(component.reasoningEffort).toBe(
+        reasoningEffort === 'default' ? null : reasoningEffort,
+      );
+      expect(component.maxAttempts()).toBe(maxAttempts);
+      expect(component.recipeEdited).toBe(false);
+      expect([
+        component.name,
+        component.matchupBestOf,
+        component.maxOutputTokens,
+        component.sharedCustomInstructions,
+      ]).toEqual(['Kept name', 5, 32768, 'Kept instructions']);
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('choosing a recipe never creates; edits after it are sent as edited', async () => {
+    const api = createApiService();
+    const create = vi.spyOn(api, 'createTournament');
+    const fixture = await renderSetup(api);
+    const component = fixture.componentInstance;
+    component.name = 'Persuasion night';
+    component.participants.set([
+      pricedParticipant('Alpha', 'a/model', 0, 0),
+      { ...pricedParticipant('Beta', 'b/model', 0, 0), seed: 1 },
+    ]);
+    fixture.detectChanges();
+    const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatSelectHarness.with({ selector: '[aria-labelledby="setup-recipe-heading"] mat-select' }),
+    );
+    await select.open();
+    await select.clickOptions({ text: 'Personality and persuasion' });
+    await fixture.whenStable();
+    expect(create).not.toHaveBeenCalled();
+    const note: HTMLElement = fixture.nativeElement.querySelector('.recipe-note');
+    expect(note.textContent).toContain('Mind games chat and resignation on');
+    expect(note.querySelector('a')?.getAttribute('href')).toBe(
+      'https://github.com/FJrepo/ai-chess-arena/blob/main/docs/benchmarks.md#personality-and-persuasion',
+    );
+
+    const optional = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('.chat-mode-toggle button'),
+    ).find((button) => button.textContent?.trim() === 'Optional')!;
+    optional.click();
+    await fixture.whenStable();
+    expect(component.chatMode).toBe('OPTIONAL');
+    expect(note.textContent).toContain('Settings changed since you chose this recipe.');
+    fixture.nativeElement.querySelector('.create-button').click();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(api.createTournamentPayload).toEqual(
+      expect.objectContaining({
+        chatMode: 'OPTIONAL',
+        banterLevel: 'MIND_GAMES',
+        resignationAllowed: true,
+        adjudicationEnabled: false,
+        legalMoveHints: true,
+        moveTimeoutSeconds: 0,
+        maxAttempts: 3,
+      }),
+    );
+    expect(api.createTournamentPayload).not.toHaveProperty('reasoningEffort');
+  });
+
+  it('offers no recipe when rerunning a saved tournament', async () => {
+    const api = createApiService();
+    Object.assign(api, { getTournament: () => of(rematchSource()) });
+    const fixture = await renderSetup(api, 'old');
+    expect(fixture.nativeElement.querySelector('#setup-recipe-heading')).toBeNull();
   });
 
   it('presets reset the reasoning effort to the model default', () => {

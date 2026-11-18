@@ -33,10 +33,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 - The **Live games** menu shows why a paused game needs attention.
 - See on the Analytics **Behaviour** tab which models talk opponents out of positions that were not lost (better than −2.00 pawns, after a chat message), split into Mind games and other banter levels, and which models let themselves be talked out.
+- A [benchmark guide](docs/benchmarks.md) maps test questions (playing strength, board understanding, effort, cost, reliability, persuasion, variance) to settings, and a **Recipe** selector on the Benchmarks form and new-tournament setup pre-fills those settings without starting anything.
 
 ### Changed
 
 - Benchmark comparisons lead with signed model score and cost changes, flag comparability, and link both games for changed outcomes.
+- The Analytics **Behaviour** tab makes persuasion counts easier to compare, with clearer role headers, quieter sample notes and columns that stay put when the table is empty.
 - Benchmark reports lead with model scores and game counts, distinguish opening-pair outcomes, and keep small charges visible.
 - The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
@@ -45,6 +47,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Runs survive a backend restart: games whose model request was never sent resume on their own, auto-runs keep running and queued resumes keep their places. A game with a request in flight pauses with a reason to check spend, so a possibly charged request is never sent twice. Practice and Stockfish games follow the same rules.
 - A request that may have reached OpenRouter is never retried automatically: a connection that breaks or times out after sending, a broken successful answer, or an answer that could not be saved pauses the game for a spend check. Connection failures before sending are still retried; after sending, only OpenRouter's complete error document (one JSON object with `error.code` and `error.message`) with a status that shows nothing was run (400, 401, 402, 403, 404, 413, 422, 429, 500, 502, 503, 504) is an ordinary failure. A choice that reports an error, and (without a move time limit) a started answer that reaches the safety cap, pause for a spend check instead of being retried. Running out of move time stays a loss on time, also once the answer has started; that attempt is recorded as a timeout with an unknown cost, and the move time starts only after the first request is admitted. A cache-control rejection is recorded before its plain retry is checked like any request.
 - A game held for a spend check resumes only through **Spend checked, resume** (`acknowledgeUncertainRequest` names the request, so a stale tab cannot confirm a newer one); a plain resume, queued resume, the scheduler and restart recovery never clear it. Restart recovery also completes paused games whose last move already decided them. See [Restarts](docs/how-it-works.md#restarts).
+- A connection to OpenRouter (TCP or TLS) still being set up when the move time runs out pauses the game for a spend check instead of forfeiting it on time. See [Model turns and prompts](docs/how-it-works.md#model-turns-and-prompts).
+- The game's spend-check banner keeps the pause reason beside **Spend checked, resume** and points operators to their OpenRouter activity.
 
 ### Fixed
 
