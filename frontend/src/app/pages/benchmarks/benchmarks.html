@@ -292,22 +292,55 @@
     @if (rerunOpen()) {
       @let change = rerunChange(data);
       @let validation = rerunValidation(data, change);
-      <section class="panel" aria-labelledby="rerun-title">
-        <h2 id="rerun-title">Before you rerun</h2>
-        @if (pendingRerun()) {
-          <p class="pause-note" role="status">
-            A rerun may already have been created. Recover it or start a separate rerun.
-          </p>
+      @let recovery = pendingRerun();
+      <section
+        class="rerun-panel"
+        [class.panel]="!recovery"
+        [class.rerun-notice]="recovery"
+        aria-labelledby="rerun-title"
+      >
+        @if (recovery) {
+          <div class="rerun-recovery">
+            <div role="status">
+              <strong id="rerun-title">A rerun may already have been created</strong>
+              <p id="rerun-separate-warning" class="secondary">
+                Starting a separate rerun can create a second paid run.
+              </p>
+            </div>
+            <div class="page-actions run-actions">
+              <button
+                mat-flat-button
+                type="button"
+                [disabled]="busy() || loading()"
+                (click)="recoverRerun(data.run.id)"
+              >
+                Recover rerun
+              </button>
+              <button
+                mat-stroked-button
+                type="button"
+                aria-describedby="rerun-separate-warning"
+                [disabled]="busy() || loading()"
+                (click)="startSeparateRerun(data)"
+              >
+                Start a separate rerun
+              </button>
+              <ng-container *ngTemplateOutlet="closeRerun" />
+            </div>
+          </div>
         } @else {
-          <p>The new run starts automatically and uses its own budget.</p>
+          @let preview = rerunPreview(data, change);
+          @let changed = preview.filter((row) => row.after !== row.before);
+          <h2 id="rerun-title">Before you rerun</h2>
           <form
             id="rerun-form"
+            class="rerun-form"
             aria-label="Rerun benchmark"
             [inert]="needsReloadConfirmation()"
             (ngSubmit)="createRerun(data)"
           >
-            <div class="form-grid">
-              <mat-form-field appearance="outline">
+            <div class="form-grid rerun-fields">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
                 <mat-label>Setting to change</mat-label>
                 <select matNativeControl name="rerunSetting" [(ngModel)]="rerunSetting">
                   <option value="">No change (measure variance)</option>
@@ -318,7 +351,7 @@
               </mat-form-field>
               @switch (rerunSetting) {
                 @case ('modelId') {
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>Model to replace</mat-label>
                     <select matNativeControl name="rerunModelFrom" [(ngModel)]="rerunModelFrom">
                       @for (model of data.definition.modelIds; track model) {
@@ -326,7 +359,7 @@
                       }
                     </select>
                   </mat-form-field>
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>Replacement model ID</mat-label>
                     <input
                       matInput
@@ -337,7 +370,7 @@
                   </mat-form-field>
                 }
                 @case ('reasoningEffort') {
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>New effort</mat-label>
                     <select matNativeControl name="rerunEffort" [(ngModel)]="rerunEffort">
                       <option value="default">Model default</option>
@@ -348,7 +381,7 @@
                   </mat-form-field>
                 }
                 @case ('chatMode') {
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>New chat mode</mat-label>
                     <select matNativeControl name="rerunChat" [(ngModel)]="rerunChat">
                       <option value="OFF">Off</option>
@@ -358,7 +391,7 @@
                   </mat-form-field>
                 }
                 @case ('budgetUsd') {
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>New budget (USD)</mat-label>
                     <input
                       matInput
@@ -370,79 +403,144 @@
                 }
               }
             </div>
-            <div class="table-scroll rerun-preview">
-              <table aria-label="Rerun settings">
-                <thead>
-                  <tr>
-                    <th scope="col">Setting</th>
-                    <th scope="col">Source run</th>
-                    <th scope="col">New run</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of rerunPreview(data, change); track row.setting) {
-                    <tr>
-                      <th scope="row">{{ row.setting }}</th>
-                      <td>{{ row.before || '—' }}</td>
-                      <td>
-                        @if (row.after !== row.before) {
-                          <strong>{{ row.after || '—' }}</strong>
-                          <span class="cdk-visually-hidden"> (changed)</span>
-                        } @else {
-                          {{ row.after || '—' }}
-                        }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
+            <div>
+              <h3>Settings preview</h3>
+              @if (changed.length) {
+                <div class="table-scroll">
+                  <table class="rerun-diff" aria-label="Rerun settings">
+                    <thead>
+                      <tr>
+                        <th scope="col">Setting</th>
+                        <th scope="col" [class.align-end]="rerunSetting === 'budgetUsd'">
+                          Current run
+                        </th>
+                        <th class="rerun-arrow" aria-hidden="true"></th>
+                        <th scope="col" [class.align-end]="rerunSetting === 'budgetUsd'">Rerun</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of changed; track row.setting) {
+                        @let isBudget = row.setting === rerunSettings.budgetUsd;
+                        <tr>
+                          <th scope="row">{{ row.setting }}</th>
+                          <td class="secondary" [class.num]="isBudget">
+                            {{ row.before || '—' }}
+                          </td>
+                          <td class="rerun-arrow secondary" aria-hidden="true">→</td>
+                          <td [class.num]="isBudget">
+                            <strong>{{ row.after || '—' }}</strong>
+                            <span class="cdk-visually-hidden"> (changed)</span>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              } @else {
+                <p class="secondary">No settings change.</p>
+              }
             </div>
+            <details class="rerun-unchanged">
+              <summary id="rerun-unchanged-summary">Unchanged settings</summary>
+              <div class="table-scroll">
+                <table aria-labelledby="rerun-unchanged-summary">
+                  <thead>
+                    <tr>
+                      <th scope="col">Setting</th>
+                      <th scope="col">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of preview; track row.setting) {
+                      @if (row.after === row.before) {
+                        <tr>
+                          <th scope="row">{{ row.setting }}</th>
+                          <td
+                            [class.num]="
+                              typeof row.before === 'number' ||
+                              row.setting === rerunSettings.budgetUsd ||
+                              row.setting === 'Stockfish levels'
+                            "
+                          >
+                            {{ row.before || '—' }}
+                          </td>
+                        </tr>
+                      }
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </form>
         }
-        @if (pendingRerun() ? actionError() : validation || actionError(); as error) {
+        @if (recovery ? actionError() : validation || actionError(); as error) {
           <p class="error" role="alert">{{ error }}</p>
         }
-        @if (needsReloadConfirmation()) {
-          <ng-container *ngTemplateOutlet="reloadConfirmation" />
-        } @else {
-          <div class="page-actions run-actions">
-            @if (pendingRerun()) {
-              <button
-                mat-flat-button
-                type="button"
-                [disabled]="busy() || loading()"
-                (click)="recoverRerun(data.run.id)"
-              >
-                Recover rerun
-              </button>
-              <button
-                mat-button
-                type="button"
-                [disabled]="busy() || loading()"
-                (click)="startSeparateRerun(data)"
-              >
-                Start a separate rerun
-              </button>
-            } @else {
+        @if (!recovery) {
+          @let plannedGames =
+            data.definition.openings.length *
+            data.definition.targetStrengths.length *
+            data.definition.modelColors.length *
+            data.definition.modelIds.length;
+          <ng-template #rerunSummary>
+            <p id="rerun-submit-summary" class="secondary">
+              <span class="num">{{ plannedGames | number }}</span> games
+              @if (needsReloadConfirmation() || !validation) {
+                ·
+                <span class="num">{{ change.budgetUsd ?? data.budgetUsd | currency: 'USD' }}</span>
+                budget cap
+              }
+            </p>
+          </ng-template>
+          @if (needsReloadConfirmation()) {
+            <div class="rerun-notice">
+              <p id="rerun-storage-warning" role="alert">
+                Browser storage is blocked. Starting another rerun after reloading can create a
+                second paid run.
+              </p>
+              <div class="page-actions run-actions rerun-storage-actions">
+                <button mat-stroked-button type="button" (click)="cancelUnprotectedStart()">
+                  Go back
+                </button>
+                <button
+                  mat-stroked-button
+                  class="rerun-warning-action"
+                  type="button"
+                  aria-describedby="rerun-storage-warning rerun-submit-summary"
+                  [disabled]="reloadConfirmationDisabled()"
+                  (click)="confirmUnprotectedStart()"
+                >
+                  Start anyway
+                </button>
+                <ng-container *ngTemplateOutlet="rerunSummary" />
+              </div>
+            </div>
+          } @else {
+            <div class="form-footer">
+              <ng-container *ngTemplateOutlet="rerunSummary" />
               <button
                 mat-flat-button
                 type="submit"
                 form="rerun-form"
+                aria-describedby="rerun-submit-summary"
                 [disabled]="busy() || loading() || !!validation"
               >
                 Create and start rerun
               </button>
-            }
-            <button
-              mat-button
-              type="button"
-              [disabled]="busy()"
-              (click)="rerunOpen.set(false); actionError.set('')"
-            >
-              Close
-            </button>
-          </div>
+              <ng-container *ngTemplateOutlet="closeRerun" />
+            </div>
+          }
         }
+        <ng-template #closeRerun>
+          <button
+            mat-button
+            type="button"
+            [disabled]="busy()"
+            (click)="rerunOpen.set(false); actionError.set('')"
+          >
+            Close
+          </button>
+        </ng-template>
       </section>
     }
 
@@ -639,6 +737,7 @@
       <section class="panel" aria-labelledby="pairs-heading">
         <h2 id="pairs-heading">Opening pairs</h2>
         @for (model of data.models; track model.modelId) {
+          @let showPairState = model.pairs.some((pair) => !pair.complete);
           <section class="opening-model" [attr.aria-labelledby]="'model-' + $index">
             <h3 [id]="'model-' + $index">{{ model.modelId }}</h3>
             @if (model.resolvedModelIds.length) {
@@ -658,9 +757,11 @@
                   <col />
                   <col class="cost-col" />
                 </colgroup>
-                <colgroup>
-                  <col class="pair-col" />
-                </colgroup>
+                @if (showPairState) {
+                  <colgroup>
+                    <col class="pair-col" />
+                  </colgroup>
+                }
                 <thead>
                   <tr>
                     <th scope="col" rowspan="2">Opening</th>
@@ -668,7 +769,9 @@
                     @for (color of data.definition.modelColors; track color) {
                       <th scope="colgroup" colspan="2">Model as {{ color | titlecase }}</th>
                     }
-                    <th scope="col" rowspan="2">Pair</th>
+                    @if (showPairState) {
+                      <th scope="col" rowspan="2">Pair</th>
+                    }
                   </tr>
                   <tr>
                     <th scope="col">Result</th>
@@ -726,7 +829,9 @@
                           </td>
                         }
                       }
-                      <td class="secondary">{{ pair.complete ? '' : 'Incomplete' }}</td>
+                      @if (showPairState) {
+                        <td class="secondary">{{ pair.complete ? '' : 'Incomplete' }}</td>
+                      }
                     </tr>
                   }
                 </tbody>

@@ -418,7 +418,88 @@ describe('Benchmarks', () => {
     expect(fixture.nativeElement.textContent).toContain('anthropic/claude-sonnet-5');
   });
 
+  it('folds unchanged rerun settings into a labeled disclosure', () => {
+    const { fixture } = setup(run.run.id);
+    const page: HTMLElement = fixture.nativeElement;
+    fixture.detectChanges();
+    clickButton(page, 'Rerun');
+    fixture.detectChanges();
+
+    const disclosure = page.querySelector('details:has([id="rerun-unchanged-summary"])');
+    expect(disclosure?.querySelector('summary')?.textContent.trim()).toBe('Unchanged settings');
+    expect(disclosure?.hasAttribute('open')).toBe(false);
+    expect(disclosure?.querySelector('table')?.getAttribute('aria-labelledby')).toBe(
+      'rerun-unchanged-summary',
+    );
+  });
+
+  it('describes the rerun submit button with the planned games and budget cap', () => {
+    const { fixture } = setup(run.run.id);
+    const page: HTMLElement = fixture.nativeElement;
+    fixture.detectChanges();
+    clickButton(page, 'Rerun');
+    fixture.detectChanges();
+
+    const submit = page.querySelector('button[form="rerun-form"]');
+    const description = submit?.getAttribute('aria-describedby');
+    expect(description).toBeTruthy();
+    expect(page.querySelector(`#${description}`)?.textContent.replace(/\s+/g, ' ').trim()).toBe(
+      '4 games · $1.00 budget cap',
+    );
+  });
+
+  it.each([
+    { budget: null, cap: '$1.00' },
+    { budget: '2.50', cap: '$2.50' },
+  ])('shows and describes the storage-blocked rerun cost ($cap)', async ({ budget, cap }) => {
+    const { fixture } = setup(run.run.id);
+    const page: HTMLElement = fixture.nativeElement;
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage blocked', 'QuotaExceededError');
+    });
+    try {
+      fixture.detectChanges();
+      clickButton(page, 'Rerun');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      if (budget !== null) {
+        const setting = page.querySelector<HTMLSelectElement>('select[name="rerunSetting"]')!;
+        setting.value = 'budgetUsd';
+        setting.dispatchEvent(new Event('change'));
+        fixture.detectChanges();
+        await fixture.whenStable();
+        const input = page.querySelector<HTMLInputElement>('input[name="rerunBudget"]')!;
+        input.value = budget;
+        input.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+      }
+      clickButton(page, 'Create and start rerun');
+      fixture.detectChanges();
+
+      const start = [...page.querySelectorAll('button')].find(
+        (button) => button.textContent.trim() === 'Start anyway',
+      )!;
+      const summaryText = `4 games · ${cap} budget cap`;
+      const summary = [...start.parentElement!.querySelectorAll('p')].find(
+        (element) => element.textContent.replace(/\s+/g, ' ').trim() === summaryText,
+      );
+      expect(summary).toBeDefined();
+      expect(summary!.closest('[hidden], [inert], details:not([open])')).toBeNull();
+      const description = start
+        .getAttribute('aria-describedby')!
+        .split(/\s+/)
+        .map((id) => page.querySelector(`#${id}`)?.textContent)
+        .join(' ')
+        .replace(/\s+/g, ' ');
+      expect(description).toContain(summaryText);
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
   it('asks before posting or reposting after a reload when storage rejects writes', () => {
+    const rerunWarning =
+      'Browser storage is blocked. Starting another rerun after reloading can create a second paid run.';
     const { fixture, api, component } = setup(run.run.id);
     const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage blocked', 'QuotaExceededError');
@@ -433,13 +514,15 @@ describe('Benchmarks', () => {
       clickButton(page, 'Create and start rerun');
       expect(api.rerunBenchmark).not.toHaveBeenCalled();
       fixture.detectChanges();
-      expect(page.textContent).toContain(reloadWarning);
+      expect(page.querySelector('#rerun-storage-warning[role="alert"]')?.textContent.trim()).toBe(
+        rerunWarning,
+      );
 
       clickButton(page, 'Go back');
       fixture.detectChanges();
       expect(api.rerunBenchmark).not.toHaveBeenCalled();
       expect(page.textContent).not.toContain('A rerun may already have been created');
-      expect(page.textContent).not.toContain(reloadWarning);
+      expect(page.textContent).not.toContain(rerunWarning);
       clickButton(page, 'Create and start rerun');
       fixture.detectChanges();
       const pendingId = uuid.mock.results.at(-1)?.value;
@@ -465,7 +548,7 @@ describe('Benchmarks', () => {
       clickButton(nextPage, 'Create and start rerun');
       reloaded.detectChanges();
       expect(api.rerunBenchmark).toHaveBeenCalledTimes(2);
-      expect(nextPage.textContent).toContain(reloadWarning);
+      expect(nextPage.textContent).toContain(rerunWarning);
     } finally {
       uuid.mockRestore();
       storage.mockRestore();
@@ -641,7 +724,7 @@ describe('Benchmarks', () => {
     expect(result?.nextElementSibling?.textContent.trim()).toBe('—');
   });
 
-  it('leaves the Pair column blank when both games have a scored result', () => {
+  it('hides the Pair column when all opening pairs are complete', () => {
     const { fixture, component } = setup(run.run.id);
     const report = structuredClone(run);
     const pair = report.models[0].pairs[0];
@@ -650,7 +733,35 @@ describe('Benchmarks', () => {
     component.report.set(report);
     fixture.detectChanges();
     const page: HTMLElement = fixture.nativeElement;
-    expect(page.querySelector('.opening-table tbody td:last-child')?.textContent.trim()).toBe('');
+    const table = page.querySelector<HTMLTableElement>('.opening-table')!;
+    expect([...table.tHead!.rows[0].cells].map((cell) => cell.textContent.trim())).toEqual([
+      'Opening',
+      'Level',
+      'Model as White',
+      'Model as Black',
+    ]);
+    expect(table.tBodies[0].rows[0].cells).toHaveLength(6);
+  });
+
+  it('shows the Pair column when any opening pair is incomplete', () => {
+    const { fixture, component } = setup(run.run.id);
+    const report = structuredClone(run);
+    const pairs = report.models[0].pairs;
+    const complete = structuredClone(pairs[0]);
+    complete.id = 'complete-pair';
+    complete.complete = true;
+    Object.assign(complete.games[1], { status: 'COMPLETED', result: 'DRAW', statusDetail: null });
+    pairs.unshift(complete);
+    component.report.set(report);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const table = page.querySelector<HTMLTableElement>('.opening-table')!;
+    expect(table.tHead!.rows[0].lastElementChild?.textContent.trim()).toBe('Pair');
+    expect([...table.tBodies[0].rows].map((row) => row.cells.length)).toEqual([7, 7]);
+    expect([...table.tBodies[0].rows].map((row) => row.cells[6].textContent.trim())).toEqual([
+      '',
+      'Incomplete',
+    ]);
   });
 
   it('shows the game resume hint only when a game is paused', () => {
