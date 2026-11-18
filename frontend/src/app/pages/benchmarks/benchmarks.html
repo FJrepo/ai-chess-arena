@@ -292,12 +292,17 @@
     @if (rerunOpen()) {
       @let change = rerunChange(data);
       @let validation = rerunValidation(data, change);
-      <section class="panel rerun-panel" aria-labelledby="rerun-title">
-        <h2 id="rerun-title">Before you rerun</h2>
-        @if (pendingRerun()) {
-          <div class="rerun-notice">
+      @let recovery = pendingRerun();
+      <section
+        class="rerun-panel"
+        [class.panel]="!recovery"
+        [class.rerun-notice]="recovery"
+        aria-labelledby="rerun-title"
+      >
+        @if (recovery) {
+          <div class="rerun-recovery">
             <div role="status">
-              <strong>A rerun may already have been created</strong>
+              <strong id="rerun-title">A rerun may already have been created</strong>
               <p id="rerun-separate-warning" class="secondary">
                 Starting a separate rerun can create a second paid run.
               </p>
@@ -326,6 +331,7 @@
         } @else {
           @let preview = rerunPreview(data, change);
           @let changed = preview.filter((row) => row.after !== row.before);
+          <h2 id="rerun-title">Before you rerun</h2>
           <form
             id="rerun-form"
             class="rerun-form"
@@ -405,8 +411,11 @@
                     <thead>
                       <tr>
                         <th scope="col">Setting</th>
-                        <th scope="col" class="align-end">Current run</th>
-                        <th scope="col">Rerun</th>
+                        <th scope="col" [class.align-end]="rerunSetting === 'budgetUsd'">
+                          Current run
+                        </th>
+                        <th class="rerun-arrow" aria-hidden="true"></th>
+                        <th scope="col" [class.align-end]="rerunSetting === 'budgetUsd'">Rerun</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -414,14 +423,12 @@
                         @let isBudget = row.setting === rerunSettings.budgetUsd;
                         <tr>
                           <th scope="row">{{ row.setting }}</th>
-                          <td class="align-end secondary">
-                            <span [class.num]="isBudget">{{ row.before || '—' }}</span>
+                          <td class="secondary" [class.num]="isBudget">
+                            {{ row.before || '—' }}
                           </td>
-                          <td>
-                            <span class="rerun-value">
-                              <span class="secondary" aria-hidden="true">→</span>
-                              <strong [class.num]="isBudget">{{ row.after || '—' }}</strong>
-                            </span>
+                          <td class="rerun-arrow secondary" aria-hidden="true">→</td>
+                          <td [class.num]="isBudget">
+                            <strong>{{ row.after || '—' }}</strong>
                             <span class="cdk-visually-hidden"> (changed)</span>
                           </td>
                         </tr>
@@ -448,15 +455,14 @@
                       @if (row.after === row.before) {
                         <tr>
                           <th scope="row">{{ row.setting }}</th>
-                          <td>
-                            <span
-                              [class.num]="
-                                typeof row.before === 'number' ||
-                                row.setting === rerunSettings.budgetUsd ||
-                                row.setting === 'Stockfish levels'
-                              "
-                              >{{ row.before || '—' }}</span
-                            >
+                          <td
+                            [class.num]="
+                              typeof row.before === 'number' ||
+                              row.setting === rerunSettings.budgetUsd ||
+                              row.setting === 'Stockfish levels'
+                            "
+                          >
+                            {{ row.before || '—' }}
                           </td>
                         </tr>
                       }
@@ -467,39 +473,51 @@
             </details>
           </form>
         }
-        @if (pendingRerun() ? actionError() : validation || actionError(); as error) {
+        @if (recovery ? actionError() : validation || actionError(); as error) {
           <p class="error" role="alert">{{ error }}</p>
         }
-        @if (!pendingRerun()) {
+        @if (!recovery) {
+          @let plannedGames =
+            data.definition.openings.length *
+            data.definition.targetStrengths.length *
+            data.definition.modelColors.length *
+            data.definition.modelIds.length;
+          <ng-template #rerunSummary>
+            <p id="rerun-submit-summary" class="secondary">
+              <span class="num">{{ plannedGames | number }}</span> games
+              @if (needsReloadConfirmation() || !validation) {
+                ·
+                <span class="num">{{ change.budgetUsd ?? data.budgetUsd | currency: 'USD' }}</span>
+                budget cap
+              }
+            </p>
+          </ng-template>
           @if (needsReloadConfirmation()) {
             <div class="rerun-notice">
               <p id="rerun-storage-warning" role="alert">
-                Browser storage is blocked. Reloading before the rerun appears could start a second
-                paid run.
+                Browser storage is blocked. Starting another rerun after reloading can create a
+                second paid run.
               </p>
-              <div class="page-actions run-actions">
+              <div class="page-actions run-actions rerun-storage-actions">
                 <button mat-stroked-button type="button" (click)="cancelUnprotectedStart()">
                   Go back
                 </button>
                 <button
-                  mat-button
-                  class="cancel-action"
+                  mat-stroked-button
+                  class="rerun-warning-action"
                   type="button"
-                  aria-describedby="rerun-storage-warning"
+                  aria-describedby="rerun-storage-warning rerun-submit-summary"
                   [disabled]="reloadConfirmationDisabled()"
                   (click)="confirmUnprotectedStart()"
                 >
                   Start anyway
                 </button>
+                <ng-container *ngTemplateOutlet="rerunSummary" />
               </div>
             </div>
           } @else {
-            @let plannedGames =
-              data.definition.openings.length *
-              data.definition.targetStrengths.length *
-              data.definition.modelColors.length *
-              data.definition.modelIds.length;
             <div class="form-footer">
+              <ng-container *ngTemplateOutlet="rerunSummary" />
               <button
                 mat-flat-button
                 type="submit"
@@ -509,16 +527,6 @@
               >
                 Create and start rerun
               </button>
-              <p id="rerun-submit-summary" class="secondary">
-                <span class="num">{{ plannedGames | number }}</span> games
-                @if (!validation) {
-                  ·
-                  <span class="num">{{
-                    change.budgetUsd ?? data.budgetUsd | currency: 'USD'
-                  }}</span>
-                  budget cap
-                }
-              </p>
               <ng-container *ngTemplateOutlet="closeRerun" />
             </div>
           }
@@ -527,7 +535,6 @@
           <button
             mat-button
             type="button"
-            class="rerun-close"
             [disabled]="busy()"
             (click)="rerunOpen.set(false); actionError.set('')"
           >
@@ -730,6 +737,7 @@
       <section class="panel" aria-labelledby="pairs-heading">
         <h2 id="pairs-heading">Opening pairs</h2>
         @for (model of data.models; track model.modelId) {
+          @let showPairState = model.pairs.some((pair) => !pair.complete);
           <section class="opening-model" [attr.aria-labelledby]="'model-' + $index">
             <h3 [id]="'model-' + $index">{{ model.modelId }}</h3>
             @if (model.resolvedModelIds.length) {
@@ -749,9 +757,11 @@
                   <col />
                   <col class="cost-col" />
                 </colgroup>
-                <colgroup>
-                  <col class="pair-col" />
-                </colgroup>
+                @if (showPairState) {
+                  <colgroup>
+                    <col class="pair-col" />
+                  </colgroup>
+                }
                 <thead>
                   <tr>
                     <th scope="col" rowspan="2">Opening</th>
@@ -759,7 +769,9 @@
                     @for (color of data.definition.modelColors; track color) {
                       <th scope="colgroup" colspan="2">Model as {{ color | titlecase }}</th>
                     }
-                    <th scope="col" rowspan="2">Pair</th>
+                    @if (showPairState) {
+                      <th scope="col" rowspan="2">Pair</th>
+                    }
                   </tr>
                   <tr>
                     <th scope="col">Result</th>
@@ -817,7 +829,9 @@
                           </td>
                         }
                       }
-                      <td class="secondary">{{ pair.complete ? '' : 'Incomplete' }}</td>
+                      @if (showPairState) {
+                        <td class="secondary">{{ pair.complete ? '' : 'Incomplete' }}</td>
+                      }
                     </tr>
                   }
                 </tbody>

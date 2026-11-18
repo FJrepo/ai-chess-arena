@@ -423,8 +423,10 @@ td.num,
 }
 
 .rerun-panel,
-.rerun-form {
+.rerun-form,
+.rerun-notice {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--app-space-3);
 }
 
@@ -437,30 +439,30 @@ td.num,
 }
 
 .rerun-form table {
-  table-layout: fixed;
-
-  th:first-child {
-    width: 25%;
-  }
-
   :is(th, td) {
     padding-block: var(--app-space-1);
   }
 }
 
-.rerun-diff th:nth-child(2) {
-  width: 25%;
-}
+.rerun-diff {
+  width: auto;
 
-.rerun-value {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--app-space-2);
+  .rerun-arrow {
+    padding-inline: var(--app-space-1);
+  }
 }
 
 .rerun-unchanged {
   color: var(--mat-sys-on-surface-variant);
   font-size: var(--app-text-secondary-size);
+
+  table {
+    table-layout: fixed;
+
+    th:first-child {
+      width: 25%;
+    }
+  }
 
   summary {
     inline-size: fit-content;
@@ -471,26 +473,39 @@ td.num,
   }
 }
 
-.rerun-panel .form-footer .rerun-close {
-  margin-inline-start: auto;
+.rerun-storage-actions {
+  justify-content: flex-start;
+}
+
+.rerun-warning-action {
+  @include mat.button-overrides(
+    (
+      outlined-label-text-color: var(--app-warning-text),
+      outlined-outline-color: var(--app-warning-border),
+      outlined-state-layer-color: var(--app-warning-text),
+    )
+  );
 }
 
 .rerun-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
   padding: var(--app-space-3) var(--app-space-4);
   border: var(--app-rule-width) solid var(--app-warning-border);
   border-radius: var(--app-banner-radius);
   background: var(--app-warning-fill);
   box-shadow: inset var(--app-space-1) 0 0 var(--app-warning-border);
 
-  > p {
+  > [id='rerun-storage-warning'] {
     color: var(--app-warning-text);
     font-size: var(--app-text-secondary-size);
   }
+}
+
+.rerun-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
 
   > [role='status'] {
     display: grid;
