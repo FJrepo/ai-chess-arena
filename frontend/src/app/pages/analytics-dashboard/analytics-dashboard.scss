@@ -510,6 +510,21 @@
   }
 }
 
+// Column headers are words: they keep the text font; only numeric cells use the numeric font.
+.analytics-table th.num {
+  font-family: inherit;
+}
+
+.analytics-table .quality-acpl {
+  white-space: nowrap;
+
+  .table-note {
+    font-weight: var(--mat-sys-body-medium-weight);
+    letter-spacing: normal;
+    text-transform: none;
+  }
+}
+
 // ?! / ? / ?? markers in the move-quality header, in the game view's tones.
 .quality-glyph {
   font-weight: 800;

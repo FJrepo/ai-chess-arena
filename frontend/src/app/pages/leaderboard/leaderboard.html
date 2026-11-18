@@ -12,6 +12,43 @@
 
   <mat-card class="leaderboard-card">
     <mat-card-content>
+      @let data = response();
+      @if (data) {
+        @if (data.models[0]; as leader) {
+          <section class="leader-summary" aria-labelledby="leader-heading">
+            <div class="leader-identity">
+              <h2 id="leader-heading">Current leader</h2>
+              <div class="model-name">
+                <app-provider-logo [modelId]="leader.modelId.replace('~', '')" [size]="24" />
+                <strong>{{ leader.displayName }}</strong>
+              </div>
+            </div>
+            <dl class="leader-stats">
+              <div class="leader-elo">
+                <dt>Elo</dt>
+                <dd>
+                  <span class="num">{{ leader.rating }}</span>
+                  @if (leader.provisional) {
+                    <span class="badge provisional">Provisional</span>
+                  }
+                </dd>
+              </div>
+              <div>
+                <dt>W–D–L</dt>
+                <dd class="num">{{ leader.wins }}–{{ leader.draws }}–{{ leader.losses }}</dd>
+              </div>
+              <div>
+                <dt>Games rated</dt>
+                <dd class="num">{{ leader.games }}</dd>
+              </div>
+            </dl>
+          </section>
+        } @else {
+          <p class="empty-state">
+            No rated models for these filters. Change the filters or finish a model-vs-model game.
+          </p>
+        }
+      }
       <div class="controls">
         <mat-slide-toggle
           [checked]="includeForfeits()"
@@ -32,14 +69,20 @@
         </mat-form-field>
         <a mat-button routerLink="/analytics">Move quality &amp; reliability</a>
       </div>
-      <p class="explanation">
-        Elo starts at 1500, with expected scores on a logistic /400 scale. K is 32 for a model's
-        first 30 rated games, then 16. Finished model-vs-model games count: checkmate, resignation,
-        adjudication and draws (½ point), plus forfeits as losses when enabled. Byes, cancelled
-        games, human games and unfinished games are excluded. Results replay by completion time;
-        fewer than 10 rated games is provisional. Aliases (~) stay separate. Disabling forfeits
-        recalculates ratings and counts using over-the-board results only.
-      </p>
+      <details class="rating-rules">
+        <summary>How ratings work</summary>
+        <p class="explanation">
+          Elo starts at 1500, with expected scores on a logistic /400 scale. K is 32 for a model's
+          first 30 rated games, then 16. Finished model-vs-model games count: checkmate,
+          resignation, adjudication and draws (½ point), plus forfeits as losses when enabled. Byes,
+          cancelled games, human games and unfinished games are excluded. Results replay by
+          completion time. Aliases (~) stay separate. Disabling forfeits recalculates ratings and
+          counts using over-the-board results only.
+          @if (data && data.models.length) {
+            See the table legend for the provisional rating cutoff.
+          }
+        </p>
+      </details>
 
       @if (loading()) {
         <div class="state" role="status">
@@ -48,90 +91,108 @@
         </div>
       } @else if (error()) {
         <p class="state" role="alert">Could not load the leaderboard. Use Refresh to try again.</p>
-      } @else if (response(); as data) {
-        @if (data.models.length === 0) {
-          <p class="state empty-state">
-            No rated games yet for these filters. Finish a model-vs-model game to see ratings.
-          </p>
-        } @else {
-          <div class="table-wrap">
-            <table>
-              <caption>
-                {{
-                  data.gamesCount
-                }}
-                rated games ·
-                {{
-                  data.includeForfeits ? 'Including forfeits' : 'Excluding forfeits'
-                }}
-                · Legal move hints
-                {{
-                  legalMoveHints() === 'all' ? 'on or off' : legalMoveHints() ? 'on' : 'off'
-                }}
-                · Recent form: last 50 rated results, each sparkline scaled independently
-              </caption>
-              <thead>
+      } @else if (data && data.models.length) {
+        <div class="table-wrap">
+          <table>
+            <caption>
+              <div class="table-meta">
+                <span>
+                  <span class="num">{{ data.gamesCount }}</span>
+                  rated {{ data.gamesCount === 1 ? 'game' : 'games' }} ·
+                  {{ data.includeForfeits ? 'Including forfeits' : 'Excluding forfeits' }}
+                  · Legal move hints
+                  {{ legalMoveHints() === 'all' ? 'on or off' : legalMoveHints() ? 'on' : 'off' }}
+                </span>
+                <span class="provisional-legend">
+                  <span class="badge" aria-hidden="true">P</span>
+                  Provisional: fewer than <span class="num">{{ provisionalGames }}</span> rated
+                  games
+                </span>
+              </div>
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" class="rank">Rank</th>
+                <th scope="col" class="model">Model</th>
+                <th scope="col" class="numeric-heading">Elo</th>
+                <th scope="col" class="numeric-heading">W / D / L</th>
+                <th scope="col" class="numeric-heading">Games</th>
+                <th scope="col" class="numeric-heading" title="Losses by this model's own forfeits">
+                  Forfeits
+                </th>
+                <th scope="col">Last played</th>
+                <th scope="col" class="trend">
+                  Recent form
+                  <button
+                    type="button"
+                    class="trend-help"
+                    aria-label="About recent form"
+                    matTooltip="Last 50 rated results, with each sparkline scaled independently."
+                  >
+                    ?
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of data.models; track row.modelId; let index = $index) {
                 <tr>
-                  <th scope="col" class="rank">Rank</th>
-                  <th scope="col" class="model">Model</th>
-                  <th scope="col" class="num">Elo</th>
-                  <th scope="col" class="num">W / D / L</th>
-                  <th scope="col" class="num">Games</th>
-                  <th scope="col" class="num" title="Losses by this model's own forfeits">
-                    Forfeits
+                  <td class="rank num">{{ index + 1 }}</td>
+                  <th scope="row" class="model">
+                    <div class="model-name">
+                      <app-provider-logo [modelId]="row.modelId.replace('~', '')" />
+                      <span>{{ row.displayName }}</span>
+                      @if (row.provisional) {
+                        <span class="badge provisional">
+                          <span aria-hidden="true">P</span>
+                          <span class="cdk-visually-hidden">Provisional</span>
+                        </span>
+                      }
+                    </div>
+                    <span class="model-id">{{ row.modelId }}</span>
+                    <span class="model-id">{{ effortLabel(row.reasoningEffort) }}</span>
+                    @if (row.alias) {
+                      <span
+                        class="badge alias"
+                        title="Moving alias; results may span model versions"
+                        >Latest alias</span
+                      >
+                    }
                   </th>
-                  <th scope="col">Last played</th>
-                  <th scope="col" class="trend">Recent form</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of data.models; track row.modelId; let index = $index) {
-                  <tr>
-                    <td class="rank num">{{ index + 1 }}</td>
-                    <th scope="row" class="model">
-                      <div class="model-name">
-                        <app-provider-logo [modelId]="row.modelId.replace('~', '')" />
-                        <span>{{ row.displayName }}</span>
-                      </div>
-                      <span class="model-id">{{ row.modelId }}</span>
-                      <span class="model-id">{{ effortLabel(row.reasoningEffort) }}</span>
-                      <div class="badges">
-                        @if (row.provisional) {
-                          <span class="badge provisional" title="Fewer than 10 rated games"
-                            >Provisional</span
-                          >
-                        }
-                        @if (row.alias) {
-                          <span
-                            class="badge alias"
-                            title="Moving alias; results may span model versions"
-                            >Latest alias</span
-                          >
-                        }
-                      </div>
-                    </th>
-                    <td class="num rating">{{ row.rating }}</td>
-                    <td class="num record">{{ row.wins }} / {{ row.draws }} / {{ row.losses }}</td>
-                    <td class="num">{{ row.games }}</td>
-                    <td class="num">{{ row.forfeits }}</td>
-                    <td class="last-played">{{ row.lastPlayed | date: 'MMM d, y' }}</td>
-                    <td class="trend">
+                  <td class="num rating">{{ row.rating }}</td>
+                  <td class="num record">{{ row.wins }} / {{ row.draws }} / {{ row.losses }}</td>
+                  <td class="num">{{ row.games }}</td>
+                  <td class="num">{{ row.forfeits }}</td>
+                  <td class="last-played">{{ row.lastPlayed | date: 'MMM d, y' }}</td>
+                  <td class="trend">
+                    @if (row.ratingHistory.length > 0) {
                       <svg
                         viewBox="0 0 100 28"
                         role="img"
                         [attr.aria-label]="
-                          row.displayName + ': recent ratings ending at ' + row.rating
+                          row.ratingHistory.length === 1
+                            ? row.displayName +
+                              ': one rated game, Elo ' +
+                              row.ratingHistory[0].rating
+                            : row.displayName + ': recent ratings ending at ' + row.rating
                         "
                       >
-                        <polyline [attr.points]="sparklinePoints(row.ratingHistory)" />
+                        @if (row.ratingHistory.length === 1) {
+                          <circle cx="50" cy="14" r="3" />
+                        } @else {
+                          <polyline [attr.points]="sparklinePoints(row.ratingHistory)" />
+                        }
                       </svg>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        }
+                    } @else {
+                      <span aria-hidden="true">—</span>
+                      <span class="cdk-visually-hidden">No rating history</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
     </mat-card-content>
   </mat-card>

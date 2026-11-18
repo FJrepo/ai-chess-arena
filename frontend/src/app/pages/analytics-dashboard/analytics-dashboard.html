@@ -297,7 +297,8 @@
               <div>
                 <h2>Move Quality</h2>
                 <p>
-                  Stockfish's verdict on every judged move in finished games, lowest ACPL first.
+                  Stockfish's verdict on every judged move in finished games, lowest average
+                  centipawn loss first.
                 </p>
               </div>
             </div>
@@ -306,7 +307,17 @@
                 <thead>
                   <tr>
                     <th class="col-model">Model</th>
-                    <th class="num">ACPL</th>
+                    <th
+                      class="num quality-acpl"
+                      scope="col"
+                      aria-sort="ascending"
+                      aria-describedby="quality-acpl-direction"
+                    >
+                      Avg. centipawn loss <span aria-hidden="true">↓</span>
+                      <span id="quality-acpl-direction" class="table-note" aria-hidden="true">
+                        lower is better
+                      </span>
+                    </th>
                     <th class="num">Reasoning tokens / accepted move</th>
                     <th class="num">Blunders / game</th>
                     <th class="num">
@@ -326,7 +337,22 @@
                     <tr>
                       <td class="col-model">
                         <strong class="model-id">{{ row.modelId }}</strong>
-                        <span class="table-note">{{ effortLabel(row.reasoning?.effort) }}</span>
+                        <span class="table-note judged-sample">
+                          @let games = row.analyzedGames;
+                          @let sample = games ?? row.analyzedMoves;
+                          @if (sample) {
+                            <span class="num">{{ sample | number }}</span>
+                            {{ games ? 'game' : 'move' }}{{ sample === 1 ? '' : 's' }} judged
+                          } @else if (sample === 0) {
+                            no judged games
+                          } @else {
+                            sample not reported
+                          }
+                          @if (row.reasoning; as reasoning) {
+                            <span aria-hidden="true"> · </span>
+                            {{ effortLabel(reasoning.effort) }}
+                          }
+                        </span>
                       </td>
                       <td class="num">{{ formatAcpl(row.averageCentipawnLoss) }}</td>
                       <td class="num">
@@ -339,17 +365,11 @@
                           n/a
                         }
                       </td>
-                      <td class="num">
-                        {{ formatPerGame(row.blundersPerGame) }}
-                        <span class="table-note"
-                          >{{ row.analyzedGames }}
-                          {{ row.analyzedGames === 1 ? 'game' : 'games' }}</span
-                        >
-                      </td>
-                      <td class="num">{{ row.blunders ?? 0 }}</td>
-                      <td class="num">{{ row.mistakes ?? 0 }}</td>
-                      <td class="num">{{ row.inaccuracies ?? 0 }}</td>
-                      <td class="num">{{ row.analyzedMoves ?? 0 }}</td>
+                      <td class="num">{{ formatPerGame(row.blundersPerGame) }}</td>
+                      <td class="num">{{ row.blunders ?? 'n/a' }}</td>
+                      <td class="num">{{ row.mistakes ?? 'n/a' }}</td>
+                      <td class="num">{{ row.inaccuracies ?? 'n/a' }}</td>
+                      <td class="num">{{ row.analyzedMoves ?? 'n/a' }}</td>
                     </tr>
                   } @empty {
                     <tr>
@@ -392,10 +412,18 @@
                     <tr>
                       <td class="col-model">
                         <strong class="model-id">{{ row.modelId }}</strong>
-                        <span class="table-note"
-                          >{{ row.conversion?.evaluatedGames ?? 0 }} of {{ row.gamesPlayed }} games
-                          evaluated</span
-                        >
+                        <span class="table-note judged-sample">
+                          @let evaluatedSides = row.conversion?.evaluatedGames;
+                          @if (evaluatedSides) {
+                            <span class="num">{{ evaluatedSides | number }}</span> of
+                            <span class="num">{{ row.gamesPlayed | number }}</span>
+                            {{ row.gamesPlayed === 1 ? 'side evaluated' : 'sides evaluated' }}
+                          } @else if (evaluatedSides === 0) {
+                            no judged games
+                          } @else {
+                            sample not reported
+                          }
+                        </span>
                       </td>
                       <td class="num">
                         {{ conversionCount(row.conversion?.winningPositionsReached) }}
