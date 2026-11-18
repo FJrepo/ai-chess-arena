@@ -116,6 +116,16 @@
                 <span class="timeline-copy">
                   <span class="timeline-label">
                     <span>{{ event.label }}</span>
+                    @if (event.bongcloud) {
+                      <mat-icon
+                        class="move-detail-badge"
+                        aria-hidden="false"
+                        role="img"
+                        aria-label="Bongcloud"
+                        title="Bongcloud"
+                        >cloud</mat-icon
+                      >
+                    }
                     @if (event.quality; as q) {
                       <span
                         class="quality-badge"
