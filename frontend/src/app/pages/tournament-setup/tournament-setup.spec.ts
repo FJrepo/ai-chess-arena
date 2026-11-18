@@ -3001,6 +3001,56 @@ describe('TournamentSetup', () => {
     );
   });
 
+  it.each([null, 9, 3601, 120.5])(
+    'blocks Create with an inline error while an enabled move time limit is %s',
+    async (seconds) => {
+      const api = createApiService();
+      const create = vi.spyOn(api, 'createTournament');
+      const fixture = await renderSetup(api);
+      const component = fixture.componentInstance;
+      component.name = 'Timed night';
+      component.participants.set([
+        pricedParticipant('Alpha', 'a/model', 0, 0),
+        { ...pricedParticipant('Beta', 'b/model', 0, 0), seed: 1 },
+      ]);
+      component.limitMoveTime = true;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const input: HTMLInputElement = fixture.nativeElement.querySelector(
+        '.move-timeout-field input',
+      );
+      input.value = seconds === null ? '' : String(seconds);
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      expect(component.readiness().canCreate).toBe(false);
+      expect(fixture.nativeElement.querySelector('.create-button').disabled).toBe(true);
+      expect(fixture.nativeElement.textContent).toContain(
+        'Turn off the move time limit or enter a whole number from 10 to 3600 seconds.',
+      );
+      component.create();
+      expect(create).not.toHaveBeenCalled();
+
+      input.value = '10';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      fixture.nativeElement.querySelector('.create-button').click();
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(api.createTournamentPayload?.['moveTimeoutSeconds']).toBe(10);
+    },
+  );
+
+  it('treats a blank enabled move time limit as a change from an untimed recipe', () => {
+    const component = new TournamentSetup(createApiService(), createRouter(), createRoute());
+    component.applyRecipe('reliability');
+    expect(component.recipeEdited).toBe(false);
+    component.limitMoveTime = true;
+    component.moveTimeout = null as unknown as number;
+    expect(component.recipeEdited).toBe(true);
+    component.limitMoveTime = false;
+    expect(component.recipeEdited).toBe(false);
+  });
+
   it('offers no recipe when rerunning a saved tournament', async () => {
     const api = createApiService();
     Object.assign(api, { getTournament: () => of(rematchSource()) });

@@ -141,9 +141,9 @@ Resignation must be on: persuasion counts resignations. The recipe switches off 
 
 **Recipe settings:** Legal move hints **on** · Reasoning effort **Model default** · Chat **Off** · Banter **Original** · Allow resignation **on** · Adjudicate decisive wins **off** · Limit time per move **off** · Max attempts per move **3**
 
-Adjudication is off, so a won game has to be finished on the board instead of being awarded. Resignation is on, so the losing side may give up a hopeless position. No time limit means no game is decided by the clock. Games can still end by mate, a draw rule, resignation or a forfeit.
+Adjudication is off, so no win is awarded by the engine: a won game ends on the board, by mate, or when the opponent resigns or forfeits. Resignation is on, so the losing side may give up a hopeless position. No time limit means no game is decided by the clock. Games can still end by mate, a draw rule, resignation or a forfeit.
 
-**Read:** Analytics, filtered to this tournament. *Play quality* → **Conversion**: **Winning positions** (games where the side reached at least 90% winning chances), **Converted**, **Thrown away** and **Missed mates**; check the *sides evaluated* count beside each model. *Behaviour* → **Resignations** → **Won by resignation** shows how many of a model's wins came from the opponent giving up.
+**Read:** Analytics, filtered to this tournament. *Play quality* → **Conversion**: **Winning positions** (games where the side reached at least 90% winning chances), **Converted**, **Thrown away** and **Missed mates**; check the *sides evaluated* count beside each model. **Missed mates** counts judged moves that missed a forced mate, whether or not the game reached a winning position or was converted. *Behaviour* → **Resignations** → **Won by resignation** shows how many of a model's wins came from the opponent giving up.
 
 **Caveats:**
 
@@ -166,12 +166,14 @@ Adjudication is off, so a won game has to be finished on the board instead of be
 
 **Read:** Analytics, filtered to this tournament. *Overview* → *Model Comparison Table* → **Latency** and **Forfeits** (the note shows how many were timeouts). *Cost & reliability* → **Avg Latency** in engine health, **Latency** in *Per-Model Performance Metrics* and **Avg Latency** in *Reliability Ranking & Stability*. The game page shows each pause reason.
 
-**Loss on time or pause?** A model loses on time only when its deadline passes while it waits for an answer on an established connection. An unfinished connection setup, an incomplete HTTP error, or a response whose status is still being read pauses the game for a spend check instead. After an earlier provider failure in the same turn, a missed deadline also pauses: for a spend check if the request may have reached OpenRouter, otherwise for the provider problem. These pauses are not losses on time; check the spend in your OpenRouter activity before choosing **Spend checked, resume**. See [Time limit per move](how-it-works.md#time-limit-per-move).
+**Loss on time or pause?** A model loses on time when its deadline passes while it waits for an answer on an established connection, and also between attempts: when an illegal or unusable answer arrives with no time left for a retry, the model forfeits on time without another request. An unfinished connection setup, an incomplete HTTP error, or a response whose status is still being read pauses the game for a spend check instead. After an earlier provider failure in the same turn, a missed deadline also pauses: for a spend check if the request may have reached OpenRouter, otherwise for the provider problem. These pauses are not losses on time. **Spend checked, resume** appears only for a pause with an unresolved request: check that request in your OpenRouter activity first. Other pauses resume with **Resume**. See [Time limit per move](how-it-works.md#time-limit-per-move).
 
 **Caveats:**
 
 - Latency depends on provider load and time of day; the same model can be fast in one run and slow in the next. Repeat at a different time before ranking close results.
 - Reasoning effort strongly affects latency. The recipe uses each model's default; for a like-for-like comparison, set one effort for every model and say so when you report it.
+- Latency averages the recorded response times of played moves. Rejected attempts and turns that end in a timeout add no sample, so a model can lose often on time and still show a low average; read **Forfeits** and its timeout note next to it.
+- Engine health on *Cost & reliability* also counts unfinished games, while the comparison and reliability tables use finished games only.
 - Latency is shown but not scored in the reliability score.
 
 **Cost:** about the same as a tournament without a limit; games lost on time end early, and a model that thinks less to stay within the limit spends less on those moves.

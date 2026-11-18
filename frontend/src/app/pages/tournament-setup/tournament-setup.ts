@@ -308,7 +308,8 @@ Your opponent is %s (%s).`;
   readonly rematchNameValid = computed(
     () => Array.from(this.nameValue().trim()).length <= MAX_TOURNAMENT_NAME_LENGTH,
   );
-  readonly rematchTimeoutValid = computed(
+  /** An enabled limit must be a whole number of seconds from 10 to 3600; a blank field is never sent. */
+  readonly moveTimeoutValid = computed(
     () =>
       !this.limitMoveTime ||
       (Number.isInteger(this.moveTimeout) && this.moveTimeout >= 10 && this.moveTimeout <= 3600),
@@ -1145,6 +1146,7 @@ Your opponent is %s (%s).`;
         !creating &&
         this.rematchReady() &&
         this.openingValid() &&
+        this.moveTimeoutValid() &&
         this.validMaxAttempts() !== null,
     };
   });
@@ -1162,7 +1164,6 @@ Your opponent is %s (%s).`;
     return (
       this.rematchSource() !== null &&
       this.rematchNameValid() &&
-      this.rematchTimeoutValid() &&
       this.rematchOutputTokensValid() &&
       this.editingParticipantIndex() === null &&
       (!hasModels ||
@@ -1192,6 +1193,7 @@ Your opponent is %s (%s).`;
     if (
       this.creating() ||
       !this.openingValid() ||
+      !this.moveTimeoutValid() ||
       maxAttempts === null ||
       (this.sourceId() && !this.readiness().canCreate)
     ) {
@@ -1500,7 +1502,8 @@ Your opponent is %s (%s).`;
       banterLevel: this.banterLevel,
       resignationAllowed: this.resignationAllowed,
       adjudicationEnabled: this.adjudicationEnabled,
-      moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : null,
+      // A blank or invalid enabled limit is NaN, so it never matches a recipe without a limit.
+      moveTimeoutSeconds: this.limitMoveTime ? (this.moveTimeout ?? NaN) : null,
       maxAttempts: this.maxAttempts() ?? NaN,
     };
   }

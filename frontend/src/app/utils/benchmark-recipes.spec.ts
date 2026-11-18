@@ -68,4 +68,11 @@ describe('benchmark recipes', () => {
       false,
     );
   });
+
+  it('tells an invalid or blank form value apart from a recipe without a value', () => {
+    const recipe = findRecipe(TOURNAMENT_RECIPES, 'reliability')!;
+    expect(recipe.settings.moveTimeoutSeconds).toBeNull();
+    expect(recipeStillApplies(recipe, { ...recipe.settings, moveTimeoutSeconds: NaN })).toBe(false);
+    expect(recipeStillApplies(recipe, { ...recipe.settings, maxAttempts: NaN })).toBe(false);
+  });
 });

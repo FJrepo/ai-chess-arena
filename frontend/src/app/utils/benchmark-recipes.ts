@@ -54,9 +54,19 @@ export function findRecipe<S>(
   return id ? recipes.find((recipe) => recipe.id === id) : undefined;
 }
 
+function sameValue(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length && left.every((value, index) => sameValue(value, right[index]))
+    );
+  }
+  // Object.is keeps NaN (a blank or invalid number field) apart from null (no value).
+  return Object.is(left, right);
+}
+
 /** Whether every setting of the recipe still has the recipe's value in the form. */
 export function recipeStillApplies<S extends object>(recipe: Recipe<S>, form: S): boolean {
-  return (Object.keys(recipe.settings) as (keyof S)[]).every(
-    (key) => JSON.stringify(form[key]) === JSON.stringify(recipe.settings[key]),
+  return (Object.keys(recipe.settings) as (keyof S)[]).every((key) =>
+    sameValue(form[key], recipe.settings[key]),
   );
 }
