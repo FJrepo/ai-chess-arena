@@ -127,27 +127,32 @@
   }
 }
 
-// Paused game: a headline with the reason as its body line, and the fix (field + button)
-// beside it on desktop widths.
 .pause-panel {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto;
-  grid-template-areas: 'head form';
-  align-items: start;
-  gap: 8px 24px;
-  padding: 14px 16px 12px;
-  border-radius: 14px;
-  border: 1px solid var(--app-warning-border);
-  background: var(--app-warning-fill);
-  box-shadow: inset 4px 0 0 var(--app-warning-border);
+  // The empty live region stays mounted so it can announce a pause as it happens.
+  position: absolute;
+
+  &:has(.pause-title) {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--app-space-2) var(--app-space-4);
+    padding: var(--app-banner-padding);
+    border-radius: var(--app-banner-radius);
+    border: 1px solid var(--mat-sys-outline-variant);
+    background: var(--mat-sys-surface-container-low);
+
+    &.spend-pause {
+      border-color: var(--app-warning-border);
+      background: var(--app-warning-fill);
+    }
+  }
 }
 
 .pause-head {
-  grid-area: head;
-  grid-column: 1 / -1;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--app-banner-gap);
 }
 
 .pause-icon {
@@ -157,19 +162,35 @@
 
 .pause-copy {
   display: grid;
-  gap: 2px;
-  padding-top: 1px;
+  gap: var(--app-space-half);
+  min-width: 0;
 }
 
 .pause-title {
-  font: var(--mat-sys-title-small);
+  margin: 0;
+  font-size: var(--mat-sys-title-small-size);
+  line-height: var(--mat-sys-title-small-line-height);
   color: var(--mat-sys-on-surface);
 }
 
-.pause-detail {
+.pause-detail,
+.pause-hint {
+  margin: 0;
   font: var(--mat-sys-body-medium);
-  color: var(--mat-sys-on-surface-variant);
   overflow-wrap: anywhere;
+}
+
+.pause-detail {
+  color: var(--mat-sys-on-surface);
+  text-wrap: pretty;
+}
+
+.pause-hint {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.spend-checked {
+  white-space: nowrap;
 }
 
 // Resignation: who gave up, at what winning chances, last words and the opponent's last message.
@@ -212,16 +233,11 @@
 
 // The field's floating label needs room above it; the button lines up with the input box.
 .raise-limit {
-  grid-area: form;
+  align-self: start;
   display: flex;
   align-items: flex-start;
   gap: 12px 16px;
   padding-top: 6px;
-}
-
-// With the form present the headline only takes the first column.
-.pause-head:has(+ .raise-limit) {
-  grid-column: head;
 }
 
 .limit-field {
@@ -231,13 +247,6 @@
 // With the reasoning-effort select the form needs the full width: it goes under the headline.
 .pause-panel:has(.effort-field) {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    'head'
-    'form';
-
-  .pause-head {
-    grid-column: auto;
-  }
 
   .limit-field {
     width: 300px;
@@ -251,12 +260,6 @@
 // The level a side asks for, after its model id.
 .effort-tag {
   white-space: nowrap;
-}
-
-.spend-check {
-  grid-area: form;
-  display: flex;
-  align-items: center;
 }
 
 // Centres the 40px button on the 56px outlined input box.

@@ -505,6 +505,28 @@ describe('GameInfoBar cancellation', () => {
 });
 
 describe('GameInfoBar spend check', () => {
+  it('announces the spend-check heading, reason and guidance in the existing live region', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    const detail =
+      'A model request was in flight during a backend restart. Check spend, then resume.';
+    fixture.componentRef.setInput('game', { ...pausedGame(null), status: 'IN_PROGRESS' });
+    fixture.detectChanges();
+
+    const element: HTMLElement = fixture.nativeElement;
+    const status = element.querySelector('[role="status"]');
+    expect(status?.textContent?.trim()).toBe('');
+
+    fixture.componentRef.setInput('game', { ...pausedGame(detail), uncertainRequest: true });
+    fixture.detectChanges();
+
+    expect(element.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(element.querySelector('[role="status"]')).toBe(status);
+    expect(status?.querySelector('h2')?.textContent?.trim()).toBe('Paused for a spend check');
+    expect(status?.querySelector('.pause-detail')?.textContent).toBe(detail);
+    expect(status?.textContent).toContain('Check your OpenRouter activity for this request.');
+    expect(status?.querySelector('button')).toBeNull();
+  });
+
   it('offers "Spend checked, resume" only for a game with an unconfirmed request', () => {
     const fixture = TestBed.createComponent(GameInfoBar);
     const emitted: string[] = [];
