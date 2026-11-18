@@ -138,16 +138,17 @@ function createSpectator(acknowledgeImmediately = true) {
   const turnState = new GameTurnStateService();
   turnState.startTicker = vi.fn();
   turnState.stopTicker = vi.fn();
+  const snackbar = { open: vi.fn() };
   const component = new GameView(
     route as any,
     api as any,
     ws as any,
     { navigate: vi.fn() } as any,
-    { open: vi.fn() } as any,
+    snackbar as any,
     turnState,
     new BoardThemeService(document),
   );
-  return { component, gameLoad, messages, reconnected, getGame, api };
+  return { component, gameLoad, messages, reconnected, getGame, api, snackbar };
 }
 
 function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<any> }) {
@@ -181,6 +182,71 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
 }
 
 describe('GameView', () => {
+  it('shows a move detail once for a committed live occurrence without another HTTP request', () => {
+    const { component, gameLoad, messages, getGame, api, snackbar } = createSpectator();
+    component.ngOnInit();
+    try {
+      gameLoad.next(
+        gameWith({
+          liveRevision: 0,
+          currentFen: '4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 3',
+          attempts: [],
+        }),
+      );
+      const capture = storedMove(3, 'WHITE', 'exd6', '4k3/8/3P4/8/8/8/8/4K3 b - - 0 3');
+      const live = revision(
+        1,
+        { type: 'committedMove', gameId: 'g-1', move: capture, pgn: '3. exd6' },
+        gameState(),
+      );
+      messages.next(live);
+      messages.next(live);
+      expect(snackbar.open).toHaveBeenCalledExactlyOnceWith(
+        'Google en passant. Holy hell!',
+        'Dismiss',
+        expect.any(Object),
+      );
+      expect(getGame).toHaveBeenCalledOnce();
+      expect(api.getGameAttempts).not.toHaveBeenCalled();
+      expect(component.moves()).toEqual([capture]);
+    } finally {
+      component.ngOnDestroy();
+    }
+  });
+
+  it('shows a historical move badge in the feed while leaving snapshot and replay quiet', () => {
+    const { component, gameLoad, snackbar } = createSpectator();
+    const walked = storedMove(
+      2,
+      'WHITE',
+      'Ke2',
+      'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR b kq - 1 2',
+    );
+    component.ngOnInit();
+    try {
+      gameLoad.next(
+        gameWith({
+          liveRevision: 0,
+          currentFen: walked.fen,
+          moves: [
+            storedMove(1, 'WHITE', 'e4', AFTER_E4),
+            storedMove(1, 'BLACK', 'e5', AFTER_E5),
+            walked,
+          ],
+          attempts: [],
+        }),
+      );
+      expect(
+        component.feedEvents().find((item) => item.label === 'White played Ke2')?.bongcloud,
+      ).toBe(true);
+      component.goToMove(0);
+      component.goToMove(2);
+      expect(snackbar.open).not.toHaveBeenCalled();
+    } finally {
+      component.ngOnDestroy();
+    }
+  });
+
   it('forks the selected playable ply on the only side with an opposing model', () => {
     const createPractice = vi.fn(() => of(gameWith({ id: 'fork' })));
     const { component } = createComponent({ api: { createPractice } });

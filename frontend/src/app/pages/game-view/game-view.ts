@@ -49,6 +49,7 @@ import { sortMovesInPlayOrder } from '../../utils/move-order';
 import { AdvantageBar } from '../../components/advantage-bar/advantage-bar';
 import { GameRevision } from '../../services/game-revision';
 import { GameTurnStateService } from '../../services/game-turn-state.service';
+import { isBongcloudMove, liveMoveDetail } from '../../utils/game-view-details';
 import { LastMove, lastMoveSquares } from '../../utils/last-move';
 import { PositionEvaluation, evaluationAt } from '../../utils/position-evaluation';
 import {
@@ -85,6 +86,7 @@ type TimelineEvent = {
   createdAtMs: number;
   createdAtLabel: string;
   moveIndex: number | null;
+  bongcloud?: boolean;
 };
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -428,6 +430,7 @@ export class GameView implements OnInit, OnDestroy {
         createdAtMs: Date.parse(move.createdAt),
         createdAtLabel: move.createdAt,
         moveIndex: index,
+        bongcloud: isBongcloudMove(moves[index - 1]?.fen ?? START_FEN, move),
       });
     });
 
@@ -820,8 +823,12 @@ export class GameView implements OnInit, OnDestroy {
           );
           break;
         case 'committedMove': {
-          const wasAtLatest = this.currentMoveIndex() === this.moves().length - 1;
-          this.moves.update((moves) => [...moves, change.move]);
+          const moves = this.moves();
+          const wasAtLatest = this.currentMoveIndex() === moves.length - 1;
+          if (wasAtLatest && !moves.some((move) => move.id === change.move.id)) {
+            this.showLiveMoveDetail(change.move);
+          }
+          this.moves.set([...moves, change.move]);
           if (wasAtLatest) this.currentMoveIndex.set(this.moves().length - 1);
           this.game.update(
             (game) => game && { ...game, currentFen: change.move.fen, pgn: change.pgn },
@@ -1101,6 +1108,13 @@ export class GameView implements OnInit, OnDestroy {
     );
   }
 
+  private showLiveMoveDetail(move: Move): void {
+    const game = this.game();
+    if (!game || game.status !== 'IN_PROGRESS') return;
+    const detail = liveMoveDetail(game.currentFen, move);
+    if (detail) this.snackbar.open(detail, 'Dismiss', { duration: 4000 });
+  }
+
   private applyLiveMove(msg: MoveWsMessage) {
     const known = this.moves().some(
       (move) => move.moveNumber === msg.moveNumber && move.color === msg.color,
@@ -1128,6 +1142,7 @@ export class GameView implements OnInit, OnDestroy {
       createdAt: new Date().toISOString(),
     };
     const wasAtLatest = this.currentMoveIndex() === this.moves().length - 1;
+    if (wasAtLatest) this.showLiveMoveDetail(newMove);
     this.moves.update((list) => [...list, newMove]);
     if (wasAtLatest) {
       this.currentMoveIndex.set(this.moves().length - 1);
