@@ -135,7 +135,7 @@
 .pause-warning {
   position: static;
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto;
+  grid-template-columns: minmax(min(280px, 100%), 1fr) auto;
   grid-template-areas: 'head form';
   align-items: start;
   gap: 8px 24px;
@@ -277,6 +277,7 @@ span.pause-title {
 
 .limit-field {
   width: 380px;
+  max-width: 100%;
 }
 
 // With the reasoning-effort select the form needs the full width: it goes under the headline.
@@ -308,4 +309,19 @@ span.pause-title {
 .save-resume {
   margin-top: 8px;
   padding-inline: 24px;
+}
+
+// On a narrow window the pause notice stacks its action under the text instead of overflowing.
+@media (max-width: 900px) {
+  .pause-warning,
+  .pause-warning.spend-pause {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'head'
+      'form';
+
+    .pause-head {
+      grid-column: auto;
+    }
+  }
 }
