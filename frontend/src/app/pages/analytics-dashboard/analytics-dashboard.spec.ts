@@ -1,4 +1,4 @@
-import { PlatformLocation } from '@angular/common';
+import { Location, PlatformLocation } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Observable, of, Subject } from 'rxjs';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -596,17 +596,183 @@ describe('AnalyticsDashboard', () => {
     expect(latencyCard.querySelector('.sub')?.textContent).toContain('P95: n/a');
   });
 
-  it('moves focus during loading and replaces history on every cost jump', async () => {
-    const { harness } = await renderDashboard('?tab=cost', {
-      comparison: new Subject(),
-      reliability: new Subject(),
-    });
+  it('focuses Reliability when navigation changes only the tab, including on Forward', async () => {
+    const { harness, component } = await renderDashboard('?tab=overview#reliability');
     const element = harness.routeNativeElement!;
-    const links = Array.from(element.querySelectorAll<HTMLAnchorElement>('.cost-jump-links a'));
-    const sections = ['spend', 'prompt-caching', 'reliability'];
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(PlatformLocation);
+    router.setUpLocationChangeListener();
+    expect(element.querySelector('#reliability')).toBeNull();
+
+    expect(await harness.navigateByUrl('/analytics?tab=cost#reliability', AnalyticsDashboard)).toBe(
+      component,
+    );
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('reliability'));
+
+    location.back();
+    await vi.waitFor(() => {
+      expect(router.url).toBe('/analytics?tab=overview#reliability');
+      expect(element.querySelector('[aria-selected="true"]')?.textContent).toContain('Overview');
+    });
+    location.forward();
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('reliability'));
+  });
+
+  it('focuses both sections when going Back and Forward between section URLs', async () => {
+    const { harness } = await renderDashboard('?tab=cost#spend');
+    const location = TestBed.inject(PlatformLocation);
+    TestBed.inject(Router).setUpLocationChangeListener();
+    expect(document.activeElement?.id).toBe('spend');
+
+    await harness.navigateByUrl('/analytics?tab=cost#prompt-caching');
+    expect(document.activeElement?.id).toBe('prompt-caching');
+    location.back();
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('spend'));
+    location.forward();
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('prompt-caching'));
+  });
+
+  it('scrolls and focuses a cold deep link once after the delayed comparison report renders', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+    const scroll = vi.fn();
+    Object.defineProperty(heading, 'scrollIntoView', { value: scroll });
+    expect(document.activeElement).not.toBe(heading);
+    expect(element.querySelector('.cache-table')).toBeNull();
+
+    comparison.next(comparisonReport());
+    comparison.complete();
+    harness.detectChanges();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(heading);
+    element.querySelector<HTMLInputElement>('.filter-min-games input')!.focus();
+    harness.detectChanges();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'center' });
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  });
+
+  it('keeps focus in Min Games when an edit supersedes a pending jump and the new report arrives', async () => {
+    const { harness, api } = await renderDashboard('?tab=cost');
+    const element = harness.routeNativeElement!;
+    const input = element.querySelector<HTMLInputElement>('.filter-min-games input')!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+    const original = new Subject<AnalyticsComparisonResponse>();
+    const replacement = new Subject<AnalyticsComparisonResponse>();
+    api.getAnalyticsComparison.mockReturnValueOnce(original).mockReturnValueOnce(replacement);
+    input.focus();
+    input.value = '3';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await harness.navigateByUrl('/analytics?tab=cost#reliability');
+    expect(document.activeElement).toBe(input);
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minGames: 3 }),
+    );
+
+    input.value = '4';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minGames: 4 }),
+    );
+    replacement.next(comparisonReport(4));
+    replacement.complete();
+    harness.detectChanges();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(input);
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('cancels a pending jump when focus moves outside the dashboard', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      outside.focus();
+      expect(document.activeElement).toBe(outside);
+      comparison.next(comparisonReport());
+      comparison.complete();
+      harness.detectChanges();
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('fulfils the newer jump when navigation changes the target before reports arrive', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    expect(document.activeElement?.id).not.toBe('reliability');
+
+    await harness.navigateByUrl('/analytics?tab=cost#spend');
+    expect(document.activeElement?.id).toBe('spend');
+    comparison.next(comparisonReport());
+    comparison.complete();
+    harness.detectChanges();
+    expect(document.activeElement).toBe(element.querySelector('h2#spend'));
+  });
+
+  it('discards a pending jump when the user selects another tab', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    const overview = element.querySelector<HTMLElement>('[role="tab"]:first-child')!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+
+    overview.click();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/analytics?tab=overview');
+    comparison.next(comparisonReport());
+    comparison.complete();
+    harness.detectChanges();
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('focuses Reliability again when the same jump link is clicked twice', async () => {
+    const { harness } = await renderDashboard('?tab=cost');
+    const element = harness.routeNativeElement!;
+    const link = element.querySelector<HTMLAnchorElement>('a[href$="#reliability"]')!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+    for (const count of [1, 2]) {
+      link.focus();
+      link.click();
+      await harness.fixture.whenStable();
+      expect(document.activeElement).toBe(heading);
+      expect(focus).toHaveBeenCalledTimes(count);
+    }
+  });
+
+  it('leaves focus alone on query-only changes with or without a retained fragment', async () => {
+    const { harness } = await renderDashboard('?tab=cost');
+    const element = harness.routeNativeElement!;
+    const input = element.querySelector<HTMLInputElement>('.filter-min-games input')!;
+    input.focus();
+    await harness.navigateByUrl('/analytics?tab=cost&window=7');
+    expect(document.activeElement).toBe(input);
+
+    await harness.navigateByUrl('/analytics?tab=cost&window=7#reliability');
+    expect(document.activeElement?.id).toBe('reliability');
+    input.focus();
+    await harness.navigateByUrl('/analytics?tab=cost&window=90#reliability');
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('replaces the current history entry on every cost jump and keeps query parameters', async () => {
+    const { harness } = await renderDashboard('?tab=cost&window=7');
+    const element = harness.routeNativeElement!;
+    const router = TestBed.inject(Router);
     const location = TestBed.inject(PlatformLocation);
     const pushState = vi.spyOn(location, 'pushState');
     const replaceState = vi.spyOn(location, 'replaceState');
+    const links = Array.from(element.querySelectorAll<HTMLAnchorElement>('.cost-jump-links a'));
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       'Spend',
       'Prompt caching',
@@ -614,69 +780,19 @@ describe('AnalyticsDashboard', () => {
     ]);
     for (const index of [0, 1, 2, 2, 0]) {
       const link = links[index];
-      const fragment = sections[index];
-      const url = `/analytics?tab=cost#${fragment}`;
+      const fragment = ['spend', 'prompt-caching', 'reliability'][index];
+      const url = `/analytics?tab=cost&window=7#${fragment}`;
       expect(link.getAttribute('href')).toBe(url);
-      link.focus();
-      expect(document.activeElement).toBe(link);
       link.click();
+      await harness.fixture.whenStable();
+      expect(router.url).toBe(url);
+      expect(location.hash).toBe(`#${fragment}`);
       const heading = element.querySelector(`h2#${fragment}`);
       expect(heading?.getAttribute('tabindex')).toBe('-1');
       expect(document.activeElement).toBe(heading);
-      await harness.fixture.whenStable();
-      expect(TestBed.inject(Router).url).toBe(url);
-      expect(location.hash).toBe(`#${fragment}`);
     }
     expect(pushState).not.toHaveBeenCalled();
-    expect(replaceState).toHaveBeenCalledTimes(4);
-  });
-
-  it('follows fragments on a reused route and leaves filter focus alone on query changes', async () => {
-    const { harness, component } = await renderDashboard('?tab=overview');
-    const element = harness.routeNativeElement!;
-    expect(element.querySelector('#reliability')).toBeNull();
-
-    expect(await harness.navigateByUrl('/analytics?tab=cost#reliability', AnalyticsDashboard)).toBe(
-      component,
-    );
-    await vi.waitFor(() => {
-      expect(element.querySelector('[aria-selected="true"]')?.textContent).toContain(
-        'Cost & reliability',
-      );
-      expect(document.activeElement?.id).toBe('reliability');
-    });
-
-    const filter = element.querySelector<HTMLElement>('.filter-window mat-select')!;
-    filter.focus();
-    await harness.navigateByUrl('/analytics?tab=cost&window=7#reliability');
-    expect(document.activeElement).toBe(filter);
-
-    await harness.navigateByUrl('/analytics?tab=cost&window=7#prompt-caching');
-    expect(document.activeElement).toBe(element.querySelector('h2#prompt-caching'));
-  });
-
-  it('focuses a cold cost deep link after the delayed comparison report has rendered', async () => {
-    const comparison = new Subject<AnalyticsComparisonResponse>();
-    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
-    const element = harness.routeNativeElement!;
-    const heading = element.querySelector('h2#reliability')!;
-    expect(heading).toBeTruthy();
-    expect(document.activeElement).not.toBe(heading);
-    expect(element.querySelector('.cache-table')).toBeNull();
-
-    comparison.next({
-      windowDays: 30,
-      tournamentId: null,
-      minGames: 0,
-      gamesCount: 3,
-      models: [comparisonRow('model.sample')],
-    });
-    comparison.complete();
-    harness.detectChanges();
-    await harness.fixture.whenStable();
-
-    expect(element.querySelector('.cache-table')).toBeTruthy();
-    expect(document.activeElement).toBe(heading);
+    expect(replaceState).toHaveBeenCalledTimes(5);
   });
 
   it('renders conversion counts, coverage and n/a in the selected comparison scope', async () => {
@@ -716,10 +832,7 @@ describe('AnalyticsDashboard', () => {
         provideRouter([]),
         {
           provide: ActivatedRoute,
-          useValue: {
-            queryParamMap: of(convertToParamMap({ tab: 'quality' })),
-            fragment: of(null),
-          },
+          useValue: { queryParamMap: of(convertToParamMap({ tab: 'quality' })) },
         },
         {
           provide: ApiService,
@@ -1201,9 +1314,26 @@ function baseRow(modelId: string): AnalyticsComparisonRow {
 }
 
 function createDashboard(): AnalyticsDashboard {
+  TestBed.configureTestingModule({ providers: [provideRouter([])] });
   return TestBed.runInInjectionContext(
-    () => new AnalyticsDashboard({} as ApiService, {} as ActivatedRoute, {} as Router),
+    () =>
+      new AnalyticsDashboard(
+        {} as ApiService,
+        {} as ActivatedRoute,
+        TestBed.inject(Router),
+        TestBed.inject(Location),
+      ),
   );
+}
+
+function comparisonReport(minGames = 0): AnalyticsComparisonResponse {
+  return {
+    windowDays: 30,
+    tournamentId: null,
+    minGames,
+    gamesCount: 3,
+    models: [comparisonRow('model.sample')],
+  };
 }
 
 async function renderDashboard(
@@ -1217,17 +1347,7 @@ async function renderDashboard(
 ) {
   const api = {
     getTournaments: vi.fn(() => responses.tournaments ?? of([])),
-    getAnalyticsComparison: vi.fn(
-      () =>
-        responses.comparison ??
-        of({
-          windowDays: 30,
-          tournamentId: null,
-          minGames: 0,
-          gamesCount: 3,
-          models: [comparisonRow('model.sample')],
-        }),
-    ),
+    getAnalyticsComparison: vi.fn(() => responses.comparison ?? of(comparisonReport())),
     getAnalyticsHealth: vi.fn(
       () =>
         responses.health ??

@@ -1,4 +1,4 @@
-<div class="analytics-page desktop-page" #analyticsPage>
+<div class="analytics-page desktop-page">
   <header class="analytics-header">
     <div class="analytics-header-copy">
       <span class="analytics-kicker">Arena Analytics</span>
@@ -570,7 +570,7 @@
         <div class="kpi-card spend-card">
           <div class="spend-header">
             <div>
-              <h2 id="spend" tabindex="-1" #spendHeading>Spend</h2>
+              <h2 id="spend" tabindex="-1" #costSectionHeading>Spend</h2>
               @if (health(); as h) {
                 <p class="spend-headline">
                   <span class="value num">{{ h.costTotalUsd | currency: 'USD' }}</span>
@@ -584,30 +584,11 @@
               }
             </div>
             <nav class="cost-jump-links" aria-label="Cost and reliability sections">
-              <a
-                [routerLink]="[]"
-                queryParamsHandling="preserve"
-                fragment="spend"
-                replaceUrl
-                (click)="focusCostSection($event, spendHeading)"
-                >Spend</a
-              >
-              <a
-                [routerLink]="[]"
-                queryParamsHandling="preserve"
-                fragment="prompt-caching"
-                replaceUrl
-                (click)="focusCostSection($event, cachingHeading)"
-                >Prompt caching</a
-              >
-              <a
-                [routerLink]="[]"
-                queryParamsHandling="preserve"
-                fragment="reliability"
-                replaceUrl
-                (click)="focusCostSection($event, reliabilityHeading)"
-                >Reliability</a
-              >
+              @for (link of costJumpLinks(); track link.id) {
+                <a [href]="link.href" (click)="followCostJumpLink($event, link.url)">
+                  {{ link.label }}
+                </a>
+              }
             </nav>
           </div>
           <p class="tab-intro">
@@ -749,7 +730,7 @@
 
         <div class="table-card cache-table-card">
           <div class="section-header">
-            <h2 id="prompt-caching" tabindex="-1" #cachingHeading>Prompt caching</h2>
+            <h2 id="prompt-caching" tabindex="-1" #costSectionHeading>Prompt caching</h2>
           </div>
           <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
           @if (comparison()) {
@@ -792,7 +773,7 @@
         </div>
 
         <div class="table-card reliability-table-card">
-          <h2 id="reliability" tabindex="-1" #reliabilityHeading>
+          <h2 id="reliability" tabindex="-1" #costSectionHeading>
             Reliability Ranking & Stability
           </h2>
           @if (reliabilityLoading()) {

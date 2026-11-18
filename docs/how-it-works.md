@@ -462,7 +462,9 @@ The analytics page shares its analysis window, tournament, legal move hints and 
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** total spend and match count for the selected engine-health scope, followed by engine-health metrics, the Trust Index, Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Average and p95 latencies use seconds with one decimal. When more than half the models have insufficient data, the Trust Index leads with how many have enough data and shows the average score below. Otherwise, any insufficient-data count appears beside the score. Each report loads independently.
 
-Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs and using the Cost & reliability jump links replace the URL without adding browser-history entries. A link like `?tab=cost#reliability` opens the tab and moves focus to the section heading. Shared filters and the refresh schedule stay in place.
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs and using the Cost & reliability jump links replace the URL without adding browser-history entries. The dashboard applies the same shared filters and refresh schedule across tabs.
+
+Opening a section link like `?tab=cost#reliability` scrolls to the heading and focuses it when ready. This also works with Back and Forward and when activating the same jump link again. Moving focus elsewhere, editing a shared filter or switching tabs cancels a waiting jump. Query-only changes keep the current focus.
 
 Changing a shared filter clears the previous results and cancels pending report requests. Each report loads the new selection independently. Every 15 seconds, the dashboard refreshes each report that has no request in progress. A request still pending after 60 seconds times out and becomes eligible for the next poll. **Sync Data** replaces any pending requests immediately.
 

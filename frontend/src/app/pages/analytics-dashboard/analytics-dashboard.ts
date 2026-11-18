@@ -6,7 +6,7 @@ import {
   OnDestroy,
   OnInit,
   signal,
-  viewChild,
+  viewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -23,9 +23,18 @@ import {
   DatePipe,
   DecimalPipe,
   formatNumber,
+  Location,
   NgTemplateOutlet,
 } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import {
+  ActivatedRoute,
+  isActive,
+  NavigationEnd,
+  NavigationSkipped,
+  NavigationStart,
+  Router,
+  UrlTree,
+} from '@angular/router';
 import { finalize, Subscription, timeout } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
@@ -51,11 +60,18 @@ type ComparisonSortOption =
   | 'costPerWinUsd'
   | 'forfeits';
 
-type CostSection = 'spend' | 'prompt-caching' | 'reliability';
+const COST_SECTIONS = [
+  { id: 'spend', label: 'Spend' },
+  { id: 'prompt-caching', label: 'Prompt caching' },
+  { id: 'reliability', label: 'Reliability' },
+] as const;
+
+type CostSection = (typeof COST_SECTIONS)[number]['id'];
 
 @Component({
   selector: 'app-analytics-dashboard',
   standalone: true,
+  host: { '(document:focusin)': 'onDocumentFocusIn($event)' },
   imports: [
     FormsModule,
     MatButtonModule,
@@ -71,7 +87,6 @@ type CostSection = 'spend' | 'prompt-caching' | 'reliability';
     DatePipe,
     DecimalPipe,
     NgTemplateOutlet,
-    RouterLink,
   ],
   templateUrl: './analytics-dashboard.html',
   styleUrl: './analytics-dashboard.scss',
@@ -303,36 +318,46 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   private readonly subscriptions = new Subscription();
   private reports = new Subscription();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly page = viewChild<ElementRef<HTMLElement>>('analyticsPage');
+
+  // Only a pending section navigation can move focus. It is consumed once the
+  // heading is ready, or discarded when the user interacts or navigates again.
+  private readonly pendingJump = signal<CostSection | null>(null);
+  private readonly costHeadings =
+    viewChildren<ElementRef<HTMLHeadingElement>>('costSectionHeading');
   private readonly costTabIndex = this.tabIds.indexOf('cost');
-  private readonly pendingCostSection = signal<CostSection | null>(null);
   private readonly tabTransitioning = signal(false);
+
+  readonly costJumpLinks = computed(() => {
+    const current =
+      this.router.lastSuccessfulNavigation()?.finalUrl ?? this.router.parseUrl(this.router.url);
+    return COST_SECTIONS.map(({ id, label }) => {
+      const url = new UrlTree(current.root, { ...current.queryParams, tab: 'cost' }, id);
+      return {
+        id,
+        label,
+        url,
+        href: this.location.prepareExternalUrl(this.router.serializeUrl(url)),
+      };
+    });
+  });
 
   constructor(
     private api: ApiService,
     private route: ActivatedRoute,
     private router: Router,
+    private location: Location,
   ) {
-    afterRenderEffect(() => {
-      const section = this.pendingCostSection();
-      if (!section || this.tabTransitioning() || this.selectedTabIndex() !== this.costTabIndex) {
-        return;
-      }
-
-      // Reports above the destination can move its heading when they finish loading.
-      if (
-        (section !== 'spend' && this.healthLoading()) ||
-        (section === 'reliability' && this.comparisonLoading())
-      ) {
-        return;
-      }
-
-      const heading = this.costHeading(section);
-      if (heading?.isConnected) {
-        this.focusCostHeading(heading);
-        this.pendingCostSection.set(null);
-      }
-    });
+    // The router creates this component before NavigationEnd, which can precede ngOnInit.
+    this.subscriptions.add(
+      this.router.events.subscribe((event) => {
+        if (event instanceof NavigationStart || event instanceof NavigationSkipped) {
+          this.pendingJump.set(null);
+        } else if (event instanceof NavigationEnd) {
+          this.pendingJump.set(this.costSectionForNavigation(event));
+        }
+      }),
+    );
+    afterRenderEffect(() => this.fulfilPendingJump());
   }
 
   ngOnInit(): void {
@@ -345,25 +370,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
         );
         if (!initialTab && index !== this.selectedTabIndex()) this.tabTransitioning.set(true);
         this.selectedTabIndex.set(index);
-        if (index !== this.costTabIndex) this.pendingCostSection.set(null);
         initialTab = false;
-      }),
-    );
-    this.subscriptions.add(
-      this.route.fragment.subscribe((fragment) => {
-        if (
-          this.selectedTabIndex() !== this.costTabIndex ||
-          (fragment !== 'spend' && fragment !== 'prompt-caching' && fragment !== 'reliability')
-        ) {
-          this.pendingCostSection.set(null);
-          return;
-        }
-
-        // A jump link may have already focused its heading before RouterLink navigates.
-        const heading = this.costHeading(fragment);
-        this.pendingCostSection.set(
-          heading && heading.ownerDocument.activeElement === heading ? null : fragment,
-        );
       }),
     );
     this.loadTournaments();
@@ -381,8 +388,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
 
   onTabChange(index: number): void {
     if (index === this.selectedTabIndex()) return;
+    this.pendingJump.set(null);
     this.selectedTabIndex.set(index);
-    this.pendingCostSection.set(null);
     this.tabTransitioning.set(true);
     void this.router.navigate([], {
       relativeTo: this.route,
@@ -396,24 +403,72 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     this.tabTransitioning.set(false);
   }
 
-  focusCostSection(event: MouseEvent, heading: HTMLElement): void {
+  followCostJumpLink(event: MouseEvent, url: UrlTree): void {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
       return;
     }
-    this.pendingCostSection.set(null);
-    this.focusCostHeading(heading);
+    event.preventDefault();
+    void this.router.navigateByUrl(url, { replaceUrl: true, onSameUrlNavigation: 'reload' });
   }
 
-  private costHeading(section: CostSection): HTMLHeadingElement | null {
-    return this.page()?.nativeElement.querySelector<HTMLHeadingElement>(`h2#${section}`) ?? null;
+  onDocumentFocusIn(event: FocusEvent): void {
+    const section = this.pendingJump();
+    if (section && !this.costHeading(section)?.contains(event.target as Node)) {
+      this.pendingJump.set(null);
+    }
   }
 
-  private focusCostHeading(heading: HTMLElement): void {
-    heading.focus({ preventScroll: true });
+  private costSectionForNavigation(event: NavigationEnd): CostSection | null {
+    const url = this.router.parseUrl(event.urlAfterRedirects);
+    const section = COST_SECTIONS.find(({ id }) => id === url.fragment);
+    if (url.queryParamMap.get('tab') !== 'cost' || !section) return null;
+
+    // A query-only change carries the existing section along. An exact URL revisit is a jump.
+    const previous = this.router.lastSuccessfulNavigation()?.previousNavigation?.finalUrl;
+    if (
+      previous?.queryParamMap.get('tab') === 'cost' &&
+      this.router.serializeUrl(previous) !== event.urlAfterRedirects &&
+      isActive(previous, this.router, {
+        paths: 'exact',
+        matrixParams: 'exact',
+        fragment: 'exact',
+        queryParams: 'ignored',
+      })()
+    ) {
+      return null;
+    }
+    return section.id;
+  }
+
+  private fulfilPendingJump(): void {
+    const section = this.pendingJump();
+    if (!section || this.tabTransitioning() || this.selectedTabIndex() !== this.costTabIndex) {
+      return;
+    }
+
+    // Reports above the destination can shift the heading while they load.
+    if (
+      (section !== 'spend' && this.healthLoading()) ||
+      (section === 'reliability' && this.comparisonLoading())
+    ) {
+      return;
+    }
+
+    const heading = this.costHeading(section);
+    if (!heading?.isConnected) return;
+
+    this.pendingJump.set(null);
     heading.scrollIntoView?.({ block: 'center' });
+    heading.focus({ preventScroll: true });
+  }
+
+  private costHeading(section: CostSection): HTMLHeadingElement | undefined {
+    return this.costHeadings().find(({ nativeElement }) => nativeElement.id === section)
+      ?.nativeElement;
   }
 
   onCommonFiltersChanged(): void {
+    this.pendingJump.set(null);
     this.comparison.set(null);
     this.health.set(null);
     this.reliability.set(null);

@@ -29,7 +29,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
-- The five Analytics filters fit on one row at 1280 px, and Cost & reliability deep links focus the section when navigating within Analytics.
+- The five Analytics filters fit on one row at 1280 px. Cost & reliability section links restore heading focus on navigation, including Back and Forward. A waiting jump yields to filter edits and other focus changes.
 - Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
 
 ## [1.7.1] - 2026-11-17
