@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.aichessarena.entity.Game.PlayerType;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.service.TurnPolicy.Action;
 import java.util.List;
@@ -63,5 +64,21 @@ class TurnPolicyTest {
                 assertEquals(timedTurn && !providerProblem ? Action.FORFEIT_TIMEOUT : Action.PAUSE_PROVIDER, timeout);
             }
         }
+    }
+
+    @Test
+    void anInterruptedRequestPausesForInspectionAndNeverSentWorkResumes() {
+        for (PlayerType side : PlayerType.values()) {
+            for (boolean connected : List.of(false, true)) {
+                assertEquals(Action.PAUSE_IN_FLIGHT, TurnPolicy.afterInterruption(true, side, connected));
+            }
+        }
+        assertEquals(Action.RESUME, TurnPolicy.afterInterruption(false, PlayerType.AI, true));
+        assertEquals(Action.PAUSE_DISCONNECTED, TurnPolicy.afterInterruption(false, PlayerType.AI, false));
+        // Engine turns cost nothing and need no OpenRouter connection.
+        assertEquals(Action.RESUME, TurnPolicy.afterInterruption(false, PlayerType.STOCKFISH, false));
+        assertEquals(Action.RESUME, TurnPolicy.afterInterruption(false, PlayerType.STOCKFISH, true));
+        assertEquals(Action.AWAIT_HUMAN, TurnPolicy.afterInterruption(false, PlayerType.HUMAN, false));
+        assertEquals(Action.AWAIT_HUMAN, TurnPolicy.afterInterruption(false, PlayerType.HUMAN, true));
     }
 }

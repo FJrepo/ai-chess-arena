@@ -81,9 +81,12 @@ public class GameMoveService {
             throw new GameStateConflictException("Game is no longer in progress");
         }
         GameLifecycleService.requireActiveTournament(game);
+        GameRunOwnership.requireOwner(game);
         if (!samePosition(game.currentFen, expectedFen)) {
             throw new GameStateConflictException("Position changed while the model was thinking");
         }
+        // The answer to the request in flight is recorded with this move and its cost.
+        GameRunOwnership.answerRecorded(game);
 
         Move move = new Move();
         move.game = game;
@@ -146,7 +149,7 @@ public class GameMoveService {
                                     java.util.function.BooleanSupplier shouldContinue) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS || game.statusRevision != expectedStatusRevision
-                || !shouldContinue.getAsBoolean()
+                || !shouldContinue.getAsBoolean() || GameRunOwnership.staleWorker(game)
                 || game.playerType(color) != Game.PlayerType.STOCKFISH || !game.currentFen.equals(expectedFen)) {
             throw new GameStateConflictException("Position changed during the Stockfish search");
         }

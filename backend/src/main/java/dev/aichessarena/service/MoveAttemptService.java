@@ -90,7 +90,7 @@ public class MoveAttemptService {
     public void record(AttemptRecord attempt) {
         try {
             Game game = gameRepository.findByIdForUpdate(attempt.gameId());
-            if (game == null) {
+            if (game == null || GameRunOwnership.staleWorker(game)) {
                 return;
             }
             MoveAttempt row = new MoveAttempt();
@@ -120,6 +120,8 @@ public class MoveAttemptService {
                 row.rawResponse = truncate(response.rawResponse(), MAX_RAW_RESPONSE_CHARS);
             }
             moveAttemptRepository.persist(row);
+            // The answer to the request in flight is recorded with its cost, in this transaction.
+            GameRunOwnership.answerRecorded(game);
 
             // Accepted moves are costed by GameMoveService.recordModelMove and resignations by
             // GameLifecycleService.resign; count only the other answers here.

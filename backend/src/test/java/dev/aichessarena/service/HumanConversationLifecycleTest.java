@@ -193,7 +193,8 @@ class HumanConversationLifecycleTest {
         };
         private final GameLifecycleService lifecycle = new GameLifecycleService() {
             @Override
-            GameDto markGameStarted(UUID id, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
+            GameDto markGameStarted(UUID id, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop,
+                                    UUID runOwner) {
                 assertTrue(claimLoop.getAsBoolean());
                 game.status = Game.GameStatus.IN_PROGRESS;
                 return DtoMapper.toDto(game, false);

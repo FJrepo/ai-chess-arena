@@ -83,6 +83,9 @@ public class GameTurnService {
     @Inject
     TournamentAutoRunService autoRuns;
 
+    @Inject
+    GameRunOwnership runOwnership;
+
     public TurnResult playTurn(TurnRequest request) {
         boolean mayResign = mayResign(request);
         String turnPrompt = promptService.buildTurnPrompt(
@@ -169,6 +172,11 @@ public class GameTurnService {
 
             LOG.infof("Game %s: %s move %d, attempt %d",
                     request.gameId(), request.sideToMove(), request.moveNumber(), attempt);
+
+            // Committed before the request leaves: after a restart it shows a request that may already be charged.
+            if (runOwnership != null && !runOwnership.markRequestSent(request.gameId())) {
+                return TurnResult.stopped();
+            }
 
             OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
                     request.modelId(),

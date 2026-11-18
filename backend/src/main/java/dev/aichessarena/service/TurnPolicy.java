@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import dev.aichessarena.entity.Game.PlayerType;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 
 /** Decides how to proceed from turn observations without reading the clock or writing game state. */
@@ -14,7 +15,15 @@ final class TurnPolicy {
         PAUSE_PROVIDER,
         PAUSE_TRUNCATED,
         FORFEIT_TIMEOUT,
-        FORFEIT_INVALID_MOVES
+        FORFEIT_INVALID_MOVES,
+        /** An interrupted game continues with a new loop: nothing of its current turn reached the provider. */
+        RESUME,
+        /** An interrupted game waits for its human player without a loop, as before the interruption. */
+        AWAIT_HUMAN,
+        /** A request may already have been charged without its answer being recorded: the operator checks first. */
+        PAUSE_IN_FLIGHT,
+        /** A model is to move but no OpenRouter key is configured. */
+        PAUSE_DISCONNECTED
     }
 
     /** No new attempt has been sent. A null time budget denotes an untimed turn. */
@@ -44,6 +53,22 @@ final class TurnPolicy {
             case EMPTY_RESPONSE, PARSE_FAILURE, RESIGN_NOT_ALLOWED, ILLEGAL_MOVE ->
                     attemptsAfterResponse > 0 ? Action.RETRY_MODEL : Action.FORFEIT_INVALID_MOVES;
             default -> throw new IllegalArgumentException("Expected a model response, got " + outcome);
+        };
+    }
+
+    /**
+     * A game's loop ended without finishing its turn (backend restart or expired lease). Only a request recorded as
+     * sent without a recorded answer may already have been charged; everything else was never sent and resumes. Engine
+     * turns cost nothing and always resume; a human turn needs no loop.
+     */
+    static Action afterInterruption(boolean requestInFlight, PlayerType sideToMove, boolean providerConnected) {
+        if (requestInFlight) {
+            return Action.PAUSE_IN_FLIGHT;
+        }
+        return switch (sideToMove) {
+            case HUMAN -> Action.AWAIT_HUMAN;
+            case STOCKFISH -> Action.RESUME;
+            case AI -> providerConnected ? Action.RESUME : Action.PAUSE_DISCONNECTED;
         };
     }
 }

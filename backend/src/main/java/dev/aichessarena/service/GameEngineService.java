@@ -67,6 +67,9 @@ public class GameEngineService {
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
+    @Inject
+    GameRunOwnership runOwnership;
+
     /**
      * One entry per game loop that is alive. The entry belongs to exactly one loop (identity matters):
      * a pause only flags it, and only the owning loop removes it when it exits, so a resumed game can
@@ -78,7 +81,13 @@ public class GameEngineService {
     private final Map<UUID, GameConversationService.ConversationState> humanConversations = new ConcurrentHashMap<>();
 
     static final class GameLoop {
+        /** This loop's fencing token, stored as the game's run owner while the loop owns the game. */
+        private final UUID token = UUID.randomUUID();
         private volatile boolean stopRequested;
+
+        UUID token() {
+            return token;
+        }
 
         synchronized void requestStop() {
             stopRequested = true;
@@ -113,7 +122,7 @@ public class GameEngineService {
         GameDto started;
         try {
             started = gameLifecycleService.markGameStarted(
-                    gameId, automatic, queueIfFull, () -> runningGames.putIfAbsent(gameId, loop) == null);
+                    gameId, automatic, queueIfFull, () -> runningGames.putIfAbsent(gameId, loop) == null, loop.token());
         } catch (RuntimeException e) {
             runningGames.remove(gameId, loop);
             throw e;
@@ -147,11 +156,24 @@ public class GameEngineService {
             LOG.warnf("Game %s is already running", gameId);
             return;
         }
+        boolean owned;
+        try {
+            owned = runOwnership == null || runOwnership.acquire(gameId, loop.token());
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Could not take game %s for its next turn", gameId);
+            owned = false;
+        }
+        if (!owned) {
+            releaseLoop(gameId, loop);
+            return;
+        }
         spawnGameLoop(gameId, loop, lastMoveSan, lastMessage);
     }
 
     void spawnGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
-        Thread.startVirtualThread(() -> {
+        // Every write this loop makes is fenced by its token (see GameRunOwnership), including its final pause.
+        GameRunOwnership.Owner owner = new GameRunOwnership.Owner(gameId, loop.token());
+        Thread.startVirtualThread(() -> ScopedValue.where(GameRunOwnership.CURRENT, owner).run(() -> {
             ManagedContext requestContext = Arc.container().requestContext();
             requestContext.activate();
             try {
@@ -165,12 +187,13 @@ public class GameEngineService {
                     requestContext.terminate();
                 }
             }
-        });
+        }));
     }
 
     private void finishLoop(UUID gameId, GameLoop loop) {
         synchronized (loop) {
             if (loop.shouldContinue()) {
+                releaseOwnership(gameId, loop);
                 runningGames.remove(gameId, loop);
                 return;
             }
@@ -178,7 +201,18 @@ public class GameEngineService {
         humanConversations.remove(gameId);
         // Keep ownership until this loop's final pause check, so it cannot pause a newly resumed loop.
         pauseQuietly(gameId);
+        releaseOwnership(gameId, loop);
         runningGames.remove(gameId, loop);
+    }
+
+    /** A failed release leaves the lease to expire; the scheduler's safety tick then recovers the game. */
+    private void releaseOwnership(UUID gameId, GameLoop loop) {
+        if (runOwnership == null) return;
+        try {
+            runOwnership.release(gameId, loop.token());
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Could not release game %s", gameId);
+        }
     }
 
     private void pauseQuietly(UUID gameId) {

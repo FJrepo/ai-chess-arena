@@ -168,7 +168,8 @@ public class TournamentAutoRunService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public boolean beforeRequest(UUID gameId) {
         Game game = games.findByIdForUpdate(gameId);
-        if (game == null || game.status != GameStatus.IN_PROGRESS || GameLifecycleService.isTournamentCancelled(game)) {
+        if (game == null || game.status != GameStatus.IN_PROGRESS || GameLifecycleService.isTournamentCancelled(game)
+                || GameRunOwnership.staleWorker(game)) {
             return false;
         }
         Tournament t = game.tournament;
@@ -267,17 +268,5 @@ public class TournamentAutoRunService {
 
     private void changed(UUID id) {
         AfterCommit.run(transactionRegistry, () -> scheduler.changed(id));
-    }
-
-    @Transactional
-    public void pauseRunsOrphanedByRestart() {
-        for (Tournament t : tournaments.list("autoRunStatus", AutoRunStatus.RUNNING)) {
-            Tournament locked = tournaments.findByIdForUpdate(t.id);
-            if (locked.autoRunStatus == AutoRunStatus.RUNNING) {
-                locked.autoRunStatus = AutoRunStatus.PAUSED;
-                locked.autoRunPauseReason = "Backend restarted";
-                locked.updatedAt = LocalDateTime.now();
-            }
-        }
     }
 }
