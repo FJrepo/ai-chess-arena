@@ -9,6 +9,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [1.9.0] - 2026-11-18
+
+Review the settings behind each model attempt, practice from a finished position against its original opposing model, and play Stockfish locally without an OpenRouter connection. [Back up your database](docs/deployment.md#backups-and-rollback) before upgrading.
+
+### Upgrade notes
+
 - Flyway `V26__game_configuration_history.sql` adds game-start settings and model-attempt configuration revisions. Back up the database and recreate backend and frontend together. Older starting settings and revisions are unknown.
 
 - Flyway `V27__practice_games.sql` adds standalone practice games and identifies inherited moves. Recreate both application services together after backing up.
@@ -26,8 +38,6 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Centralize turn decisions for model answers, provider retries, and time limits.
-
-### Fixed
 
 ## [1.8.0] - 2026-11-18
 
