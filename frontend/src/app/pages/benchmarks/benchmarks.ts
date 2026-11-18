@@ -4,8 +4,9 @@ import {
   DecimalPipe,
   NgTemplateOutlet,
   TitleCasePipe,
+  formatCurrency,
 } from '@angular/common';
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -13,10 +14,14 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, Observable, Subject, catchError, finalize, startWith, switchMap } from 'rxjs';
 import type {
+  BenchmarkColor,
   BenchmarkGame,
+  BenchmarkModelResult,
+  BenchmarkPair,
   BenchmarkRerunChanges,
   BenchmarkRun,
   BenchmarkRunSettings,
@@ -49,6 +54,7 @@ const noHintsSuffix = '-no-hints';
     MatInputModule,
     MatSelectModule,
     MatSlideToggleModule,
+    MatTooltipModule,
     RouterLink,
   ],
   templateUrl: './benchmarks.html',
@@ -59,6 +65,7 @@ export class Benchmarks {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly locale = inject(LOCALE_ID);
   private readonly reload = new Subject<void>();
   private readonly pendingSubmissions = signal(this.readPendingSubmissions());
   private readonly pendingReruns = signal(this.readPendingReruns());
@@ -251,10 +258,12 @@ export class Benchmarks {
       const pendingId = this.pendingSubmissions().get(fingerprint);
       const clientRequestId = pendingId ?? newRequestId();
       if (!pendingId) this.setPendingSubmission(fingerprint, clientRequestId);
+      const clearPending = () => this.setPendingSubmission(fingerprint, null);
       this.submitCreation(
         this.api.createBenchmark({ ...details, clientRequestId }),
-        () => this.setPendingSubmission(fingerprint, null),
+        clearPending,
         (id) => void this.router.navigate(['/benchmarks', id]),
+        clearPending,
       );
     }
   }
@@ -434,6 +443,7 @@ export class Benchmarks {
     request: Observable<BenchmarkRun>,
     clearPending: () => void,
     onCreated: (id: string) => void,
+    clearOnClientError?: () => void,
   ): void {
     this.busy.set(true);
     request
@@ -448,7 +458,7 @@ export class Benchmarks {
         },
         error: (error) => {
           const status = error?.status;
-          if (status >= 400 && status < 500 && status !== 408) clearPending();
+          if (status >= 400 && status < 500 && status !== 408) clearOnClientError?.();
           this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.');
         },
       });
@@ -499,6 +509,28 @@ export class Benchmarks {
       this.resumeBudget = report.budgetUsd;
       this.resumeConcurrency = report.maxConcurrentGames;
     }
+  }
+
+  splitScore(model: BenchmarkModelResult, target: number, color: BenchmarkColor) {
+    return model.splits.find((row) => row.targetStrength === target && row.color === color)?.score;
+  }
+
+  pairGame(pair: BenchmarkPair, color: BenchmarkColor) {
+    return pair.games.find((game) => game.color === color);
+  }
+
+  formatSpend(amount: number | null | undefined, maxDecimals: 2 | 4 = 2): string {
+    if (amount == null) return '';
+    const minimum = 1 / 10 ** maxDecimals;
+    const belowMinimum = amount > 0 && amount < minimum;
+    const value = formatCurrency(
+      belowMinimum ? minimum : amount,
+      this.locale,
+      '$',
+      'USD',
+      `1.2-${maxDecimals}`,
+    );
+    return belowMinimum ? `<${value}` : value;
   }
 
   gameLabel(game: BenchmarkGame): string {

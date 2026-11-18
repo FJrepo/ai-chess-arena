@@ -346,8 +346,45 @@ class BenchmarkRunIT {
         compare(rerun, base).then().statusCode(200).body("comparisonType", equalTo("CONTROLLED_RERUN"));
         compare(base, independent).then().statusCode(200).body("comparable", equalTo(true))
                 .body("comparisonType", equalTo("MULTIPLE_SETTINGS")).body("models.size()", equalTo(1));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "{} | 0",
+        "{\"budgetUsd\":\"3.00\"} | 0",
+        "{\"legalMoveHints\":true} | 2"
+    })
+    void operationalLimitsDoNotChangeComparability(String change, int settingChanges) {
+        UUID base = create(REQUEST);
+        UUID rerun = createRerun(base, change);
+        compare(base, rerun).then().statusCode(200).body("comparisonType", equalTo("CONTROLLED_RERUN"));
+
         resumeWithHigherLimits(rerun);
-        compare(base, rerun).then().statusCode(200).body("comparisonType", equalTo("MULTIPLE_SETTINGS"));
+        compare(base, rerun).then().statusCode(200)
+                .body("comparable", equalTo(true))
+                .body("comparisonType", equalTo("CONTROLLED_RERUN"))
+                .body("settingChanges.size()", equalTo(settingChanges))
+                .body("settingChanges.setting", not(hasItem("Current budget (USD)")))
+                .body("settingChanges.setting", not(hasItem("Concurrent games")))
+                .body("operationalLimitsNote", equalTo("Budget and concurrency are operational limits and are not compared"));
+    }
+
+    @Test
+    void comparisonReportsSpendCheckPauseDetails() {
+        UUID base = create(REQUEST);
+        UUID candidate = createRerun(base, "{}");
+        UUID paused = gameIds(base).getFirst();
+        lifecycle.markGameStarted(paused);
+        QuarkusTransaction.requiringNew().run(() -> games.findByIdForUpdate(paused).requestSentAt = Instant.now());
+        lifecycle.pauseForInspection(paused, GameLifecycleService.DELIVERY_UNCERTAIN);
+
+        String matchup = "matchups.find { it.base.gameId == '" + paused + "' }";
+        compare(base, candidate).then().statusCode(200)
+                .body(matchup + ".base.status", equalTo("PAUSED"))
+                .body(matchup + ".base.statusDetail", containsString(GameLifecycleService.DELIVERY_UNCERTAIN))
+                .body(matchup + ".base.uncertainRequest", equalTo(true))
+                .body(matchup + ".candidate.uncertainRequest", equalTo(false))
+                .body(matchup + ".base.points", nullValue());
     }
 
     @Test

@@ -128,6 +128,8 @@ export interface BenchmarkComparisonGameSide {
   gameId: string | null;
   status: Game['status'] | null;
   reason: string | null;
+  statusDetail: string | null;
+  uncertainRequest: boolean;
   outcome: 'WIN' | 'DRAW' | 'LOSS' | null;
   points: number | null;
   forfeit: boolean;
@@ -149,6 +151,7 @@ export interface BenchmarkComparison {
   comparisonType: 'CONTROLLED_RERUN' | 'COMPARABLE' | 'MULTIPLE_SETTINGS' | 'NOT_COMPARABLE';
   differences: BenchmarkSettingDifference[];
   settingChanges: BenchmarkSettingDifference[];
+  operationalLimitsNote: string;
   baseSpendUsd: number;
   candidateSpendUsd: number;
   spendDeltaUsd: number | null;

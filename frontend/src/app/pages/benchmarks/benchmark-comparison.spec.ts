@@ -36,6 +36,8 @@ const win: BenchmarkComparisonGameSide = {
   gameId: 'base-game',
   status: 'COMPLETED',
   reason: 'CHECKMATE',
+  statusDetail: null,
+  uncertainRequest: false,
   outcome: 'WIN',
   points: 1,
   forfeit: false,
@@ -61,6 +63,7 @@ const report = {
   comparisonType: 'CONTROLLED_RERUN',
   differences: [],
   settingChanges: [{ setting: 'Requested effort', base: 'low', candidate: 'high' }],
+  operationalLimitsNote: 'Budget and concurrency are operational limits and are not compared',
   baseSpendUsd: 0.1,
   candidateSpendUsd: 0.3,
   spendDeltaUsd: 0.2,
@@ -208,5 +211,53 @@ describe('Benchmark comparison', () => {
     const page = render({ ...report, comparisonType: 'MULTIPLE_SETTINGS' });
     expect(page.textContent).toContain('Differences cannot be attributed to a single setting');
     expect(page.textContent).toContain('-100 pp');
+  });
+
+  it('shows the operational limits note from the API and names the playing settings', () => {
+    const operationalLimitsNote =
+      'Budget and concurrency are operational limits and are not compared';
+    const page = render({ ...report, operationalLimitsNote });
+    expect(page.textContent).toContain(operationalLimitsNote);
+    const definition = page
+      .querySelector('[aria-labelledby="setting-changes"]')
+      ?.textContent?.replace(/\s+/g, ' ');
+    expect(definition).toContain('model IDs, requested effort, legal move hints, chat mode');
+    expect(definition).toContain(
+      'maximum attempts per move, move time limit, and maximum output tokens',
+    );
+    expect(definition).toContain(
+      'opening suite, seed and lines, Stockfish executable and NNUE weights',
+    );
+    expect(definition).toContain(
+      'search nodes, threads and hash size, Stockfish levels, model colors, and underlying prompt version',
+    );
+  });
+
+  it('shows the pause reason and warns of a missing charge only for an unresolved request', () => {
+    const statusDetail =
+      'A model request lost its connection after it was sent. Check spend, then resume.';
+    const base = {
+      ...win,
+      status: 'PAUSED',
+      reason: null,
+      outcome: null,
+      points: null,
+      statusDetail,
+      uncertainRequest: true,
+    };
+    const candidate = {
+      ...base,
+      gameId: loss.gameId,
+      statusDetail: 'Paused by operator',
+      uncertainRequest: false,
+    };
+    const page = render({ ...report, matchups: [{ ...report.matchups[0], base, candidate }] });
+    const baseCell = page.querySelector('a[href="/games/base-game"]')?.closest('td');
+    const candidateCell = page.querySelector('a[href="/games/candidate-game"]')?.closest('td');
+    expect(baseCell?.textContent).toContain('Paused');
+    expect(baseCell?.textContent).toContain(statusDetail);
+    expect(baseCell?.textContent).toContain('Displayed spend may be missing this request’s cost.');
+    expect(candidateCell?.textContent).toContain('Paused by operator');
+    expect(candidateCell?.textContent).not.toContain('Displayed spend may be missing');
   });
 });

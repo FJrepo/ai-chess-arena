@@ -486,6 +486,8 @@ function normalizeBenchmarkComparison(report: BenchmarkComparison): BenchmarkCom
     gameId: side.gameId ?? null,
     status: side.status ?? null,
     reason: side.reason ?? null,
+    statusDetail: side.statusDetail ?? null,
+    uncertainRequest: side.uncertainRequest ?? false,
     outcome: side.outcome ?? null,
     points: side.points ?? null,
     telemetry: side.telemetry ? telemetry(side.telemetry) : null,

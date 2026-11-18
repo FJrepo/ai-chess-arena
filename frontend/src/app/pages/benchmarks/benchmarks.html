@@ -1,15 +1,118 @@
-<div class="benchmark-page">
+<div class="desktop-page">
   <header class="page-hero page-hero-surface">
-    <div>
-      @if (runId()) {
-        <a mat-button routerLink="/benchmarks">Back to Benchmarks</a>
-      }
-      <h1>{{ report()?.run?.name ?? 'Benchmarks' }}</h1>
-      <p>{{ runId() ? 'Performance against this Stockfish setup' : 'Paired Stockfish ladder' }}</p>
+    <div class="hero-row">
+      <div class="page-title-block">
+        @if (runId()) {
+          <a class="back-link" routerLink="/benchmarks">Back to Benchmarks</a>
+        }
+        <h1 class="page-title">{{ report()?.run?.name ?? 'Benchmarks' }}</h1>
+        <p class="page-subtitle">
+          {{ runId() ? 'Performance against this Stockfish setup' : 'Paired Stockfish ladder' }}
+        </p>
+      </div>
+
+      <div class="page-actions run-actions">
+        @if (report(); as data) {
+          <ng-container *ngTemplateOutlet="runStatus; context: { $implicit: data.run.status }" />
+        }
+        <button
+          mat-stroked-button
+          type="button"
+          [disabled]="loading() || busy()"
+          (click)="refresh()"
+        >
+          Refresh
+        </button>
+        @if (report(); as data) {
+          <button
+            mat-stroked-button
+            type="button"
+            [disabled]="loading() || busy()"
+            (click)="openRerun(data)"
+          >
+            Rerun
+          </button>
+          <a
+            mat-stroked-button
+            routerLink="/benchmarks/compare"
+            [queryParams]="{
+              base: data.run.rerunOf ?? data.run.id,
+              candidate: data.run.rerunOf ? data.run.id : null,
+            }"
+            >Compare runs</a
+          >
+          @if (data.run.status === 'RUNNING') {
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="busy() || loading()"
+              (click)="changeRun(data.run, 'pause')"
+            >
+              Pause run
+            </button>
+          }
+          @if (data.run.status === 'RUNNING' || data.run.status === 'PAUSED') {
+            <button
+              mat-button
+              class="cancel-action"
+              type="button"
+              [disabled]="busy() || loading()"
+              (click)="changeRun(data.run, 'cancel')"
+            >
+              Cancel run
+            </button>
+          }
+        }
+      </div>
     </div>
-    <button mat-stroked-button type="button" [disabled]="loading() || busy()" (click)="refresh()">
-      Refresh
-    </button>
+
+    @if (report(); as data) {
+      @if (
+        data.run.pauseReason ||
+        data.run.status === 'PAUSED' ||
+        hasPausedGames() ||
+        (!rerunOpen() && actionError())
+      ) {
+        <div class="run-management">
+          @if (data.run.pauseReason) {
+            <p class="pause-note" role="status">{{ data.run.pauseReason }}</p>
+          }
+          @if (data.run.status === 'PAUSED') {
+            <form class="resume-form" (ngSubmit)="changeRun(data.run, 'resume')">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Budget (USD)</mat-label>
+                <input
+                  matInput
+                  name="resumeBudget"
+                  inputmode="decimal"
+                  [(ngModel)]="resumeBudget"
+                />
+              </mat-form-field>
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Concurrent games</mat-label>
+                <input
+                  matInput
+                  name="resumeConcurrency"
+                  type="number"
+                  [(ngModel)]="resumeConcurrency"
+                />
+              </mat-form-field>
+              <button mat-flat-button type="submit" [disabled]="busy() || loading()">
+                Resume run
+              </button>
+            </form>
+          }
+          @if (hasPausedGames()) {
+            <p class="secondary">
+              Open a paused game and choose Resume to return it to play or queue it for a free slot.
+            </p>
+          }
+          @if (!rerunOpen() && actionError()) {
+            <p class="error" role="alert">{{ actionError() }}</p>
+          }
+        </div>
+      }
+    }
   </header>
 
   @if (loadError()) {
@@ -20,123 +123,146 @@
   }
 
   @if (!runId()) {
-    <section class="panel" aria-labelledby="create-heading">
-      <h2 id="create-heading">New ladder run</h2>
-      <p>32 games per model across eight openings, both colors, and two Stockfish targets.</p>
-      @if (hasPendingSubmission() && !busy()) {
-        <p role="status">A benchmark creation may already be in progress</p>
-      }
-      <form (ngSubmit)="create()">
-        <div class="form-grid">
-          <mat-form-field appearance="outline">
-            <mat-label>Run name</mat-label>
-            <input matInput name="name" maxlength="120" [(ngModel)]="name" />
-          </mat-form-field>
-          <mat-form-field appearance="outline" class="model-field">
-            <mat-label>OpenRouter model IDs</mat-label>
-            <textarea matInput name="models" rows="2" [(ngModel)]="modelsText"></textarea>
-            <mat-hint>One provider/model ID per line, up to eight.</mat-hint>
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Stockfish target A</mat-label>
-            <input matInput name="lower" type="number" [(ngModel)]="lowerStrength" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Stockfish target B</mat-label>
-            <input matInput name="higher" type="number" [(ngModel)]="higherStrength" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Budget (USD)</mat-label>
-            <input matInput name="budget" inputmode="decimal" [(ngModel)]="budget" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Concurrent games</mat-label>
-            <input matInput name="concurrency" type="number" [(ngModel)]="concurrency" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Reasoning effort</mat-label>
-            <mat-select name="effort" [(ngModel)]="reasoningEffort">
-              <mat-option value="default">Model default</mat-option>
-              @for (effort of efforts; track effort) {
-                <mat-option [value]="effort">{{ effortLabel(effort) }}</mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Chat mode</mat-label>
-            <mat-select name="chat" [(ngModel)]="chatMode">
-              <mat-option value="OFF">Off</mat-option>
-              <mat-option value="OPTIONAL">Optional</mat-option>
-              <mat-option value="MANDATORY">Mandatory</mat-option>
-            </mat-select>
-          </mat-form-field>
-          <mat-slide-toggle name="hints" [(ngModel)]="legalMoveHints"
-            >Legal move hints</mat-slide-toggle
-          >
-        </div>
-        <button mat-flat-button type="submit" [disabled]="busy()">
-          {{ busy() ? 'Creating…' : 'Create and start run' }}
-        </button>
-        @if (actionError()) {
-          <p class="error" role="alert">{{ actionError() }}</p>
+    <div class="setup-layout">
+      <section class="panel" aria-labelledby="create-heading">
+        <h2 id="create-heading">New ladder run</h2>
+        @if (hasPendingSubmission() && !busy()) {
+          <p class="secondary" role="status">A benchmark creation may already be in progress</p>
         }
-      </form>
-    </section>
 
-    @if (runs(); as saved) {
-      <section class="panel" aria-labelledby="saved-heading">
-        <h2 id="saved-heading">Saved runs</h2>
-        @if (saved.length) {
-          <div class="table-scroll">
-            <table aria-labelledby="saved-heading">
-              <thead>
-                <tr>
-                  <th scope="col">Run</th>
-                  <th scope="col">Created</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (run of saved; track run.id) {
-                  <tr>
-                    <th scope="row">
-                      <a [routerLink]="['/benchmarks', run.id]">{{ run.name }}</a>
-                    </th>
-                    <td>{{ run.createdAt | date: 'medium' }}</td>
-                    <td>{{ run.status | titlecase }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+        <form class="create-form" (ngSubmit)="create()">
+          <div class="form-grid">
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+              <mat-label>Run name</mat-label>
+              <input matInput name="name" maxlength="120" [(ngModel)]="name" />
+            </mat-form-field>
+            <mat-form-field
+              class="model-ids-field"
+              appearance="outline"
+              floatLabel="always"
+              subscriptSizing="dynamic"
+            >
+              <mat-label>OpenRouter model IDs</mat-label>
+              <textarea matInput name="models" rows="4" [(ngModel)]="modelsText"></textarea>
+              <mat-hint>One provider/model ID per line, up to eight.</mat-hint>
+            </mat-form-field>
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+              <mat-label>Budget (USD)</mat-label>
+              <input matInput name="budget" inputmode="decimal" [(ngModel)]="budget" />
+              <mat-hint>The run pauses when it reaches this budget.</mat-hint>
+            </mat-form-field>
           </div>
-        } @else {
-          <p class="secondary">Create a run to see its results here.</p>
-        }
+
+          <fieldset>
+            <legend>Stockfish levels</legend>
+            <div class="form-grid">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Level A</mat-label>
+                <input matInput name="lower" type="number" [(ngModel)]="lowerStrength" />
+              </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Level B</mat-label>
+                <input matInput name="higher" type="number" [(ngModel)]="higherStrength" />
+              </mat-form-field>
+            </div>
+            <p class="field-hint secondary">
+              Choose two distinct levels from 1320 to 3190.
+              <button
+                class="hint-help"
+                type="button"
+                aria-label="About Stockfish levels"
+                matTooltip="Each opening is played twice at each level, with the model taking White and Black."
+              >
+                ?
+              </button>
+            </p>
+          </fieldset>
+
+          <fieldset>
+            <legend>Run settings</legend>
+            <div class="form-grid settings-grid">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Concurrent games</mat-label>
+                <input matInput name="concurrency" type="number" [(ngModel)]="concurrency" />
+                <mat-hint>1–8 games at a time.</mat-hint>
+              </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Reasoning effort</mat-label>
+                <mat-select name="effort" [(ngModel)]="reasoningEffort">
+                  <mat-option value="default">Model default</mat-option>
+                  @for (effort of efforts; track effort) {
+                    <mat-option [value]="effort">{{ effortLabel(effort) }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Chat mode</mat-label>
+                <mat-select name="chat" [(ngModel)]="chatMode">
+                  <mat-option value="OFF">Off</mat-option>
+                  <mat-option value="OPTIONAL">Optional</mat-option>
+                  <mat-option value="MANDATORY">Mandatory</mat-option>
+                </mat-select>
+              </mat-form-field>
+              <mat-slide-toggle name="hints" [(ngModel)]="legalMoveHints"
+                >Legal move hints</mat-slide-toggle
+              >
+            </div>
+          </fieldset>
+
+          <div class="form-footer">
+            <button mat-flat-button type="submit" [disabled]="busy()">
+              {{ busy() ? 'Creating…' : 'Create and start run' }}
+            </button>
+            <p class="secondary">
+              8 openings × 2 colors × 2 levels = <strong>32 games per model</strong>
+            </p>
+          </div>
+          @if (actionError()) {
+            <p class="error" role="alert">{{ actionError() }}</p>
+          }
+        </form>
       </section>
-    }
+
+      @if (runs(); as saved) {
+        <section class="panel" aria-labelledby="saved-heading">
+          <h2 id="saved-heading">Saved runs</h2>
+          @if (saved.length) {
+            <div class="table-scroll">
+              <table class="saved-table" aria-labelledby="saved-heading">
+                <thead>
+                  <tr>
+                    <th scope="col">Run</th>
+                    <th scope="col" class="align-end">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (run of saved; track run.id) {
+                    <tr>
+                      <th scope="row">
+                        <a [routerLink]="['/benchmarks', run.id]">{{ run.name }}</a>
+                        <time class="secondary" [attr.datetime]="run.createdAt">
+                          {{ run.createdAt | date: 'medium' }}
+                        </time>
+                      </th>
+                      <td class="align-end">
+                        <ng-container
+                          *ngTemplateOutlet="runStatus; context: { $implicit: run.status }"
+                        />
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="secondary">Create a run to see its results here.</p>
+          }
+        </section>
+      }
+    </div>
   }
 
   @if (report(); as data) {
-    <div class="run-actions">
-      <button
-        mat-flat-button
-        type="button"
-        [disabled]="loading() || busy()"
-        (click)="openRerun(data)"
-      >
-        Rerun
-      </button>
-      <a
-        mat-stroked-button
-        routerLink="/benchmarks/compare"
-        [queryParams]="{
-          base: data.run.rerunOf ?? data.run.id,
-          candidate: data.run.rerunOf ? data.run.id : null,
-        }"
-        >Compare runs</a
-      >
-    </div>
-
     @if (rerunOpen()) {
       @let change = rerunChange(data);
       @let validation = rerunValidation(data, change);
@@ -245,7 +371,7 @@
         @if (pendingRerun() ? actionError() : validation || actionError(); as error) {
           <p class="error" role="alert">{{ error }}</p>
         }
-        <div class="run-actions">
+        <div class="page-actions run-actions">
           @if (pendingRerun()) {
             <button
               mat-flat-button
@@ -285,42 +411,143 @@
       </section>
     }
 
-    <section class="panel" aria-labelledby="run-setup">
-      <div class="section-heading">
-        <h2 id="run-setup">Run setup</h2>
-        @if (data.run.status === 'RUNNING' || data.run.status === 'PAUSED') {
-          <div class="run-actions">
-            @if (data.run.status === 'RUNNING') {
-              <button
-                mat-stroked-button
-                type="button"
-                [disabled]="busy() || loading()"
-                (click)="changeRun(data.run, 'pause')"
-              >
-                Pause run
-              </button>
+    <section class="panel" aria-labelledby="model-results">
+      <h2 id="model-results">Model results</h2>
+      <div class="table-scroll">
+        <table
+          class="model-table overview-table"
+          aria-label="Performance against this Stockfish setup"
+        >
+          <thead>
+            <tr>
+              <th scope="col">Model</th>
+              <th scope="col" class="align-end">
+                Score <span class="column-note">Points / scored</span>
+              </th>
+              <th scope="col" class="align-end">
+                Games <span class="column-note">Scored / planned</span>
+              </th>
+              <th scope="col" class="align-end">Wins</th>
+              <th scope="col" class="align-end">Draws</th>
+              <th scope="col" class="align-end">Losses</th>
+              <th scope="col" class="align-end secondary">Forfeit losses</th>
+              <th scope="col" class="align-end secondary">Incomplete pairs</th>
+              <th scope="col" class="align-end secondary">Spend</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (model of data.models; track model.modelId) {
+              <tr>
+                <th scope="row">{{ model.modelId }}</th>
+                <td class="num headline-score">
+                  <ng-container
+                    *ngTemplateOutlet="scoreValue; context: { $implicit: model.overall }"
+                  />
+                </td>
+                <td class="num">{{ model.overall.scoredGames }} / {{ model.pairs.length * 2 }}</td>
+                <td class="num" [class.secondary]="model.overall.wins === 0">
+                  {{ model.overall.wins }}
+                </td>
+                <td class="num" [class.secondary]="model.overall.draws === 0">
+                  {{ model.overall.draws }}
+                </td>
+                <td class="num" [class.secondary]="model.overall.losses === 0">
+                  {{ model.overall.losses }}
+                </td>
+                <td class="num secondary">{{ model.overall.forfeits }}</td>
+                <td class="num secondary">
+                  {{ model.incompletePairs }} / {{ model.pairs.length }}
+                </td>
+                <td class="num secondary">
+                  {{ formatSpend(model.spendUsd) }}
+                </td>
+              </tr>
             }
-            <button
-              mat-stroked-button
-              type="button"
-              [disabled]="busy() || loading()"
-              (click)="changeRun(data.run, 'cancel')"
-            >
-              Cancel run
-            </button>
-          </div>
-        }
+          </tbody>
+        </table>
       </div>
+    </section>
+
+    <section class="panel" aria-labelledby="split-heading">
+      <div class="section-heading">
+        <h2 id="split-heading">Score by level and color</h2>
+        <p id="split-key" class="secondary">Points / scored games · Wins – draws – losses</p>
+      </div>
+      <div class="table-scroll">
+        <table
+          class="model-table split-table"
+          aria-labelledby="split-heading"
+          aria-describedby="split-key"
+        >
+          <colgroup>
+            <col />
+          </colgroup>
+          @for (target of data.definition.targetStrengths; track target) {
+            <colgroup [attr.span]="data.definition.modelColors.length"></colgroup>
+          }
+          <thead>
+            <tr>
+              <th scope="col" rowspan="2">Model</th>
+              @for (target of data.definition.targetStrengths; track target) {
+                <th
+                  scope="colgroup"
+                  [attr.colspan]="data.definition.modelColors.length"
+                  class="level-heading"
+                >
+                  Level {{ target }}
+                </th>
+              }
+            </tr>
+            <tr>
+              @for (target of data.definition.targetStrengths; track target) {
+                @for (color of data.definition.modelColors; track color) {
+                  <th scope="col" class="align-end">{{ color | titlecase }}</th>
+                }
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (model of data.models; track model.modelId) {
+              <tr>
+                <th scope="row">{{ model.modelId }}</th>
+                @for (target of data.definition.targetStrengths; track target) {
+                  @for (color of data.definition.modelColors; track color) {
+                    @let score = splitScore(model, target, color);
+                    <td class="align-end">
+                      <span class="num">
+                        <ng-container
+                          *ngTemplateOutlet="scoreValue; context: { $implicit: score }"
+                        />
+                      </span>
+                      @if (score && score.scoredGames) {
+                        <span class="cell-note secondary num">
+                          {{ score.wins }} – {{ score.draws }} – {{ score.losses }}
+                        </span>
+                        @if (score.forfeits) {
+                          <span class="cell-note secondary">
+                            <span class="num">{{ score.forfeits }}</span>
+                            {{ score.forfeits === 1 ? 'forfeit loss' : 'forfeit losses' }}
+                          </span>
+                        }
+                      }
+                    </td>
+                  }
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="run-setup">
+      <h2 id="run-setup">Run setup</h2>
       <dl class="run-facts">
-        <div>
-          <dt>Status</dt>
-          <dd>{{ data.run.status | titlecase }}</dd>
-        </div>
         <div>
           <dt>Spend / budget</dt>
           <dd class="num">
-            {{ data.spendUsd | currency: 'USD' : 'symbol' : '1.2-6' }} /
-            {{ data.budgetUsd | currency: 'USD' }}
+            {{ formatSpend(data.spendUsd) }} /
+            {{ data.budgetUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
           </dd>
         </div>
         <div>
@@ -346,36 +573,6 @@
           <dd>{{ data.chatMode | titlecase }}</dd>
         </div>
       </dl>
-
-      @if (data.run.pauseReason) {
-        <p class="pause-note" role="status">{{ data.run.pauseReason }}</p>
-      }
-      @if (data.run.status === 'PAUSED') {
-        <form class="resume-form" (ngSubmit)="changeRun(data.run, 'resume')">
-          <mat-form-field appearance="outline">
-            <mat-label>Budget (USD)</mat-label>
-            <input matInput name="resumeBudget" inputmode="decimal" [(ngModel)]="resumeBudget" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Concurrent games</mat-label>
-            <input
-              matInput
-              name="resumeConcurrency"
-              type="number"
-              [(ngModel)]="resumeConcurrency"
-            />
-          </mat-form-field>
-          <button mat-flat-button type="submit" [disabled]="busy() || loading()">Resume run</button>
-        </form>
-      }
-      @if (hasPausedGames()) {
-        <p class="secondary">
-          Open a paused game and choose Resume to return it to play or queue it for a free slot.
-        </p>
-      }
-      @if (!rerunOpen() && actionError()) {
-        <p class="error" role="alert">{{ actionError() }}</p>
-      }
 
       <details>
         <summary>Engine build and opening suite</summary>
@@ -403,121 +600,122 @@
       </details>
     </section>
 
-    @for (model of data.models; track model.modelId) {
-      <section class="panel" [attr.aria-labelledby]="'model-' + $index">
-        <h2 [id]="'model-' + $index">{{ model.modelId }}</h2>
-        @if (model.resolvedModelIds.length) {
-          <p class="secondary">Reported model IDs {{ model.resolvedModelIds.join(', ') }}</p>
-        }
-        <dl class="run-facts">
-          <div>
-            <dt>Scored games</dt>
-            <dd class="num">{{ model.overall.scoredGames }} / {{ model.pairs.length * 2 }}</dd>
-          </div>
-          <div>
-            <dt>Incomplete pairs</dt>
-            <dd class="num">{{ model.incompletePairs }} / {{ model.pairs.length }}</dd>
-          </div>
-          <div>
-            <dt>Model spend</dt>
-            <dd class="num">{{ model.spendUsd | currency: 'USD' : 'symbol' : '1.2-6' }}</dd>
-          </div>
-        </dl>
-        <div class="table-scroll">
-          <table
-            [attr.aria-label]="'Performance against this Stockfish setup for ' + model.modelId"
-          >
-            <thead>
-              <tr>
-                <th scope="col" class="num">Stockfish target</th>
-                <th scope="col">Model color</th>
-                <th scope="col" class="num">Wins</th>
-                <th scope="col" class="num">Draws</th>
-                <th scope="col" class="num">Losses</th>
-                <th scope="col" class="num">Forfeit losses</th>
-                <th scope="col" class="num">Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of model.splits; track row.targetStrength + row.color) {
-                <tr>
-                  <th scope="row" class="num">{{ row.targetStrength }}</th>
-                  <td>{{ row.color | titlecase }}</td>
-                  <ng-container *ngTemplateOutlet="scoreCells; context: { $implicit: row.score }" />
-                </tr>
-              }
-              <tr>
-                <th scope="row" colspan="2">Overall</th>
-                <ng-container
-                  *ngTemplateOutlet="scoreCells; context: { $implicit: model.overall }"
-                />
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>Opening pairs</h3>
-        <div class="table-scroll">
-          <table [attr.aria-label]="'Opening pairs for ' + model.modelId">
-            <thead>
-              <tr>
-                <th scope="col">Opening</th>
-                <th scope="col" class="num">Target</th>
-                <th scope="col">Model as White</th>
-                <th scope="col">Model as Black</th>
-                <th scope="col">Pair</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (pair of model.pairs; track pair.id) {
-                <tr>
-                  <th scope="row">{{ openings().get(pair.openingId)?.name ?? pair.openingId }}</th>
-                  <td class="num">{{ pair.targetStrength }}</td>
-                  @for (game of pair.games; track game.id) {
-                    <td>
-                      <a
-                        [routerLink]="['/games', game.id]"
-                        [attr.aria-label]="
-                          gameLabel(game) +
-                          ', ' +
-                          openings().get(pair.openingId)?.name +
-                          ', model as ' +
-                          game.color
-                        "
-                      >
-                        {{ gameLabel(game) }}
-                      </a>
-                      <span class="game-spend num">{{
-                        game.spendUsd | currency: 'USD' : 'symbol' : '1.2-6'
-                      }}</span>
-                      @if (game.statusDetail || game.reason) {
-                        <small class="secondary">{{
-                          game.statusDetail || reasonLabel(game.reason)
-                        }}</small>
+    @if (data.models.length) {
+      <section class="panel" aria-labelledby="pairs-heading">
+        <h2 id="pairs-heading">Opening pairs</h2>
+        @for (model of data.models; track model.modelId) {
+          <section class="opening-model" [attr.aria-labelledby]="'model-' + $index">
+            <h3 [id]="'model-' + $index">{{ model.modelId }}</h3>
+            @if (model.resolvedModelIds.length) {
+              <p class="secondary">Reported model IDs {{ model.resolvedModelIds.join(', ') }}</p>
+            }
+            <div class="table-scroll">
+              <table class="opening-table" [attr.aria-label]="'Opening pairs for ' + model.modelId">
+                <colgroup>
+                  <col class="opening-col" />
+                  <col class="level-col" />
+                </colgroup>
+                <colgroup>
+                  <col />
+                  <col class="cost-col" />
+                </colgroup>
+                <colgroup>
+                  <col />
+                  <col class="cost-col" />
+                </colgroup>
+                <colgroup>
+                  <col class="pair-col" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col" rowspan="2">Opening</th>
+                    <th scope="col" rowspan="2" class="align-end">Level</th>
+                    @for (color of data.definition.modelColors; track color) {
+                      <th scope="colgroup" colspan="2">Model as {{ color | titlecase }}</th>
+                    }
+                    <th scope="col" rowspan="2">Pair</th>
+                  </tr>
+                  <tr>
+                    <th scope="col">Result</th>
+                    <th scope="col" class="align-end">Spend</th>
+                    <th scope="col">Result</th>
+                    <th scope="col" class="align-end">Spend</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (pair of model.pairs; track pair.id) {
+                    @let opening = openings().get(pair.openingId)?.name ?? pair.openingId;
+                    <tr>
+                      <th scope="row">{{ opening }}</th>
+                      <td class="num">{{ pair.targetStrength }}</td>
+                      @for (color of data.definition.modelColors; track color) {
+                        @if (pairGame(pair, color); as game) {
+                          @let label = gameLabel(game);
+                          @let unplayed = game.status === 'WAITING' && !game.result;
+                          <td class="game-result">
+                            @if (game.id) {
+                              <a
+                                class="game-outcome"
+                                [attr.data-outcome]="unplayed ? 'Waiting' : label"
+                                [routerLink]="['/games', game.id]"
+                                [attr.aria-label]="
+                                  label +
+                                  ', ' +
+                                  opening +
+                                  ', ' +
+                                  model.modelId +
+                                  ' as ' +
+                                  (game.color | titlecase) +
+                                  ', Stockfish level ' +
+                                  pair.targetStrength
+                                "
+                              >
+                                {{ label }}
+                              </a>
+                            } @else {
+                              <span class="secondary">{{ label }}</span>
+                            }
+                            @if (game.statusDetail || game.reason) {
+                              <small class="cell-note secondary">{{
+                                game.statusDetail || reasonLabel(game.reason)
+                              }}</small>
+                            }
+                          </td>
+                          <td class="num secondary">
+                            {{ unplayed ? '—' : formatSpend(game.spendUsd, 4) }}
+                          </td>
+                        } @else {
+                          <td colspan="2" class="secondary">
+                            <span class="cdk-visually-hidden">No game</span
+                            ><span aria-hidden="true">—</span>
+                          </td>
+                        }
                       }
-                    </td>
+                      <td class="secondary">{{ pair.complete ? '' : 'Incomplete' }}</td>
+                    </tr>
                   }
-                  <td>{{ pair.complete ? 'Complete' : 'Incomplete' }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        }
       </section>
     }
   }
 </div>
 
-<ng-template #scoreCells let-score>
-  <td class="num">{{ score.wins }}</td>
-  <td class="num">{{ score.draws }}</td>
-  <td class="num">{{ score.losses }}</td>
-  <td class="num">{{ score.forfeits }}</td>
-  <td class="num">
-    @if (score.scoredGames) {
-      {{ score.points | number: '1.0-1' }} / {{ score.scoredGames }}
-    } @else {
-      <span aria-label="No scored games">—</span>
-    }
-  </td>
+<ng-template #runStatus let-status>
+  <span class="status-chip" [attr.data-status]="status">
+    {{ status === 'FINISHED' ? 'Completed' : (status | titlecase) }}
+  </span>
+</ng-template>
+
+<ng-template #scoreValue let-score>
+  @if (score?.scoredGames) {
+    {{ score.points | number: '1.0-1' }} / {{ score.scoredGames }}
+  } @else {
+    <span class="secondary">
+      <span class="cdk-visually-hidden">No scored games</span><span aria-hidden="true">—</span>
+    </span>
+  }
 </ng-template>

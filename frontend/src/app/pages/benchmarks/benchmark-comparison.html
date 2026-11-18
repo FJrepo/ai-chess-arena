@@ -1,9 +1,9 @@
-<div class="benchmark-page">
+<div class="desktop-page">
   <header class="page-hero page-hero-surface">
-    <div>
-      <a mat-button routerLink="/benchmarks">Back to Benchmarks</a>
-      <h1>Compare benchmark runs</h1>
-      <p>Performance against this Stockfish setup</p>
+    <div class="page-title-block">
+      <a class="back-link" routerLink="/benchmarks">Back to Benchmarks</a>
+      <h1 class="page-title">Compare benchmark runs</h1>
+      <p class="page-subtitle">Performance against this Stockfish setup</p>
     </div>
   </header>
 
@@ -72,6 +72,18 @@
         @if (data.comparisonType === 'MULTIPLE_SETTINGS') {
           <p>Differences cannot be attributed to a single setting.</p>
         }
+        @if (data.comparisonType === 'CONTROLLED_RERUN') {
+          <p class="secondary">
+            A controlled rerun repeats the source’s playing settings or makes one recorded change.
+            Playing settings compared are model IDs, requested effort, legal move hints, chat mode,
+            maximum attempts per move, move time limit, and maximum output tokens.
+          </p>
+          <p class="secondary">
+            Both runs must match on opening suite, seed and lines, Stockfish executable and NNUE
+            weights, search nodes, threads and hash size, Stockfish levels, model colors, and
+            underlying prompt version.
+          </p>
+        }
         @if (data.settingChanges.length) {
           <ng-container
             *ngTemplateOutlet="
@@ -79,14 +91,15 @@
               context: { $implicit: data.settingChanges, label: 'Run settings changes' }
             "
           />
-        } @else {
-          <p>The rerun repeats the source settings to measure run-to-run variance.</p>
         }
       </section>
     }
 
     <section class="panel" aria-labelledby="run-totals">
       <h2 id="run-totals">Run spend</h2>
+      @if (data.operationalLimitsNote) {
+        <p class="secondary">{{ data.operationalLimitsNote }}.</p>
+      }
       <div class="table-scroll">
         <table aria-labelledby="run-totals">
           <thead>
@@ -326,6 +339,14 @@
   }
   @if (game.reason) {
     <small>{{ reasonLabel(game.reason) }}</small>
+  }
+  @if (game.status === 'PAUSED') {
+    @if (game.statusDetail) {
+      <small>{{ game.statusDetail }}</small>
+    }
+    @if (game.uncertainRequest) {
+      <small class="pause-note">Displayed spend may be missing this request’s cost.</small>
+    }
   }
   @if (game.pairIncomplete) {
     <small>Incomplete pair</small>

@@ -10,6 +10,7 @@ import java.util.UUID;
 
 public record BenchmarkComparisonDto(
         Summary base, Summary candidate, boolean comparable, ComparisonType comparisonType, List<Difference> differences, List<Difference> settingChanges,
+        String operationalLimitsNote,
         BigDecimal baseSpendUsd, BigDecimal candidateSpendUsd, BigDecimal spendDeltaUsd,
         List<String> unmatchedBaseModels, List<String> unmatchedCandidateModels,
         List<Model> models, List<Matchup> matchups
@@ -32,8 +33,9 @@ public record BenchmarkComparisonDto(
             BigDecimal scoreDelta, BigDecimal spendDeltaUsd
     ) {}
 
-    public record GameSide(UUID gameId, GameStatus status, ResultReason reason, String outcome, BigDecimal points,
-                           boolean forfeit, boolean pairIncomplete, Telemetry telemetry, BigDecimal spendUsd) {}
+    public record GameSide(UUID gameId, GameStatus status, ResultReason reason, String statusDetail, boolean uncertainRequest,
+                           String outcome, BigDecimal points, boolean forfeit, boolean pairIncomplete,
+                           Telemetry telemetry, BigDecimal spendUsd) {}
 
     public record Telemetry(long firstTryMoves, long turnsSampled, BigDecimal firstTryLegalRate,
                             long reasoningMovesReported, BigDecimal reasoningTokensPerMove) {}

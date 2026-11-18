@@ -36,6 +36,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Benchmark reports lead with model scores and game counts, distinguish opening-pair outcomes, and keep small charges visible.
 - The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
 - Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.
@@ -48,8 +49,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Retrying an unconfirmed benchmark creation in the same tab returns the original run even after reloading. Terminal model and Stockfish moves are saved with their results, so cancellation keeps committed wins and draws. Opening positions supply a baseline for move quality.
 - Benchmark games stay out of Analytics health counts while their spend remains visible. Benchmark games show their configured chat mode between turns and give recovery guidance for cut-off answers.
-- Recover an unconfirmed rerun using its original request after reloading. Starting a separate run requires explicit confirmation.
-- Benchmark comparisons flag incompatible prompt versions and multiple setting changes, show missing scores and telemetry without empty labels, and count outcome changes only across scored games.
+- Recover an unconfirmed rerun using its original request after reloading or after a recovery error. Starting a separate run requires explicit confirmation.
+- Benchmark comparisons exclude budget and concurrency from playing settings, flag incompatible prompt versions and multiple setting changes, and show reasons and possible missing spend for spend-check pauses.
+- Benchmark comparisons show missing scores and telemetry without empty labels, and count outcome changes only across scored games.
 - Benchmark first-try legality includes earlier attempts at the same ply across pauses. New reruns reject stale budget or concurrency previews even if the source changes during verification.
 
 ### Security

@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class BenchmarkComparisonService {
     private static final BigDecimal HALF_POINT = new BigDecimal("0.5");
+    private static final String OPERATIONAL_LIMITS_NOTE = "Budget and concurrency are operational limits and are not compared";
 
     @Inject BenchmarkRunService runs;
     @Inject GameRepository games;
@@ -90,7 +91,7 @@ public class BenchmarkComparisonService {
             unmatchedCandidate.clear();
         }
         return new BenchmarkComparisonDto(BenchmarkRunService.summary(base), BenchmarkRunService.summary(candidate),
-                comparable, comparisonType, differences, displayedChanges, baseSpend, candidateSpend,
+                comparable, comparisonType, differences, displayedChanges, OPERATIONAL_LIMITS_NOTE, baseSpend, candidateSpend,
                 comparable ? candidateSpend.subtract(baseSpend) : null,
                 unmatchedBase, unmatchedCandidate, models, matchups);
     }
@@ -164,7 +165,7 @@ public class BenchmarkComparisonService {
     private GameSide gameSide(RunData data, String model, Opening opening, int target, String color,
                               boolean incomplete, Totals totals) {
         Game game = data.game(model, opening, target, color);
-        if (game == null) return new GameSide(null, null, null, null, null, false, incomplete, null, null);
+        if (game == null) return new GameSide(null, null, null, null, false, null, null, false, incomplete, null, null);
         boolean white = "WHITE".equals(color);
         var outcome = outcomes.classifyComparison(game, white);
         BigDecimal points = null;
@@ -183,7 +184,8 @@ public class BenchmarkComparisonService {
         totals.turns += turns;
         totals.reasoning.include(reasoning);
         totals.spend = totals.spend.add(game.totalCostUsd);
-        return new GameSide(game.id, game.status, game.resultReason, label, points, points != null && outcome.forfeit(),
+        return new GameSide(game.id, game.status, game.resultReason, game.statusDetail, game.requestSentAt != null,
+                label, points, points != null && outcome.forfeit(),
                 incomplete, telemetry(first, turns, reasoning), game.totalCostUsd);
     }
 
@@ -210,8 +212,6 @@ public class BenchmarkComparisonService {
         settingChange(changes, "legalMoveHints", "Legal move hints", base.legalMoveHints ? "On" : "Off",
                 candidate.legalMoveHints ? "On" : "Off");
         settingChange(changes, "chatMode", "Chat mode", base.chatMode, candidate.chatMode);
-        settingChange(changes, "budgetUsd", "Current budget (USD)", base.budgetUsd, candidate.budgetUsd);
-        settingChange(changes, "maxConcurrentGames", "Concurrent games", base.maxConcurrentGames, candidate.maxConcurrentGames);
         settingChange(changes, "maxAttempts", "Max attempts per move", base.maxAttempts, candidate.maxAttempts);
         settingChange(changes, "moveTimeoutSeconds", "Move time limit (seconds)", base.moveTimeoutSeconds,
                 candidate.moveTimeoutSeconds);
@@ -234,10 +234,9 @@ public class BenchmarkComparisonService {
     private static boolean isControlledRerun(Tournament source, Tournament rerun, Map<String, Difference> changes) {
         var recorded = rerun.benchmarkDefinition.rerun();
         if (recorded == null || !source.id.equals(recorded.baseId())) return false;
-        if (changes.isEmpty()) return recorded.setting() == null;
-        if (!changes.containsKey(recorded.setting())) return false;
-        // Budget is the only recorded change that can be edited after the rerun is created.
-        return !"budgetUsd".equals(recorded.setting()) || rerun.budgetUsd.compareTo(new BigDecimal(recorded.value())) == 0;
+        String setting = recorded.setting();
+        if (setting == null || "budgetUsd".equals(setting)) return changes.isEmpty();
+        return changes.containsKey(setting);
     }
 
     private static List<Difference> differences(Tournament before, Tournament after) {

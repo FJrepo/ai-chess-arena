@@ -11,6 +11,10 @@
   border-color: var(--app-warning-border);
 }
 
+.panel p + :is(p, .table-scroll) {
+  margin-block-start: var(--app-space-2);
+}
+
 .comparison-table {
   table-layout: fixed;
 
@@ -34,14 +38,18 @@
     width: 10%;
   }
 
-  th small {
-    display: block;
-    margin-block-start: var(--app-space-1);
-    font-weight: normal;
+  :is(th, td) {
+    vertical-align: top;
   }
 
   small {
+    display: block;
+    margin-block-start: var(--app-space-1);
     font-size: var(--app-text-secondary-size);
+  }
+
+  th small {
+    font-weight: normal;
   }
 }
 
