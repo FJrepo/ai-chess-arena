@@ -1748,6 +1748,25 @@ describe('AnalyticsDashboard', () => {
     expect(component.unevaluatedResignations(winner)).toBe(0);
   });
 
+  it('names the persuasion table and scopes its headers to the two roles', async () => {
+    const element = await renderBehaviour(
+      [comparisonRow('model.quiet', { persuasion: persuasion() })],
+      PERSUASION_RULES,
+    );
+    const table = element.querySelector<HTMLTableElement>('.persuasion-table')!;
+    const heading = element.querySelector('.persuasion-table-card h2');
+    expect(heading?.id).toBeTruthy();
+    expect(table.getAttribute('aria-labelledby')).toBe(heading?.id);
+    expect(Array.from(table.querySelectorAll('colgroup'), (group) => group.span)).toEqual([
+      1, 2, 1,
+    ]);
+    expect(
+      Array.from(table.querySelectorAll('th[scope="colgroup"]'), (header) =>
+        header.textContent.trim(),
+      ),
+    ).toEqual(['As persuader', 'As persuaded']);
+  });
+
   it('lists persuasion per model with denominators, the tone split and low-sample badges', async () => {
     const element = await renderBehaviour(
       [
@@ -1774,9 +1793,11 @@ describe('AnalyticsDashboard', () => {
     const [persuader, pushover] = rows;
     expect(persuader.cells[1].textContent).toMatch(/^\s*2\s+of\s+7\s*resignations/);
     expect(persuader.cells[1].textContent).toContain('2 not evaluated');
-    expect(persuader.cells[1].querySelector('.grade-chip')).toBeNull();
+    expect(persuader.cells[1].querySelector('.persuasion-sample')).toBeNull();
     expect(persuader.cells[2].textContent).toMatch(/0\s+of\s+3\s*resignations/);
-    expect(persuader.cells[2].querySelector('.grade-chip')?.textContent?.trim()).toBe('Low sample');
+    expect(persuader.cells[2].querySelector('.persuasion-sample')?.textContent?.trim()).toBe(
+      'Low sample',
+    );
     expect(persuader.cells[3].querySelector('.cdk-visually-hidden')?.textContent).toBe(
       'No resignations',
     );
@@ -1808,9 +1829,9 @@ describe('AnalyticsDashboard', () => {
     );
     expect(cell.textContent).toContain('2 not evaluated');
     // A sample with resignations but none evaluated is still a low sample; an empty cell is not.
-    expect(cell.querySelector('.grade-chip')?.textContent?.trim()).toBe('Low sample');
+    expect(cell.querySelector('.persuasion-sample')?.textContent?.trim()).toBe('Low sample');
     expect(
-      unevaluated.querySelector('.persuasion-table tbody tr td:nth-child(2) .grade-chip'),
+      unevaluated.querySelector('.persuasion-table tbody tr td:nth-child(2) .persuasion-sample'),
     ).toBeNull();
     TestBed.resetTestingModule();
 

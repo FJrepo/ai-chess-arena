@@ -467,6 +467,27 @@
   border-left: 1px solid var(--app-divider);
 }
 
+.persuasion-table {
+  td.behaviour-metric {
+    vertical-align: baseline;
+  }
+
+  .persuasion-denominator {
+    display: inline;
+    margin-inline-start: var(--app-space-1);
+  }
+
+  .persuasion-sample {
+    padding-inline: var(--app-space-1);
+    border: 1px dashed var(--mat-sys-outline);
+    border-radius: var(--app-surface-radius-md);
+
+    &:not(:last-child) {
+      margin-inline-end: var(--app-space-2);
+    }
+  }
+}
+
 .behaviour-content {
   .behaviour-takeaway {
     color: var(--mat-sys-on-surface);
