@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -176,18 +175,19 @@ public class GameTurnService {
 
             // Admitted and committed before the request leaves: after a restart the record shows a request that may
             // already be charged. The same admission runs before any further POST of this call (the plain fallback).
-            AtomicReference<Instant> sentAt = new AtomicReference<>();
-            if (runOwnership != null) {
-                sentAt.set(runOwnership.markRequestSent(request.gameId(), null));
-                if (sentAt.get() == null) {
-                    return TurnResult.stopped();
-                }
+            if (runOwnership != null && runOwnership.markRequestSent(request.gameId()) == null) {
+                return TurnResult.stopped();
             }
-            OpenRouterService.SendGate gate = () -> admitAnotherRequest(request, sentAt);
+            FallbackGate gate = new FallbackGate(request, attemptContext, attempt);
             List<OpenRouterService.ChatMsg> messages = List.copyOf(request.history());
             OpenRouterService.AnswerDeadline deadline = turnDeadline;
             OpenRouterService.LlmResponse llmResponse = ScopedValue.where(OpenRouterService.SEND_GATE, gate).call(() ->
                     openRouterService.chat(request.modelId(), messages, deadline, request.maxOutputTokens(), effort));
+            if (gate.refused) {
+                // The rejection was answered and handled by the gate; nothing more is sent.
+                return gate.unrecorded ? pauseForInspection(request, GameLifecycleService.UNRECORDED_ANSWER)
+                        : TurnResult.stopped();
+            }
 
             if (llmResponse.isProviderFailure()) {
                 String detail = withReasoningEffortHint(llmResponse, effort, request);
@@ -223,8 +223,10 @@ public class GameTurnService {
             }
 
             if (llmResponse.cacheRejectionStatus() != null) {
+                // The gate recorded the rejection before the plain retry was sent.
                 providerProblem = new ProviderProblem(
-                        "OpenRouter rejected cache control (HTTP " + llmResponse.cacheRejectionStatus() + ")", attempt);
+                        "OpenRouter rejected cache control (HTTP " + llmResponse.cacheRejectionStatus() + ")",
+                        gate.rejectionRecorded ? 0 : attempt);
             }
             if (llmResponse.timedOut()) {
                 return handleResponseTimeout(request, attemptContext, attempt, llmResponse, providerProblem);
@@ -523,17 +525,33 @@ public class GameTurnService {
         }
     }
 
-    /** Admission for a further POST of the same call: the request before it has its complete answer. */
-    private boolean admitAnotherRequest(TurnRequest request, AtomicReference<Instant> sentAt) {
-        if (!request.shouldContinue().getAsBoolean()) {
-            return false;
+    /**
+     * Admission for the plain fallback of a request whose cache markers were rejected: the rejection and any usage it
+     * reports are committed first (so the run's spend includes them), then the fallback is admitted like any request.
+     */
+    private final class FallbackGate implements OpenRouterService.SendGate {
+        private final TurnRequest request;
+        private final AttemptContext attemptContext;
+        private final int attempt;
+        boolean rejectionRecorded;
+        boolean refused;
+        boolean unrecorded;
+
+        FallbackGate(TurnRequest request, AttemptContext attemptContext, int attempt) {
+            this.request = request;
+            this.attemptContext = attemptContext;
+            this.attempt = attempt;
         }
-        if (runOwnership == null) {
-            return true;
+
+        @Override
+        public boolean admitAnotherRequest(OpenRouterService.LlmResponse rejection) {
+            rejectionRecorded = recordAttempt(request, attemptContext, attempt, Outcome.PROVIDER_RETRYABLE, null,
+                    rejection.errorMessage() + "; retrying once with plain messages", rejection);
+            unrecorded = !rejectionRecorded;
+            refused = unrecorded || !request.shouldContinue().getAsBoolean()
+                    || (runOwnership != null && runOwnership.markRequestSent(request.gameId()) == null);
+            return !refused;
         }
-        Instant next = runOwnership.markRequestSent(request.gameId(), sentAt.get());
-        sentAt.set(next);
-        return next != null;
     }
 
     /** Pauses for the operator's spend check; see {@link GameLifecycleService#pauseForInspection}. */

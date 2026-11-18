@@ -974,6 +974,33 @@ describe('GameView', () => {
     expect(component.truncationPauseLimit()).toBe(4096);
   });
 
+  it('reads the snapshot when a pause holds the game for a spend check', () => {
+    const readsAfterPause = (detail: string) => {
+      TestBed.resetTestingModule();
+      const getGame = vi.fn(() =>
+        of(gameFixture({ status: 'PAUSED', statusRevision: 2, uncertainRequest: true })),
+      );
+      const { component } = createComponent({ api: { getGame } });
+      (component as any).gameId = 'g-1';
+      component.game.set(gameFixture({ status: 'IN_PROGRESS' }));
+      const before = getGame.mock.calls.length;
+      component.handleWsMessage({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'PAUSED',
+        detail,
+        statusRevision: 2,
+      });
+      return getGame.mock.calls.length - before;
+    };
+
+    const ordinary = readsAfterPause('OpenRouter rate limit reached (HTTP 429)');
+    const spendCheck = readsAfterPause(
+      'A model request (m, White, move 3) has no recorded answer. Check spend, then resume.',
+    );
+    expect(spendCheck).toBe(ordinary + 1);
+  });
+
   it('names the rejected move in the live retry text', () => {
     const { component } = createComponent();
 

@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -185,7 +186,7 @@ class DurableRunsIT {
             assertEquals("A model request (test/white, White, move 1) was in flight during a backend restart and may "
                     + "already have been charged. Check spend, then resume.", paused.statusDetail);
             assertNull(paused.runOwner);
-            assertNull(paused.requestSentAt, "the reason now carries the request");
+            assertNotNull(paused.requestSentAt, "kept until the operator acknowledges it");
             assertFalse(engine.isRunning(gameId), "nothing was resumed");
             assertEquals(1, requests.get(), "the request is not sent again");
 
@@ -231,7 +232,7 @@ class DurableRunsIT {
                     start, read(gameId).statusRevision, () -> true));
             attempts.record(new MoveAttemptService.AttemptRecord(gameId, 1, "WHITE", 1, "test/white",
                     Outcome.ILLEGAL_MOVE, "Ke2", "Illegal", paid("Ke2", 0.5)));
-            assertNull(ownership.markRequestSent(gameId, null));
+            assertNull(ownership.markRequestSent(gameId));
             lifecycle.forfeitTimeout(gameId, "WHITE", 30);
             lifecycle.forfeitInvalidMoves(gameId, "WHITE", 3);
             lifecycle.pauseWithReason(gameId, "Stale pause");
@@ -354,19 +355,18 @@ class DurableRunsIT {
                 Game game = read(gameId);
                 assertEquals(GameStatus.PAUSED, game.status);
                 if (inFlight) {
-                    // Either the resume came first and was refused, or it followed the inspection pause.
-                    assertEquals(resumed == 200 ? 1 : 0, turnsPlayed.get());
-                    if (resumed != 200) {
-                        assertEquals(409, resumed);
-                        assertTrue(game.statusDetail.contains("was in flight during a backend restart"));
-                    }
+                    // Before or after recovery, an ordinary resume never sends the possibly charged request again.
+                    assertEquals(409, resumed);
+                    assertEquals(0, turnsPlayed.get());
+                    assertNotNull(game.requestSentAt);
+                    assertTrue(game.statusDetail.endsWith(GameLifecycleService.INSPECTION_SUFFIX), game.statusDetail);
                 } else {
                     assertEquals(409, resumed, "the game never left IN_PROGRESS");
                     assertEquals(1, turnsPlayed.get());
                 }
             }
         }
-        assertEquals(1, maxConcurrent.get());
+        assertEquals(inFlight ? 0 : 1, maxConcurrent.get(), "never two loops");
     }
 
     @Test
@@ -669,7 +669,7 @@ class DurableRunsIT {
                 + "already have been charged. Check spend, then resume.", game.statusDetail);
         assertEquals(1, requests.get(), "never retried automatically");
         assertNotNull(markers.getFirst());
-        assertNull(game.requestSentAt, "the reason now carries the request");
+        assertNotNull(game.requestSentAt, "kept until the operator acknowledges it");
         assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId));
     }
 
@@ -694,7 +694,7 @@ class DurableRunsIT {
         assertEquals("A model request (test/white, White, move 1) was answered, but the answer could not be saved, so "
                 + "its cost may be missing. Check spend, then resume.", game.statusDetail);
         assertEquals(1, requests.get(), "no retry before the answer is saved");
-        assertNull(game.requestSentAt);
+        assertNotNull(game.requestSentAt, "kept until the operator acknowledges it");
     }
 
     @Test
@@ -705,29 +705,23 @@ class DurableRunsIT {
         UUID owner = UUID.randomUUID();
         setRunState(gameId, owner, Instant.now().plusSeconds(600), null);
 
-        asWorker(gameId, owner, () -> {
-            Instant first = ownership.markRequestSent(gameId, null);
-            assertNotNull(first);
-            // The plain fallback of the same call replaces an answered request.
-            Instant fallback = ownership.markRequestSent(gameId, first);
-            assertNotNull(fallback);
-            assertTrue(fallback.isAfter(first));
-            assertEquals(fallback, read(gameId).requestSentAt);
-            assertNull(ownership.markRequestSent(gameId, null), "an earlier request has no recorded answer");
-            return null;
-        });
+        Instant first = asWorker(gameId, owner, () -> ownership.markRequestSent(gameId));
+        assertNotNull(first);
+        assertEquals(first, read(gameId).requestSentAt);
+        assertNull(asWorker(gameId, owner, () -> ownership.markRequestSent(gameId)),
+                "an earlier request has no recorded answer");
         Game paused = read(gameId);
         assertEquals(GameStatus.PAUSED, paused.status);
         assertEquals("A model request (test/white, White, move 1) has no recorded answer and may already have been "
                 + "charged. Check spend, then resume.", paused.statusDetail);
-        assertNull(paused.requestSentAt);
+        assertEquals(first, paused.requestSentAt, "only the operator's acknowledgement clears it");
 
         // Another loop or a stale one is refused; so is a request beyond the budget, which pauses the run.
         QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).status = GameStatus.IN_PROGRESS);
         setRunState(gameId, owner, Instant.now().plusSeconds(600), null);
-        assertNull(asWorker(gameId, UUID.randomUUID(), () -> ownership.markRequestSent(gameId, null)));
+        assertNull(asWorker(gameId, UUID.randomUUID(), () -> ownership.markRequestSent(gameId)));
         QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).totalCostUsd = new BigDecimal("0.01"));
-        assertNull(asWorker(gameId, owner, () -> ownership.markRequestSent(gameId, null)));
+        assertNull(asWorker(gameId, owner, () -> ownership.markRequestSent(gameId)));
         assertEquals(AutoRunStatus.PAUSED, runStatus(tournamentId));
         assertNull(read(gameId).requestSentAt);
     }
@@ -738,20 +732,26 @@ class DurableRunsIT {
         configure(tournamentId, "{\"maxConcurrentGames\":1,\"budgetUsd\":0.01}");
         UUID gameId = gameIds(tournamentId).getFirst();
         List<Boolean> fallbackAdmitted = new ArrayList<>();
+        List<BigDecimal> spendAtAdmission = new ArrayList<>();
         answers(call -> {
-            // The first request was rejected for cache control; its spend reaches the budget meanwhile.
-            QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).totalCostUsd = new BigDecimal("0.01"));
-            fallbackAdmitted.add(!OpenRouterService.SEND_GATE.isBound()
-                    || OpenRouterService.SEND_GATE.get().admitAnotherRequest());
-            return LlmResponse.providerFailure(OpenRouterService.ProviderOutcome.RETRYABLE, 400,
-                    "OpenRouter rejected the request (HTTP 400); the plain retry was not sent", 5, null);
+            // As OpenRouterService does: the marked request was rejected for cache control, with billable usage.
+            LlmResponse rejection = new LlmResponse(null, 900, 0, 0.01, 5,
+                    "{\"error\":{\"message\":\"cache_control is unsupported\"}}", false,
+                    "OpenRouter rejected the request (HTTP 400): cache_control is unsupported",
+                    OpenRouterService.ProviderOutcome.RETRYABLE, 400, null, null);
+            boolean admitted = OpenRouterService.SEND_GATE.get().admitAnotherRequest(rejection);
+            fallbackAdmitted.add(admitted);
+            spendAtAdmission.add(read(gameId).totalCostUsd);
+            return admitted ? paid("e4", 0.0) : rejection;
         });
 
         runs.schedule(tournamentId);
 
         awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
         awaitReleased(gameId);
-        assertEquals(List.of(false), fallbackAdmitted);
+        assertEquals(List.of(false), fallbackAdmitted, "the recorded rejection's spend reaches the budget");
+        assertEquals(0, new BigDecimal("0.01").compareTo(spendAtAdmission.getFirst()));
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId), "recorded once, before the fallback");
         assertEquals(AutoRunStatus.PAUSED, runStatus(tournamentId));
         assertEquals("Budget of $0.01 reached ($0.01 spent)", read(gameId).statusDetail);
         assertEquals(1, requests.get());
@@ -801,6 +801,256 @@ class DurableRunsIT {
         recovery.recover(List.of(gameId), Interruption.EXPIRED_LEASE);
         awaitGame(gameId, g -> g.runOwner == null && moveCountOf(g) == 2);
         assertEquals(1, requests.get());
+    }
+
+    @Test
+    void onlyTheOperatorsAcknowledgementResumesAGameWithAnUnresolvedRequest() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.PAUSED);
+        configure(tournamentId, "{\"maxConcurrentGames\":1}");
+        UUID gameId = gameIds(tournamentId).getFirst();
+        Instant sentAt = Instant.now().minusSeconds(30).truncatedTo(ChronoUnit.MICROS);
+        // As left when the inspection pause itself could not be committed: the generic loop-failure reason.
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game game = games.findById(gameId);
+            game.statusDetail = "The game loop stopped unexpectedly (IllegalStateException); resume to retry";
+            game.requestSentAt = sentAt;
+        });
+        queue(gameId, Instant.now().minusSeconds(10));
+        AtomicInteger turnsPlayed = new AtomicInteger();
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest request) {
+                turnsPlayed.incrementAndGet();
+                lifecycle.pauseWithReason(request.gameId(), "Test turn finished");
+                return TurnResult.paused();
+            }
+        }, GameTurnService.class);
+        String held = "A model request (test/white, White, move 1) has no recorded answer and may already have been "
+                + "charged. Check spend, then resume.";
+
+        // The scheduler's queued resume: refused and withdrawn.
+        runs.schedule(tournamentId);
+        Game game = read(gameId);
+        assertEquals(GameStatus.PAUSED, game.status);
+        assertNull(game.resumeRequestedAt);
+        assertEquals(held, game.statusDetail);
+        assertEquals(sentAt, game.requestSentAt);
+        // An ordinary resume, queued or not.
+        given().contentType("application/json").body("{}").post("/api/games/{id}/start", gameId)
+                .then().statusCode(409).body("error", org.hamcrest.Matchers.equalTo(
+                        GameEngineService.UNRESOLVED_START_CONFLICT));
+        given().contentType("application/json").body("{}").queryParam("queueIfFull", false)
+                .post("/api/games/{id}/start", gameId).then().statusCode(409);
+        // Restart recovery and the safety tick.
+        recovery.recover(List.of(gameId), Interruption.RESTART);
+        recovery.recover(List.of(gameId), Interruption.EXPIRED_LEASE);
+        assertEquals(held, read(gameId).statusDetail);
+        assertEquals(sentAt, read(gameId).requestSentAt);
+        assertEquals(0, turnsPlayed.get());
+        given().get("/api/games/{id}", gameId).then().statusCode(200)
+                .body("uncertainRequest", org.hamcrest.Matchers.equalTo(true));
+        // Fail-closed parameter.
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", "yes")
+                .post("/api/games/{id}/start", gameId).then().statusCode(400);
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", "true", "true")
+                .post("/api/games/{id}/start", gameId).then().statusCode(400);
+
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", true)
+                .post("/api/games/{id}/start", gameId).then().statusCode(200)
+                .body("status", org.hamcrest.Matchers.equalTo("IN_PROGRESS"))
+                .body("uncertainRequest", org.hamcrest.Matchers.equalTo(false));
+        awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+        awaitReleased(gameId);
+        assertEquals(1, turnsPlayed.get());
+        assertNull(read(gameId).requestSentAt);
+        // Nothing left to acknowledge.
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", true)
+                .post("/api/games/{id}/start", gameId).then().statusCode(409);
+    }
+
+    @Test
+    void aLoopFailingWithAnUnresolvedRequestCommitsTheInspectionPause() throws Exception {
+        UUID gameId = tournamentGame(AutoRunStatus.OFF, GameStatus.WAITING);
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest request) {
+                assertNotNull(ownership.markRequestSent(request.gameId()));
+                throw new IllegalStateException("Lost after sending");
+            }
+        }, GameTurnService.class);
+
+        engine.startGame(gameId);
+
+        awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+        awaitReleased(gameId);
+        Game game = read(gameId);
+        assertEquals("A model request (test/white, White, move 1) has no recorded answer and may already have been "
+                + "charged. Check spend, then resume.", game.statusDetail);
+        assertNotNull(game.requestSentAt);
+        WebApplicationException refused = assertThrows(WebApplicationException.class, () -> engine.startGame(gameId));
+        assertEquals(409, refused.getResponse().getStatus());
+        assertFalse(engine.isRunning(gameId));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"200 malformed", "200 no choices", "200 choice without message", "200 error object",
+            "503 html", "408 error document", "418 error document", "503 headers then drop", "drop after request"})
+    void everyAnswerThatDoesNotProveNothingWasChargedPausesAfterExactlyOnePost(String answer) throws Exception {
+        UUID gameId = tournamentGame(AutoRunStatus.OFF, GameStatus.WAITING);
+        AtomicInteger posts = new AtomicInteger();
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
+            Thread.startVirtualThread(() -> serveRaw(socket, posts, answer));
+            OpenRouterService router = new OpenRouterService();
+            router.baseUrl = "http://127.0.0.1:" + socket.getLocalPort();
+            router.keyStore = dev.aichessarena.config.OpenRouterKeyStoreFixture.keys("test-key",
+                    java.nio.file.Path.of("target/test-keys"));
+            router.objectMapper = new ObjectMapper();
+            router.defaultTemperature = 0.7;
+            router.defaultMaxTokens = 100;
+            QuarkusMock.installMockForType(router, OpenRouterService.class);
+
+            engine.startGame(gameId);
+
+            awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+            awaitReleased(gameId);
+        }
+        Game game = read(gameId);
+        assertEquals(1, posts.get(), answer);
+        assertEquals("A model request (test/white, White, move 1) lost its connection after it was sent and may "
+                + "already have been charged. Check spend, then resume.", game.statusDetail, answer);
+        assertNotNull(game.requestSentAt);
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId));
+    }
+
+    private static void serveRaw(java.net.ServerSocket socket, AtomicInteger posts, String answer) {
+        while (!socket.isClosed()) {
+            try (var connection = socket.accept()) {
+                var in = connection.getInputStream();
+                StringBuilder head = new StringBuilder();
+                while (!head.toString().endsWith("\r\n\r\n")) {
+                    int b = in.read();
+                    if (b < 0) break;
+                    head.append((char) b);
+                }
+                int length = 0;
+                for (String line : head.toString().split("\r\n")) {
+                    if (line.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:")) {
+                        length = Integer.parseInt(line.substring(15).trim());
+                    }
+                }
+                in.readNBytes(length);
+                var out = connection.getOutputStream();
+                if (!head.toString().startsWith("POST /chat/completions")) {
+                    out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                    continue;
+                }
+                posts.incrementAndGet();
+                String document = "{\"error\":{\"message\":\"Something happened\"}}";
+                String raw = switch (answer) {
+                    case "200 malformed" -> response(200, "<html>gateway</html>");
+                    case "200 no choices" -> response(200, "{\"choices\":[]}");
+                    case "200 choice without message" -> response(200, "{\"choices\":[{}]}");
+                    case "200 error object" -> response(200, "{\"error\":{\"message\":\"Provider returned error\"}}");
+                    case "503 html" -> response(503, "<html>bad gateway</html>");
+                    case "408 error document" -> response(408, document);
+                    case "418 error document" -> response(418, document);
+                    case "503 headers then drop" -> "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json"
+                            + "\r\nContent-Length: 200\r\n\r\n{\"error\":";
+                    default -> "";
+                };
+                out.write(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.flush();
+            } catch (java.io.IOException e) {
+                // closed by the test
+            }
+        }
+    }
+
+    private static String response(int status, String body) {
+        return "HTTP/1.1 %d X\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s"
+                .formatted(status, body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, body);
+    }
+
+    @Test
+    void restartFinalizesAGameABudgetPauseLeftWithADecidingMove() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.PAUSED);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game g = games.findById(gameId);
+            g.statusDetail = "Budget of $0.01 reached ($0.01 spent)";
+            Board board = new Board();
+            for (String san : List.of("f3", "e5", "g4", "Qh4#")) {
+                var move = new dev.aichessarena.entity.Move();
+                move.game = g;
+                move.moveNumber = chess.getMoveNumber(board);
+                move.color = chess.getSideToMove(board);
+                var played = chess.validateAndApply(board, san);
+                move.san = played.san();
+                move.fen = played.fen();
+                moves.persist(move);
+            }
+            g.currentFen = board.getFen();
+        });
+        assertTrue(lifecycle.gamesInterruptedByRestart().contains(gameId));
+
+        recovery.recover(List.of(gameId), Interruption.RESTART);
+
+        Game game = read(gameId);
+        assertEquals(GameStatus.COMPLETED, game.status);
+        assertEquals(Game.GameResult.BLACK_WINS, game.result);
+        assertEquals(Game.ResultReason.CHECKMATE, game.resultReason);
+    }
+
+    @Test
+    void aHumanMoveWhoseCompletionRollsBackKeepsTheLeaseForRecovery() throws Exception {
+        UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
+            Game g = new Game();
+            g.practiceKind = Game.PracticeKind.FROM_GAME;
+            g.whitePracticeControl = PlayerType.HUMAN;
+            g.blackPracticeControl = PlayerType.AI;
+            g.whitePlayerName = "You";
+            g.blackPlayerName = "Model";
+            g.blackModelId = "test/black";
+            g.status = GameStatus.IN_PROGRESS;
+            g.startedAt = java.time.LocalDateTime.now();
+            games.persist(g);
+            Board board = new Board();
+            for (String san : List.of("e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6")) {
+                var move = new dev.aichessarena.entity.Move();
+                move.game = g;
+                move.moveNumber = chess.getMoveNumber(board);
+                move.color = chess.getSideToMove(board);
+                var played = chess.validateAndApply(board, san);
+                move.san = played.san();
+                move.fen = played.fen();
+                moves.persist(move);
+            }
+            g.currentFen = board.getFen();
+            return g.id;
+        });
+        seededGames.add(gameId);
+        GameLifecycleService real = ClientProxy.unwrap(lifecycle);
+        QuarkusMock.installMockForType(new GameLifecycleService() {
+            @Override public void completeGame(UUID id, ChessService.GameEndInfo endInfo) {
+                throw new IllegalStateException("Completion rolled back");
+            }
+        }, GameLifecycleService.class);
+        answers(call -> fail("the game is decided"));
+
+        assertThrows(IllegalStateException.class,
+                () -> engine.submitHumanMove(gameId, "Qxf7", null, null, null, null));
+        QuarkusMock.installMockForType(real, GameLifecycleService.class);
+        Game mated = read(gameId);
+        assertEquals(GameStatus.IN_PROGRESS, mated.status);
+        assertEquals(7, moveCount(gameId));
+        assertNotNull(mated.runOwner, "the durable lease survives the failed completion");
+        assertFalse(engine.isRunning(gameId));
+
+        setRunState(gameId, mated.runOwner, Instant.now().minusSeconds(1), null);
+        recovery.recover(List.of(gameId), Interruption.EXPIRED_LEASE);
+        Game game = read(gameId);
+        assertEquals(GameStatus.COMPLETED, game.status);
+        assertEquals(Game.GameResult.WHITE_WINS, game.result);
+        assertEquals(Game.ResultReason.CHECKMATE, game.resultReason);
     }
 
     // --- fixtures -------------------------------------------------------------------------------------------------

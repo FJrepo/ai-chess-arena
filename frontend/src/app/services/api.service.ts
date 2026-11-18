@@ -204,6 +204,15 @@ export class ApiService {
     return this.http.post<Game>(`${this.baseUrl}/games/${id}/start`, {});
   }
 
+  /** Resumes a game paused for a spend check, stating that the spend for its unconfirmed request was checked. */
+  resumeAfterSpendCheck(id: string): Observable<Game> {
+    return this.http.post<Game>(
+      `${this.baseUrl}/games/${id}/start`,
+      {},
+      { params: { acknowledgeUncertainRequest: true } },
+    );
+  }
+
   cancelResumeRequest(id: string, statusRevision: number): Observable<Game> {
     return this.http.delete<Game>(`${this.baseUrl}/games/${id}/resume-request`, {
       params: { statusRevision },

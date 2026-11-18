@@ -131,13 +131,28 @@
         <mat-icon class="pause-icon" aria-hidden="true">pause_circle</mat-icon>
         <div class="pause-copy">
           <span class="pause-title">{{
-            game.resumeRequestedAt || showRaiseLimit()
-              ? 'Game paused'
-              : 'Paused. Fix the problem, then resume the game.'
+            game.uncertainRequest
+              ? 'Paused for a spend check'
+              : game.resumeRequestedAt || showRaiseLimit()
+                ? 'Game paused'
+                : 'Paused. Fix the problem, then resume the game.'
           }}</span>
           <span class="pause-detail">{{ game.statusDetail }}</span>
         </div>
       </div>
+      @if (game.uncertainRequest) {
+        <div class="spend-check">
+          <button
+            mat-flat-button
+            type="button"
+            class="spend-checked"
+            [disabled]="saving"
+            (click)="spendCheckedResume.emit()"
+          >
+            Spend checked, resume
+          </button>
+        </div>
+      }
       @if (showRaiseLimit()) {
         <div class="raise-limit">
           <mat-form-field appearance="outline" class="limit-field" subscriptSizing="dynamic">

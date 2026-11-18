@@ -71,7 +71,12 @@ public record GameDto(
         String practiceKind,
         UUID practiceSourceGameId,
         Integer practiceSourcePly,
-        Integer stockfishElo
+        Integer stockfishElo,
+        /**
+         * A model request was sent and its answer never recorded, so it may have been charged: the game resumes only
+         * with {@code acknowledgeUncertainRequest=true} on the start endpoint.
+         */
+        boolean uncertainRequest
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

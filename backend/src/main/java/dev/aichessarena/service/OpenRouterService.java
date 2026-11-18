@@ -134,8 +134,20 @@ public class OpenRouterService {
      */
     @FunctionalInterface
     public interface SendGate {
-        boolean admitAnotherRequest();
+        /**
+         * {@code answered} is the complete answer to the previous request (the rejection, with any reported usage):
+         * the gate records it before admitting another request, and refuses if it cannot.
+         */
+        boolean admitAnotherRequest(LlmResponse answered);
     }
+
+    /**
+     * Statuses whose complete, parseable error document proves that OpenRouter did not run (and so did not bill) the
+     * request: validation (400, 413, 422), authentication and credits (401, 402), moderation or permission (403), an
+     * unknown model or endpoint (404), rate limiting (429) and server errors reported before generation (500, 502,
+     * 503, 504). Any other status after sending (e.g. 408 or a proxy timeout such as 524) may follow a generation.
+     */
+    static final Set<Integer> NON_BILLABLE_STATUSES = Set.of(400, 401, 402, 403, 404, 413, 422, 429, 500, 502, 503, 504);
 
     public static final ScopedValue<SendGate> SEND_GATE = ScopedValue.newInstance();
 
@@ -283,29 +295,28 @@ public class OpenRouterService {
             long elapsed = elapsedMs(startNanos);
 
             if (response.statusCode() != 200) {
-                boolean rejectedCacheControl = isCacheControlRejection(response.statusCode(), response.body());
-                if (breakpoint >= 0 && rejectedCacheControl) {
+                LlmResponse failure = errorResponse(modelId, response.statusCode(), response.body(), elapsed);
+                if (breakpoint >= 0 && !failure.deliveryUncertain()
+                        && isCacheControlRejection(response.statusCode(), response.body())) {
                     explicitCachingRejected.add(modelId);
-                    if (SEND_GATE.isBound() && !SEND_GATE.get().admitAnotherRequest()) {
+                    CacheRejection rejection = new CacheRejection(response.statusCode(), response.body(),
+                            SEND_GATE.isBound());
+                    if (deadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
+                        // No time for a plain retry: the rejection is the answer, recorded by the caller.
+                        return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsed,
+                                new CacheRejection(rejection.status(), rejection.body(), false), false);
+                    }
+                    // The rejection (and any usage it reports) is recorded and the plain retry admitted like any request.
+                    if (rejection.recorded() && !SEND_GATE.get().admitAnotherRequest(failure)) {
                         LOG.warnf("OpenRouter rejected explicit caching for %s; the game cannot send a plain retry now",
                                 modelId);
-                        return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE,
-                                response.statusCode(), describeHttpFailure(response.statusCode(), response.body())
-                                        + "; the plain retry was not sent", elapsed, response.body()), response.body());
+                        return failure;
                     }
                     LOG.warnf("OpenRouter rejected explicit caching for %s; retrying once with plain messages", modelId);
                     return sendChatRequest(modelId, messages, maxOutputTokens, reasoningEffort, startNanos, deadline,
-                            limitedByMoveTime, new CacheRejection(response.statusCode(), response.body()))
-                            .withCacheRejectionStatus(response.statusCode());
+                            limitedByMoveTime, rejection).withCacheRejectionStatus(response.statusCode());
                 }
-                LOG.errorf("OpenRouter API error %d: %s", response.statusCode(), truncateForLog(response.body()));
-                return withReportedUsage(LlmResponse.providerFailure(
-                        rejectedCacheControl ? ProviderOutcome.RETRYABLE : classifyHttpStatus(response.statusCode()),
-                        response.statusCode(),
-                        describeHttpFailure(response.statusCode(), response.body()),
-                        elapsed,
-                        response.body()
-                ), response.body());
+                return failure;
             }
 
             return parseCompletion(modelId, response.body(), elapsed);
@@ -332,8 +343,9 @@ public class OpenRouterService {
                 pending.cancel(true);
             }
             LOG.error("OpenRouter API call failed");
-            return LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
+            LlmResponse failed = LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
                     "OpenRouter request failed", 0, null);
+            return bodyHandedOver.get() ? failed.withDeliveryUncertain() : failed;
         }
     }
 
@@ -362,13 +374,42 @@ public class OpenRouterService {
         return response;
     }
 
+    /**
+     * The one place that classifies a complete error response to a sent request. It is a provider failure that may be
+     * retried only with a status from {@link #NON_BILLABLE_STATUSES} and OpenRouter's error document
+     * ({@code {"error": {...}}}); anything else may follow a generation and is delivery-uncertain.
+     */
+    private LlmResponse errorResponse(String modelId, int status, String body, long elapsed) {
+        LOG.errorf("OpenRouter API error %d: %s", status, truncateForLog(body));
+        if (!NON_BILLABLE_STATUSES.contains(status) || !isErrorDocument(body)) {
+            return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, status,
+                    describeHttpFailure(status, body) + "; the answer does not show that nothing was charged",
+                    elapsed, body), body).withDeliveryUncertain();
+        }
+        return withReportedUsage(LlmResponse.providerFailure(
+                isCacheControlRejection(status, body) ? ProviderOutcome.RETRYABLE : classifyHttpStatus(status),
+                status, describeHttpFailure(status, body), elapsed, body), body);
+    }
+
+    private boolean isErrorDocument(String body) {
+        try {
+            JsonNode json = body == null ? null : objectMapper.readTree(body);
+            return json != null && json.isObject() && json.path("error").isObject();
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * A complete 200 response. Only a valid completion (a choice with a message object) is an answer; any other
+     * body may follow a generation and is delivery-uncertain.
+     */
     private LlmResponse parseCompletion(String modelId, String responseBody, long elapsed) {
         JsonNode json;
         try {
             json = objectMapper.readTree(responseBody);
         } catch (IOException e) {
             LOG.warnf("OpenRouter returned a non-JSON body for model %s", modelId);
-            // A successful status with a broken (e.g. truncated) body: the answer was produced and may be charged.
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
                     "OpenRouter returned a malformed response", elapsed, responseBody).withDeliveryUncertain();
         }
@@ -380,13 +421,14 @@ public class OpenRouterService {
                     providerMessage == null
                             ? "OpenRouter returned a response without choices"
                             : "OpenRouter upstream error: " + abbreviate(providerMessage),
-                    elapsed, responseBody), responseBody);
+                    elapsed, responseBody), responseBody).withDeliveryUncertain();
         }
         JsonNode message = json.path("choices").get(0).path("message");
         if (!message.isObject()) {
             LOG.warnf("OpenRouter returned a choice without a message object for model %s", modelId);
             return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
-                    "OpenRouter returned a malformed choice", elapsed, responseBody), responseBody);
+                    "OpenRouter returned a malformed choice", elapsed, responseBody), responseBody)
+                    .withDeliveryUncertain();
         }
         String content = message.path("content").asText(null);
         String finishReason = json.path("choices").get(0).path("finish_reason").asText(null);
@@ -466,14 +508,7 @@ public class OpenRouterService {
                     bodyHandedOver && !notDelivered(cause));
         }
         if (cause instanceof IOException) {
-            if (responseStatus != 0 && responseStatus != 200) {
-                // An error status arrived before the body broke off: classified by the status, like a stalled body.
-                LOG.warnf("OpenRouter answered HTTP %d for model %s, but the error body broke off", responseStatus,
-                        modelId);
-                return LlmResponse.providerFailure(classifyHttpStatus(responseStatus), responseStatus,
-                        describeHttpFailure(responseStatus, null), elapsed, null);
-            }
-            if (bodyHandedOver && !notDelivered(cause)) {
+            if (responseStatus != 0 || (bodyHandedOver && !notDelivered(cause))) {
                 LOG.warnf("OpenRouter connection for model %s broke after the request was sent", modelId);
                 return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, responseStatus,
                         "The connection to OpenRouter broke after the request was sent", elapsed, null)
@@ -498,17 +533,22 @@ public class OpenRouterService {
         if (cacheRejection != null) {
             LOG.warnf("Plain retry for model %s exhausted the deadline after a cache-control rejection (HTTP %d)",
                     modelId, cacheRejection.status());
-            LlmResponse failure = withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE,
-                    cacheRejection.status(), describeHttpFailure(cacheRejection.status(), cacheRejection.body())
-                            + "; plain retry did not finish within the original request deadline after cache-control rejection",
-                    elapsed, cacheRejection.body()), cacheRejection.body());
+            String detail = describeHttpFailure(cacheRejection.status(), cacheRejection.body())
+                    + "; plain retry did not finish within the original request deadline after cache-control rejection";
+            // A rejection the gate has recorded already carries its own usage; never count it twice.
+            LlmResponse failure = cacheRejection.recorded()
+                    ? LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, cacheRejection.status(), detail, elapsed, null)
+                    : withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, cacheRejection.status(),
+                            detail, elapsed, cacheRejection.body()), cacheRejection.body());
             return sent ? failure.withDeliveryUncertain() : failure;
         }
         if (responseStatus != 0 && responseStatus != 200) {
+            // An incomplete error response does not show that nothing was charged.
             LOG.warnf("OpenRouter answered HTTP %d for model %s, but the error body did not arrive in time",
                     responseStatus, modelId);
-            return LlmResponse.providerFailure(classifyHttpStatus(responseStatus), responseStatus,
-                    describeHttpFailure(responseStatus, null), elapsed, null);
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, responseStatus,
+                    describeHttpFailure(responseStatus, null) + "; the error response was incomplete", elapsed, null)
+                    .withDeliveryUncertain();
         }
         if (limitedByMoveTime) {
             LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, elapsed);
@@ -568,8 +608,11 @@ public class OpenRouterService {
         };
     }
 
-    /** Attribution carried by the single plain retry; it shares the marked request's original deadlines. */
-    private record CacheRejection(int status, String body) { }
+    /**
+     * Attribution carried by the single plain retry; it shares the marked request's original deadlines.
+     * {@code recorded}: the send gate has already recorded the rejection.
+     */
+    private record CacheRejection(int status, String body, boolean recorded) { }
 
     private static String describe(Duration duration) {
         long seconds = duration.toSeconds();

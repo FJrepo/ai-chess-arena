@@ -172,6 +172,11 @@ export interface Game {
   statusDetail?: string | null;
   resumeRequestedAt?: string | null;
   runCapacity?: RunCapacity | null;
+  /**
+   * A model request was sent and its answer never recorded, so it may already have been charged. The game resumes
+   * only after the operator confirms the spend check (`acknowledgeUncertainRequest`).
+   */
+  uncertainRequest?: boolean;
   /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
   advancedPlayerName?: string | null;
   /**

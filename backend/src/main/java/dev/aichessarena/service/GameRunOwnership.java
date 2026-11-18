@@ -88,14 +88,14 @@ public class GameRunOwnership {
     /**
      * Admits one request and records, committed, that it is about to be sent: the last check before every POST to the
      * provider. Admission re-reads the game under the locks: it must be in progress and owned by the calling loop, the
-     * auto-run must allow it (run state and budget), and no earlier request may be without a recorded answer, except
-     * {@code replacing}, an answered request of the same call (the plain fallback after a cache-control rejection).
-     * An unresolved earlier request pauses the game for inspection instead.
+     * auto-run must allow it (run state and budget), and no earlier request may be without a recorded answer. An
+     * unresolved earlier request holds the game in the inspection pause instead; only the operator's acknowledgement
+     * clears it ({@link GameLifecycleService#markGameStarted}).
      *
      * @return the new request record, or null when nothing may be sent
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public Instant markRequestSent(UUID gameId, Instant replacing) {
+    public Instant markRequestSent(UUID gameId) {
         Game game = games.findByIdForUpdate(gameId);
         if (game == null || game.status != GameStatus.IN_PROGRESS || staleWorker(game)) {
             return null;
@@ -103,15 +103,12 @@ public class GameRunOwnership {
         if (autoRuns != null && !autoRuns.admitLocked(game)) {
             return null;
         }
-        if (game.requestSentAt != null && !game.requestSentAt.equals(replacing)) {
+        if (game.requestSentAt != null) {
             LOG.warnf("Game %s: an earlier request has no recorded answer; pausing instead of sending another", gameId);
-            lifecycle.pauseLockedForInspection(game, GameLifecycleService.UNRESOLVED_REQUEST);
+            lifecycle.holdForInspection(game, GameLifecycleService.UNRESOLVED_REQUEST);
             return null;
         }
         Instant sentAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        if (sentAt.equals(game.requestSentAt)) {
-            sentAt = sentAt.plus(1, ChronoUnit.MICROS);
-        }
         game.requestSentAt = sentAt;
         renew(game);
         return sentAt;

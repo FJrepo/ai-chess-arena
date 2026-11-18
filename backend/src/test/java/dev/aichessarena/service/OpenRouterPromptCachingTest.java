@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -210,7 +211,7 @@ class OpenRouterPromptCachingTest {
     void cacheRejectionRetriesTheSameAttemptPlainAndRemembersTheExactId(int status, String message) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = status;
-        rejectionBody = JSON.createObjectNode().putObject("error").put("message", message).toString();
+        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("message", message)).toString();
         var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
         assertPlain(send(service, "google/gemini-pro", messages), messages);
         assertEquals(2, requests.size());
@@ -230,23 +231,30 @@ class OpenRouterPromptCachingTest {
     void thePlainFallbackIsSentOnlyWhenTheGameAdmitsAnotherRequest(boolean admitted) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = 400;
-        AtomicInteger asked = new AtomicInteger();
+        rejectionBody = "{\"error\":{\"message\":\"cache_control is unsupported\"},"
+                + "\"usage\":{\"prompt_tokens\":900,\"cost\":0.003}}";
+        List<OpenRouterService.LlmResponse> offered = new ArrayList<>();
+        List<Integer> postsWhenAsked = new ArrayList<>();
         var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
-        OpenRouterService.SendGate gate = () -> {
-            asked.incrementAndGet();
+        OpenRouterService.SendGate gate = rejection -> {
+            offered.add(rejection);
+            postsWhenAsked.add(requests.size());
             return admitted;
         };
 
         var response = ScopedValue.where(OpenRouterService.SEND_GATE, gate)
                 .call(() -> service.chat("google/gemini-pro", messages));
 
-        assertEquals(1, asked.get(), "asked once, before the second POST only");
+        assertEquals(List.of(1), postsWhenAsked, "asked once, after the rejection and before the second POST");
+        // The gate gets the complete rejection with its usage, to record it before admitting the fallback.
+        assertEquals(400, offered.getFirst().httpStatus());
+        assertEquals(0.003, offered.getFirst().costUsd());
+        assertEquals(900, offered.getFirst().promptTokens());
         assertEquals(admitted ? 2 : 1, requests.size());
         assertEquals(!admitted, response.isProviderFailure());
         if (!admitted) {
             assertEquals(OpenRouterService.ProviderOutcome.RETRYABLE, response.outcome());
             assertEquals(400, response.httpStatus());
-            assertTrue(response.errorMessage().endsWith("; the plain retry was not sent"), response.errorMessage());
             assertFalse(response.deliveryUncertain());
         }
     }
@@ -266,7 +274,7 @@ class OpenRouterPromptCachingTest {
     void unrelatedErrorsKeepTheirClassificationAndAreNotRetried(int status, String message) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = status;
-        rejectionBody = message;
+        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("message", message)).toString();
         var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")));
         assertEquals(OpenRouterService.ProviderOutcome.FATAL, response.outcome());
         assertEquals(1, requests.size());
@@ -380,13 +388,16 @@ class OpenRouterPromptCachingTest {
 
         assertTrue(result.pausedGame());
         assertFalse(result.isTerminal());
-        // 2.0: the plain fallback was sent and its answer did not arrive in time, so it may be charged.
+        // 2.0: the rejection is recorded before the plain fallback is sent; that fallback did not finish in time,
+        // so it may be charged.
         assertEquals(List.of("inspect: " + GameLifecycleService.DELIVERY_UNCERTAIN), pauses);
-        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), attempts.stream()
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_RETRYABLE), attempts.stream()
                 .map(MoveAttemptService.AttemptRecord::outcome).toList());
         assertEquals(404, attempts.getFirst().response().httpStatus());
-        assertTrue(attempts.getFirst().errorMessage().contains("cache"));
-        assertTrue(attempts.getFirst().response().deliveryUncertain());
+        assertFalse(attempts.getFirst().response().deliveryUncertain());
+        assertTrue(attempts.getLast().errorMessage().contains("cache"));
+        assertTrue(attempts.getLast().response().deliveryUncertain());
+        assertNull(attempts.getLast().response().rawResponse(), "the rejection's usage is not counted twice");
         assertEquals(2, requests.size(), "only the marked request and its plain fallback are sent");
     }
 
@@ -408,13 +419,17 @@ class OpenRouterPromptCachingTest {
 
         assertTrue(result.pausedGame());
         assertEquals(expectedRequests, requests.size());
-        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.PROVIDER_RETRYABLE), attempts.stream()
-                .map(MoveAttemptService.AttemptRecord::outcome).toList());
-        assertEquals("Ke2", attempts.getFirst().proposedMove());
+        // 2.0: the rejection is recorded (attempt 1) before its plain fallback is sent.
+        List<Outcome> expected = expectedRequests == 3
+                ? List.of(Outcome.PROVIDER_RETRYABLE, Outcome.ILLEGAL_MOVE, Outcome.PROVIDER_RETRYABLE)
+                : List.of(Outcome.PROVIDER_RETRYABLE, Outcome.ILLEGAL_MOVE);
+        assertEquals(expected, attempts.stream().map(MoveAttemptService.AttemptRecord::outcome).toList());
+        assertEquals(404, attempts.getFirst().response().httpStatus());
+        assertEquals(1, attempts.getFirst().attemptNumber());
+        assertEquals("Ke2", attempts.get(1).proposedMove());
         assertEquals(expectedRequests == 3 ? 2 : 1, attempts.getLast().attemptNumber());
         assertEquals(1, pauses.size());
         assertTrue(pauses.getFirst().contains("cache"));
-        assertEquals(pauses.getFirst(), attempts.getLast().errorMessage());
     }
 
     private GameTurnService.TurnResult playTimedTurn(OpenRouterService router, AtomicLong nanos, int timeoutSeconds,

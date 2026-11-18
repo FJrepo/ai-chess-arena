@@ -146,10 +146,19 @@ public class GameResource {
     @POST
     @Path("/{id}/start")
     public Response startGame(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
-        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(uriInfo, "queueIfFull")));
+        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(uriInfo, "queueIfFull")),
+                parseAcknowledgement(queryValuesIgnoringCase(uriInfo, "acknowledgeUncertainRequest")));
     }
 
     Response startGame(UUID id, boolean queueIfFull) {
+        return startGame(id, queueIfFull, false);
+    }
+
+    /**
+     * {@code acknowledgeUncertainRequest=true} states that spend for the game's unresolved model request was checked;
+     * it is the only way to resume such a game (409 otherwise, and 409 when there is nothing to acknowledge).
+     */
+    Response startGame(UUID id, boolean queueIfFull, boolean acknowledgeUncertainRequest) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         if (game.tournament != null
@@ -159,8 +168,23 @@ public class GameResource {
         if (!hasConfiguredPlayer(game, true) || !hasConfiguredPlayer(game, false)) {
             throw new IllegalArgumentException("Both players must be set");
         }
+        if (acknowledgeUncertainRequest) {
+            return Response.ok(gameEngineService.startGame(id, queueIfFull, true)).build();
+        }
         return Response.ok(queueIfFull ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id))
                 .build();
+    }
+
+    static boolean parseAcknowledgement(List<String> values) {
+        if (values == null) return false;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("acknowledgeUncertainRequest must be given at most once");
+        }
+        String value = values.getFirst();
+        if (!"true".equals(value) && !"false".equals(value)) {
+            throw new IllegalArgumentException("acknowledgeUncertainRequest must be true or false");
+        }
+        return "true".equals(value);
     }
 
     /**

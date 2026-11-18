@@ -129,7 +129,8 @@ public final class DtoMapper {
                 g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
                 attempts, streamId, g.startingConfiguration, configurationHistory,
                 g.practiceKind == null ? null : g.practiceKind.name(), g.practiceSourceGameId, g.practiceSourcePly,
-                g.stockfishElo
+                g.stockfishElo,
+                g.requestSentAt != null
         );
     }
 

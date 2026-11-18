@@ -452,7 +452,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_moves_game_ply ON moves (game_id, move_numb
 ```
 
 ### Games show "A model request … was in flight during a backend restart"
-Game loops do not survive a backend restart. A game whose model request was out when the backend stopped is paused with this reason, because the provider may already have charged it. Check the spend for that model on OpenRouter, then resume the game from the game view. Games without a request in flight resume on their own (see [Restarts](how-it-works.md#restarts)). Games paused by an older version show "Paused because the server restarted"; resume them as before.
+Game loops do not survive a backend restart. A game whose model request was out when the backend stopped is paused with this reason, because the provider may already have charged it. Check the spend for that model on OpenRouter, then choose **Spend checked, resume** in the game view's pause banner (API: `POST /api/games/{id}/start?acknowledgeUncertainRequest=true`); a plain resume is refused with HTTP 409 until then. Games without a request in flight resume on their own (see [Restarts](how-it-works.md#restarts)). Games paused by an older version show "Paused because the server restarted"; resume them as before.
 
 
 ### GHCR pull fails

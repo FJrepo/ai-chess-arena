@@ -114,24 +114,58 @@ class OpenRouterServiceChatTest {
                 "OpenRouter rejected the API key (HTTP 401): No auth credentials found");
         assertFailure(402, "{\"error\":{\"message\":\"Insufficient credits\"}}", ProviderOutcome.FATAL,
                 "OpenRouter account has insufficient credits (HTTP 402): Insufficient credits");
-        assertFailure(404, "not json", ProviderOutcome.FATAL, "Model not found on OpenRouter (HTTP 404)");
+        assertFailure(404, "{\"error\":{\"message\":\"No such model\"}}", ProviderOutcome.FATAL,
+                "Model not found on OpenRouter (HTTP 404): No such model");
+    }
+
+    /** Rule B: only a complete error document with a status from the non-billable allowlist is a plain failure. */
+    @Test
+    void errorAnswersThatDoNotProveNothingWasChargedAreDeliveryUncertain() throws IOException {
+        String document = "{\"error\":{\"message\":\"Something happened\"}}";
+        for (var answer : List.of(
+                java.util.Map.entry(404, "not json"),
+                java.util.Map.entry(429, "{}"),
+                java.util.Map.entry(500, ""),
+                java.util.Map.entry(503, "<html>bad gateway</html>"),
+                java.util.Map.entry(408, document),
+                java.util.Map.entry(418, document),
+                java.util.Map.entry(524, document))) {
+            stopServer();
+            LlmResponse response = chat(serviceAnswering(answer.getKey(), answer.getValue()));
+            assertTrue(response.isProviderFailure(), "HTTP " + answer.getKey());
+            assertTrue(response.deliveryUncertain(), "HTTP " + answer.getKey() + " " + answer.getValue());
+        }
+        for (int status : OpenRouterService.NON_BILLABLE_STATUSES) {
+            stopServer();
+            LlmResponse response = chat(serviceAnswering(status, document));
+            assertTrue(response.isProviderFailure(), "HTTP " + status);
+            assertFalse(response.deliveryUncertain(), "HTTP " + status);
+        }
+        assertEquals(java.util.Set.of(400, 401, 402, 403, 404, 413, 422, 429, 500, 502, 503, 504),
+                OpenRouterService.NON_BILLABLE_STATUSES);
     }
 
     @Test
     void rateLimitsAndServerErrorsAreRetryable() throws IOException {
-        assertFailure(429, "{}", ProviderOutcome.RETRYABLE, "OpenRouter rate limit reached (HTTP 429)");
-        assertFailure(500, "", ProviderOutcome.RETRYABLE, "OpenRouter server error (HTTP 500)");
+        assertFailure(429, "{\"error\":{}}", ProviderOutcome.RETRYABLE, "OpenRouter rate limit reached (HTTP 429)");
+        assertFailure(500, "{\"error\":{}}", ProviderOutcome.RETRYABLE, "OpenRouter server error (HTTP 500)");
         assertFailure(503, "{\"error\":{\"message\":\"upstream down\"}}", ProviderOutcome.RETRYABLE,
                 "OpenRouter server error (HTTP 503): upstream down");
     }
 
     @Test
-    void malformedOrChoicelessSuccessBodiesAreRetryable() throws IOException {
-        assertFailure(200, "<html>gateway</html>", ProviderOutcome.RETRYABLE, "OpenRouter returned a malformed response");
-        assertFailure(200, "{\"choices\":[]}", ProviderOutcome.RETRYABLE, "OpenRouter returned a response without choices");
-        assertFailure(200, "{\"choices\":[{}]}", ProviderOutcome.RETRYABLE, "OpenRouter returned a malformed choice");
-        assertFailure(200, "{\"error\":{\"message\":\"Provider returned error\",\"code\":502}}", ProviderOutcome.RETRYABLE,
+    void everySuccessStatusWithoutAValidCompletionIsDeliveryUncertain() throws IOException {
+        assertUncertain(200, "<html>gateway</html>", "OpenRouter returned a malformed response");
+        assertUncertain(200, "{\"choices\":[]}", "OpenRouter returned a response without choices");
+        assertUncertain(200, "{\"choices\":[{}]}", "OpenRouter returned a malformed choice");
+        assertUncertain(200, "{\"error\":{\"message\":\"Provider returned error\",\"code\":502}}",
                 "OpenRouter upstream error: Provider returned error");
+    }
+
+    private void assertUncertain(int status, String body, String detail) throws IOException {
+        assertFailure(status, body, ProviderOutcome.RETRYABLE, detail);
+        stopServer();
+        assertTrue(chat(serviceAnswering(status, body)).deliveryUncertain(), body);
     }
 
     @Test
@@ -290,7 +324,7 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
-    void errorStatusWithAStalledBodyKeepsTheProviderClassificationInsteadOfATimeout() throws IOException {
+    void errorStatusWithAStalledBodyIsAnIncompleteAnswerNotATimeout() throws IOException {
         // Status and headers arrive at once, the error body would take about 3 s.
         String errorBody = "{\"error\":{\"message\":\"upstream down\"}}";
         for (int status : new int[] {503, 429}) {
@@ -303,7 +337,7 @@ class OpenRouterServiceChatTest {
             assertEquals(ProviderOutcome.RETRYABLE, response.outcome(), "HTTP " + status);
             assertEquals(status, response.httpStatus());
             assertFalse(response.timedOut());
-            assertFalse(response.deliveryUncertain(), "an error status is an answer");
+            assertTrue(response.deliveryUncertain(), "an incomplete error response proves nothing");
             assertTrue(response.isProviderFailure());
         }
 
@@ -311,8 +345,10 @@ class OpenRouterServiceChatTest {
         OpenRouterService service = serviceStreaming(401, errorBody, 10, 300);
         LlmResponse unauthorized = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
                 in(Duration.ofMillis(500)), 100);
-        assertEquals(ProviderOutcome.FATAL, unauthorized.outcome());
-        assertEquals("OpenRouter rejected the API key (HTTP 401)", unauthorized.errorMessage());
+        assertTrue(unauthorized.deliveryUncertain());
+        assertFalse(unauthorized.timedOut());
+        assertEquals("OpenRouter rejected the API key (HTTP 401); the error response was incomplete",
+                unauthorized.errorMessage());
     }
 
     @Test
