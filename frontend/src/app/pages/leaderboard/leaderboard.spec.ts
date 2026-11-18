@@ -173,7 +173,7 @@ describe('Leaderboard', () => {
     expect(trend?.querySelectorAll('svg circle')).toHaveLength(1);
     expect(trend?.querySelector('polyline')).toBeNull();
     expect(trend?.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toBe(
-      'One rated game: 1516',
+      'example: one rated game, Elo 1516',
     );
   });
 

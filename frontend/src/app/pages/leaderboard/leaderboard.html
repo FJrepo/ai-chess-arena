@@ -171,7 +171,9 @@
                         role="img"
                         [attr.aria-label]="
                           row.ratingHistory.length === 1
-                            ? 'One rated game: ' + row.ratingHistory[0].rating
+                            ? row.displayName +
+                              ': one rated game, Elo ' +
+                              row.ratingHistory[0].rating
                             : row.displayName + ': recent ratings ending at ' + row.rating
                         "
                       >
