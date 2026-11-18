@@ -75,7 +75,7 @@
         "banterLevel": null,
         "resignationAllowed": false,
         "adjudicationEnabled": false,
-        "limitMoveTime": false,
+        "moveTimeoutSeconds": null,
         "maxAttempts": 3
       }
     },
@@ -91,7 +91,39 @@
         "banterLevel": "MIND_GAMES",
         "resignationAllowed": true,
         "adjudicationEnabled": false,
-        "limitMoveTime": false,
+        "moveTimeoutSeconds": null,
+        "maxAttempts": 3
+      }
+    },
+    {
+      "id": "conversion",
+      "label": "Can it finish a won game?",
+      "anchor": "can-it-finish-a-won-game",
+      "summary": "No adjudication, resignation on: winning positions converted or thrown away.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "default",
+        "chatMode": "OFF",
+        "banterLevel": null,
+        "resignationAllowed": true,
+        "adjudicationEnabled": false,
+        "moveTimeoutSeconds": null,
+        "maxAttempts": 3
+      }
+    },
+    {
+      "id": "speed",
+      "label": "How fast does it answer?",
+      "anchor": "how-fast-does-it-answer",
+      "summary": "A 120-second move limit, chat off: latency, losses on time and pauses.",
+      "settings": {
+        "legalMoveHints": true,
+        "reasoningEffort": "default",
+        "chatMode": "OFF",
+        "banterLevel": null,
+        "resignationAllowed": false,
+        "adjudicationEnabled": false,
+        "moveTimeoutSeconds": 120,
         "maxAttempts": 3
       }
     }

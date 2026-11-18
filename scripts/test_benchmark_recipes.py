@@ -32,6 +32,10 @@ def on_off(value):
     return 'on' if value else 'off'
 
 
+def move_time(seconds):
+    return 'off' if seconds is None else f'{seconds} seconds'
+
+
 def benchmark_line(settings):
     low, high = settings['targetStrengths']
     return ' · '.join([
@@ -50,7 +54,7 @@ def tournament_line(settings):
         f"Banter **{BANTER[settings['banterLevel']]}**",
         f"Allow resignation **{on_off(settings['resignationAllowed'])}**",
         f"Adjudicate decisive wins **{on_off(settings['adjudicationEnabled'])}**",
-        f"Limit time per move **{on_off(settings['limitMoveTime'])}**",
+        f'Limit time per move **{move_time(settings["moveTimeoutSeconds"])}**',
         f"Max attempts per move **{settings['maxAttempts']}**",
     ])
 
