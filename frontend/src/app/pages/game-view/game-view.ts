@@ -1044,6 +1044,8 @@ export class GameView implements OnInit, OnDestroy {
                 runCapacity: msg.runCapacity ?? null,
                 // Only a pause can hold a spend check; the snapshot read on a pause sets it.
                 uncertainRequest: status && status !== 'PAUSED' ? false : g.uncertainRequest,
+                uncertainRequestSentAt:
+                  status && status !== 'PAUSED' ? null : g.uncertainRequestSentAt,
                 statusRevision: msg.statusRevision ?? g.statusRevision,
                 startedAt:
                   status === 'IN_PROGRESS'
@@ -1360,10 +1362,15 @@ export class GameView implements OnInit, OnDestroy {
   /** Resumes a game paused for a spend check once the operator has checked the spend of its unconfirmed request. */
   resumeAfterSpendCheck() {
     this.withCurrentGameKey(() => {
-      if (this.savingLimit()) return;
-      this.runGameAction(this.api.resumeAfterSpendCheck(this.gameId), {
+      const requestSentAt = this.game()?.uncertainRequestSentAt;
+      if (this.savingLimit() || !requestSentAt) return;
+      this.runGameAction(this.api.resumeAfterSpendCheck(this.gameId, requestSentAt), {
         next: (game) => this.applyResumeSnapshot(game),
-        error: (err) => this.showServerError(err, 'Failed to resume the game.'),
+        error: (err) => {
+          this.showServerError(err, 'Failed to resume the game.');
+          // Another tab may have resumed it, or a newer request needs its own spend check: show the current state.
+          if (err?.status === 409) this.loadGame();
+        },
       });
     });
   }

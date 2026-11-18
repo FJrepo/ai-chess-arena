@@ -636,6 +636,36 @@ describe('GameView', () => {
     );
   });
 
+  it('acknowledges exactly the displayed request and refreshes when it has changed', () => {
+    const resumeAfterSpendCheck = vi.fn(() =>
+      throwError(() => ({
+        status: 409,
+        error: { error: 'The unconfirmed model request has changed; refresh and check spend' },
+      })),
+    );
+    const getGame = vi.fn(() => EMPTY);
+    const { component, snackbar } = createComponent({ api: { resumeAfterSpendCheck, getGame } });
+    (component as any).gameId = 'g-1';
+    component.game.set(
+      gameFixture({
+        status: 'PAUSED',
+        uncertainRequest: true,
+        uncertainRequestSentAt: '2026-11-18T10:00:00.123456Z',
+      }),
+    );
+    const reads = getGame.mock.calls.length;
+
+    component.resumeAfterSpendCheck();
+
+    expect(resumeAfterSpendCheck).toHaveBeenCalledWith('g-1', '2026-11-18T10:00:00.123456Z');
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'The unconfirmed model request has changed; refresh and check spend',
+      'Dismiss',
+      expect.any(Object),
+    );
+    expect(getGame.mock.calls.length).toBe(reads + 1);
+  });
+
   it('keeps the pause reason from status updates and clears it on resume', () => {
     const { component } = createComponent();
     component.game.set({

@@ -95,7 +95,7 @@ public class GameLifecycleService {
 
     @Transactional
     GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
-        return markGameStarted(gameId, automatic, queueIfFull, claimLoop, null, false);
+        return markGameStarted(gameId, automatic, queueIfFull, claimLoop, null, null);
     }
 
     /**
@@ -103,24 +103,29 @@ public class GameLifecycleService {
      * token {@code runOwner} (null: no loop).
      *
      * <p>A game with an unresolved request (sent, its answer never recorded) never starts or queues without
-     * {@code acknowledgeUncertainRequest}, the operator's statement that spend was checked: it is held in the
-     * inspection pause instead (committed) and returned with {@link GameDto#uncertainRequest()} still set. The
-     * acknowledgement clears the record and is rejected when there is nothing to acknowledge.
+     * {@code acknowledgedRequest}, the operator's statement that spend was checked for exactly that request (its
+     * {@link GameDto#uncertainRequestSentAt()}): it is held in the inspection pause instead (committed) and returned
+     * with {@link GameDto#uncertainRequest()} still set. Compared under the game lock, an acknowledgement clears the
+     * record; it is rejected when there is nothing to acknowledge or it names another (e.g. newer) request.
      */
     @Transactional
     GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop,
-                            UUID runOwner, boolean acknowledgeUncertainRequest) {
+                            UUID runOwner, Instant acknowledgedRequest) {
         Game game = requireLockedGame(gameId);
         requireActiveTournament(game);
         if (keys != null && game.practiceKind != Game.PracticeKind.HUMAN_STOCKFISH) keys.requireKey();
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }
-        if (game.requestSentAt == null && acknowledgeUncertainRequest) {
+        if (game.requestSentAt == null && acknowledgedRequest != null) {
             throw new GameStateConflictException("This game has no unconfirmed model request; refresh and resume it");
         }
+        if (acknowledgedRequest != null && !acknowledgedRequest.equals(game.requestSentAt)) {
+            throw new GameStateConflictException(
+                    "The unconfirmed model request has changed; refresh and check spend for the current one");
+        }
         if (game.requestSentAt != null) {
-            if (!acknowledgeUncertainRequest) {
+            if (acknowledgedRequest == null) {
                 holdForInspection(game, UNRESOLVED_REQUEST);
                 return DtoMapper.toDto(game, false);
             }
@@ -244,15 +249,18 @@ public class GameLifecycleService {
                 .getResultList();
     }
 
-    /** Games in progress whose loop stopped renewing its lease, e.g. after it ended without being able to release. */
+    /**
+     * Games in progress or paused whose loop stopped renewing its lease, e.g. after it ended without being able to
+     * commit its final state (or, after a human move that ended the game, its completion).
+     */
     @Transactional
     public List<UUID> gamesWithExpiredLease() {
         return gameRepository.getEntityManager().createQuery("""
                 select g.id from Game g
-                where g.status = :inProgress and g.runOwner is not null and g.runLeaseUntil <= :now
+                where g.status in :open and g.runOwner is not null and g.runLeaseUntil <= :now
                 order by g.id
                 """, UUID.class)
-                .setParameter("inProgress", GameStatus.IN_PROGRESS)
+                .setParameter("open", List.of(GameStatus.IN_PROGRESS, GameStatus.PAUSED))
                 .setParameter("now", Instant.now())
                 .getResultList();
     }
@@ -290,19 +298,23 @@ public class GameLifecycleService {
             return null;
         }
         boolean inProgress = game.status == GameStatus.IN_PROGRESS;
-        boolean candidate = cause == Interruption.RESTART
-                ? inProgress || game.status == GameStatus.PAUSED
-                : inProgress && GameRunOwnership.leaseExpired(game, Instant.now());
+        boolean open = inProgress || game.status == GameStatus.PAUSED;
+        boolean candidate = open
+                && (cause == Interruption.RESTART || GameRunOwnership.leaseExpired(game, Instant.now()));
         if (!candidate) {
             return null;
         }
         if (!inProgress) {
             // A paused game only needs finishing when decided, or holding while a request is unresolved.
+            TurnPolicy.Action held = null;
             if (!isTournamentCancelled(game) && !completeIfDecided(game) && game.requestSentAt != null) {
                 holdForInspection(game, cause.inFlight);
-                return TurnPolicy.Action.PAUSE_IN_FLIGHT;
+                held = TurnPolicy.Action.PAUSE_IN_FLIGHT;
             }
-            return null;
+            if (runOwnership != null && GameRunOwnership.leaseExpired(game, Instant.now())) {
+                runOwnership.claim(game, null);
+            }
+            return held;
         }
         if (isTournamentCancelled(game)) {
             // Legacy inconsistent row: nothing can run in a cancelled tournament.

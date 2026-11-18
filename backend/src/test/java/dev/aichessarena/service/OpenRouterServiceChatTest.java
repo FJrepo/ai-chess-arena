@@ -110,21 +110,26 @@ class OpenRouterServiceChatTest {
 
     @Test
     void authAndCreditFailuresAreFatal() throws IOException {
-        assertFailure(401, "{\"error\":{\"message\":\"No auth credentials found\"}}", ProviderOutcome.FATAL,
+        assertFailure(401, "{\"error\":{\"code\":401,\"message\":\"No auth credentials found\"}}", ProviderOutcome.FATAL,
                 "OpenRouter rejected the API key (HTTP 401): No auth credentials found");
-        assertFailure(402, "{\"error\":{\"message\":\"Insufficient credits\"}}", ProviderOutcome.FATAL,
+        assertFailure(402, "{\"error\":{\"code\":402,\"message\":\"Insufficient credits\"}}", ProviderOutcome.FATAL,
                 "OpenRouter account has insufficient credits (HTTP 402): Insufficient credits");
-        assertFailure(404, "{\"error\":{\"message\":\"No such model\"}}", ProviderOutcome.FATAL,
+        assertFailure(404, "{\"error\":{\"code\":404,\"message\":\"No such model\"}}", ProviderOutcome.FATAL,
                 "Model not found on OpenRouter (HTTP 404): No such model");
     }
 
     /** Rule B: only a complete error document with a status from the non-billable allowlist is a plain failure. */
     @Test
     void errorAnswersThatDoNotProveNothingWasChargedAreDeliveryUncertain() throws IOException {
-        String document = "{\"error\":{\"message\":\"Something happened\"}}";
+        String document = "{\"error\":{\"code\":500,\"message\":\"Something happened\"}}";
         for (var answer : List.of(
                 java.util.Map.entry(404, "not json"),
                 java.util.Map.entry(429, "{}"),
+                java.util.Map.entry(429, "{\"error\":{}}"),
+                java.util.Map.entry(503, "{\"error\":{\"message\":\"no code\"}}"),
+                java.util.Map.entry(503, "{\"error\":{\"code\":503}}"),
+                java.util.Map.entry(503, document + " trailing garbage"),
+                java.util.Map.entry(503, document + " {\"second\":1}"),
                 java.util.Map.entry(500, ""),
                 java.util.Map.entry(503, "<html>bad gateway</html>"),
                 java.util.Map.entry(408, document),
@@ -147,9 +152,11 @@ class OpenRouterServiceChatTest {
 
     @Test
     void rateLimitsAndServerErrorsAreRetryable() throws IOException {
-        assertFailure(429, "{\"error\":{}}", ProviderOutcome.RETRYABLE, "OpenRouter rate limit reached (HTTP 429)");
-        assertFailure(500, "{\"error\":{}}", ProviderOutcome.RETRYABLE, "OpenRouter server error (HTTP 500)");
-        assertFailure(503, "{\"error\":{\"message\":\"upstream down\"}}", ProviderOutcome.RETRYABLE,
+        assertFailure(429, "{\"error\":{\"code\":429,\"message\":\"Rate limited\"}}", ProviderOutcome.RETRYABLE,
+                "OpenRouter rate limit reached (HTTP 429): Rate limited");
+        assertFailure(500, "{\"error\":{\"code\":500,\"message\":\"Internal\"}}", ProviderOutcome.RETRYABLE,
+                "OpenRouter server error (HTTP 500): Internal");
+        assertFailure(503, "{\"error\":{\"code\":503,\"message\":\"upstream down\"}}", ProviderOutcome.RETRYABLE,
                 "OpenRouter server error (HTTP 503): upstream down");
     }
 
@@ -160,6 +167,29 @@ class OpenRouterServiceChatTest {
         assertUncertain(200, "{\"choices\":[{}]}", "OpenRouter returned a malformed choice");
         assertUncertain(200, "{\"error\":{\"message\":\"Provider returned error\",\"code\":502}}",
                 "OpenRouter upstream error: Provider returned error");
+    }
+
+    @Test
+    void anErrorInsideASuccessfulAnswerIsDeliveryUncertainAndKeepsItsUsage() throws IOException {
+        String usage = ",\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"cost\":0.002}}";
+        for (String choice : List.of(
+                "{\"message\":{\"content\":\"{\\\"move\\\":\\\"e\"},\"finish_reason\":\"error\","
+                        + "\"error\":{\"code\":502,\"message\":\"Upstream stopped\"}}",
+                "{\"message\":{\"content\":\"{\\\"move\\\":\\\"e4\\\"}\"},\"finish_reason\":\"error\"}",
+                "{\"message\":{\"content\":\"partial\"},\"error\":{\"code\":500,\"message\":\"Stopped\"}}")) {
+            stopServer();
+            LlmResponse response = chat(serviceAnswering(200, "{\"choices\":[" + choice + "]" + usage));
+            assertTrue(response.isProviderFailure(), choice);
+            assertTrue(response.deliveryUncertain(), choice);
+            assertNull(response.content());
+            assertEquals(0.002, response.costUsd(), "usage is preserved");
+            assertEquals(3, response.completionTokens());
+        }
+        // A valid completion followed by more content is not a valid answer either.
+        stopServer();
+        LlmResponse trailing = chat(serviceAnswering(200,
+                "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]} {\"choices\":[]}"));
+        assertTrue(trailing.deliveryUncertain());
     }
 
     private void assertUncertain(int status, String body, String detail) throws IOException {
@@ -256,8 +286,9 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
-    void slowlyStreamedBodyTimesOutAtTheDeadlineNotWhenTheBodyEnds() throws IOException {
+    void aStartedAnswerMissingTheDeadlineEndsThereAndIsDeliveryUncertainNotAModelTimeout() throws IOException {
         // Headers arrive at once, the body trickles in over about 3 s: the old request timeout never fired.
+        // 2.0: once the 200 answer has started it may be generated and billed, so it never forfeits the game.
         OpenRouterService service = serviceStreamingSlowly(10, 300);
 
         long start = System.nanoTime();
@@ -265,9 +296,9 @@ class OpenRouterServiceChatTest {
                 in(Duration.ofMillis(700)), 100);
         long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
-        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
-        assertTrue(response.timedOut());
-        assertFalse(response.isProviderFailure());
+        assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+        assertFalse(response.timedOut());
+        assertTrue(response.deliveryUncertain());
         assertTrue(elapsedMs >= 650 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
     }
 
@@ -295,7 +326,8 @@ class OpenRouterServiceChatTest {
         assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
         assertFalse(response.timedOut());
         assertTrue(response.isProviderFailure());
-        assertEquals("OpenRouter request did not finish within the safety limit of 600 ms", response.errorMessage());
+        assertEquals("OpenRouter started the answer, but it did not complete in time", response.errorMessage());
+        assertTrue(response.deliveryUncertain());
         assertTrue(elapsedMs >= 550 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
     }
 
@@ -326,7 +358,7 @@ class OpenRouterServiceChatTest {
     @Test
     void errorStatusWithAStalledBodyIsAnIncompleteAnswerNotATimeout() throws IOException {
         // Status and headers arrive at once, the error body would take about 3 s.
-        String errorBody = "{\"error\":{\"message\":\"upstream down\"}}";
+        String errorBody = "{\"error\":{\"code\":503,\"message\":\"upstream down\"}}";
         for (int status : new int[] {503, 429}) {
             stopServer();
             OpenRouterService service = serviceStreaming(status, errorBody, 10, 300);
@@ -362,7 +394,7 @@ class OpenRouterServiceChatTest {
                 in(Duration.ofMillis(600)), 100);
         long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
-        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        assertTrue(response.deliveryUncertain(), "the answer had started");
         assertTrue(elapsedMs >= 550 && elapsedMs < 1_000, "elapsed " + elapsedMs + " ms");
     }
 
@@ -402,11 +434,13 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
-    void anAnswerCompleteOnlyAfterTheDeadlineIsATimeoutEvenIfItIsThereWhenTheCallerLooks() throws IOException {
+    void anAnswerCompleteOnlyAfterTheDeadlineIsLateEvenIfItIsThereWhenTheCallerLooks() throws IOException {
         LlmResponse response = chatWithDelayedCaller(1_200, 1_517, 1_000);
 
-        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
-        assertTrue(response.timedOut());
+        // Late, not used: the started answer may be billed, so it is delivery-uncertain rather than a timeout.
+        assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+        assertTrue(response.deliveryUncertain());
+        assertNull(response.content());
     }
 
     /**

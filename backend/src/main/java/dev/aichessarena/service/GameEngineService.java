@@ -84,6 +84,8 @@ public class GameEngineService {
         /** This loop's fencing token, stored as the game's run owner while the loop owns the game. */
         private final UUID token = UUID.randomUUID();
         private volatile boolean stopRequested;
+        /** The loop failed and could not commit its pause: its lease is kept for the safety tick. */
+        private volatile boolean pauseFailed;
 
         UUID token() {
             return token;
@@ -104,39 +106,41 @@ public class GameEngineService {
      * @throws WebApplicationException 409 if the game is running, in progress or finished; 404 if it does not exist
      */
     public GameDto startGame(UUID gameId) {
-        return startGame(gameId, false, false, false);
+        return startGame(gameId, false, false, null);
     }
 
     /** Allows a paused game to queue when all slots are occupied or reserved. */
     public GameDto startGame(UUID gameId, boolean queueIfFull) {
-        return startGame(gameId, false, queueIfFull, false);
+        return startGame(gameId, false, queueIfFull, null);
     }
 
     /**
-     * Like {@link #startGame(UUID, boolean)}; {@code acknowledgeUncertainRequest} is the operator's statement that
-     * spend for an unresolved model request was checked, the only way to resume such a game.
+     * Like {@link #startGame(UUID, boolean)}; {@code acknowledgedRequest} (the game's
+     * {@code uncertainRequestSentAt}) is the operator's statement that spend for that unresolved model request was
+     * checked, the only way to resume such a game.
      *
      * @throws GameStateConflictException 409 if the game has an unresolved request and nothing acknowledges it (the
      *         game is then held in the inspection pause), or if an acknowledgement finds nothing to acknowledge
      */
-    public GameDto startGame(UUID gameId, boolean queueIfFull, boolean acknowledgeUncertainRequest) {
-        return startGame(gameId, false, queueIfFull, acknowledgeUncertainRequest);
+    public GameDto startGame(UUID gameId, boolean queueIfFull, java.time.Instant acknowledgedRequest) {
+        return startGame(gameId, false, queueIfFull, acknowledgedRequest);
     }
 
     /** Returns null while an earlier loop still owns the game, or while it has an unresolved request. */
     public GameDto startScheduledGame(UUID gameId) {
-        return startGame(gameId, true, false, false);
+        return startGame(gameId, true, false, null);
     }
 
     static final String UNRESOLVED_START_CONFLICT = "A model request of this game may already have been charged. "
-            + "Check spend, then resume with acknowledgeUncertainRequest=true";
+            + "Check spend, then resume with acknowledgeUncertainRequest set to its uncertainRequestSentAt";
 
-    private GameDto startGame(UUID gameId, boolean automatic, boolean queueIfFull, boolean acknowledgeUncertainRequest) {
+    private GameDto startGame(UUID gameId, boolean automatic, boolean queueIfFull,
+                              java.time.Instant acknowledgedRequest) {
         GameLoop loop = new GameLoop();
         GameDto started;
         try {
             started = gameLifecycleService.markGameStarted(gameId, automatic, queueIfFull,
-                    () -> runningGames.putIfAbsent(gameId, loop) == null, loop.token(), acknowledgeUncertainRequest);
+                    () -> runningGames.putIfAbsent(gameId, loop) == null, loop.token(), acknowledgedRequest);
         } catch (RuntimeException e) {
             runningGames.remove(gameId, loop);
             throw e;
@@ -179,7 +183,7 @@ public class GameEngineService {
                 runGameLoop(gameId, loop, lastMoveSan, lastMessage);
             } catch (Exception e) {
                 LOG.errorf(e, "Game loop failed for game %s", gameId);
-                pauseAfterLoopFailure(gameId, e);
+                pauseAfterLoopFailure(gameId, loop, e);
             } finally {
                 finishLoop(gameId, loop);
                 if (requestContext.isActive()) {
@@ -189,28 +193,42 @@ public class GameEngineService {
         }));
     }
 
+    /**
+     * Ends a loop. The durable lease is released only once the game's final state is committed (its pause, and the
+     * spend-check hold for an unresolved request); otherwise the lease is kept, so the safety tick recovers the game
+     * after it expires.
+     */
     private void finishLoop(UUID gameId, GameLoop loop) {
         synchronized (loop) {
             if (loop.shouldContinue()) {
-                holdUnresolvedRequest(gameId);
-                releaseOwnership(gameId, loop);
+                if (holdUnresolvedRequest(gameId) && !loop.pauseFailed) {
+                    releaseOwnership(gameId, loop);
+                }
                 runningGames.remove(gameId, loop);
                 return;
             }
         }
         humanConversations.remove(gameId);
-        // Keep ownership until this loop's final pause check, so it cannot pause a newly resumed loop.
-        pauseQuietly(gameId);
-        releaseOwnership(gameId, loop);
+        // Keep ownership until this loop's final pause check, so it cannot pause a newly resumed loop. The hold also
+        // covers a game paused meanwhile (e.g. with its run), which the pause itself leaves alone.
+        boolean settled = pauseQuietly(gameId) && holdUnresolvedRequest(gameId) && !loop.pauseFailed;
+        if (settled) {
+            releaseOwnership(gameId, loop);
+        }
         runningGames.remove(gameId, loop);
     }
 
-    /** An answer still missing when a loop ends will never be recorded: hold the game for the operator. */
-    private void holdUnresolvedRequest(UUID gameId) {
+    /**
+     * An answer still missing when a loop ends will never be recorded: hold the game for the operator. Returns whether
+     * that check committed.
+     */
+    private boolean holdUnresolvedRequest(UUID gameId) {
         try {
             gameLifecycleService.pauseEndingLoop(gameId, null);
+            return true;
         } catch (RuntimeException e) {
-            LOG.errorf(e, "Could not check game %s for an unresolved request", gameId);
+            LOG.errorf(e, "Could not check game %s for an unresolved request; keeping its lease", gameId);
+            return false;
         }
     }
 
@@ -224,15 +242,17 @@ public class GameEngineService {
         }
     }
 
-    private void pauseQuietly(UUID gameId) {
+    private boolean pauseQuietly(UUID gameId) {
         try {
             gameLifecycleService.markGamePaused(gameId);
+            return true;
         } catch (RuntimeException e) {
             LOG.errorf(e, "Could not pause game %s", gameId);
+            return false;
         }
     }
 
-    private void pauseAfterLoopFailure(UUID gameId, Exception failure) {
+    private void pauseAfterLoopFailure(UUID gameId, GameLoop loop, Exception failure) {
         humanConversations.remove(gameId);
         try {
             // With an unresolved request this commits the inspection pause instead: a plain resume must not re-send.
@@ -240,6 +260,7 @@ public class GameEngineService {
                     "The game loop stopped unexpectedly (" + failure.getClass().getSimpleName() + "); resume to retry");
         } catch (RuntimeException e) {
             LOG.errorf(e, "Could not pause game %s after loop failure", gameId);
+            loop.pauseFailed = true;
         }
     }
 

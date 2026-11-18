@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import dev.aichessarena.dto.OpenRouterModelOptionDto;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.dto.OpenRouterModelsResponseDto;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -391,13 +392,26 @@ public class OpenRouterService {
                 status, describeHttpFailure(status, body), elapsed, body), body);
     }
 
+    /**
+     * OpenRouter's documented error document and nothing else: one JSON object (no trailing content) whose
+     * {@code error} object carries a {@code code} and a non-blank {@code message}.
+     */
     private boolean isErrorDocument(String body) {
         try {
-            JsonNode json = body == null ? null : objectMapper.readTree(body);
-            return json != null && json.isObject() && json.path("error").isObject();
+            JsonNode json = strictTree(body);
+            JsonNode error = json == null ? null : json.path("error");
+            return json != null && json.isObject() && error.isObject()
+                    && (error.path("code").isNumber() || error.path("code").isTextual())
+                    && error.path("message").isTextual() && !error.path("message").asText().isBlank();
         } catch (IOException e) {
             return false;
         }
+    }
+
+    /** Parses exactly one JSON value; trailing content (garbage or a second value) is an error. */
+    private JsonNode strictTree(String body) throws IOException {
+        return body == null ? null
+                : objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(body);
     }
 
     /**
@@ -407,7 +421,7 @@ public class OpenRouterService {
     private LlmResponse parseCompletion(String modelId, String responseBody, long elapsed) {
         JsonNode json;
         try {
-            json = objectMapper.readTree(responseBody);
+            json = strictTree(responseBody);
         } catch (IOException e) {
             LOG.warnf("OpenRouter returned a non-JSON body for model %s", modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
@@ -430,8 +444,18 @@ public class OpenRouterService {
                     "OpenRouter returned a malformed choice", elapsed, responseBody), responseBody)
                     .withDeliveryUncertain();
         }
+        JsonNode choice = json.path("choices").get(0);
+        String finishReason = choice.path("finish_reason").asText(null);
+        if (choice.hasNonNull("error") || "error".equals(finishReason)) {
+            // A generation that failed midway: partial content, but the usage so far may be billed.
+            String providerMessage = choice.path("error").path("message").asText(null);
+            LOG.warnf("OpenRouter reported an error inside the answer for model %s: %s", modelId, providerMessage);
+            return withReportedUsage(LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                    providerMessage == null ? "OpenRouter reported an error inside the answer"
+                            : "OpenRouter reported an error inside the answer: " + abbreviate(providerMessage),
+                    elapsed, responseBody), responseBody).withDeliveryUncertain();
+        }
         String content = message.path("content").asText(null);
-        String finishReason = json.path("choices").get(0).path("finish_reason").asText(null);
         return new LlmResponse(content, 0, 0, null, elapsed, responseBody, false, null,
                 ProviderOutcome.OK, 200, finishReason, null).withUsage(json.path("usage"));
     }
@@ -548,6 +572,13 @@ public class OpenRouterService {
                     responseStatus, modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, responseStatus,
                     describeHttpFailure(responseStatus, null) + "; the error response was incomplete", elapsed, null)
+                    .withDeliveryUncertain();
+        }
+        if (responseStatus == 200 && sent) {
+            // The answer had started: it may be generated and billed even though it did not arrive in time.
+            LOG.warnf("OpenRouter started the answer for model %s, but it did not complete in time", modelId);
+            return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
+                    "OpenRouter started the answer, but it did not complete in time", elapsed, null)
                     .withDeliveryUncertain();
         }
         if (limitedByMoveTime) {

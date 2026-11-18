@@ -49,7 +49,7 @@ class OpenRouterPromptCachingTest {
     private final AtomicInteger catalogRequests = new AtomicInteger();
     private String catalog = explicitCatalog();
     private int rejectionStatus;
-    private String rejectionBody = "{\"error\":{\"message\":\"No endpoints found that support cache control\"}}";
+    private String rejectionBody = "{\"error\":{\"code\":404,\"message\":\"No endpoints found that support cache control\"}}";
     private boolean rejectPlain;
     private String plainMove = "e4";
     private Runnable afterRejection = () -> { };
@@ -211,7 +211,8 @@ class OpenRouterPromptCachingTest {
     void cacheRejectionRetriesTheSameAttemptPlainAndRemembersTheExactId(int status, String message) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = status;
-        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("message", message)).toString();
+        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("code", status).put("message", message))
+                .toString();
         var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
         assertPlain(send(service, "google/gemini-pro", messages), messages);
         assertEquals(2, requests.size());
@@ -231,7 +232,7 @@ class OpenRouterPromptCachingTest {
     void thePlainFallbackIsSentOnlyWhenTheGameAdmitsAnotherRequest(boolean admitted) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = 400;
-        rejectionBody = "{\"error\":{\"message\":\"cache_control is unsupported\"},"
+        rejectionBody = "{\"error\":{\"code\":400,\"message\":\"cache_control is unsupported\"},"
                 + "\"usage\":{\"prompt_tokens\":900,\"cost\":0.003}}";
         List<OpenRouterService.LlmResponse> offered = new ArrayList<>();
         List<Integer> postsWhenAsked = new ArrayList<>();
@@ -274,7 +275,8 @@ class OpenRouterPromptCachingTest {
     void unrelatedErrorsKeepTheirClassificationAndAreNotRetried(int status, String message) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = status;
-        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("message", message)).toString();
+        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("code", status).put("message", message))
+                .toString();
         var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")));
         assertEquals(OpenRouterService.ProviderOutcome.FATAL, response.outcome());
         assertEquals(1, requests.size());
@@ -358,7 +360,7 @@ class OpenRouterPromptCachingTest {
         AtomicLong nanos = new AtomicLong();
         useSimulatedResponseTimes(router, nanos);
         rejectionStatus = status;
-        rejectionBody = "{\"error\":{\"message\":\"Provider rejected the request\"}}";
+        rejectionBody = "{\"error\":{\"code\":400,\"message\":\"Provider rejected the request\"}}";
         // The default first provider backoff is 1 s, leaving no time for another request.
         afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
         List<String> pauses = new ArrayList<>();
@@ -429,7 +431,12 @@ class OpenRouterPromptCachingTest {
         assertEquals("Ke2", attempts.get(1).proposedMove());
         assertEquals(expectedRequests == 3 ? 2 : 1, attempts.getLast().attemptNumber());
         assertEquals(1, pauses.size());
-        assertTrue(pauses.getFirst().contains("cache"));
+        if (expectedRequests == 3) {
+            // The third request's answer had started when the move time ran out: a spend check, never a forfeit.
+            assertEquals("inspect: " + GameLifecycleService.DELIVERY_UNCERTAIN, pauses.getFirst());
+        } else {
+            assertTrue(pauses.getFirst().contains("cache"));
+        }
     }
 
     private GameTurnService.TurnResult playTimedTurn(OpenRouterService router, AtomicLong nanos, int timeoutSeconds,

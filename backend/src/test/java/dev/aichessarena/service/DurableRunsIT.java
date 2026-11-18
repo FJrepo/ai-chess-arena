@@ -849,12 +849,13 @@ class DurableRunsIT {
         given().get("/api/games/{id}", gameId).then().statusCode(200)
                 .body("uncertainRequest", org.hamcrest.Matchers.equalTo(true));
         // Fail-closed parameter.
-        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", "yes")
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", "true")
                 .post("/api/games/{id}/start", gameId).then().statusCode(400);
-        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", "true", "true")
+        given().contentType("application/json").body("{}")
+                .queryParam("acknowledgeUncertainRequest", sentAt.toString(), sentAt.toString())
                 .post("/api/games/{id}/start", gameId).then().statusCode(400);
 
-        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", true)
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", sentAt.toString())
                 .post("/api/games/{id}/start", gameId).then().statusCode(200)
                 .body("status", org.hamcrest.Matchers.equalTo("IN_PROGRESS"))
                 .body("uncertainRequest", org.hamcrest.Matchers.equalTo(false));
@@ -863,8 +864,164 @@ class DurableRunsIT {
         assertEquals(1, turnsPlayed.get());
         assertNull(read(gameId).requestSentAt);
         // Nothing left to acknowledge.
-        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", true)
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", sentAt.toString())
                 .post("/api/games/{id}/start", gameId).then().statusCode(409);
+    }
+
+    @Test
+    void anAcknowledgementOnlyClearsTheRequestItNames() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.PAUSED);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        Instant seen = Instant.now().minusSeconds(60).truncatedTo(ChronoUnit.MICROS);
+        Instant newer = seen.plusSeconds(30);
+        setRunState(gameId, null, null, seen);
+        String shown = given().get("/api/games/{id}", gameId).then().statusCode(200)
+                .extract().path("uncertainRequestSentAt");
+        assertEquals(seen, Instant.parse(shown));
+        // Meanwhile (another tab acknowledged it, the game ran on) a newer request became unresolved.
+        setRunState(gameId, null, null, newer);
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest request) {
+                lifecycle.pauseWithReason(request.gameId(), "Test turn finished");
+                return TurnResult.paused();
+            }
+        }, GameTurnService.class);
+
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", shown)
+                .post("/api/games/{id}/start", gameId).then().statusCode(409)
+                .body("error", org.hamcrest.Matchers.containsString("has changed"));
+        assertEquals(newer, read(gameId).requestSentAt, "the newer request stays unresolved");
+        assertEquals(GameStatus.PAUSED, read(gameId).status);
+
+        given().contentType("application/json").body("{}").queryParam("acknowledgeUncertainRequest", newer.toString())
+                .post("/api/games/{id}/start", gameId).then().statusCode(200);
+        awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+        awaitReleased(gameId);
+        assertNull(read(gameId).requestSentAt);
+    }
+
+    @Test
+    void aStartedAnswerThatMissesTheMoveTimeNeverForfeits() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 2);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        AtomicInteger posts = new AtomicInteger();
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
+            Thread.startVirtualThread(() -> serveRaw(socket, posts, "200 headers then stall"));
+            installRouter(socket);
+
+            engine.startGame(gameId);
+
+            awaitGame(gameId, g -> g.status != GameStatus.IN_PROGRESS);
+            awaitReleased(gameId);
+        }
+        Game game = read(gameId);
+        assertEquals(GameStatus.PAUSED, game.status, "never a timeout forfeit once the answer had started");
+        assertNull(game.result);
+        assertEquals("A model request (test/white, White, move 1) lost its connection after it was sent and may "
+                + "already have been charged. Check spend, then resume.", game.statusDetail);
+        assertEquals(1, posts.get());
+    }
+
+    @Test
+    void aLoopStoppedByARunPauseStillHoldsItsUnresolvedRequest() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        configure(tournamentId, "{\"maxConcurrentGames\":1}");
+        UUID gameId = gameIds(tournamentId).getFirst();
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest request) {
+                assertNotNull(ownership.markRequestSent(request.gameId()));
+                // The run is paused while the request is out; then saving the (discarded) answer fails.
+                runs.pause(tournamentId);
+                return TurnResult.stopped();
+            }
+        }, GameTurnService.class);
+
+        runs.schedule(tournamentId);
+
+        awaitGame(gameId, g -> g.statusDetail != null && g.statusDetail.endsWith(GameLifecycleService.INSPECTION_SUFFIX));
+        awaitReleased(gameId);
+        Game game = read(gameId);
+        assertEquals(GameStatus.PAUSED, game.status);
+        assertEquals("A model request (test/white, White, move 1) has no recorded answer and may already have been "
+                + "charged. Check spend, then resume.", game.statusDetail);
+        assertNotNull(game.requestSentAt);
+    }
+
+    @Test
+    void aLoopThatCannotCommitItsFinalStateKeepsItsLeaseForTheSafetyTick() throws Exception {
+        UUID gameId = tournamentGame(AutoRunStatus.OFF, GameStatus.WAITING);
+        CountDownLatch sent = new CountDownLatch(1);
+        CountDownLatch failNow = new CountDownLatch(1);
+        QuarkusMock.installMockForType(new GameTurnService() {
+            @Override public TurnResult playTurn(TurnRequest request) {
+                assertNotNull(ownership.markRequestSent(request.gameId()));
+                sent.countDown();
+                await(failNow);
+                throw new IllegalStateException("Lost after sending");
+            }
+        }, GameTurnService.class);
+        GameLifecycleService real = ClientProxy.unwrap(lifecycle);
+
+        engine.startGame(gameId);
+        assertTrue(sent.await(10, TimeUnit.SECONDS));
+        // The database is unreachable for the loop's pause and hold.
+        QuarkusMock.installMockForType(new GameLifecycleService() {
+            @Override public void pauseEndingLoop(UUID id, String detail) {
+                throw new IllegalStateException("Database unavailable");
+            }
+
+            @Override public void markGamePaused(UUID id) {
+                throw new IllegalStateException("Database unavailable");
+            }
+        }, GameLifecycleService.class);
+        failNow.countDown();
+        awaitReleased(gameId);
+        QuarkusMock.installMockForType(real, GameLifecycleService.class);
+
+        Game stuck = read(gameId);
+        assertEquals(GameStatus.IN_PROGRESS, stuck.status);
+        assertNotNull(stuck.requestSentAt);
+        assertNotNull(stuck.runOwner, "the lease is kept so the safety tick can recover the game");
+        setRunState(gameId, stuck.runOwner, Instant.now().minusSeconds(1), stuck.requestSentAt);
+        assertTrue(lifecycle.gamesWithExpiredLease().contains(gameId));
+        recovery.recover(List.of(gameId), Interruption.EXPIRED_LEASE);
+        Game held = read(gameId);
+        assertEquals(GameStatus.PAUSED, held.status);
+        assertEquals("A model request (test/white, White, move 1) was in flight when its game loop stopped and may "
+                + "already have been charged. Check spend, then resume.", held.statusDetail);
+    }
+
+    @Test
+    void theSafetyTickFinalizesADecidedGamePausedBeforeItsLeaseExpired() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.PAUSED);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game g = games.findById(gameId);
+            g.statusDetail = null;
+            Board board = new Board();
+            for (String san : List.of("f3", "e5", "g4", "Qh4#")) {
+                var move = new dev.aichessarena.entity.Move();
+                move.game = g;
+                move.moveNumber = chess.getMoveNumber(board);
+                move.color = chess.getSideToMove(board);
+                var played = chess.validateAndApply(board, san);
+                move.san = played.san();
+                move.fen = played.fen();
+                moves.persist(move);
+            }
+            g.currentFen = board.getFen();
+        });
+        // Its completion rolled back and the operator paused it; the lease of that human move has now expired.
+        setRunState(gameId, UUID.randomUUID(), Instant.now().minusSeconds(1), null);
+        assertTrue(lifecycle.gamesWithExpiredLease().contains(gameId));
+
+        recovery.recover(List.of(gameId), Interruption.EXPIRED_LEASE);
+
+        Game game = read(gameId);
+        assertEquals(GameStatus.COMPLETED, game.status);
+        assertEquals(Game.ResultReason.CHECKMATE, game.resultReason);
+        assertNull(game.runOwner);
     }
 
     @Test
@@ -892,20 +1049,15 @@ class DurableRunsIT {
 
     @ParameterizedTest
     @ValueSource(strings = {"200 malformed", "200 no choices", "200 choice without message", "200 error object",
-            "503 html", "408 error document", "418 error document", "503 headers then drop", "drop after request"})
+            "200 choice error", "200 finish reason error", "200 trailing value", "503 html", "503 trailing garbage",
+            "503 error without code", "408 error document", "418 error document", "503 headers then drop",
+            "drop after request"})
     void everyAnswerThatDoesNotProveNothingWasChargedPausesAfterExactlyOnePost(String answer) throws Exception {
         UUID gameId = tournamentGame(AutoRunStatus.OFF, GameStatus.WAITING);
         AtomicInteger posts = new AtomicInteger();
         try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
             Thread.startVirtualThread(() -> serveRaw(socket, posts, answer));
-            OpenRouterService router = new OpenRouterService();
-            router.baseUrl = "http://127.0.0.1:" + socket.getLocalPort();
-            router.keyStore = dev.aichessarena.config.OpenRouterKeyStoreFixture.keys("test-key",
-                    java.nio.file.Path.of("target/test-keys"));
-            router.objectMapper = new ObjectMapper();
-            router.defaultTemperature = 0.7;
-            router.defaultMaxTokens = 100;
-            QuarkusMock.installMockForType(router, OpenRouterService.class);
+            installRouter(socket);
 
             engine.startGame(gameId);
 
@@ -918,6 +1070,17 @@ class DurableRunsIT {
                 + "already have been charged. Check spend, then resume.", game.statusDetail, answer);
         assertNotNull(game.requestSentAt);
         assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId));
+    }
+
+    private void installRouter(java.net.ServerSocket socket) {
+        OpenRouterService router = new OpenRouterService();
+        router.baseUrl = "http://127.0.0.1:" + socket.getLocalPort();
+        router.keyStore = dev.aichessarena.config.OpenRouterKeyStoreFixture.keys("test-key",
+                java.nio.file.Path.of("target/test-keys"));
+        router.objectMapper = new ObjectMapper();
+        router.defaultTemperature = 0.7;
+        router.defaultMaxTokens = 100;
+        QuarkusMock.installMockForType(router, OpenRouterService.class);
     }
 
     private static void serveRaw(java.net.ServerSocket socket, AtomicInteger posts, String answer) {
@@ -944,7 +1107,8 @@ class DurableRunsIT {
                     continue;
                 }
                 posts.incrementAndGet();
-                String document = "{\"error\":{\"message\":\"Something happened\"}}";
+                String document = "{\"error\":{\"code\":503,\"message\":\"Something happened\"}}";
+                String usage = ",\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"cost\":0.001}}";
                 String raw = switch (answer) {
                     case "200 malformed" -> response(200, "<html>gateway</html>");
                     case "200 no choices" -> response(200, "{\"choices\":[]}");
@@ -953,12 +1117,28 @@ class DurableRunsIT {
                     case "503 html" -> response(503, "<html>bad gateway</html>");
                     case "408 error document" -> response(408, document);
                     case "418 error document" -> response(418, document);
+                    case "200 choice error" -> response(200, "{\"choices\":[{\"message\":{\"content\":\"{\\\"mo\"},"
+                            + "\"error\":{\"code\":502,\"message\":\"Upstream stopped\"}}]" + usage);
+                    case "200 finish reason error" -> response(200, "{\"choices\":[{\"message\":{\"content\":\"e4\"},"
+                            + "\"finish_reason\":\"error\"}]" + usage);
+                    case "200 trailing value" -> response(200,
+                            "{\"choices\":[{\"message\":{\"content\":\"{\\\"move\\\":\\\"e4\\\"}\"}}]} {}");
+                    case "503 trailing garbage" -> response(503, document + " garbage");
+                    case "503 error without code" -> response(503, "{\"error\":{\"message\":\"Something happened\"}}");
                     case "503 headers then drop" -> "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json"
                             + "\r\nContent-Length: 200\r\n\r\n{\"error\":";
+                    case "200 headers then stall" -> "HTTP/1.1 200 OK\r\nContent-Type: application/json"
+                            + "\r\nContent-Length: 500\r\n\r\n{\"choices\":";
                     default -> "";
                 };
                 out.write(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 out.flush();
+                if (answer.endsWith("stall")) {
+                    // Keep the connection open until the client gives up.
+                    while (in.read() >= 0) {
+                        // discard
+                    }
+                }
             } catch (java.io.IOException e) {
                 // closed by the test
             }

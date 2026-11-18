@@ -179,6 +179,8 @@ export interface Game {
    * only after the operator confirms the spend check (`acknowledgeUncertainRequest`).
    */
   uncertainRequest?: boolean;
+  /** Identifies that unconfirmed request; the spend-check acknowledgement must name it. */
+  uncertainRequestSentAt?: string | null;
   /** Set on the game that decided its series: who advanced (also when a draw policy decided a level series). */
   advancedPlayerName?: string | null;
   /**
