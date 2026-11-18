@@ -446,10 +446,11 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       return;
     }
 
-    // Reports above the destination can shift the heading while they load.
+    // Reports above the destination can shift the heading while they first load; a background
+    // refresh keeps the current data in place, so it does not hold a jump back.
     if (
-      (section !== 'spend' && this.healthLoading()) ||
-      (section === 'reliability' && this.comparisonLoading())
+      (section !== 'spend' && this.healthLoading() && !this.health()) ||
+      (section === 'reliability' && this.comparisonLoading() && !this.comparison())
     ) {
       return;
     }
@@ -477,6 +478,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   manualRefresh(): void {
+    // A refresh is a user action: it supersedes a jump that is still waiting for reports.
+    this.pendingJump.set(null);
     this.refreshAll();
   }
 

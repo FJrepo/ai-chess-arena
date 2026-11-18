@@ -735,6 +735,69 @@ describe('AnalyticsDashboard', () => {
     expect(focus).not.toHaveBeenCalled();
   });
 
+  it('drops a pending jump when the user refreshes manually before the report arrives', async () => {
+    const initial = new Subject<AnalyticsComparisonResponse>();
+    const refreshed = new Subject<AnalyticsComparisonResponse>();
+    const { harness, api } = await renderDashboard('?tab=cost', {
+      comparison: initial,
+    });
+    const element = harness.routeNativeElement!;
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(PlatformLocation);
+    router.setUpLocationChangeListener();
+    await harness.navigateByUrl('/analytics?tab=cost#reliability');
+    location.back();
+    await vi.waitFor(() => expect(router.url).toBe('/analytics?tab=cost'));
+
+    const sync = element.querySelector<HTMLButtonElement>('.refresh-btn')!;
+    sync.focus();
+    location.forward();
+    await vi.waitFor(() => expect(router.url).toBe('/analytics?tab=cost#reliability'));
+    await harness.fixture.whenStable();
+    expect(document.activeElement).toBe(sync);
+    expect(element.querySelector('.cache-table')).toBeNull();
+
+    api.getAnalyticsComparison.mockReturnValueOnce(refreshed);
+    sync.click();
+    expect(initial.observed).toBe(false);
+    expect(refreshed.observed).toBe(true);
+    refreshed.next(comparisonReport());
+    refreshed.complete();
+    harness.detectChanges();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(sync);
+  });
+
+  it('jumps at once during a background refresh that keeps the current reports', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const { harness, api } = await renderDashboard('?tab=cost');
+      const element = harness.routeNativeElement!;
+      const link = element.querySelector<HTMLAnchorElement>('a[href$="#reliability"]')!;
+      const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+      const comparison = new Subject<AnalyticsComparisonResponse>();
+      const health = new Subject<AnalyticsHealthResponse>();
+      api.getAnalyticsComparison.mockReturnValueOnce(comparison);
+      api.getAnalyticsHealth.mockReturnValueOnce(health);
+      vi.advanceTimersByTime(15000);
+      harness.detectChanges();
+
+      expect(element.querySelector('.cache-table')).toBeTruthy();
+      expect(element.querySelector('.health-table')).toBeTruthy();
+      link.focus();
+      link.click();
+      await harness.fixture.whenStable();
+
+      expect(TestBed.inject(Router).url).toBe('/analytics?tab=cost#reliability');
+      expect(comparison.observed).toBe(true);
+      expect(health.observed).toBe(true);
+      expect(document.activeElement).toBe(heading);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('focuses Reliability again when the same jump link is clicked twice', async () => {
     const { harness } = await renderDashboard('?tab=cost');
     const element = harness.routeNativeElement!;
