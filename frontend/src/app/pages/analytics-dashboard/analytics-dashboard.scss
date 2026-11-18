@@ -180,8 +180,45 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.spend-header,
+.spend-headline,
+.cost-jump-links,
+.trust-score {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.spend-header {
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--app-space-3);
+  margin-bottom: var(--app-space-2);
+}
+
+.spend-card h2 {
+  margin: 0;
+  font-size: var(--mat-sys-title-medium-size);
+  line-height: var(--mat-sys-title-medium-line-height);
+}
+
+.spend-headline,
+.trust-score {
+  align-items: baseline;
+  column-gap: var(--app-space-3);
+}
+
+.spend-headline {
+  margin: 0;
+  font-size: var(--mat-sys-title-medium-size);
+}
+
+.cost-jump-links {
+  gap: var(--app-space-3) var(--app-space-4);
+  font-size: var(--app-text-secondary-size);
+}
+
 .cost-kpi-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.35fr);
   grid-auto-rows: 1fr;
 
   .kpi-card {

@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
+import { afterRenderEffect, Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -16,7 +16,7 @@ import {
   formatNumber,
   NgTemplateOutlet,
 } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { finalize, Subscription, timeout } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
@@ -60,6 +60,7 @@ type ComparisonSortOption =
     DatePipe,
     DecimalPipe,
     NgTemplateOutlet,
+    RouterLink,
   ],
   templateUrl: './analytics-dashboard.html',
   styleUrl: './analytics-dashboard.scss',
@@ -282,7 +283,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return models.reduce((sum, model) => sum + model.finalScore, 0) / models.length;
   });
 
-  reliabilityLowConfidenceCount = computed(() => {
+  reliabilityInsufficientCount = computed(() => {
     return (this.reliability()?.models ?? []).filter((m) => m.insufficientData).length;
   });
 
@@ -296,7 +297,32 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     private api: ApiService,
     private route: ActivatedRoute,
     private router: Router,
-  ) {}
+  ) {
+    const initialRoute = this.route.snapshot;
+    if (initialRoute?.queryParamMap.get('tab') === 'cost') {
+      const fragment = initialRoute.fragment;
+      if (fragment === 'spend' || fragment === 'prompt-caching' || fragment === 'reliability') {
+        const initialJump = afterRenderEffect(() => {
+          // Reports above the destination can move its heading when they finish loading.
+          if (
+            (fragment !== 'spend' && this.healthLoading()) ||
+            (fragment === 'reliability' && this.comparisonLoading())
+          ) {
+            return;
+          }
+          initialJump.destroy();
+          if (
+            this.route.snapshot.fragment !== fragment ||
+            document.activeElement !== document.body
+          ) {
+            return;
+          }
+          const heading = document.getElementById(fragment);
+          if (heading) this.focusCostHeading(heading);
+        });
+      }
+    }
+  }
 
   ngOnInit(): void {
     this.subscriptions.add(
@@ -327,6 +353,18 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
+  }
+
+  focusCostSection(event: MouseEvent, heading: HTMLElement): void {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    this.focusCostHeading(heading);
+  }
+
+  private focusCostHeading(heading: HTMLElement): void {
+    heading.focus({ preventScroll: true });
+    heading.scrollIntoView?.({ block: 'center' });
   }
 
   onCommonFiltersChanged(): void {
@@ -406,6 +444,12 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       return 'n/a';
     }
     return `${Math.round(value).toLocaleString('en-US')} ms`;
+  }
+
+  formatSeconds(milliseconds: number | null | undefined): string {
+    return milliseconds == null
+      ? 'n/a'
+      : `${formatNumber(milliseconds / 1000, 'en-US', '1.1-1')} s`;
   }
 
   private refreshAll(): void {

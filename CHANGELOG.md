@@ -21,6 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
+- The Cost & reliability tab leads with spend and match count, shows latency in seconds and puts the insufficient-data count beside the Trust Index. Jump links take you to Spend, Prompt caching and Reliability.
 
 ### Fixed
 

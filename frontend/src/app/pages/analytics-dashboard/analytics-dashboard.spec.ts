@@ -8,6 +8,7 @@ import {
   AnalyticsComparisonModel,
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
+  ModelReliability,
   ModelReliabilityResponse,
 } from '../../models/analytics.model';
 import { AnalyticsDashboard } from './analytics-dashboard';
@@ -25,6 +26,7 @@ describe('AnalyticsDashboard', () => {
       tab: 'cost',
       label: 'Cost & reliability',
       headings: [
+        'Spend',
         'Per-Model Performance Metrics',
         'Prompt caching',
         'Reliability Ranking & Stability',
@@ -53,17 +55,9 @@ describe('AnalyticsDashboard', () => {
     }
     if (tab === 'cost') {
       const grid = element.querySelector('.cost-kpi-grid')!;
-      expect(grid.querySelectorAll(':scope > .kpi-card')).toHaveLength(6);
       expect(
         Array.from(grid.querySelectorAll('.label')).map((node) => node.textContent?.trim()),
-      ).toEqual([
-        'Total Cost',
-        'Move Volume',
-        'Avg Latency',
-        'Total Tokens',
-        'Trust Index',
-        'Low Confidence',
-      ]);
+      ).toEqual(['Move Volume', 'Avg Latency', 'Total Tokens', 'Trust Index']);
       expect(element.querySelector('.kpi-grid, .table-card')).toBe(grid);
       expect(element.querySelectorAll('.kpi-grid')).toHaveLength(1);
       expect(element.querySelector('.table-footnote')?.textContent).toContain('All attempts');
@@ -425,37 +419,37 @@ describe('AnalyticsDashboard', () => {
       source: 'health' as const,
       loading: 'Analyzing engine performance...',
       error: 'Failed to load engine health metrics.',
-      headings: ['Prompt caching', 'Reliability Ranking & Stability'],
+      missingTable: '.health-table',
       missingCards: [0, 1, 2, 3],
     },
     {
       source: 'reliability' as const,
       loading: 'Calculating reliability scores...',
       error: 'Failed to load model reliability metrics.',
-      headings: ['Per-Model Performance Metrics', 'Prompt caching'],
-      missingCards: [4, 5],
+      missingTable: '.reliability-table',
+      missingCards: [4],
     },
     {
       source: 'comparison' as const,
       loading: 'Comparing model results...',
       error: 'Failed to load model comparison metrics.',
-      headings: ['Per-Model Performance Metrics', 'Reliability Ranking & Stability'],
+      missingTable: '.cache-table',
       missingCards: [],
     },
   ])(
     'preserves the KPI grid and other tables while $source loads or fails',
-    async ({ source, loading, error, headings, missingCards }) => {
+    async ({ source, loading, error, missingTable, missingCards }) => {
       const response = new Subject<never>();
       const { harness } = await renderDashboard('?tab=cost', { [source]: response });
       const element = harness.routeNativeElement!;
       const grid = element.querySelector('.cost-kpi-grid')!;
-      const cards = Array.from(grid.querySelectorAll('.kpi-card'));
-      expect(cards).toHaveLength(6);
+      const cards = Array.from(element.querySelectorAll('.spend-card, .cost-kpi-grid .kpi-card'));
+      expect(cards).toHaveLength(5);
       expect(element.querySelector('.kpi-grid, .loading-state, .table-card')).toBe(grid);
       expect(element.textContent).toContain(loading);
-      expect(
-        Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
-      ).toEqual(headings);
+      expect(element.querySelector(missingTable)).toBeNull();
+      expect(element.querySelectorAll('.table-card table')).toHaveLength(2);
+      expect(element.querySelectorAll('h2[id]')).toHaveLength(3);
       for (const index of missingCards) {
         expect(cards[index].querySelector('.value')?.textContent).toBe('—');
         expect(cards[index].querySelector('.sub')?.textContent).toContain('Loading...');
@@ -465,13 +459,15 @@ describe('AnalyticsDashboard', () => {
       harness.detectChanges();
       expect(element.textContent).toContain(error);
       expect(element.querySelector('.cost-kpi-grid')).toBe(grid);
-      expect(Array.from(grid.querySelectorAll('.kpi-card'))).toEqual(cards);
+      expect(Array.from(element.querySelectorAll('.spend-card, .cost-kpi-grid .kpi-card'))).toEqual(
+        cards,
+      );
       for (const index of missingCards) {
         expect(cards[index].querySelector('.sub')?.textContent).toContain('Unavailable');
       }
-      expect(
-        Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
-      ).toEqual(headings);
+      expect(element.querySelector(missingTable)).toBeNull();
+      expect(element.querySelectorAll('.table-card table')).toHaveLength(2);
+      expect(element.querySelectorAll('h2[id]')).toHaveLength(3);
     },
   );
 
@@ -486,11 +482,143 @@ describe('AnalyticsDashboard', () => {
     harness.detectChanges();
 
     expect(Array.from(element.querySelectorAll('.cost-kpi-grid .kpi-card'))).toEqual(cards);
-    expect(cards[4].querySelector('.value')?.textContent).toBe('0.0');
-    expect(cards[4].querySelector('.sub')?.textContent).toContain('Average across 0 models');
-    expect(cards[5].querySelector('.value')?.textContent).toBe('0');
+    expect(cards[3].querySelector('.value')?.textContent).toBe('—');
+    expect(cards[3].querySelector('.sub')?.textContent).toContain('No reliability data available.');
+    expect(cards[3].querySelector('.trust-sample')).toBeNull();
     expect(element.textContent).not.toContain('Calculating reliability scores...');
     expect(element.textContent).toContain('No reliability data available for current criteria.');
+  });
+
+  it.each([
+    { costTotalUsd: 46.8, gamesCount: 78, headline: '$46.80 across 78 matches' },
+    { costTotalUsd: 0.25, gamesCount: 1, headline: '$0.25 across 1 match' },
+    { costTotalUsd: 0, gamesCount: 0, headline: '$0.00 across 0 matches' },
+  ])('leads the cost tab with $headline from engine health', async (health) => {
+    const { harness, component } = await renderDashboard('?tab=cost');
+    component.health.update((report) => ({
+      ...report!,
+      costTotalUsd: health.costTotalUsd,
+      gamesCount: health.gamesCount,
+    }));
+    harness.detectChanges();
+
+    const lead = harness.routeNativeElement!.querySelector('.tab-content')?.firstElementChild;
+    expect(lead?.querySelector('h2')?.textContent).toBe('Spend');
+    expect(lead?.querySelector('.spend-headline')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      health.headline,
+    );
+  });
+
+  it.each([
+    { insufficient: 8, total: 9, note: '8 of 9 models have insufficient data' },
+    { insufficient: 1, total: 9, note: '1 of 9 models has insufficient data' },
+    { insufficient: 1, total: 1, note: '1 of 1 model has insufficient data' },
+    { insufficient: 0, total: 9, note: null },
+  ])('puts the sample note beside the score for $insufficient of $total models', async (sample) => {
+    const models = Array.from({ length: sample.total }, (_, index) =>
+      reliabilityRow(`model.${index}`, { insufficientData: index < sample.insufficient }),
+    );
+    const { harness } = await renderDashboard('?tab=cost', {
+      reliability: of({ windowDays: 30, tournamentId: null, minGames: 0, models }),
+    });
+    const score = harness.routeNativeElement!.querySelector('.trust-score')!;
+    expect(score.querySelector('.value')?.textContent).toBe('81.3');
+    const note = score.querySelector('.trust-sample');
+    if (sample.note === null) {
+      expect(note).toBeNull();
+    } else {
+      expect(note?.textContent?.replace(/\s+/g, ' ').trim()).toBe(sample.note);
+    }
+  });
+
+  it('renders seconds and missing latencies in the cost KPIs and both latency columns', async () => {
+    const { harness, component } = await renderDashboard('?tab=cost', {
+      reliability: of({
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        models: [
+          reliabilityRow('model.fast', { averageResponseTimeMs: 812 }),
+          reliabilityRow('model.unknown', { averageResponseTimeMs: null }),
+        ],
+      }),
+    });
+    component.health.update((report) => ({
+      ...report!,
+      averageResponseTimeMs: 4720,
+      p95ResponseTimeMs: 12010,
+      models: [4720, null].map((averageResponseTimeMs, index) => ({
+        modelId: `model.${index}`,
+        movesCount: 5,
+        retriesTotal: 0,
+        averageRetriesPerMove: 0,
+        averageResponseTimeMs,
+        promptTokensTotal: 1000,
+        completionTokensTotal: 100,
+        totalCostUsd: 0.1,
+        averageCostPerMoveUsd: 0.02,
+      })),
+    }));
+    harness.detectChanges();
+
+    const element = harness.routeNativeElement!;
+    const latencyCard = element.querySelectorAll('.cost-kpi-grid .kpi-card')[1];
+    expect(latencyCard.querySelector('.value')?.textContent).toBe('4.7 s');
+    expect(latencyCard.querySelector('.sub')?.textContent).toContain('P95: 12.0 s');
+    expect(
+      Array.from(element.querySelectorAll('.health-table tbody td:nth-child(5)')).map(
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(['4.7 s', 'n/a']);
+    expect(
+      Array.from(element.querySelectorAll('.reliability-table tbody td:last-child')).map(
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(['0.8 s', 'n/a']);
+
+    component.health.update((report) => ({
+      ...report!,
+      averageResponseTimeMs: null,
+      p95ResponseTimeMs: null,
+    }));
+    harness.detectChanges();
+    expect(latencyCard.querySelector('.value')?.textContent).toBe('n/a');
+    expect(latencyCard.querySelector('.sub')?.textContent).toContain('P95: n/a');
+  });
+
+  it('preserves the cost deep link and moves focus to each jump link heading while reports load', async () => {
+    const { harness } = await renderDashboard('?tab=cost', {
+      comparison: new Subject(),
+      reliability: new Subject(),
+    });
+    const element = harness.routeNativeElement!;
+    const links = Array.from(element.querySelectorAll<HTMLAnchorElement>('.cost-jump-links a'));
+    const sections = ['spend', 'prompt-caching', 'reliability'];
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      'Spend',
+      'Prompt caching',
+      'Reliability',
+    ]);
+    for (const [index, link] of links.entries()) {
+      const fragment = sections[index];
+      const url = `/analytics?tab=cost#${fragment}`;
+      expect(link.getAttribute('href')).toBe(url);
+      link.focus();
+      expect(document.activeElement).toBe(link);
+      link.click();
+      const heading = element.querySelector(`h2#${fragment}`);
+      expect(heading?.getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(heading);
+      await harness.fixture.whenStable();
+      expect(TestBed.inject(Router).url).toBe(url);
+    }
+  });
+
+  it('focuses the section heading when opening a copied cost jump link', async () => {
+    const { harness } = await renderDashboard('?tab=cost#reliability');
+    expect(document.activeElement).toBe(
+      harness.routeNativeElement!.querySelector('h2#reliability'),
+    );
   });
 
   it('renders conversion counts, coverage and n/a in the selected comparison scope', async () => {
@@ -954,6 +1082,29 @@ type AnalyticsComparisonRow = {
 
 function comparisonRow(modelId: string, overrides: Partial<AnalyticsComparisonModel> = {}) {
   return { ...baseRow(modelId), ...overrides };
+}
+
+function reliabilityRow(
+  modelId: string,
+  overrides: Partial<ModelReliability> = {},
+): ModelReliability {
+  return {
+    modelId,
+    gamesPlayed: 5,
+    gamesCompleted: 5,
+    forfeitCount: 0,
+    forfeitRate: 0,
+    timeoutForfeitRate: 0,
+    averageRetriesPerMove: 0.1,
+    firstTryLegalRate: 0.9,
+    averageResponseTimeMs: 1200,
+    averageCostPerMoveUsd: 0.08,
+    movesSampled: 30,
+    finalScore: 81.3,
+    band: 'B',
+    insufficientData: false,
+    ...overrides,
+  };
 }
 
 function baseRow(modelId: string): AnalyticsComparisonRow {
