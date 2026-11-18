@@ -81,4 +81,26 @@ class TurnPolicyTest {
         assertEquals(Action.AWAIT_HUMAN, TurnPolicy.afterInterruption(false, PlayerType.HUMAN, false));
         assertEquals(Action.AWAIT_HUMAN, TurnPolicy.afterInterruption(false, PlayerType.HUMAN, true));
     }
+
+    @Test
+    void aRequestThatMayHaveBeenDeliveredIsNeverRetried() {
+        for (Outcome outcome : List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_FATAL)) {
+            for (Long remaining : java.util.Arrays.asList(null, 0L, 10L)) {
+                assertEquals(Action.PAUSE_DELIVERY_UNCERTAIN,
+                        TurnPolicy.afterProviderFailure(outcome, remaining, 1L, true));
+            }
+        }
+        assertEquals(Action.RETRY_PROVIDER, TurnPolicy.afterProviderFailure(Outcome.PROVIDER_RETRYABLE, null, 1L, false));
+    }
+
+    @Test
+    void noRetryFollowsAnAnswerThatWasNotSaved() {
+        for (Action retry : List.of(Action.RETRY_MODEL, Action.RETRY_PROVIDER)) {
+            assertEquals(Action.PAUSE_UNRECORDED, TurnPolicy.beforeRetry(retry, false));
+            assertEquals(retry, TurnPolicy.beforeRetry(retry, true));
+        }
+        for (Action other : List.of(Action.FORFEIT_INVALID_MOVES, Action.PAUSE_PROVIDER, Action.ACCEPT)) {
+            assertEquals(other, TurnPolicy.beforeRetry(other, false));
+        }
+    }
 }

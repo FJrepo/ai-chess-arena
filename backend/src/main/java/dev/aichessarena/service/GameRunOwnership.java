@@ -39,6 +39,12 @@ public class GameRunOwnership {
     @Inject
     GameRepository games;
 
+    @Inject
+    TournamentAutoRunService autoRuns;
+
+    @Inject
+    GameLifecycleService lifecycle;
+
     @ConfigProperty(name = "openrouter.request-safety-cap", defaultValue = "PT10M")
     Duration requestSafetyCap = Duration.ofMinutes(10);
 
@@ -80,36 +86,35 @@ public class GameRunOwnership {
     }
 
     /**
-     * Takes an in-progress game without a live owner for a new loop (after a human move). Returns false when the game
-     * is not in progress or another loop's lease still holds it.
+     * Admits one request and records, committed, that it is about to be sent: the last check before every POST to the
+     * provider. Admission re-reads the game under the locks: it must be in progress and owned by the calling loop, the
+     * auto-run must allow it (run state and budget), and no earlier request may be without a recorded answer, except
+     * {@code replacing}, an answered request of the same call (the plain fallback after a cache-control rejection).
+     * An unresolved earlier request pauses the game for inspection instead.
+     *
+     * @return the new request record, or null when nothing may be sent
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public boolean acquire(UUID gameId, UUID token) {
-        Game game = games.findByIdForUpdate(gameId);
-        if (game == null || game.status != GameStatus.IN_PROGRESS) {
-            return false;
-        }
-        if (game.runOwner != null && !leaseExpired(game, Instant.now())) {
-            LOG.warnf("Game %s is still leased by another game loop", gameId);
-            return false;
-        }
-        claim(game, token);
-        return true;
-    }
-
-    /**
-     * Records, and commits, that a model request is about to be sent: the last check before the provider is called.
-     * Returns false, and nothing may be sent, when the game is no longer in progress or the calling loop lost it.
-     */
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public boolean markRequestSent(UUID gameId) {
+    public Instant markRequestSent(UUID gameId, Instant replacing) {
         Game game = games.findByIdForUpdate(gameId);
         if (game == null || game.status != GameStatus.IN_PROGRESS || staleWorker(game)) {
-            return false;
+            return null;
         }
-        game.requestSentAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        if (autoRuns != null && !autoRuns.admitLocked(game)) {
+            return null;
+        }
+        if (game.requestSentAt != null && !game.requestSentAt.equals(replacing)) {
+            LOG.warnf("Game %s: an earlier request has no recorded answer; pausing instead of sending another", gameId);
+            lifecycle.pauseLockedForInspection(game, GameLifecycleService.UNRESOLVED_REQUEST);
+            return null;
+        }
+        Instant sentAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        if (sentAt.equals(game.requestSentAt)) {
+            sentAt = sentAt.plus(1, ChronoUnit.MICROS);
+        }
+        game.requestSentAt = sentAt;
         renew(game);
-        return true;
+        return sentAt;
     }
 
     /** The answer to the request in flight is recorded in the caller's transaction. */

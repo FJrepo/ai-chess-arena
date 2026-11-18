@@ -172,6 +172,12 @@ public class TournamentAutoRunService {
                 || GameRunOwnership.staleWorker(game)) {
             return false;
         }
+        return admitLocked(game);
+    }
+
+    /** The run's part of request admission, for a game the caller has locked; may pause the run at the budget. */
+    boolean admitLocked(Game game) {
+        if (GameLifecycleService.isTournamentCancelled(game)) return false;
         Tournament t = game.tournament;
         if (t == null || t.autoRunStatus == AutoRunStatus.OFF || t.autoRunStatus == AutoRunStatus.FINISHED) return true;
         return t.autoRunStatus == AutoRunStatus.RUNNING && !pauseIfBudgetReached(t);

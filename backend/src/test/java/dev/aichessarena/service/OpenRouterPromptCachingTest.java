@@ -225,6 +225,32 @@ class OpenRouterPromptCachingTest {
         assertBreakpoint(send(service, "~google/gemini-pro-latest", messages), 0, messages);
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void thePlainFallbackIsSentOnlyWhenTheGameAdmitsAnotherRequest(boolean admitted) throws Exception {
+        OpenRouterService service = stub();
+        rejectionStatus = 400;
+        AtomicInteger asked = new AtomicInteger();
+        var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
+        OpenRouterService.SendGate gate = () -> {
+            asked.incrementAndGet();
+            return admitted;
+        };
+
+        var response = ScopedValue.where(OpenRouterService.SEND_GATE, gate)
+                .call(() -> service.chat("google/gemini-pro", messages));
+
+        assertEquals(1, asked.get(), "asked once, before the second POST only");
+        assertEquals(admitted ? 2 : 1, requests.size());
+        assertEquals(!admitted, response.isProviderFailure());
+        if (!admitted) {
+            assertEquals(OpenRouterService.ProviderOutcome.RETRYABLE, response.outcome());
+            assertEquals(400, response.httpStatus());
+            assertTrue(response.errorMessage().endsWith("; the plain retry was not sent"), response.errorMessage());
+            assertFalse(response.deliveryUncertain());
+        }
+    }
+
     @Test
     void persistentCacheRejectionsRetryOnlyOnceAndAreNeverFatal() throws Exception {
         OpenRouterService service = stub();
@@ -354,11 +380,13 @@ class OpenRouterPromptCachingTest {
 
         assertTrue(result.pausedGame());
         assertFalse(result.isTerminal());
-        assertEquals(1, pauses.size());
-        assertTrue(pauses.getFirst().contains("cache"));
+        // 2.0: the plain fallback was sent and its answer did not arrive in time, so it may be charged.
+        assertEquals(List.of("inspect: " + GameLifecycleService.DELIVERY_UNCERTAIN), pauses);
         assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), attempts.stream()
                 .map(MoveAttemptService.AttemptRecord::outcome).toList());
         assertEquals(404, attempts.getFirst().response().httpStatus());
+        assertTrue(attempts.getFirst().errorMessage().contains("cache"));
+        assertTrue(attempts.getFirst().response().deliveryUncertain());
         assertEquals(2, requests.size(), "only the marked request and its plain fallback are sent");
     }
 
@@ -405,6 +433,9 @@ class OpenRouterPromptCachingTest {
         turn.gameLifecycleService = new GameLifecycleService() {
             @Override
             public void pauseForProviderFailure(UUID id, String detail) { pauses.add(detail); }
+
+            @Override
+            public void pauseForInspection(UUID id, String clause) { pauses.add("inspect: " + clause); }
 
             @Override
             public void forfeitTimeout(UUID id, String color, int seconds) {

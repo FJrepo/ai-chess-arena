@@ -59,6 +59,9 @@ public class GameMoveService {
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
+    @Inject
+    GameRunOwnership runOwnership;
+
     @Transactional
     public void recordModelMove(
             UUID gameId,
@@ -122,6 +125,17 @@ public class GameMoveService {
             String message,
             String expectedFen
     ) {
+        recordHumanMove(gameId, moveNumber, color, san, fen, playerName, message, expectedFen, null);
+    }
+
+    /**
+     * Records a human move and, in the same transaction, hands the game to the loop with token {@code nextOwner} that
+     * plays the next turn (null: none). If that loop never starts, its lease expires and the safety tick recovers the
+     * game, so a committed human move can never leave the opponent's turn without an owner.
+     */
+    @Transactional
+    public void recordHumanMove(UUID gameId, int moveNumber, String color, String san, String fen, String playerName,
+                                String message, String expectedFen, UUID nextOwner) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
             throw new GameStateConflictException("Game is not awaiting a human move");
@@ -140,6 +154,9 @@ public class GameMoveService {
         move.promptVersion = "human";
         move.promptHash = null;
         move.retryCount = 0;
+        if (runOwnership != null && nextOwner != null) {
+            runOwnership.claim(game, nextOwner);
+        }
         persistMove(move, playerName, message);
     }
 

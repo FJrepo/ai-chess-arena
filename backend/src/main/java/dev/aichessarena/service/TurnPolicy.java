@@ -23,7 +23,11 @@ final class TurnPolicy {
         /** A request may already have been charged without its answer being recorded: the operator checks first. */
         PAUSE_IN_FLIGHT,
         /** A model is to move but no OpenRouter key is configured. */
-        PAUSE_DISCONNECTED
+        PAUSE_DISCONNECTED,
+        /** A request was sent but no usable answer arrived: it may be charged and is never retried automatically. */
+        PAUSE_DELIVERY_UNCERTAIN,
+        /** A paid answer could not be saved: no further request until the operator has checked spend. */
+        PAUSE_UNRECORDED
     }
 
     /** No new attempt has been sent. A null time budget denotes an untimed turn. */
@@ -32,6 +36,16 @@ final class TurnPolicy {
             return Action.REQUEST;
         }
         return providerProblem ? Action.PAUSE_PROVIDER : Action.FORFEIT_TIMEOUT;
+    }
+
+    /**
+     * Provider failures leave the model's attempts untouched. A request whose delivery is uncertain (sent, but the
+     * connection broke or timed out before a usable answer) may already be charged and is never retried.
+     */
+    static Action afterProviderFailure(Outcome outcome, Long remainingNanos, Long nextBackoffNanos,
+                                       boolean deliveryUncertain) {
+        return deliveryUncertain ? Action.PAUSE_DELIVERY_UNCERTAIN
+                : afterProviderFailure(outcome, remainingNanos, nextBackoffNanos);
     }
 
     /** Provider failures leave the model's attempts untouched. A null backoff means no provider retries remain. */
@@ -54,6 +68,12 @@ final class TurnPolicy {
                     attemptsAfterResponse > 0 ? Action.RETRY_MODEL : Action.FORFEIT_INVALID_MOVES;
             default -> throw new IllegalArgumentException("Expected a model response, got " + outcome);
         };
+    }
+
+    /** A retry needs the previous answer, and with it its cost, to be committed first. */
+    static Action beforeRetry(Action planned, boolean answerRecorded) {
+        boolean retry = planned == Action.RETRY_MODEL || planned == Action.RETRY_PROVIDER;
+        return retry && !answerRecorded ? Action.PAUSE_UNRECORDED : planned;
     }
 
     /**

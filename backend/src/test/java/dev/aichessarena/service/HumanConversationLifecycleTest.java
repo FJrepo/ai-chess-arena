@@ -221,7 +221,7 @@ class HumanConversationLifecycleTest {
 
             @Override
             public void recordHumanMove(UUID id, int number, String color, String san, String fen,
-                                        String player, String message, String expectedFen) {
+                                        String player, String message, String expectedFen, UUID nextOwner) {
                 assertEquals(game.currentFen, expectedFen);
                 save(number, color, san, fen);
             }

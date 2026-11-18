@@ -149,27 +149,6 @@ public class GameEngineService {
         return started;
     }
 
-    /** Continues an IN_PROGRESS game after a human move was recorded. */
-    void continueAfterHumanMove(UUID gameId, String lastMoveSan, String lastMessage) {
-        GameLoop loop = tryClaimLoop(gameId);
-        if (loop == null) {
-            LOG.warnf("Game %s is already running", gameId);
-            return;
-        }
-        boolean owned;
-        try {
-            owned = runOwnership == null || runOwnership.acquire(gameId, loop.token());
-        } catch (RuntimeException e) {
-            LOG.errorf(e, "Could not take game %s for its next turn", gameId);
-            owned = false;
-        }
-        if (!owned) {
-            releaseLoop(gameId, loop);
-            return;
-        }
-        spawnGameLoop(gameId, loop, lastMoveSan, lastMessage);
-    }
-
     void spawnGameLoop(UUID gameId, GameLoop loop, String lastMoveSan, String lastMessage) {
         // Every write this loop makes is fenced by its token (see GameRunOwnership), including its final pause.
         GameRunOwnership.Owner owner = new GameRunOwnership.Owner(gameId, loop.token());
@@ -519,23 +498,38 @@ public class GameEngineService {
         }
 
         String playerName = "WHITE".equals(sideToMove) ? game.whitePlayerName : game.blackPlayerName;
-        gameMoveService.recordHumanMove(
-                gameId,
-                moveNumber,
-                sideToMove,
-                result.san(),
-                result.fen(),
-                playerName,
-                game.practiceKind == Game.PracticeKind.HUMAN_STOCKFISH ? null : message,
-                game.currentFen
-        );
-
-        if (chessService.isGameOver(board)) {
-            endGame(gameId, board);
-            return;
+        // The loop for the next turn is claimed first and owns the game from the move's own commit on.
+        GameLoop loop = tryClaimLoop(gameId);
+        if (loop == null) {
+            throw new GameStateConflictException("Game is still processing a turn");
+        }
+        try {
+            gameMoveService.recordHumanMove(
+                    gameId,
+                    moveNumber,
+                    sideToMove,
+                    result.san(),
+                    result.fen(),
+                    playerName,
+                    game.practiceKind == Game.PracticeKind.HUMAN_STOCKFISH ? null : message,
+                    game.currentFen,
+                    loop.token()
+            );
+        } catch (RuntimeException e) {
+            releaseLoop(gameId, loop);
+            throw e;
         }
 
-        continueAfterHumanMove(gameId, result.san(), message);
+        if (chessService.isGameOver(board)) {
+            try {
+                endGame(gameId, board);
+            } finally {
+                releaseOwnership(gameId, loop);
+                releaseLoop(gameId, loop);
+            }
+            return;
+        }
+        spawnGameLoop(gameId, loop, result.san(), message);
     }
 
     private boolean isHumanTurn(Game game, String color) {

@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -173,18 +174,20 @@ public class GameTurnService {
             LOG.infof("Game %s: %s move %d, attempt %d",
                     request.gameId(), request.sideToMove(), request.moveNumber(), attempt);
 
-            // Committed before the request leaves: after a restart it shows a request that may already be charged.
-            if (runOwnership != null && !runOwnership.markRequestSent(request.gameId())) {
-                return TurnResult.stopped();
+            // Admitted and committed before the request leaves: after a restart the record shows a request that may
+            // already be charged. The same admission runs before any further POST of this call (the plain fallback).
+            AtomicReference<Instant> sentAt = new AtomicReference<>();
+            if (runOwnership != null) {
+                sentAt.set(runOwnership.markRequestSent(request.gameId(), null));
+                if (sentAt.get() == null) {
+                    return TurnResult.stopped();
+                }
             }
-
-            OpenRouterService.LlmResponse llmResponse = openRouterService.chat(
-                    request.modelId(),
-                    List.copyOf(request.history()),
-                    turnDeadline,
-                    request.maxOutputTokens(),
-                    effort
-            );
+            OpenRouterService.SendGate gate = () -> admitAnotherRequest(request, sentAt);
+            List<OpenRouterService.ChatMsg> messages = List.copyOf(request.history());
+            OpenRouterService.AnswerDeadline deadline = turnDeadline;
+            OpenRouterService.LlmResponse llmResponse = ScopedValue.where(OpenRouterService.SEND_GATE, gate).call(() ->
+                    openRouterService.chat(request.modelId(), messages, deadline, request.maxOutputTokens(), effort));
 
             if (llmResponse.isProviderFailure()) {
                 String detail = withReasoningEffortHint(llmResponse, effort, request);
@@ -192,12 +195,19 @@ public class GameTurnService {
                         request.gameId(), request.modelId(), llmResponse.outcome(), detail);
                 Outcome outcome = llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
                         ? Outcome.PROVIDER_FATAL : Outcome.PROVIDER_RETRYABLE;
-                recordAttempt(request, attemptContext, attempt, outcome, null, detail, llmResponse);
+                boolean recorded = recordAttempt(request, attemptContext, attempt, outcome, null, detail, llmResponse);
                 Long delayMs = outcome == Outcome.PROVIDER_RETRYABLE && providerFailures < providerRetryBackoffMs.length
                         ? providerRetryBackoffMs[providerFailures] : null;
-                Action action = TurnPolicy.afterProviderFailure(outcome,
+                Action action = TurnPolicy.beforeRetry(TurnPolicy.afterProviderFailure(outcome,
                         delayMs == null ? null : remainingNanos(turnDeadline),
-                        delayMs == null ? null : TimeUnit.MILLISECONDS.toNanos(delayMs));
+                        delayMs == null ? null : TimeUnit.MILLISECONDS.toNanos(delayMs),
+                        llmResponse.deliveryUncertain()), recorded);
+                if (action == Action.PAUSE_DELIVERY_UNCERTAIN) {
+                    return pauseForInspection(request, GameLifecycleService.DELIVERY_UNCERTAIN);
+                }
+                if (action == Action.PAUSE_UNRECORDED) {
+                    return pauseForInspection(request, GameLifecycleService.UNRECORDED_ANSWER);
+                }
                 if (action == Action.PAUSE_PROVIDER) {
                     return pauseForProvider(request, detail);
                 }
@@ -233,8 +243,13 @@ public class GameTurnService {
                 case PAUSE_TRUNCATED -> {
                     return pauseForTruncation(request, attemptContext, attempt, answer.proposedMove(), llmResponse);
                 }
-                case RETRY_MODEL, FORFEIT_INVALID_MOVES -> recordRejectedAnswer(
-                        request, attemptContext, attempt, maxAttempts, answer, llmResponse, action == Action.RETRY_MODEL);
+                case RETRY_MODEL, FORFEIT_INVALID_MOVES -> {
+                    boolean recorded = recordRejectedAnswer(request, attemptContext, attempt, maxAttempts, answer,
+                            llmResponse, action == Action.RETRY_MODEL);
+                    if (TurnPolicy.beforeRetry(action, recorded) == Action.PAUSE_UNRECORDED) {
+                        return pauseForInspection(request, GameLifecycleService.UNRECORDED_ANSWER);
+                    }
+                }
                 default -> throw new IllegalStateException("Unexpected action after assessing a model answer: " + action);
             }
             if (action == Action.FORFEIT_INVALID_MOVES) {
@@ -305,8 +320,9 @@ public class GameTurnService {
         }
     }
 
-    private void recordRejectedAnswer(TurnRequest request, AttemptContext attemptContext, int attempt, int maxAttempts,
-                                      ModelAnswer answer, OpenRouterService.LlmResponse response, boolean retry) {
+    /** Returns whether the rejected answer, and its cost, were committed. */
+    private boolean recordRejectedAnswer(TurnRequest request, AttemptContext attemptContext, int attempt, int maxAttempts,
+                                         ModelAnswer answer, OpenRouterService.LlmResponse response, boolean retry) {
         String proposedMove = answer.proposedMove();
         String detail;
         String retryReason;
@@ -341,7 +357,7 @@ public class GameTurnService {
             default -> throw new IllegalArgumentException("Expected an invalid model answer, got " + answer.outcome());
         }
 
-        recordAttempt(request, attemptContext, attempt, answer.outcome(), proposedMove, detail, response);
+        boolean recorded = recordAttempt(request, attemptContext, attempt, answer.outcome(), proposedMove, detail, response);
         broadcastRetry(request.gameId(), request.sideToMove(), attempt, retryReason, answer.outcome(), proposedMove);
         if (retry) {
             if (response.content() != null) {
@@ -350,6 +366,7 @@ public class GameTurnService {
             request.history().add(new OpenRouterService.ChatMsg("user", promptService.buildRetryPrompt(
                     retryError.get(), request.fen(), request.legalMoves(), attempt + 1, maxAttempts)));
         }
+        return recorded;
     }
 
     private TurnResult recordAcceptedMove(TurnRequest request, AttemptContext attemptContext, int attempt,
@@ -488,17 +505,41 @@ public class GameTurnService {
 
     private record AttemptContext(ReasoningEffort effort, Integer configurationRevision) {}
 
-    private void recordAttempt(TurnRequest request, AttemptContext attemptContext, int attempt, Outcome outcome,
-                               String proposedMove, String errorMessage, OpenRouterService.LlmResponse response) {
+    /**
+     * Records the attempt in its own transaction and returns whether it committed. A failed commit does not end the
+     * turn by itself, but no further request may follow it ({@link TurnPolicy#beforeRetry}).
+     */
+    private boolean recordAttempt(TurnRequest request, AttemptContext attemptContext, int attempt, Outcome outcome,
+                                  String proposedMove, String errorMessage, OpenRouterService.LlmResponse response) {
         try {
             moveAttemptService.record(new MoveAttemptService.AttemptRecord(
                     request.gameId(), request.moveNumber(), request.sideToMove(), attempt, request.modelId(),
                     outcome, proposedMove, errorMessage, response, attemptContext.effort(), request.statusRevision(),
                     attemptContext.configurationRevision()));
+            return true;
         } catch (RuntimeException e) {
-            // The attempt is committed in its own transaction; a failed commit must not interrupt the game.
             LOG.warnf(e, "Game %s: could not record %s attempt", request.gameId(), outcome);
+            return false;
         }
+    }
+
+    /** Admission for a further POST of the same call: the request before it has its complete answer. */
+    private boolean admitAnotherRequest(TurnRequest request, AtomicReference<Instant> sentAt) {
+        if (!request.shouldContinue().getAsBoolean()) {
+            return false;
+        }
+        if (runOwnership == null) {
+            return true;
+        }
+        Instant next = runOwnership.markRequestSent(request.gameId(), sentAt.get());
+        sentAt.set(next);
+        return next != null;
+    }
+
+    /** Pauses for the operator's spend check; see {@link GameLifecycleService#pauseForInspection}. */
+    private TurnResult pauseForInspection(TurnRequest request, String clause) {
+        gameLifecycleService.pauseForInspection(request.gameId(), clause);
+        return TurnResult.paused();
     }
 
     private TurnResult pauseForProvider(TurnRequest request, String detail) {

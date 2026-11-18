@@ -33,7 +33,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
 - Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.
 - Removed the `trashTalkEnabled` flag, replaced by chat modes since 1.4, from the API and the database.
-- Runs survive a backend restart: games whose model request was never sent resume on their own, auto-runs keep running and queued resumes keep their places. A game with a request in flight pauses with a reason to check spend, so a possibly charged request is never sent twice. Practice and Stockfish games follow the same rules. See [Restarts](docs/how-it-works.md#restarts).
+- Runs survive a backend restart: games whose model request was never sent resume on their own, auto-runs keep running and queued resumes keep their places. A game with a request in flight pauses with a reason to check spend, so a possibly charged request is never sent twice. Practice and Stockfish games follow the same rules.
+- A request that may have reached OpenRouter is never retried automatically: a connection that breaks or times out after sending, a broken successful answer, or an answer that could not be saved pauses the game for a spend check. Connection failures before sending are still retried, and a plain retry after a cache-control rejection is checked like any request. See [Restarts](docs/how-it-works.md#restarts).
 
 ### Fixed
 

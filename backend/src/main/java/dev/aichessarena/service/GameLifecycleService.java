@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
@@ -74,6 +75,12 @@ public class GameLifecycleService {
 
     @Inject
     GameRunOwnership runOwnership;
+
+    @Inject
+    GameConversationService conversations;
+
+    @Inject
+    ChessService chessService;
 
     /**
      * Starts a WAITING or PAUSED game under the tournament and game row locks, or records a queued resume.
@@ -234,17 +241,22 @@ public class GameLifecycleService {
                 .getResultList();
     }
 
-    /** Why a game's loop ended without finishing its turn. */
+    /** Why a game's loop ended without finishing its turn, and what that means for its request in flight. */
     enum Interruption {
-        RESTART("during a backend restart"),
-        EXPIRED_LEASE("when its game loop stopped");
+        RESTART("was in flight during a backend restart and may already have been charged"),
+        EXPIRED_LEASE("was in flight when its game loop stopped and may already have been charged");
 
-        private final String when;
+        private final String inFlight;
 
-        Interruption(String when) {
-            this.when = when;
+        Interruption(String inFlight) {
+            this.inFlight = inFlight;
         }
     }
+
+    // Why a model request needs the operator's spend check (see inspectionDetail).
+    static final String UNRESOLVED_REQUEST = "has no recorded answer and may already have been charged";
+    static final String DELIVERY_UNCERTAIN = "lost its connection after it was sent and may already have been charged";
+    static final String UNRECORDED_ANSWER = "was answered, but the answer could not be saved, so its cost may be missing";
 
     /**
      * Decides, under the tournament and game locks, how a game whose loop did not survive continues
@@ -272,6 +284,14 @@ public class GameLifecycleService {
             pauseLockedGame(game, RESTART_DETAIL);
             return null;
         }
+        if (completeIfDecided(game)) {
+            // The deciding move was committed, but the loop stopped before it could finish the game.
+            if (runOwnership != null) {
+                runOwnership.claim(game, null);
+            }
+            LOG.infof("Game %s was already decided when its loop was interrupted %s; completed it", gameId, cause);
+            return null;
+        }
         String side = sideToMove(game.currentFen);
         Game.PlayerType player = game.playerType(side);
         boolean providerConnected = keys == null || !keys.key().isBlank();
@@ -287,14 +307,14 @@ public class GameLifecycleService {
                 if (liveUpdates != null) {
                     liveUpdates.changed(game);
                 }
-                LOG.infof("Game %s resumes after its loop was interrupted %s", gameId, cause.when);
+                LOG.infof("Game %s resumes after its loop was interrupted (%s)", gameId, cause);
             }
             case AWAIT_HUMAN -> {
                 if (runOwnership != null) {
                     runOwnership.claim(game, null);
                 }
             }
-            case PAUSE_IN_FLIGHT -> pauseLockedGame(game, inFlightDetail(game, side, cause));
+            case PAUSE_IN_FLIGHT -> pauseLockedForInspection(game, cause.inFlight);
             case PAUSE_DISCONNECTED -> pauseLockedGame(game, DISCONNECTED_DETAIL);
             default -> throw new IllegalStateException("Unexpected recovery action " + action);
         }
@@ -304,11 +324,49 @@ public class GameLifecycleService {
     static final String DISCONNECTED_DETAIL =
             "The backend restarted without an OpenRouter connection. Connect OpenRouter, then resume.";
 
-    private static String inFlightDetail(Game game, String side, Interruption cause) {
+    /**
+     * Completes a game whose committed position is already decided (mate, stalemate, draw rules or an eligible
+     * adjudication), as the loop would have done. The caller holds the locks.
+     */
+    private boolean completeIfDecided(Game game) {
+        if (isTerminal(game) || conversations == null || chessService == null) {
+            return false;
+        }
+        Board board = conversations.initializeBoard(game.id, game);
+        if (chessService.isGameOver(board)) {
+            completeLockedGame(game, chessService.getGameEndInfo(board));
+            return true;
+        }
+        return game.status == GameStatus.IN_PROGRESS && WinAdjudication.enabledFor(game)
+                && adjudicateIfEligible(game.id, game.currentFen);
+    }
+
+    /** "A model request (model, side, move n) {clause}. Check spend, then resume." for the side to move. */
+    static String inspectionDetail(Game game, String clause) {
+        String side = sideToMove(game.currentFen);
         String model = "WHITE".equals(side) ? game.whiteModelId : game.blackModelId;
         String player = "WHITE".equals(side) ? "White" : "Black";
-        return "A model request (%s, %s, move %d) was in flight %s and may already have been charged. Check spend, then resume."
-                .formatted(model == null ? "unknown model" : model, player, fullMoveNumber(game.currentFen), cause.when);
+        return "A model request (%s, %s, move %d) %s. Check spend, then resume."
+                .formatted(model == null ? "unknown model" : model, player, fullMoveNumber(game.currentFen), clause);
+    }
+
+    /**
+     * Pauses a game the operator must inspect before another request is sent, for a request that {@code clause}
+     * describes ({@link #UNRESOLVED_REQUEST}, {@link #DELIVERY_UNCERTAIN}, {@link #UNRECORDED_ANSWER}). Also applies to
+     * a game already paused meanwhile, whose reason it replaces.
+     */
+    @Transactional
+    public void pauseForInspection(UUID gameId, String clause) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || GameRunOwnership.staleWorker(game)
+                || (game.status != GameStatus.IN_PROGRESS && game.status != GameStatus.PAUSED)) {
+            return;
+        }
+        pauseLockedForInspection(game, clause);
+    }
+
+    void pauseLockedForInspection(Game game, String clause) {
+        pauseLockedGame(game, inspectionDetail(game, clause));
     }
 
     /**

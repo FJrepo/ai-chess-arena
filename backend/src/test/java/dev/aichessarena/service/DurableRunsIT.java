@@ -231,7 +231,7 @@ class DurableRunsIT {
                     start, read(gameId).statusRevision, () -> true));
             attempts.record(new MoveAttemptService.AttemptRecord(gameId, 1, "WHITE", 1, "test/white",
                     Outcome.ILLEGAL_MOVE, "Ke2", "Illegal", paid("Ke2", 0.5)));
-            assertFalse(ownership.markRequestSent(gameId));
+            assertNull(ownership.markRequestSent(gameId, null));
             lifecycle.forfeitTimeout(gameId, "WHITE", 30);
             lifecycle.forfeitInvalidMoves(gameId, "WHITE", 3);
             lifecycle.pauseWithReason(gameId, "Stale pause");
@@ -600,6 +600,207 @@ class DurableRunsIT {
     private Flyway flyway(String url, String target) {
         return Flyway.configure().dataSource(url, username, password).locations("classpath:db/migration")
                 .target(target).load();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"AI", "STOCKFISH"})
+    void aGameDecidedByItsLastCommittedMoveCompletesOnRecovery(String winner) throws Exception {
+        // The winning move was committed, but the backend stopped before the loop could finish the game.
+        UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
+            Game g = new Game();
+            boolean engine = "STOCKFISH".equals(winner);
+            g.practiceKind = engine ? Game.PracticeKind.HUMAN_STOCKFISH : Game.PracticeKind.FROM_GAME;
+            g.stockfishElo = engine ? 1500 : null;
+            g.whitePracticeControl = PlayerType.HUMAN;
+            g.blackPracticeControl = PlayerType.valueOf(winner);
+            g.whitePlayerName = "You";
+            g.blackPlayerName = engine ? "Stockfish" : "Model";
+            g.blackModelId = engine ? null : "test/black";
+            g.status = GameStatus.IN_PROGRESS;
+            g.startedAt = java.time.LocalDateTime.now();
+            g.runOwner = UUID.randomUUID();
+            g.runLeaseUntil = Instant.now().plusSeconds(600);
+            games.persist(g);
+            Board board = new Board();
+            for (String san : List.of("f3", "e5", "g4", "Qh4#")) {
+                var move = new dev.aichessarena.entity.Move();
+                move.game = g;
+                move.moveNumber = chess.getMoveNumber(board);
+                move.color = chess.getSideToMove(board);
+                var played = chess.validateAndApply(board, san);
+                assertTrue(played.valid(), san);
+                move.san = played.san();
+                move.fen = played.fen();
+                moves.persist(move);
+            }
+            g.currentFen = board.getFen();
+            return g.id;
+        });
+        seededGames.add(gameId);
+        answers(call -> fail("a decided game sends nothing"));
+
+        recovery.recover(List.of(gameId), Interruption.RESTART);
+
+        Game game = read(gameId);
+        assertEquals(GameStatus.COMPLETED, game.status);
+        assertEquals(Game.GameResult.BLACK_WINS, game.result);
+        assertEquals(Game.ResultReason.CHECKMATE, game.resultReason);
+        assertNull(game.runOwner);
+        assertFalse(engine.isRunning(gameId));
+        assertEquals(0, requests.get());
+    }
+
+    @Test
+    void aRequestWhoseDeliveryIsUncertainPausesForInspectionAndIsNeverRetried() throws Exception {
+        UUID gameId = tournamentGame(AutoRunStatus.OFF, GameStatus.WAITING);
+        List<Instant> markers = new ArrayList<>();
+        answers(call -> {
+            markers.add(read(gameId).requestSentAt);
+            return LlmResponse.providerFailure(OpenRouterService.ProviderOutcome.RETRYABLE, 0,
+                    "The connection to OpenRouter broke after the request was sent", 5, null).withDeliveryUncertain();
+        });
+
+        engine.startGame(gameId);
+
+        awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+        awaitReleased(gameId);
+        Game game = read(gameId);
+        assertEquals("A model request (test/white, White, move 1) lost its connection after it was sent and may "
+                + "already have been charged. Check spend, then resume.", game.statusDetail);
+        assertEquals(1, requests.get(), "never retried automatically");
+        assertNotNull(markers.getFirst());
+        assertNull(game.requestSentAt, "the reason now carries the request");
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void anAnswerThatCannotBeSavedIsNeverFollowedByAnotherRequest(boolean illegalAnswer) throws Exception {
+        UUID gameId = tournamentGame(AutoRunStatus.OFF, GameStatus.WAITING);
+        QuarkusMock.installMockForType(new MoveAttemptService() {
+            @Override public void record(AttemptRecord attempt) {
+                throw new IllegalStateException("Attempt transaction rolled back");
+            }
+        }, MoveAttemptService.class);
+        answers(call -> illegalAnswer ? paid("Ke2", 0.02)
+                : LlmResponse.providerFailure(OpenRouterService.ProviderOutcome.RETRYABLE, 503, "OpenRouter server error",
+                        5, null));
+
+        engine.startGame(gameId);
+
+        awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+        awaitReleased(gameId);
+        Game game = read(gameId);
+        assertEquals("A model request (test/white, White, move 1) was answered, but the answer could not be saved, so "
+                + "its cost may be missing. Check spend, then resume.", game.statusDetail);
+        assertEquals(1, requests.get(), "no retry before the answer is saved");
+        assertNull(game.requestSentAt);
+    }
+
+    @Test
+    void everyPostIsAdmittedAgainstFreshStateOwnershipBudgetAndUnresolvedRequests() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.IN_PROGRESS);
+        configure(tournamentId, "{\"maxConcurrentGames\":1,\"budgetUsd\":0.01}");
+        UUID gameId = gameIds(tournamentId).getFirst();
+        UUID owner = UUID.randomUUID();
+        setRunState(gameId, owner, Instant.now().plusSeconds(600), null);
+
+        asWorker(gameId, owner, () -> {
+            Instant first = ownership.markRequestSent(gameId, null);
+            assertNotNull(first);
+            // The plain fallback of the same call replaces an answered request.
+            Instant fallback = ownership.markRequestSent(gameId, first);
+            assertNotNull(fallback);
+            assertTrue(fallback.isAfter(first));
+            assertEquals(fallback, read(gameId).requestSentAt);
+            assertNull(ownership.markRequestSent(gameId, null), "an earlier request has no recorded answer");
+            return null;
+        });
+        Game paused = read(gameId);
+        assertEquals(GameStatus.PAUSED, paused.status);
+        assertEquals("A model request (test/white, White, move 1) has no recorded answer and may already have been "
+                + "charged. Check spend, then resume.", paused.statusDetail);
+        assertNull(paused.requestSentAt);
+
+        // Another loop or a stale one is refused; so is a request beyond the budget, which pauses the run.
+        QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).status = GameStatus.IN_PROGRESS);
+        setRunState(gameId, owner, Instant.now().plusSeconds(600), null);
+        assertNull(asWorker(gameId, UUID.randomUUID(), () -> ownership.markRequestSent(gameId, null)));
+        QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).totalCostUsd = new BigDecimal("0.01"));
+        assertNull(asWorker(gameId, owner, () -> ownership.markRequestSent(gameId, null)));
+        assertEquals(AutoRunStatus.PAUSED, runStatus(tournamentId));
+        assertNull(read(gameId).requestSentAt);
+    }
+
+    @Test
+    void thePlainFallbackOfATurnIsAdmittedLikeItsFirstRequest() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        configure(tournamentId, "{\"maxConcurrentGames\":1,\"budgetUsd\":0.01}");
+        UUID gameId = gameIds(tournamentId).getFirst();
+        List<Boolean> fallbackAdmitted = new ArrayList<>();
+        answers(call -> {
+            // The first request was rejected for cache control; its spend reaches the budget meanwhile.
+            QuarkusTransaction.requiringNew().run(() -> games.findById(gameId).totalCostUsd = new BigDecimal("0.01"));
+            fallbackAdmitted.add(!OpenRouterService.SEND_GATE.isBound()
+                    || OpenRouterService.SEND_GATE.get().admitAnotherRequest());
+            return LlmResponse.providerFailure(OpenRouterService.ProviderOutcome.RETRYABLE, 400,
+                    "OpenRouter rejected the request (HTTP 400); the plain retry was not sent", 5, null);
+        });
+
+        runs.schedule(tournamentId);
+
+        awaitGame(gameId, g -> g.status == GameStatus.PAUSED);
+        awaitReleased(gameId);
+        assertEquals(List.of(false), fallbackAdmitted);
+        assertEquals(AutoRunStatus.PAUSED, runStatus(tournamentId));
+        assertEquals("Budget of $0.01 reached ($0.01 spent)", read(gameId).statusDetail);
+        assertEquals(1, requests.get());
+    }
+
+    @Test
+    void aCommittedHumanMoveHandsTheGameToTheNextLoopInTheSameTransaction() throws Exception {
+        UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
+            Game g = new Game();
+            g.practiceKind = Game.PracticeKind.FROM_GAME;
+            g.whitePracticeControl = PlayerType.HUMAN;
+            g.blackPracticeControl = PlayerType.AI;
+            g.whitePlayerName = "You";
+            g.blackPlayerName = "Model";
+            g.blackModelId = "test/black";
+            g.status = GameStatus.IN_PROGRESS;
+            g.startedAt = java.time.LocalDateTime.now();
+            games.persist(g);
+            return g.id;
+        });
+        seededGames.add(gameId);
+        GameMoveService real = ClientProxy.unwrap(gameMoves);
+        // The backend loses the loop right after the human move commits (e.g. a database outage at that moment).
+        QuarkusMock.installMockForType(new GameMoveService() {
+            @Override public void recordHumanMove(UUID id, int number, String color, String san, String fen,
+                                                  String player, String message, String expectedFen, UUID nextOwner) {
+                QuarkusTransaction.requiringNew().run(() -> real.recordHumanMove(id, number, color, san, fen, player,
+                        message, expectedFen, nextOwner));
+                throw new IllegalStateException("Connection lost after the commit");
+            }
+        }, GameMoveService.class);
+        answers(call -> paid("e5", 0.0));
+
+        assertThrows(IllegalStateException.class,
+                () -> engine.submitHumanMove(gameId, "e4", null, null, null, null));
+        QuarkusMock.installMockForType(real, GameMoveService.class);
+        Game handedOver = read(gameId);
+        assertEquals(1, moveCount(gameId));
+        assertEquals(GameStatus.IN_PROGRESS, handedOver.status);
+        assertNotNull(handedOver.runOwner, "the model's turn has an owner from the move's commit on");
+        assertNotNull(handedOver.runLeaseUntil);
+        assertFalse(engine.isRunning(gameId));
+
+        // Once that lease expires, the safety tick resumes the model's turn.
+        setRunState(gameId, handedOver.runOwner, Instant.now().minusSeconds(1), null);
+        assertTrue(lifecycle.gamesWithExpiredLease().contains(gameId));
+        recovery.recover(List.of(gameId), Interruption.EXPIRED_LEASE);
+        awaitGame(gameId, g -> g.runOwner == null && moveCountOf(g) == 2);
+        assertEquals(1, requests.get());
     }
 
     // --- fixtures -------------------------------------------------------------------------------------------------

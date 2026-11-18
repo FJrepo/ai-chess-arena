@@ -147,6 +147,55 @@ class OpenRouterServiceChatTest {
         assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
         assertTrue(response.errorMessage().startsWith("Could not reach OpenRouter"), response.errorMessage());
         assertFalse(response.timedOut());
+        assertFalse(response.deliveryUncertain(), "a refused connection never delivered the request");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void aConnectionLostAfterTheRequestWasSentIsDeliveryUncertain(boolean truncatedAnswer) throws Exception {
+        try (ServerSocket socket = new ServerSocket(0, 0, InetAddress.getLoopbackAddress())) {
+            Thread provider = Thread.startVirtualThread(() -> {
+                try (var connection = socket.accept()) {
+                    readRequest(connection.getInputStream());
+                    requests.incrementAndGet();
+                    if (truncatedAnswer) {
+                        OutputStream out = connection.getOutputStream();
+                        out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n"
+                                + "{\"choices\":[").getBytes(StandardCharsets.US_ASCII));
+                        out.flush();
+                    }
+                } catch (IOException ignored) {
+                    // The client sees the dropped connection.
+                }
+            });
+            OpenRouterService service = service("http://127.0.0.1:" + socket.getLocalPort());
+
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    in(Duration.ofSeconds(10)), 100);
+            provider.join(5_000);
+
+            assertEquals(1, requests.get());
+            assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+            assertTrue(response.deliveryUncertain(), response.errorMessage());
+            assertFalse(response.timedOut());
+        }
+    }
+
+    /** Reads one HTTP/1.1 request with a Content-Length body. */
+    private static void readRequest(java.io.InputStream in) throws IOException {
+        StringBuilder head = new StringBuilder();
+        while (!head.toString().endsWith("\r\n\r\n")) {
+            int b = in.read();
+            if (b < 0) throw new IOException("request ended early");
+            head.append((char) b);
+        }
+        int length = 0;
+        for (String line : head.toString().split("\r\n")) {
+            if (line.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:")) {
+                length = Integer.parseInt(line.substring(15).trim());
+            }
+        }
+        in.readNBytes(length);
     }
 
     @Test
@@ -237,6 +286,7 @@ class OpenRouterServiceChatTest {
 
         assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
         assertFalse(response.timedOut());
+        assertTrue(response.deliveryUncertain(), "the request was sent, so it may be charged");
     }
 
     @Test
@@ -253,6 +303,7 @@ class OpenRouterServiceChatTest {
             assertEquals(ProviderOutcome.RETRYABLE, response.outcome(), "HTTP " + status);
             assertEquals(status, response.httpStatus());
             assertFalse(response.timedOut());
+            assertFalse(response.deliveryUncertain(), "an error status is an answer");
             assertTrue(response.isProviderFailure());
         }
 
