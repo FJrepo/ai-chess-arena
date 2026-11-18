@@ -1,8 +1,10 @@
 import type {
+  BenchmarkComparison,
   BenchmarkRun,
   BenchmarkRunSettings,
   BenchmarkSummary,
   CreateBenchmarkRequest,
+  RerunBenchmarkRequest,
 } from '../models/benchmark.model';
 import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
 import type { LiveGamesSnapshot } from '../models/live-games.model';
@@ -91,6 +93,16 @@ export class ApiService {
 
   createBenchmark(request: CreateBenchmarkRequest): Observable<BenchmarkRun> {
     return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks`, request);
+  }
+
+  rerunBenchmark(id: string, request: RerunBenchmarkRequest): Observable<BenchmarkRun> {
+    return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/rerun`, request);
+  }
+
+  compareBenchmarks(base: string, candidate: string): Observable<BenchmarkComparison> {
+    return this.http.get<BenchmarkComparison>(`${this.baseUrl}/benchmarks/compare`, {
+      params: { base, candidate },
+    });
   }
 
   pauseBenchmark(id: string): Observable<BenchmarkRun> {

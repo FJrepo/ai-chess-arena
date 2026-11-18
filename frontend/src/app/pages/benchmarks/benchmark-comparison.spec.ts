@@ -1,0 +1,160 @@
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
+import type {
+  BenchmarkComparison,
+  BenchmarkComparisonGameSide,
+  BenchmarkSummary,
+  BenchmarkTelemetry,
+} from '../../models/benchmark.model';
+import { ApiService } from '../../services/api.service';
+import { BenchmarkComparisonPage } from './benchmark-comparison';
+
+const base: BenchmarkSummary = {
+  id: 'base',
+  name: 'Ladder fixture',
+  status: 'FINISHED',
+  createdAt: '2026-01-01T15:00:00',
+  pauseReason: null,
+  rerunOf: null,
+};
+const candidate: BenchmarkSummary = {
+  ...base,
+  id: 'candidate',
+  name: 'Ladder fixture (rerun)',
+  rerunOf: base.id,
+};
+const telemetry: BenchmarkTelemetry = {
+  firstTryMoves: 8,
+  turnsSampled: 10,
+  firstTryLegalRate: 0.8,
+  reasoningTokensPerMove: 0,
+  reasoningMovesReported: 9,
+};
+const win: BenchmarkComparisonGameSide = {
+  gameId: 'base-game',
+  status: 'COMPLETED',
+  reason: 'CHECKMATE',
+  outcome: 'WIN',
+  points: 1,
+  forfeit: false,
+  pairIncomplete: false,
+  telemetry,
+  spendUsd: 0.1,
+};
+const loss: BenchmarkComparisonGameSide = {
+  ...win,
+  gameId: 'candidate-game',
+  status: 'FORFEIT',
+  reason: 'FORFEIT_INVALID_MOVES',
+  outcome: 'LOSS',
+  forfeit: true,
+  points: 0,
+  pairIncomplete: true,
+  spendUsd: 0.3,
+};
+const report = {
+  base,
+  candidate,
+  comparable: true,
+  differences: [],
+  settingChanges: [{ setting: 'Requested effort', base: 'low', candidate: 'high' }],
+  baseSpendUsd: 0.1,
+  candidateSpendUsd: 0.3,
+  spendDeltaUsd: 0.2,
+  unmatchedBaseModels: [],
+  unmatchedCandidateModels: [],
+  models: [
+    {
+      baseModelId: 'fixture/base',
+      candidateModelId: 'fixture/candidate',
+      base: {
+        telemetry,
+        score: { wins: 1, losses: 0, draws: 0, forfeits: 0, points: 1, scoredGames: 1 },
+        incompletePairs: 0,
+        spendUsd: 0.1,
+        resolvedModelIds: [],
+      },
+      candidate: {
+        telemetry,
+        score: { wins: 0, losses: 1, draws: 0, forfeits: 1, points: 0, scoredGames: 1 },
+        incompletePairs: 1,
+        spendUsd: 0.3,
+        resolvedModelIds: [],
+      },
+      matchedGames: 1,
+      scoreDelta: -1,
+      spendDeltaUsd: 0.2,
+    },
+  ],
+  matchups: [
+    {
+      baseModelId: 'fixture/base',
+      candidateModelId: 'fixture/candidate',
+      openingId: 'french',
+      openingName: 'French Winawer',
+      targetStrength: 1500,
+      color: 'WHITE',
+      base: win,
+      candidate: loss,
+      outcomeChanged: true,
+      scoreDelta: -1,
+      spendDeltaUsd: 0.2,
+    },
+  ],
+} satisfies BenchmarkComparison;
+
+function render(data: BenchmarkComparison) {
+  const params = convertToParamMap({ base: base.id, candidate: candidate.id });
+  const api = {
+    listBenchmarks: vi.fn(() => of([base, candidate])),
+    compareBenchmarks: vi.fn(() => of(data)),
+  };
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([]),
+      { provide: ApiService, useValue: api },
+      { provide: ActivatedRoute, useValue: { queryParamMap: of(params) } },
+    ],
+  });
+  const fixture = TestBed.createComponent(BenchmarkComparisonPage);
+  fixture.detectChanges();
+  return { page: fixture.nativeElement as HTMLElement, api };
+}
+
+describe('Benchmark comparison', () => {
+  it('shows settings, paired scores and telemetry, spend delta, and both changed-game links', () => {
+    const { page, api } = render(report);
+    expect(api.compareBenchmarks).toHaveBeenCalledWith('base', 'candidate');
+    expect(page.querySelector('table[aria-label="Run settings changes"]')?.textContent).toMatch(
+      /Requested effort.*low.*high/,
+    );
+    expect(page.textContent).toContain('fixture/candidate');
+    expect(page.textContent).toContain('-100 pp');
+    expect(page.textContent).toContain('1 matched');
+    expect(page.textContent).toContain('80% (8/10)');
+    expect(page.textContent).toContain('0 (9 reported)');
+    expect(page.textContent).toContain('+$0.20');
+    const changedRow = page.querySelector('a[href="/games/base-game"]')?.closest('tr');
+    expect(changedRow?.textContent).toContain('French Winawer');
+    expect(changedRow?.textContent).toContain('Incomplete pair');
+    expect(changedRow?.querySelector('a[href="/games/candidate-game"]')?.textContent).toBe(
+      'Forfeit',
+    );
+  });
+
+  it('shows both incompatible values and suppresses comparative scores and cost deltas', () => {
+    const { page } = render({
+      ...report,
+      comparable: false,
+      spendDeltaUsd: null,
+      differences: [{ setting: 'Opening suite', base: 'suite-v1', candidate: 'suite-v2' }],
+    });
+    const warning = page.querySelector('[role="alert"]');
+    expect(warning?.textContent).toContain('Not comparable');
+    expect(warning?.textContent).toMatch(/Opening suite.*suite-v1.*suite-v2/);
+    expect(page.textContent).not.toContain('By matchup');
+    expect(page.textContent).not.toContain('Cost delta');
+    expect(page.querySelector('a[href="/games/base-game"]')).toBeNull();
+  });
+});

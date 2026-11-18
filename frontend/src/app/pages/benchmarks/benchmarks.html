@@ -117,6 +117,144 @@
   }
 
   @if (report(); as data) {
+    <div class="run-actions">
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="loading() || busy()"
+        (click)="openRerun(data)"
+      >
+        Rerun
+      </button>
+      <a
+        mat-stroked-button
+        routerLink="/benchmarks/compare"
+        [queryParams]="{
+          base: data.run.rerunOf ?? data.run.id,
+          candidate: data.run.rerunOf ? data.run.id : null,
+        }"
+        >Compare runs</a
+      >
+    </div>
+
+    @if (rerunOpen()) {
+      @let change = rerunChange(data);
+      @let validation = rerunValidation(data, change);
+      <section class="panel" aria-labelledby="rerun-title">
+        <h2 id="rerun-title">Before you rerun</h2>
+        <p>The new run starts automatically and uses its own budget.</p>
+        @if (hasPendingRerun(data) && !busy()) {
+          <p class="pause-note" role="status">
+            A rerun may already be in progress. Submit the same change to recover it.
+          </p>
+        }
+        <form aria-label="Rerun benchmark" (ngSubmit)="createRerun(data)">
+          <div class="form-grid">
+            <mat-form-field appearance="outline">
+              <mat-label>Setting to change</mat-label>
+              <select matNativeControl name="rerunSetting" [(ngModel)]="rerunSetting">
+                <option value="">No change (measure variance)</option>
+                @for (setting of rerunSettingKeys; track setting) {
+                  <option [value]="setting">{{ rerunSettings[setting] }}</option>
+                }
+              </select>
+            </mat-form-field>
+            @switch (rerunSetting) {
+              @case ('modelId') {
+                <mat-form-field appearance="outline">
+                  <mat-label>Model to replace</mat-label>
+                  <select matNativeControl name="rerunModelFrom" [(ngModel)]="rerunModelFrom">
+                    @for (model of data.definition.modelIds; track model) {
+                      <option [value]="model">{{ model }}</option>
+                    }
+                  </select>
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Replacement model ID</mat-label>
+                  <input matInput name="rerunModelTo" maxlength="255" [(ngModel)]="rerunModelTo" />
+                </mat-form-field>
+              }
+              @case ('reasoningEffort') {
+                <mat-form-field appearance="outline">
+                  <mat-label>New effort</mat-label>
+                  <select matNativeControl name="rerunEffort" [(ngModel)]="rerunEffort">
+                    <option value="default">Model default</option>
+                    @for (effort of efforts; track effort) {
+                      <option [value]="effort">{{ effortLabel(effort) }}</option>
+                    }
+                  </select>
+                </mat-form-field>
+              }
+              @case ('chatMode') {
+                <mat-form-field appearance="outline">
+                  <mat-label>New chat mode</mat-label>
+                  <select matNativeControl name="rerunChat" [(ngModel)]="rerunChat">
+                    <option value="OFF">Off</option>
+                    <option value="OPTIONAL">Optional</option>
+                    <option value="MANDATORY">Mandatory</option>
+                  </select>
+                </mat-form-field>
+              }
+              @case ('budgetUsd') {
+                <mat-form-field appearance="outline">
+                  <mat-label>New budget (USD)</mat-label>
+                  <input
+                    matInput
+                    name="rerunBudget"
+                    inputmode="decimal"
+                    [(ngModel)]="rerunBudget"
+                  />
+                </mat-form-field>
+              }
+            }
+          </div>
+          <div class="table-scroll rerun-preview">
+            <table aria-label="Rerun settings">
+              <thead>
+                <tr>
+                  <th scope="col">Setting</th>
+                  <th scope="col">Source run</th>
+                  <th scope="col">New run</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of rerunPreview(data, change); track row.setting) {
+                  <tr>
+                    <th scope="row">{{ row.setting }}</th>
+                    <td>{{ row.before || '—' }}</td>
+                    <td>
+                      @if (row.after !== row.before) {
+                        <strong>{{ row.after || '—' }}</strong>
+                        <span class="cdk-visually-hidden"> (changed)</span>
+                      } @else {
+                        {{ row.after || '—' }}
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (validation || actionError()) {
+            <p class="error" role="alert">{{ validation || actionError() }}</p>
+          }
+          <div class="run-actions">
+            <button mat-flat-button type="submit" [disabled]="busy() || loading() || !!validation">
+              Create and start rerun
+            </button>
+            <button
+              mat-button
+              type="button"
+              [disabled]="busy()"
+              (click)="rerunOpen.set(false); actionError.set('')"
+            >
+              Close
+            </button>
+          </div>
+        </form>
+      </section>
+    }
+
     <section class="panel" aria-labelledby="run-setup">
       <div class="section-heading">
         <h2 id="run-setup">Run setup</h2>
@@ -205,7 +343,7 @@
           Open a paused game and choose Resume to return it to play or queue it for a free slot.
         </p>
       }
-      @if (actionError()) {
+      @if (!rerunOpen() && actionError()) {
         <p class="error" role="alert">{{ actionError() }}</p>
       }
 

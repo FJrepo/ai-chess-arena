@@ -39,11 +39,11 @@ final class BenchmarkResults {
                 games.size() == 2 && games.stream().allMatch(BenchmarkResults::scored), rows);
     }
 
-    private static boolean scored(Game game) {
+    static boolean scored(Game game) {
         return AnalyticsGameOutcomeClassifier.isTerminal(game.status) && game.result != null;
     }
 
-    private static Score score(List<Game> games, AnalyticsGameOutcomeClassifier outcomes) {
+    static Score score(List<Game> games, AnalyticsGameOutcomeClassifier outcomes) {
         var results = games.stream()
                 .map(game -> outcomes.classifyComparison(game, "WHITE".equals(game.benchmarkModelColor()))).toList();
         long wins = results.stream().filter(outcome -> outcome.win()).count();

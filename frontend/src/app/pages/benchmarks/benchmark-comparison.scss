@@ -1,0 +1,50 @@
+.comparison-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: var(--app-space-4);
+  align-items: baseline;
+}
+
+.comparison-warning {
+  background: var(--app-warning-fill);
+  color: var(--app-warning-text);
+  border-color: var(--app-warning-border);
+}
+
+.comparison-table {
+  table-layout: fixed;
+
+  .model-name {
+    width: 17%;
+  }
+
+  .model-results {
+    width: 23%;
+  }
+
+  .matchup-name {
+    width: 36%;
+  }
+
+  .game-results {
+    width: 22%;
+  }
+
+  .delta {
+    width: 10%;
+  }
+
+  th small {
+    display: block;
+    margin-block-start: var(--app-space-1);
+    font-weight: normal;
+  }
+
+  small {
+    font-size: var(--app-text-secondary-size);
+  }
+}
+
+.comparison-values {
+  text-align: end;
+}

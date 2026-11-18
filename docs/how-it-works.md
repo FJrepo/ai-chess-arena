@@ -152,6 +152,16 @@ Pairs enter the waiting order together and use whatever slots are available. **P
 
 **Performance against this Stockfish setup** is reported for each model overall and for each target and model color. The score is wins plus half a point per draw, divided by scored games. W/D/L includes forfeits, with model forfeits also shown separately. Results count as games finish, and a pair remains incomplete until both games have a scored result. Every game has a link and its spend appears in the game, model and run totals. Benchmark games stay out of tournament brackets, leaderboard ratings, regular model analytics and health game counts. Moving aliases such as `~anthropic/claude-sonnet-latest` are accepted. The report retains the requested alias and lists the concrete model IDs reported by OpenRouter, including when the alias resolves to more than one model during the run. The Analytics spend total includes benchmark spend and shows it on its own line, including paid attempts from unfinished or cancelled games.
 
+### Rerun and compare
+
+Open a benchmark result and choose **Rerun**. Choose **No change** to measure run-to-run variance, or change one setting: replace one model ID, switch legal move hints, change requested reasoning effort, change chat mode, or set a new budget. The preview shows the source and new values before you start. Chat and hints determine the prompt version, so changing either also changes the displayed version. The new run uses the source's exact stored opening lines, colors, Stockfish levels, search limits and engine fingerprints. The current ladder uses fixed opening lines without a random seed. If the required engine, weights or prompt version are unavailable, creation stops before scheduling games.
+
+**Create and start rerun** queues fresh games under a new budget cap. The preview uses the source's current budget and concurrency cap. If either limit changes before creation, refresh the run and review the preview again. If a submission goes unconfirmed, reopen **Rerun** and submit the same choice in the same tab. The request ID also survives reloads when session storage is available.
+
+Creating a rerun opens its comparison with the source. Use **Compare runs** on any benchmark result to choose a base and candidate. Models with the same ID align across runs. If one model remains on each side, the report pairs them and shows both IDs. Other unmatched models are listed. Compare uses the opening ID, model color and Stockfish level to align games. Different opening suites or lines, engine or weight fingerprints, search limits, colors or levels produce a **Not comparable** warning with both values. The page still shows each run's spend.
+
+The model score is wins plus half a point per draw, divided by scored games. Score deltas compare only matchups scored in both runs. The report shows the mean change in percentage points per model and the point change per game. Changed outcomes appear first, sorted by the magnitude of the point change, with links to both games. A color pair stays incomplete until both of its games have scored results. First-try legality uses canonical model moves and counts turns ending in an invalid-move forfeit as failures. Reasoning tokens per move average accepted model answers that report the counter, including explicit zeroes. Both telemetry measures include moves already played in unfinished games, exclude book and engine moves, and display a dash for missing samples. Spend includes every paid answer, even in unfinished and cancelled games. Cost deltas are candidate spend minus base spend.
+
 ### Benchmark API
 
 | Endpoint | Behavior |
@@ -159,6 +169,8 @@ Pairs enter the waiting order together and use whatever slots are available. **P
 | `POST /api/benchmarks` | Creates a new run with all its games and enables auto-run. Returns HTTP 201. Reusing the same `clientRequestId` returns the original report with HTTP 200 without scheduling another run. |
 | `GET /api/benchmarks` | Lists run IDs, names, creation times and run statuses. |
 | `GET /api/benchmarks/{id}` | Returns setup, model aggregates, pair progress, game IDs and spend from one database snapshot. |
+| `POST /api/benchmarks/{id}/rerun` | Copies the source and creates fresh games with zero or one changed setting. Returns HTTP 201, or HTTP 200 for a replay of the same request ID and change. |
+| `GET /api/benchmarks/compare?base={uuid}&candidate={uuid}` | Reads both runs in one database snapshot. Returns matchup scores, telemetry and spend for compatible runs, or the incompatible settings. |
 | `POST /api/benchmarks/{id}/pause` | Pauses the run and active games. |
 | `POST /api/benchmarks/{id}/resume` | Resumes with a JSON object. Omitted `budgetUsd` and `maxConcurrentGames` retain their values. The budget must stay positive. |
 | `POST /api/benchmarks/{id}/cancel` | Cancels an active or paused run and returns its report with status `CANCELLED`. A finished or already cancelled run returns HTTP 409. |
@@ -179,6 +191,8 @@ For example, create a run with this request.
 ```
 
 All create fields are required. Generate a UUID for each new run and reuse it when retrying a submission. The report includes any progress the original run has made. Provide distinct model IDs, integer targets, a JSON boolean for hints, a supported [reasoning effort](#reasoning-effort) value or `default`, and `OFF`, `OPTIONAL` or `MANDATORY` for chat. Budget accepts an exact decimal string or a JSON number, with at most two decimal places. Concurrency accepts integers from 1 through 8. Unknown fields and invalid values return HTTP 400. A missing OpenRouter connection or unverifiable opponent build or weights returns HTTP 409. Game details identify the owning run with `benchmarkRunId` and include `benchmarkChatMode` for periods between turns. Benchmark moves cannot be overridden.
+
+A rerun request requires `clientRequestId` and a `change` object. Use `{}` for a plain rerun, or exactly one key from `modelId` (object with `from` and `to` model IDs), `reasoningEffort`, `legalMoveHints`, `chatMode` and `budgetUsd`. Unknown keys, invalid values and a selected value equal to the source return HTTP 400. Clients can supply `expectedRunSettings` with both current source limits to guard the preview against concurrent updates. Reusing a rerun UUID with a different source or change, stale expected limits, or an unavailable source engine, weights or prompt version returns HTTP 409. A rerun's summary includes `rerunOf` so clients can link back to the source.
 
 ## Opening variety
 

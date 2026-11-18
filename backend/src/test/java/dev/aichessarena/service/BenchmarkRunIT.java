@@ -16,6 +16,8 @@ import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.entity.BenchmarkDefinition.Network;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.repository.GameRepository;
@@ -137,6 +139,153 @@ class BenchmarkRunIT {
             assertEquals(1, schedules.get());
             assertEquals(32, gameIds(benchmarks.getFirst()).size());
         }
+    }
+
+    @Test
+    void rerunOnlyAcceptsOneActualChangeOrAnExplicitEmptyChange() {
+        UUID base = create(REQUEST);
+        for (String change : List.of(
+                "null", "[]", "{\"legalMoveHints\":false}", "{\"reasoningEffort\":\"extreme\"}",
+                "{\"legalMoveHints\":true,\"chatMode\":\"OPTIONAL\"}", "{\"suite\":\"another\"}",
+                "{\"modelId\":{\"from\":\"fixture/absent\",\"to\":\"fixture/second\"}}")) {
+            rerun(base, withRequestId("{\"change\":" + change + "}")).then().statusCode(400);
+        }
+        assertEquals(1, schedules.get());
+        UUID candidate = createRerun(base, "{}");
+        assertEquals(32, gameIds(candidate).size());
+        given().get("/api/benchmarks/{id}", candidate).then().statusCode(200)
+                .body("definition.promptVersion", equalTo("v2-silent-no-hints"))
+                .body("run.rerunOf", equalTo(base.toString()));
+    }
+
+    @Test
+    void concurrentRerunReplaysOneCreationAndRejectsAConflictingIntent() throws Exception {
+        UUID base = create(REQUEST);
+        String body = withRequestId("{\"change\":{\"legalMoveHints\":true}}");
+        Callable<io.restassured.response.Response> submit = () -> rerun(base, body);
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var responses = pool.invokeAll(List.of(submit, submit));
+            List<Integer> statuses = new ArrayList<>();
+            for (var future : responses) {
+                var response = future.get();
+                statuses.add(response.statusCode());
+                if (response.statusCode() == 201) benchmarks.add(UUID.fromString(response.path("run.id")));
+                response.then().body("legalMoveHints", equalTo(true))
+                        .body("definition.promptVersion", equalTo("v2-silent"));
+            }
+            assertEquals(List.of(200, 201), statuses.stream().sorted().toList());
+            rerun(base, body.replace("\"legalMoveHints\":true", "\"chatMode\":\"OPTIONAL\""))
+                    .then().statusCode(409);
+            assertEquals(2, schedules.get());
+        }
+    }
+
+    @Test
+    void rerunFailsClosedOnStaleLimitsAndDifferentWeightsButReplaysAfterEngineChanges() {
+        UUID base = create(REQUEST);
+        rerun(base, withRequestId("""
+                {"change":{},"expectedRunSettings":{"budgetUsd":"2.00","maxConcurrentGames":2}}
+                """)).then().statusCode(409);
+        String body = withRequestId("{\"change\":{\"chatMode\":\"MANDATORY\"}}");
+        var created = rerun(base, body).then().statusCode(201);
+        String candidate = created.extract().path("run.id");
+        benchmarks.add(UUID.fromString(candidate));
+        QuarkusMock.installMockForType(new StockfishOpponentService() {
+            @Override EngineFingerprint benchmarkFingerprint(List<Integer> strengths) {
+                return new EngineFingerprint(HASH, List.of(new Network(NETWORK, "different-weights")));
+            }
+        }, StockfishOpponentService.class);
+        rerun(base, withRequestId("{\"change\":{}}")).then().statusCode(409);
+        rerun(base, body).then().statusCode(200).body("run.id", equalTo(candidate));
+        assertEquals(2, schedules.get());
+    }
+
+    @Test
+    void comparesMatchedGamesAndAllSpendAndRefusesDifferentSetup() {
+        UUID base = create(REQUEST);
+        UUID candidate = createRerun(base, "{\"modelId\":{\"from\":\"fixture/ladder\",\"to\":\"fixture/second\"}}");
+        var before = gameIds(base);
+        var after = gameIds(candidate);
+        lifecycle.completeGame(before.getFirst(), new ChessService.GameEndInfo("WHITE_WINS", "CHECKMATE"));
+        lifecycle.markGameStarted(after.getFirst());
+        lifecycle.forfeitInvalidMoves(after.getFirst(), "WHITE", 3);
+        lifecycle.completeGame(after.get(1), new ChessService.GameEndInfo("DRAW", "STALEMATE"));
+        addTelemetry(before.getFirst(), "fixture/ladder", 0, 0);
+        addTelemetry(after.getFirst(), "fixture/second", 1, 32);
+        pay(before.getFirst(), "WHITE", 0.10);
+        pay(after.getFirst(), "WHITE", 0.25);
+        pay(after.get(3), "BLACK", 0.50);
+        given().queryParam("base", base).queryParam("candidate", candidate).get("/api/benchmarks/compare").then()
+                .statusCode(200).body("comparable", equalTo(true))
+                .body("models[0].baseModelId", equalTo("fixture/ladder"))
+                .body("models[0].candidateModelId", equalTo("fixture/second"))
+                .body("models[0].scoreDelta", equalTo(-1.0f))
+                .body("models[0].matchedGames", equalTo(1))
+                .body("models[0].base.incompletePairs", equalTo(16))
+                .body("models[0].candidate.incompletePairs", equalTo(15))
+                .body("models[0].base.telemetry.firstTryLegalRate", equalTo(1.0f))
+                .body("models[0].base.telemetry.reasoningTokensPerMove", equalTo(0.0f))
+                .body("models[0].candidate.score.forfeits", equalTo(1))
+                .body("models[0].candidate.telemetry.turnsSampled", equalTo(2))
+                .body("models[0].candidate.telemetry.reasoningTokensPerMove", equalTo(32.0f))
+                .body("matchups[0].candidate.forfeit", equalTo(true))
+                .body("spendDeltaUsd", equalTo(0.65f))
+                .body("matchups[0].base.gameId", equalTo(before.getFirst().toString()))
+                .body("matchups[0].candidate.gameId", equalTo(after.getFirst().toString()))
+                .body("matchups[0].spendDeltaUsd", equalTo(0.15f))
+                .body("matchups[1].candidate.gameId", equalTo(after.get(1).toString()));
+        QuarkusTransaction.requiringNew().run(() -> tournaments.getEntityManager().createNativeQuery("""
+                update tournaments
+                set benchmark_definition = benchmark_definition || '{"suite":"changed-suite","engineSha256":"changed-digest"}'
+                where id = :id
+                """).setParameter("id", candidate).executeUpdate());
+        given().queryParam("base", base).queryParam("candidate", candidate).get("/api/benchmarks/compare").then()
+                .statusCode(200).body("comparable", equalTo(false))
+                .body("differences.setting", hasItem("Opening suite"))
+                .body("differences.setting", hasItem("Stockfish executable SHA-256"))
+                .body("matchups.size()", equalTo(0));
+        given().queryParam("base", "invalid").queryParam("candidate", candidate)
+                .get("/api/benchmarks/compare").then().statusCode(400);
+        given().queryParam("base", base, candidate).queryParam("candidate", candidate)
+                .get("/api/benchmarks/compare").then().statusCode(400);
+        given().queryParam("candidate", candidate).get("/api/benchmarks/compare").then().statusCode(400);
+        given().queryParam("base", base).queryParam("candidate", base)
+                .get("/api/benchmarks/compare").then().statusCode(400);
+    }
+
+    private void addTelemetry(UUID gameId, String modelId, int retries, int reasoningTokens) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game game = games.findByIdForUpdate(gameId);
+            Move move = new Move();
+            move.game = game;
+            move.color = game.benchmarkModelColor();
+            move.moveNumber = 77;
+            move.san = "e4";
+            move.fen = game.currentFen;
+            move.modelId = modelId;
+            move.retryCount = retries;
+            move.persist();
+            MoveAttempt accepted = new MoveAttempt();
+            accepted.game = game;
+            accepted.color = move.color;
+            accepted.moveNumber = move.moveNumber;
+            accepted.attemptNumber = retries + 1;
+            accepted.modelId = modelId;
+            accepted.outcome = Outcome.ACCEPTED;
+            accepted.reasoningTokens = reasoningTokens;
+            accepted.persist();
+        });
+    }
+
+    private UUID createRerun(UUID base, String change) {
+        var response = rerun(base, withRequestId("{\"change\":" + change + "}")).then().statusCode(201);
+        UUID id = UUID.fromString(response.extract().path("run.id"));
+        benchmarks.add(id);
+        return id;
+    }
+
+    private static io.restassured.response.Response rerun(UUID base, String body) {
+        return given().contentType("application/json").body(body).post("/api/benchmarks/{id}/rerun", base);
     }
 
     @Test

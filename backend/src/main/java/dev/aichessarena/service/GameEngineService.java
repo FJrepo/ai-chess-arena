@@ -354,6 +354,10 @@ public class GameEngineService {
             conversation = gameConversationService.refreshSystemPrompts(game, conversation);
             GameConversationService.PromptContext prompt =
                     "WHITE".equals(sideToMove) ? conversation.whitePrompt() : conversation.blackPrompt();
+            if (game.isBenchmark() && !prompt.version().equals(game.tournament.benchmarkDefinition.promptVersion())) {
+                gameLifecycleService.pauseWithReason(gameId, "The benchmark's saved prompt version is unavailable.");
+                return;
+            }
             GameTurnService.TurnResult turnResult = gameTurnService.playTurn(new GameTurnService.TurnRequest(
                     gameId,
                     pgn,

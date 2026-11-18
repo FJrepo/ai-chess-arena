@@ -15,6 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V31__stockfish_ladder.sql` adds benchmark definitions and paired games, requires a creation UUID for benchmarks, and records concrete model IDs reported for moving aliases. Back up the database and recreate backend and frontend together. Existing games need no backfill.
 
+- Flyway `V33__benchmark_reruns.sql` records the pinned prompt version on saved V31 benchmarks. Back up the database and recreate backend and frontend together.
+
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
   - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
@@ -24,6 +26,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Run the **Stockfish ladder** against a verified engine build and weights, compare color-paired results and spend, and cancel unfinished runs without losing results. Benchmark reports show concrete model IDs when OpenRouter resolves a moving alias.
+- **Rerun and compare** a benchmark with one setting changed or repeat the same setup, preview the settings before spending, and review paired outcomes, telemetry and cost deltas.
+
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 
