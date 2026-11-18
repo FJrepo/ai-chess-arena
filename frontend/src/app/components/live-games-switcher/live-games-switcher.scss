@@ -2,15 +2,157 @@
   display: inline-flex;
 }
 
-.matchup,
-.game-details,
-.reason {
-  display: block;
+.trigger {
+  --mat-button-outlined-horizontal-padding: var(--app-space-4);
+  --mat-button-outlined-label-text-color: var(--mat-sys-on-surface-variant);
+  --mat-button-outlined-outline-color: var(--mat-sys-outline-variant);
 }
 
-.matchup,
-.event,
-.reason {
+.trigger.has-live-games {
+  --mat-button-outlined-label-text-color: var(--mat-sys-on-primary-container);
+  --mat-button-outlined-outline-color: var(--mat-sys-primary);
+  background: var(--mat-sys-primary-container);
+}
+
+.trigger.no-live-games {
+  --mat-button-outlined-outline-color: var(--mat-sys-outline);
+}
+
+.trigger-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+
+.live-lamp {
+  inline-size: var(--app-space-2);
+  block-size: var(--app-space-2);
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--app-live-lamp);
+  box-shadow: 0 0 var(--app-space-1) var(--app-live-glow);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .live-lamp {
+    animation: live-lamp-pulse 2.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes live-lamp-pulse {
+    to {
+      box-shadow: 0 0 var(--app-space-2) var(--app-space-half) var(--app-live-glow);
+    }
+  }
+}
+
+.attention-marker {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--app-space-3);
+  block-size: var(--app-space-4);
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--app-warning-text);
+  color: var(--mat-sys-surface);
+  font-size: var(--app-text-secondary-size);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.menu-note {
+  padding: var(--app-space-2) var(--app-space-3) var(--app-space-1);
+  color: var(--mat-sys-on-surface-variant);
+  font-size: var(--app-text-secondary-size);
+}
+
+// The label and consecutive rows share a surface while the menu items stay in one list.
+.section-label,
+.game-row {
+  --group-surface: var(--app-live-games-running-bg);
+
+  &.paused {
+    --group-surface: var(--app-live-games-paused-bg);
+  }
+
+  &.finished {
+    --group-surface: var(--app-live-games-finished-bg);
+  }
+}
+
+.section-label {
+  border-start-start-radius: var(--mat-sys-corner-small);
+  border-start-end-radius: var(--mat-sys-corner-small);
+  padding: var(--app-space-2) var(--app-space-3) var(--app-space-1);
+  background-color: var(--group-surface);
+  color: var(--mat-sys-on-surface);
+  font-size: var(--app-text-secondary-size);
+  font-variant-caps: small-caps;
+  font-weight: 700;
+  letter-spacing: var(--app-table-heading-tracking);
+
+  &.finished {
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.section-label:not(:first-child) {
+  margin-block-start: var(--app-live-games-group-gap);
+}
+
+.game-row.mat-mdc-menu-item {
+  --app-live-games-row-hover: color-mix(
+    in srgb,
+    var(--mat-sys-on-surface) 6%,
+    var(--group-surface)
+  );
+  --mat-menu-item-hover-state-layer-color: var(--app-live-games-row-hover);
+  --mat-menu-item-focus-state-layer-color: var(--app-live-games-row-hover);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--app-space-half);
+  padding: var(--app-space-3);
+  background-color: var(--group-surface);
+  color: var(--mat-sys-on-surface);
+
+  &.finished {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  + .game-row {
+    border-block-start: 1px solid var(--app-live-games-row-divider);
+  }
+
+  &:not(:has(+ .game-row)) {
+    border-end-start-radius: var(--mat-sys-corner-small);
+    border-end-end-radius: var(--mat-sys-corner-small);
+  }
+
+  &:is(:focus-visible, .cdk-keyboard-focused) {
+    outline: var(--app-rule-width) solid var(--app-accent-info);
+    outline-offset: calc(-1 * var(--app-focus-offset));
+
+    // Keyboard focus reveals the whole matchup that the two-line clamp shortens.
+    .matchup {
+      display: block;
+      overflow: visible;
+    }
+  }
+}
+
+.matchup {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+  text-wrap: balance;
+}
+
+.versus {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.event {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -21,6 +163,7 @@
   align-items: baseline;
   gap: var(--app-space-2);
   font-size: var(--app-text-secondary-size);
+  font-weight: 400;
   color: var(--mat-sys-on-surface-variant);
 }
 
@@ -28,17 +171,30 @@
   flex-shrink: 0;
 }
 
+.state-marker {
+  display: inline-block;
+  padding-inline: var(--app-space-2);
+  border-radius: var(--mat-sys-corner-full);
+  font-weight: 500;
+}
+
 .attention {
+  background: var(--app-live-games-attention-bg);
+  background-clip: padding-box;
+  border: 1px solid var(--app-live-games-attention-border);
   color: var(--app-warning-text);
 }
 
-.reason {
-  font-size: var(--app-text-secondary-size);
-  color: var(--mat-sys-on-surface-variant);
+.practice {
+  background: var(--mat-sys-surface-container-highest);
 }
 
-.menu-note {
-  padding: var(--app-space-2) var(--app-space-4);
-  color: var(--mat-sys-on-surface-variant);
+// The pause reason wraps in full, so its closing instruction (such as
+// "Check spend, then resume.") is never clipped.
+.reason {
+  display: block;
+  overflow-wrap: anywhere;
   font-size: var(--app-text-secondary-size);
+  font-weight: 400;
+  color: var(--mat-sys-on-surface-variant);
 }

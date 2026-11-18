@@ -37,6 +37,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Centre the Live games switcher in the header, show running and paused status with green and amber indicators, and group matchups into bright Running, warm Paused and muted Last finished cards.
 - The Analytics **Behaviour** tab makes persuasion counts easier to compare, with clearer role headers, quieter sample notes and columns that stay put when the table is empty.
 - Benchmark reports lead with model scores and game counts, distinguish opening-pair outcomes, and keep small charges visible.
 - The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
