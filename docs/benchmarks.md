@@ -47,7 +47,7 @@ Add one to eight model IDs and a budget. A fixed effort keeps the thinking reque
 
 **Question:** can the model find legal moves from the position without being given the list?
 
-**Where:** Benchmarks → Recipe → *Board understanding*, or better: Rerun a *Raw playing strength* run and change only **Legal move hints**, then compare.
+**Where:** Benchmarks → Recipe → *Board understanding*, or better: rerun a *Raw playing strength* run with **Setting to change** set to **Legal move hints**, then compare.
 
 **Recipe settings:** Legal move hints **off** · Reasoning effort **Medium** · Chat mode **Off** · Stockfish levels **1500** and **2000**
 
@@ -61,11 +61,11 @@ Add one to eight model IDs and a budget. A fixed effort keeps the thinking reque
 
 **Question:** does a higher requested reasoning effort win more points, and at what price?
 
-**Where:** Benchmarks → Recipe → *Is more effort worth it?* for a Low baseline. When it has finished, open it, choose **Rerun**, change only **Reasoning effort** (for example to High) and start; the comparison opens automatically. See [Rerun and compare](how-it-works.md#rerun-and-compare).
+**Where:** Benchmarks → Recipe → *Is more effort worth it?* for a Low baseline. When it has finished, open it, choose **Rerun**, set **Setting to change** to **Requested effort**, pick a higher **New effort** (for example High) and choose **Create and start rerun**; the comparison opens automatically. See [Rerun and compare](how-it-works.md#rerun-and-compare).
 
 **Recipe settings:** Legal move hints **on** · Reasoning effort **Low** · Chat mode **Off** · Stockfish levels **1500** and **2000**
 
-**Read:** the comparison's **Score delta** per model, **Cost delta**, and **Reasoning tokens per move** for both runs. The changed outcomes list shows which games flipped.
+**Read:** the comparison's **Score delta** per model, **Cost delta**, and **Reasoning tok/move** (reasoning tokens per move) for both runs. The changed outcomes list shows which games flipped.
 
 **Caveats:** if a model's reasoning tokens barely change, its provider ignored or mapped the level, and the delta says nothing about effort. Higher effort can hit the fixed 16,384-token output limit; a cut-off answer pauses the game. Compare the score delta with a [variance check](#variance-check) before calling it an improvement.
 
@@ -81,7 +81,7 @@ Add one to eight model IDs and a budget. A fixed effort keeps the thinking reque
 
 Each model thinks as its provider ships it, which is what you pay for by default.
 
-**Read:** *Model results* → **Score** and **Spend** (points divided by spend gives points per dollar); *Opening pairs* shows spend per game. Rerun and compare adds **Reasoning tokens per move** and **Cost delta**. For cost per completed move across tournaments, use Analytics: *Cost & reliability* → *Per-Model Performance Metrics* → **Cost/Move**, *Overview* → **Cost / Win**, and *Play quality* → **Reasoning tokens / accepted move**. Benchmark games are kept out of those model analytics; their spend appears on its own line.
+**Read:** *Model results* → **Score** and **Spend** (points divided by spend gives points per dollar); *Opening pairs* shows spend per game. Rerun and compare adds **Reasoning tok/move** (reasoning tokens per move) and **Cost delta**. For cost per completed move across tournaments, use Analytics: *Cost & reliability* → *Per-Model Performance Metrics* → **Cost/Move**, *Overview* → **Cost / Win**, and *Play quality* → **Reasoning tokens / accepted move**. Benchmark games are kept out of those model analytics; their spend appears on its own line.
 
 **Caveats:** spend is what OpenRouter reports, including rejected answers and cache discounts, so it changes with prices and provider routing over time. Some models think without end at their default effort and can hit the output limit (the game pauses).
 
