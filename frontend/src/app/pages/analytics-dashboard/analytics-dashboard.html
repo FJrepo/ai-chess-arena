@@ -460,7 +460,7 @@
                 {{ summary.partial ? 'combined' : 'total' }}).
               }
               @case ('sparse') {
-                Fewer than two models have at least
+                Fewer than two {{ summary.partial ? 'reporting models' : 'models' }} have at least
                 <span class="num">{{ minOptionalChatMoves }}</span> Optional-chat moves.
                 <span class="num">{{ summary.moves }}</span> reported Optional-chat
                 {{ summary.moves === 1 ? 'move' : 'moves' }}.

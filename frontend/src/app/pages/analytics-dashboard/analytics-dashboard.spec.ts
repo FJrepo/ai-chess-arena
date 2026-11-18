@@ -1176,7 +1176,9 @@ describe('AnalyticsDashboard', () => {
     ]);
 
     const intro = behaviourTakeaway(element);
-    expect(intro).toContain('Fewer than two models have at least 20 Optional-chat moves.');
+    expect(intro).toContain(
+      'Fewer than two reporting models have at least 20 Optional-chat moves.',
+    );
     expect(intro).toContain('219 reported Optional-chat moves.');
     expect(intro).toContain('1 of 3 models reached 20 moves.');
     expect(intro).toContain('among 3 models that reported Optional chat');
@@ -1195,7 +1197,9 @@ describe('AnalyticsDashboard', () => {
     ]);
 
     const intro = behaviourTakeaway(element);
-    expect(intro).toContain('Fewer than two models have at least 20 Optional-chat moves.');
+    expect(intro).toContain(
+      'Fewer than two reporting models have at least 20 Optional-chat moves.',
+    );
     expect(intro).toContain('10 reported Optional-chat moves.');
     expect(intro).toContain('0 of 1 model reached 20 moves.');
     expect(intro).toContain('among 1 model that reported Optional chat');
@@ -1208,6 +1212,7 @@ describe('AnalyticsDashboard', () => {
     ]);
 
     const intro = behaviourTakeaway(element);
+    expect(intro).toContain('Fewer than two models have at least 20 Optional-chat moves.');
     expect(intro).toContain('1 reported Optional-chat move.');
     expect(intro).toContain('0 of 1 model reached 20 moves.');
   });
