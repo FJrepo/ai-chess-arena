@@ -1,3 +1,4 @@
+import { PlatformLocation } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Observable, of, Subject } from 'rxjs';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -510,23 +511,32 @@ describe('AnalyticsDashboard', () => {
   });
 
   it.each([
-    { insufficient: 8, total: 9, note: '8 of 9 models have insufficient data' },
+    { insufficient: 8, total: 9, headline: 'Only 1 of 9 models has enough data' },
+    { insufficient: 3, total: 5, headline: 'Only 2 of 5 models have enough data' },
+    { insufficient: 3, total: 6, note: '3 of 6 models have insufficient data' },
     { insufficient: 1, total: 9, note: '1 of 9 models has insufficient data' },
-    { insufficient: 1, total: 1, note: '1 of 1 model has insufficient data' },
-    { insufficient: 0, total: 9, note: null },
-  ])('puts the sample note beside the score for $insufficient of $total models', async (sample) => {
+    { insufficient: 1, total: 1, headline: 'Only 0 of 1 model has enough data' },
+    { insufficient: 0, total: 9 },
+  ])('shows the Trust Index for $insufficient of $total insufficient models', async (sample) => {
     const models = Array.from({ length: sample.total }, (_, index) =>
       reliabilityRow(`model.${index}`, { insufficientData: index < sample.insufficient }),
     );
     const { harness } = await renderDashboard('?tab=cost', {
       reliability: of({ windowDays: 30, tournamentId: null, minGames: 0, models }),
     });
-    const score = harness.routeNativeElement!.querySelector('.trust-score')!;
-    expect(score.querySelector('.value')?.textContent).toBe('81.3');
-    const note = score.querySelector('.trust-sample');
-    if (sample.note === null) {
-      expect(note).toBeNull();
+    const card = harness.routeNativeElement!.querySelector('.cost-kpi-grid .kpi-card:last-child')!;
+    const headline = card.querySelector('.trust-headline');
+    const score = card.querySelector('.trust-score');
+    if (sample.headline) {
+      expect(headline?.textContent?.replace(/\s+/g, ' ').trim()).toBe(sample.headline);
+      const average = card.querySelector('.trust-average');
+      expect(headline?.nextElementSibling).toBe(average);
+      expect(average?.textContent?.trim()).toBe('Average score: 81.3');
+      expect(score).toBeNull();
     } else {
+      expect(headline).toBeNull();
+      expect(score?.querySelector('.value')?.textContent).toBe('81.3');
+      const note = score?.querySelector('.trust-sample');
       expect(note?.textContent?.replace(/\s+/g, ' ').trim()).toBe(sample.note);
     }
   });
@@ -586,7 +596,7 @@ describe('AnalyticsDashboard', () => {
     expect(latencyCard.querySelector('.sub')?.textContent).toContain('P95: n/a');
   });
 
-  it('preserves the cost deep link and moves focus to each jump link heading while reports load', async () => {
+  it('moves focus during loading and replaces history on every cost jump', async () => {
     const { harness } = await renderDashboard('?tab=cost', {
       comparison: new Subject(),
       reliability: new Subject(),
@@ -594,12 +604,16 @@ describe('AnalyticsDashboard', () => {
     const element = harness.routeNativeElement!;
     const links = Array.from(element.querySelectorAll<HTMLAnchorElement>('.cost-jump-links a'));
     const sections = ['spend', 'prompt-caching', 'reliability'];
+    const location = TestBed.inject(PlatformLocation);
+    const pushState = vi.spyOn(location, 'pushState');
+    const replaceState = vi.spyOn(location, 'replaceState');
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       'Spend',
       'Prompt caching',
       'Reliability',
     ]);
-    for (const [index, link] of links.entries()) {
+    for (const index of [0, 1, 2, 2, 0]) {
+      const link = links[index];
       const fragment = sections[index];
       const url = `/analytics?tab=cost#${fragment}`;
       expect(link.getAttribute('href')).toBe(url);
@@ -611,14 +625,58 @@ describe('AnalyticsDashboard', () => {
       expect(document.activeElement).toBe(heading);
       await harness.fixture.whenStable();
       expect(TestBed.inject(Router).url).toBe(url);
+      expect(location.hash).toBe(`#${fragment}`);
     }
+    expect(pushState).not.toHaveBeenCalled();
+    expect(replaceState).toHaveBeenCalledTimes(4);
   });
 
-  it('focuses the section heading when opening a copied cost jump link', async () => {
-    const { harness } = await renderDashboard('?tab=cost#reliability');
-    expect(document.activeElement).toBe(
-      harness.routeNativeElement!.querySelector('h2#reliability'),
+  it('follows fragments on a reused route and leaves filter focus alone on query changes', async () => {
+    const { harness, component } = await renderDashboard('?tab=overview');
+    const element = harness.routeNativeElement!;
+    expect(element.querySelector('#reliability')).toBeNull();
+
+    expect(await harness.navigateByUrl('/analytics?tab=cost#reliability', AnalyticsDashboard)).toBe(
+      component,
     );
+    await vi.waitFor(() => {
+      expect(element.querySelector('[aria-selected="true"]')?.textContent).toContain(
+        'Cost & reliability',
+      );
+      expect(document.activeElement?.id).toBe('reliability');
+    });
+
+    const filter = element.querySelector<HTMLElement>('.filter-window mat-select')!;
+    filter.focus();
+    await harness.navigateByUrl('/analytics?tab=cost&window=7#reliability');
+    expect(document.activeElement).toBe(filter);
+
+    await harness.navigateByUrl('/analytics?tab=cost&window=7#prompt-caching');
+    expect(document.activeElement).toBe(element.querySelector('h2#prompt-caching'));
+  });
+
+  it('focuses a cold cost deep link after the delayed comparison report has rendered', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    const heading = element.querySelector('h2#reliability')!;
+    expect(heading).toBeTruthy();
+    expect(document.activeElement).not.toBe(heading);
+    expect(element.querySelector('.cache-table')).toBeNull();
+
+    comparison.next({
+      windowDays: 30,
+      tournamentId: null,
+      minGames: 0,
+      gamesCount: 3,
+      models: [comparisonRow('model.sample')],
+    });
+    comparison.complete();
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(heading);
   });
 
   it('renders conversion counts, coverage and n/a in the selected comparison scope', async () => {
@@ -658,7 +716,10 @@ describe('AnalyticsDashboard', () => {
         provideRouter([]),
         {
           provide: ActivatedRoute,
-          useValue: { queryParamMap: of(convertToParamMap({ tab: 'quality' })) },
+          useValue: {
+            queryParamMap: of(convertToParamMap({ tab: 'quality' })),
+            fragment: of(null),
+          },
         },
         {
           provide: ApiService,
@@ -1140,7 +1201,9 @@ function baseRow(modelId: string): AnalyticsComparisonRow {
 }
 
 function createDashboard(): AnalyticsDashboard {
-  return new AnalyticsDashboard({} as ApiService, {} as ActivatedRoute, {} as Router);
+  return TestBed.runInInjectionContext(
+    () => new AnalyticsDashboard({} as ApiService, {} as ActivatedRoute, {} as Router),
+  );
 }
 
 async function renderDashboard(

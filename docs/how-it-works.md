@@ -460,9 +460,9 @@ The analytics page shares its analysis window, tournament, legal move hints and 
 - **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
 - **Play quality:** Move Quality and Conversion.
 - **Behaviour:** Talkativeness and Resignations.
-- **Cost & reliability:** total spend and match count for the selected engine-health scope, followed by engine-health metrics, the Trust Index, Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Average and p95 latencies use seconds with one decimal. The Trust Index shows how many models have insufficient data when at least one does. Jump links move focus to the Spend, Prompt caching and Reliability headings and can be opened directly. Each report loads independently.
+- **Cost & reliability:** total spend and match count for the selected engine-health scope, followed by engine-health metrics, the Trust Index, Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Average and p95 latencies use seconds with one decimal. When more than half the models have insufficient data, the Trust Index leads with how many have enough data and shows the average score below. Otherwise, any insufficient-data count appears beside the score. Each report loads independently.
 
-Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs replaces the URL without adding browser-history entries. Shared filters and the refresh schedule stay in place.
+Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs and using the Cost & reliability jump links replace the URL without adding browser-history entries. A link like `?tab=cost#reliability` opens the tab and moves focus to the section heading. Shared filters and the refresh schedule stay in place.
 
 Changing a shared filter clears the previous results and cancels pending report requests. Each report loads the new selection independently. Every 15 seconds, the dashboard refreshes each report that has no request in progress. A request still pending after 60 seconds times out and becomes eligible for the next poll. **Sync Data** replaces any pending requests immediately.
 

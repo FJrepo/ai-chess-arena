@@ -1,4 +1,13 @@
-import { afterRenderEffect, Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -41,6 +50,8 @@ type ComparisonSortOption =
   | 'averageResponseTimeMs'
   | 'costPerWinUsd'
   | 'forfeits';
+
+type CostSection = 'spend' | 'prompt-caching' | 'reliability';
 
 @Component({
   selector: 'app-analytics-dashboard',
@@ -292,43 +303,67 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   private readonly subscriptions = new Subscription();
   private reports = new Subscription();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly page = viewChild<ElementRef<HTMLElement>>('analyticsPage');
+  private readonly costTabIndex = this.tabIds.indexOf('cost');
+  private readonly pendingCostSection = signal<CostSection | null>(null);
+  private readonly tabTransitioning = signal(false);
 
   constructor(
     private api: ApiService,
     private route: ActivatedRoute,
     private router: Router,
   ) {
-    const initialRoute = this.route.snapshot;
-    if (initialRoute?.queryParamMap.get('tab') === 'cost') {
-      const fragment = initialRoute.fragment;
-      if (fragment === 'spend' || fragment === 'prompt-caching' || fragment === 'reliability') {
-        const initialJump = afterRenderEffect(() => {
-          // Reports above the destination can move its heading when they finish loading.
-          if (
-            (fragment !== 'spend' && this.healthLoading()) ||
-            (fragment === 'reliability' && this.comparisonLoading())
-          ) {
-            return;
-          }
-          initialJump.destroy();
-          if (
-            this.route.snapshot.fragment !== fragment ||
-            document.activeElement !== document.body
-          ) {
-            return;
-          }
-          const heading = document.getElementById(fragment);
-          if (heading) this.focusCostHeading(heading);
-        });
+    afterRenderEffect(() => {
+      const section = this.pendingCostSection();
+      if (!section || this.tabTransitioning() || this.selectedTabIndex() !== this.costTabIndex) {
+        return;
       }
-    }
+
+      // Reports above the destination can move its heading when they finish loading.
+      if (
+        (section !== 'spend' && this.healthLoading()) ||
+        (section === 'reliability' && this.comparisonLoading())
+      ) {
+        return;
+      }
+
+      const heading = this.costHeading(section);
+      if (heading?.isConnected) {
+        this.focusCostHeading(heading);
+        this.pendingCostSection.set(null);
+      }
+    });
   }
 
   ngOnInit(): void {
+    let initialTab = true;
     this.subscriptions.add(
       this.route.queryParamMap.subscribe((params) => {
-        const index = this.tabIds.findIndex((tab) => tab === params.get('tab'));
-        this.selectedTabIndex.set(index < 0 ? 0 : index);
+        const index = Math.max(
+          0,
+          this.tabIds.findIndex((tab) => tab === params.get('tab')),
+        );
+        if (!initialTab && index !== this.selectedTabIndex()) this.tabTransitioning.set(true);
+        this.selectedTabIndex.set(index);
+        if (index !== this.costTabIndex) this.pendingCostSection.set(null);
+        initialTab = false;
+      }),
+    );
+    this.subscriptions.add(
+      this.route.fragment.subscribe((fragment) => {
+        if (
+          this.selectedTabIndex() !== this.costTabIndex ||
+          (fragment !== 'spend' && fragment !== 'prompt-caching' && fragment !== 'reliability')
+        ) {
+          this.pendingCostSection.set(null);
+          return;
+        }
+
+        // A jump link may have already focused its heading before RouterLink navigates.
+        const heading = this.costHeading(fragment);
+        this.pendingCostSection.set(
+          heading && heading.ownerDocument.activeElement === heading ? null : fragment,
+        );
       }),
     );
     this.loadTournaments();
@@ -347,6 +382,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   onTabChange(index: number): void {
     if (index === this.selectedTabIndex()) return;
     this.selectedTabIndex.set(index);
+    this.pendingCostSection.set(null);
+    this.tabTransitioning.set(true);
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: this.tabIds[index] },
@@ -355,11 +392,20 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     });
   }
 
+  onTabAnimationDone(): void {
+    this.tabTransitioning.set(false);
+  }
+
   focusCostSection(event: MouseEvent, heading: HTMLElement): void {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
       return;
     }
+    this.pendingCostSection.set(null);
     this.focusCostHeading(heading);
+  }
+
+  private costHeading(section: CostSection): HTMLHeadingElement | null {
+    return this.page()?.nativeElement.querySelector<HTMLHeadingElement>(`h2#${section}`) ?? null;
   }
 
   private focusCostHeading(heading: HTMLElement): void {

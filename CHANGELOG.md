@@ -21,7 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
-- The Cost & reliability tab leads with spend and match count, shows latency in seconds and puts the insufficient-data count beside the Trust Index. Jump links take you to Spend, Prompt caching and Reliability.
+- The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
 
 ### Fixed
 
@@ -29,6 +29,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
+- The five Analytics filters fit on one row at 1280 px, and Cost & reliability deep links focus the section when navigating within Analytics.
 - Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
 
 ## [1.7.1] - 2026-11-17

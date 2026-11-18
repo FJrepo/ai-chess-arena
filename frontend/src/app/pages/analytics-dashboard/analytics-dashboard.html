@@ -1,4 +1,4 @@
-<div class="analytics-page desktop-page">
+<div class="analytics-page desktop-page" #analyticsPage>
   <header class="analytics-header">
     <div class="analytics-header-copy">
       <span class="analytics-kicker">Arena Analytics</span>
@@ -63,7 +63,7 @@
       />
       <mat-icon matPrefix>leaderboard</mat-icon>
     </mat-form-field>
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-effort">
       <mat-label>Comparison effort</mat-label>
       <mat-select [(ngModel)]="selectedReasoningEffort" (ngModelChange)="onCommonFiltersChanged()">
         <mat-option value="">All efforts</mat-option>
@@ -96,6 +96,7 @@
     mat-align-tabs="start"
     [selectedIndex]="selectedTabIndex()"
     (selectedIndexChange)="onTabChange($event)"
+    (animationDone)="onTabAnimationDone()"
   >
     <mat-tab>
       <ng-template mat-tab-label>
@@ -587,6 +588,7 @@
                 [routerLink]="[]"
                 queryParamsHandling="preserve"
                 fragment="spend"
+                replaceUrl
                 (click)="focusCostSection($event, spendHeading)"
                 >Spend</a
               >
@@ -594,6 +596,7 @@
                 [routerLink]="[]"
                 queryParamsHandling="preserve"
                 fragment="prompt-caching"
+                replaceUrl
                 (click)="focusCostSection($event, cachingHeading)"
                 >Prompt caching</a
               >
@@ -601,6 +604,7 @@
                 [routerLink]="[]"
                 queryParamsHandling="preserve"
                 fragment="reliability"
+                replaceUrl
                 (click)="focusCostSection($event, reliabilityHeading)"
                 >Reliability</a
               >
@@ -648,21 +652,37 @@
           <div class="kpi-card">
             <div class="label">Trust Index</div>
             @if (reliability()?.models?.length; as modelCount) {
-              <div class="trust-score">
-                <div class="value num">{{ formatScore(reliabilityAverageScore()) }}</div>
-                @if (reliabilityInsufficientCount(); as insufficientCount) {
-                  <div class="sub trust-sample">
-                    <span class="num">{{ insufficientCount | number }}</span> of
-                    <span class="num">{{ modelCount | number }}</span>
-                    {{ modelCount === 1 ? 'model' : 'models' }}
-                    {{ insufficientCount === 1 ? 'has' : 'have' }} insufficient data
-                  </div>
-                }
-              </div>
-              <div class="sub">
-                Average across <span class="num">{{ modelCount | number }}</span>
-                {{ modelCount === 1 ? 'model' : 'models' }}
-              </div>
+              @let insufficientCount = reliabilityInsufficientCount();
+              @let modelLabel = modelCount === 1 ? 'model' : 'models';
+              @if (insufficientCount > modelCount / 2) {
+                @let enoughCount = modelCount - insufficientCount;
+                <p class="trust-headline">
+                  Only <span class="num">{{ enoughCount | number }}</span> of
+                  <span class="num">{{ modelCount | number }}</span>
+                  {{ modelLabel }} {{ enoughCount === 1 || modelCount === 1 ? 'has' : 'have' }}
+                  enough data
+                </p>
+                <div class="sub trust-average">
+                  Average score:
+                  <span class="num">{{ formatScore(reliabilityAverageScore()) }}</span>
+                </div>
+              } @else {
+                <div class="trust-score">
+                  <div class="value num">{{ formatScore(reliabilityAverageScore()) }}</div>
+                  @if (insufficientCount) {
+                    <div class="sub trust-sample">
+                      <span class="num">{{ insufficientCount | number }}</span> of
+                      <span class="num">{{ modelCount | number }}</span>
+                      {{ modelLabel }} {{ insufficientCount === 1 ? 'has' : 'have' }} insufficient
+                      data
+                    </div>
+                  }
+                </div>
+                <div class="sub">
+                  Average across <span class="num">{{ modelCount | number }}</span>
+                  {{ modelLabel }}
+                </div>
+              }
             } @else {
               <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
             }
