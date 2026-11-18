@@ -1,6 +1,7 @@
 package dev.aichessarena.dto;
 
 import dev.aichessarena.entity.*;
+import dev.aichessarena.service.CanonicalPlies;
 import dev.aichessarena.service.MoveQualityClassifier;
 import dev.aichessarena.service.MoveQualityClassifier.GameSummary;
 import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
@@ -10,6 +11,9 @@ import dev.aichessarena.service.WinAdjudication;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 public final class DtoMapper {
 
@@ -79,9 +83,11 @@ public final class DtoMapper {
         if (includeMoves) {
             List<Move> played = g.moves;
             List<MoveQuality> qualities = MoveQualityClassifier.analyze(played);
+            Set<UUID> canonicalIds = canonicalMoveIds(played);
             List<MoveDto> mapped = new ArrayList<>(played.size());
             for (int i = 0; i < played.size(); i++) {
-                mapped.add(toDto(played.get(i), qualities.get(i)));
+                Move move = played.get(i);
+                mapped.add(toDto(move, qualities.get(i), canonicalIds.contains(move.id)));
             }
             moves = mapped;
             qualitySummary = toDto(MoveQualityClassifier.summarize(played, qualities));
@@ -91,11 +97,11 @@ public final class DtoMapper {
                 g.id,
                 g.tournament != null ? g.tournament.id : null,
                 g.whitePlayerName,
-                g.whiteParticipant != null ? g.whiteParticipant.controlType.name() : "AI",
+                g.playerType("WHITE").name(),
                 g.whiteModelId,
                 g.whiteParticipant != null ? g.whiteParticipant.id : null,
                 g.blackPlayerName,
-                g.blackParticipant != null ? g.blackParticipant.controlType.name() : "AI",
+                g.playerType("BLACK").name(),
                 g.blackModelId,
                 g.blackParticipant != null ? g.blackParticipant.id : null,
                 g.status.name(),
@@ -121,7 +127,8 @@ public final class DtoMapper {
                 g.turnStartedAt, g.turnDeadlineAt,
                 g.turnChatMode != null ? g.turnChatMode.name() : null,
                 g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
-                attempts, streamId, g.startingConfiguration, configurationHistory
+                attempts, streamId, g.startingConfiguration, configurationHistory,
+                g.practiceKind == null ? null : g.practiceKind.name(), g.practiceSourceGameId, g.practiceSourcePly
         );
     }
 
@@ -191,6 +198,19 @@ public final class DtoMapper {
     }
 
     public static MoveDto toDto(Move m, MoveQuality quality) {
+        return toDto(m, quality, true);
+    }
+
+    public static List<MoveDto> toMoveDtos(List<Move> moves) {
+        Set<UUID> canonicalIds = canonicalMoveIds(moves);
+        return moves.stream().map(move -> toDto(move, null, canonicalIds.contains(move.id))).toList();
+    }
+
+    private static Set<UUID> canonicalMoveIds(List<Move> moves) {
+        return CanonicalPlies.of(moves).stream().map(move -> move.id).collect(Collectors.toSet());
+    }
+
+    private static MoveDto toDto(Move m, MoveQuality quality, boolean canonical) {
         return new MoveDto(
                 m.id, m.moveNumber, m.color, m.san, m.fen,
                 m.modelId, m.promptVersion, m.promptHash, m.promptTokens, m.completionTokens,
@@ -199,7 +219,7 @@ public final class DtoMapper {
                 m.createdAt,
                 toDto(quality),
                 m.chatMode != null ? m.chatMode.name() : null,
-                m.isBook
+                m.isBook, m.isInherited, canonical
         );
     }
 

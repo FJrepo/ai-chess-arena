@@ -45,6 +45,10 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Practice games migration (V27)
+
+Back up the database before upgrading and recreate both application services together. Flyway `V27__practice_games.sql` adds standalone practice controls, source references and an inherited-move marker. Earlier games and their data are retained. There is no backfill. Restore the pre-upgrade backup to roll back the schema. See [Play from here](how-it-works.md#play-from-here).
+
 ## Configuration history migration (V26)
 
 Back up the database before upgrading and recreate both application services together. Flyway `V26__game_configuration_history.sql` adds a nullable game-start snapshot, an ordered configuration history per game and an optional reference from each model attempt. No backfill runs. Older starting settings and attempt revisions are unknown, and earlier standings, game history and costs are retained. The usual restart recovery pauses interrupted games. Restore the pre-upgrade backup if rolling back the schema. See [Configuration history](how-it-works.md#configuration-history).

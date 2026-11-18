@@ -31,6 +31,34 @@ public class Game extends PanacheEntityBase {
     @JoinColumn(name = "black_participant_id")
     public TournamentParticipant blackParticipant;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "practice_kind", length = 32)
+    public PracticeKind practiceKind;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "white_practice_control", length = 16)
+    public PlayerType whitePracticeControl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "black_practice_control", length = 16)
+    public PlayerType blackPracticeControl;
+
+    @Column(name = "practice_source_game_id")
+    public UUID practiceSourceGameId;
+
+    @Column(name = "practice_source_ply")
+    public Integer practiceSourcePly;
+
+    /** Immutable creation identity retained when deletion clears the source navigation link. */
+    @Column(name = "practice_origin_game_id", updatable = false)
+    public UUID practiceOriginGameId;
+
+    @Column(name = "practice_request_id", updatable = false)
+    public UUID practiceRequestId;
+
+    @Column(name = "practice_request_move_id", updatable = false)
+    public UUID practiceRequestMoveId;
+
     @Column(name = "white_player_name")
     public String whitePlayerName;
 
@@ -160,7 +188,7 @@ public class Game extends PanacheEntityBase {
 
     /** Play order: White and Black share a move number, and "WHITE" sorts after "BLACK", hence color DESC. */
     @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("moveNumber ASC, color DESC, createdAt ASC")
+    @OrderBy("moveNumber ASC, color DESC, createdAt ASC, id ASC")
     public List<Move> moves = new ArrayList<>();
 
     @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -182,6 +210,26 @@ public class Game extends PanacheEntityBase {
                     ? null : participant.effectiveReasoningEffort();
         }
         return tournament != null ? tournament.reasoningEffort : null;
+    }
+
+    public boolean isPractice() {
+        return practiceKind != null;
+    }
+
+    public PlayerType playerType(String color) {
+        boolean white = "WHITE".equals(color);
+        if (isPractice()) return white ? whitePracticeControl : blackPracticeControl;
+        TournamentParticipant participant = white ? whiteParticipant : blackParticipant;
+        return participant != null && participant.controlType == TournamentParticipant.ControlType.HUMAN
+                ? PlayerType.HUMAN : PlayerType.AI;
+    }
+
+    public enum PlayerType {
+        AI, HUMAN
+    }
+
+    public enum PracticeKind {
+        FROM_GAME
     }
 
     public enum GameStatus {

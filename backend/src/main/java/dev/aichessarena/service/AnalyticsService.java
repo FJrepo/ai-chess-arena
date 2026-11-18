@@ -231,8 +231,13 @@ public class AnalyticsService {
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId, Boolean legalMoveHints) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadHealthScope(days, tournamentId, legalMoveHints);
-        List<Game> games = scope.games();
-        List<Move> moves = scope.moves().stream().filter(move -> !move.isBook).toList();
+        List<Game> games = scope.games().stream().filter(game -> game.status != GameStatus.CANCELLED).toList();
+        Set<UUID> practiceIds = scope.games().stream().filter(Game::isPractice).map(game -> game.id)
+                .collect(java.util.stream.Collectors.toSet());
+        BigDecimal practiceCostUsd = scope.games().stream().filter(Game::isPractice)
+                .map(game -> nonNull(game.totalCostUsd)).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Move> moves = scope.moves().stream()
+                .filter(move -> !move.isBook && !practiceIds.contains(move.game.id)).toList();
 
         long activeGamesCount = games.stream().filter(outcomeClassifier::isActive).count();
         long completedGamesCount = games.stream().filter(game -> game.status == GameStatus.COMPLETED).count();
@@ -263,7 +268,8 @@ public class AnalyticsService {
                 .mapToLong(Integer::longValue)
                 .sum();
 
-        Map<String, BigDecimal> rejectedCostByModel = rejectedCostByModel(scope.rejectedAttemptCosts());
+        Map<String, BigDecimal> rejectedCostByModel = rejectedCostByModel(scope.rejectedAttemptCosts().stream()
+                .filter(cost -> !practiceIds.contains(cost.gameId())).toList());
         BigDecimal costTotalUsd = moves.stream()
                 .map(move -> move.costUsd)
                 .filter(Objects::nonNull)
@@ -334,7 +340,8 @@ public class AnalyticsService {
                 p95ResponseTimeMs,
                 promptTokensTotal,
                 completionTokensTotal,
-                scale(costTotalUsd, 6),
+                scale(costTotalUsd.add(practiceCostUsd), 6),
+                scale(practiceCostUsd, 6),
                 modelRows
         );
     }

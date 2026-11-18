@@ -1,7 +1,9 @@
 package dev.aichessarena.resource;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.aichessarena.dto.*;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
@@ -9,6 +11,7 @@ import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.service.GameConfigurationHistory;
 import dev.aichessarena.service.GameEngineService;
 import dev.aichessarena.service.GameLifecycleService;
+import dev.aichessarena.service.PracticeGameService;
 import dev.aichessarena.service.ExportService;
 import dev.aichessarena.websocket.GameStream;
 import jakarta.inject.Inject;
@@ -48,6 +51,41 @@ public class GameResource {
     @Inject
     GameConfigurationHistory configurations;
 
+    @Inject
+    PracticeGameService practice;
+
+    @GET
+    @Path("/practice")
+    public java.util.List<GameDto> listPractice() {
+        return practice.list();
+    }
+
+    @POST
+    @Path("/{id}/practice")
+    public Response createPractice(@PathParam("id") UUID id, JsonNode body) {
+        if (body == null || !body.isObject() || body.propertyStream()
+                .anyMatch(field -> !java.util.Set.of("ply", "side", "clientRequestId", "moveId").contains(field.getKey()))) {
+            throw new IllegalArgumentException("Provide ply, side and an optional clientRequestId");
+        }
+        JsonNode ply = body.path("ply");
+        if (!ply.isIntegralNumber() || !ply.canConvertToInt() || ply.intValue() < 0) {
+            throw new IllegalArgumentException("Ply must be a non-negative integer");
+        }
+        String side = body.path("side").textValue();
+        if (!"WHITE".equals(side) && !"BLACK".equals(side)) {
+            throw new IllegalArgumentException("Side must be WHITE or BLACK");
+        }
+        return Response.status(201).entity(practice.fork(id, ply.intValue(), side,
+                optionalUuid(body, "clientRequestId"), optionalUuid(body, "moveId"))).build();
+    }
+
+    private static UUID optionalUuid(JsonNode body, String field) {
+        if (!body.hasNonNull(field)) return null;
+        String value = body.get(field).textValue();
+        if (value == null) throw new IllegalArgumentException(field + " must be a UUID");
+        return UUID.fromString(value);
+    }
+
     @GET
     @Path("/{id}")
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -75,8 +113,7 @@ public class GameResource {
                 && game.tournament.status == TournamentStatus.CANCELLED) {
             throw new WebApplicationException("Tournament has been cancelled", Response.Status.CONFLICT);
         }
-        if (!hasConfiguredPlayer(game.whiteParticipant, game.whitePlayerName, game.whiteModelId)
-                || !hasConfiguredPlayer(game.blackParticipant, game.blackPlayerName, game.blackModelId)) {
+        if (!hasConfiguredPlayer(game, true) || !hasConfiguredPlayer(game, false)) {
             throw new IllegalArgumentException("Both players must be set");
         }
         return Response.ok("true".equals(queueIfFull)
@@ -132,7 +169,7 @@ public class GameResource {
     @Path("/{id}/moves")
     public Response getMoves(@PathParam("id") UUID id) {
         return Response.ok(
-                moveRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList()
+                DtoMapper.toMoveDtos(moveRepository.findByGameId(id))
         ).build();
     }
 
@@ -158,17 +195,17 @@ public class GameResource {
                 ExportService.filename("game", id, "pgn"));
     }
 
-    private boolean hasConfiguredPlayer(
-            dev.aichessarena.entity.TournamentParticipant participant,
-            String playerName,
-            String modelId
-    ) {
-        if (participant == null) {
-            return playerName != null && !playerName.isBlank() && modelId != null && !modelId.isBlank();
+    private boolean hasConfiguredPlayer(Game game, boolean white) {
+        TournamentParticipant participant = white ? game.whiteParticipant : game.blackParticipant;
+        boolean human = game.playerType(white ? "WHITE" : "BLACK") == Game.PlayerType.HUMAN;
+        if (participant != null) {
+            return human ? present(participant.playerName) : present(participant.modelId);
         }
-        if (participant.controlType == dev.aichessarena.entity.TournamentParticipant.ControlType.HUMAN) {
-            return participant.playerName != null && !participant.playerName.isBlank();
-        }
-        return participant.modelId != null && !participant.modelId.isBlank();
+        return present(white ? game.whitePlayerName : game.blackPlayerName)
+                && (human || present(white ? game.whiteModelId : game.blackModelId));
+    }
+
+    private static boolean present(String value) {
+        return value != null && !value.isBlank();
     }
 }

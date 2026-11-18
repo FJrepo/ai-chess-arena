@@ -164,6 +164,25 @@ export class ApiService {
   }
 
   // Games
+  getPracticeGames(): Observable<Game[]> {
+    return this.http.get<Game[]>(`${this.baseUrl}/games/practice`);
+  }
+
+  createPractice(
+    id: string,
+    ply: number,
+    side: 'WHITE' | 'BLACK',
+    clientRequestId: string,
+    moveId?: string,
+  ): Observable<Game> {
+    return this.http.post<Game>(`${this.baseUrl}/games/${id}/practice`, {
+      ply,
+      side,
+      clientRequestId,
+      moveId,
+    });
+  }
+
   getGame(id: string): Observable<Game> {
     return this.http.get<Game>(`${this.baseUrl}/games/${id}`);
   }

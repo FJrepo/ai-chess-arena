@@ -1,0 +1,43 @@
+<main class="practice-page">
+  <header class="page-hero page-hero-surface">
+    <h1>Practice</h1>
+  </header>
+  @if (games(); as games) {
+    @if (games.length) {
+      <div class="table-scroll">
+        <table aria-label="Practice games">
+          <thead>
+            <tr>
+              <th scope="col">Game</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created</th>
+              <th scope="col" class="num">Spend</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (game of games; track game.id) {
+              <tr>
+                <th scope="row">
+                  <a [routerLink]="['/games', game.id]"
+                    >{{ game.whitePlayerName }} vs {{ game.blackPlayerName }}</a
+                  >
+                </th>
+                <td>{{ statusLabel(game.status) }}</td>
+                <td>{{ game.createdAt | date: 'short' }}</td>
+                <td class="num">{{ game.totalCostUsd | currency: 'USD' : 'symbol' : '1.2-6' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <p>Choose a position in a finished game and select <strong>Play from here</strong>.</p>
+      <a mat-stroked-button routerLink="/tournaments">View tournaments</a>
+    }
+  } @else if (failed()) {
+    <p role="alert">Could not load practice games.</p>
+    <button mat-stroked-button (click)="load()">Try again</button>
+  } @else {
+    <p role="status">Loading practice games…</p>
+  }
+</main>

@@ -23,6 +23,10 @@ export const routes: Routes = [
       import('./pages/tournament-setup/tournament-setup').then((m) => m.TournamentSetup),
   },
   {
+    path: 'practice',
+    loadComponent: () => import('./pages/practice/practice').then((m) => m.Practice),
+  },
+  {
     path: 'analytics',
     loadComponent: () =>
       import('./pages/analytics-dashboard/analytics-dashboard').then((m) => m.AnalyticsDashboard),

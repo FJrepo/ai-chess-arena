@@ -11,9 +11,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V26__game_configuration_history.sql` adds game-start settings and model-attempt configuration revisions. Back up the database and recreate backend and frontend together. Older starting settings and revisions are unknown.
 
+- Flyway `V27__practice_games.sql` adds standalone practice games and identifies inherited moves. Recreate both application services together after backing up.
+
 ### Added
 
 - Review a game’s starting settings, see which configuration each model attempt used, and compare the first game’s start with a rematch draft.
+
+- Start a practice game from a playable position against the original opposing model. Practice spend appears separately in the operator total.
 
 ### Changed
 

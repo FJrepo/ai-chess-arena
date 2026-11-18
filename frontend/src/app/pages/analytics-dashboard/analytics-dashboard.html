@@ -775,6 +775,14 @@
                     {{ h.gamesCount === 1 ? 'match' : 'matches' }}
                   </span>
                 </p>
+                @if (h.practiceCostUsd !== undefined && (h.tournamentId ?? null) === null) {
+                  <p class="sub">
+                    Practice
+                    <span class="num">{{
+                      h.practiceCostUsd | currency: 'USD' : 'symbol' : '1.2-6'
+                    }}</span>
+                  </p>
+                }
               } @else {
                 <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
               }

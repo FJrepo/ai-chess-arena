@@ -142,6 +142,8 @@ export interface GameConfigurationRevision {
   settings: GameConfiguration;
 }
 
+export type PracticeKind = 'FROM_GAME';
+
 export interface Game {
   /** Immutable opening snapshot; absent for STANDARD and pre-feature games. */
   openingId?: string | null;
@@ -151,6 +153,9 @@ export interface Game {
   legalMoveHints?: boolean;
   id: string;
   tournamentId: string | null;
+  practiceKind?: PracticeKind | null;
+  practiceSourceGameId?: string | null;
+  practiceSourcePly?: number | null;
   whitePlayerName: string | null;
   whiteControlType: 'AI' | 'HUMAN';
   whiteModelId: string | null;
@@ -295,6 +300,8 @@ export interface Move {
   isOverride: boolean;
   /** Authored opening move, excluded from model metrics. */
   isBook?: boolean;
+  isInherited?: boolean;
+  isCanonical?: boolean;
   evaluationCp?: number | null;
   evaluationMate?: number | null;
   createdAt: string;

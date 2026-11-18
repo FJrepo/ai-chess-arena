@@ -13,6 +13,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
 - [Model turns and prompts](#model-turns-and-prompts)
 - [Legal move hints](#legal-move-hints)
+- [Play from here](#play-from-here)
 - [Prompt caching](#prompt-caching)
 - [Time limit per move](#time-limit-per-move)
 - [Output-token limit](#output-token-limit) and [fixing a cut-off game](#fixing-a-cut-off-game)
@@ -264,6 +265,16 @@ Human turns retain each side's model conversation in memory across waits. After 
 Cleanup flags the owning loop before eviction, so a concurrent human-turn handoff cannot restore deleted history. Retention checks committed game and tournament status and refuses missing games, games outside active play and completed/cancelled tournaments. The existing ten-second scheduler tick also sweeps retained history for these cases, preserving active human waits even when no tournament is on auto-run.
 
 Each model turn resolves both system prompts and compares their hashes and metadata with the active prompts. Changes to rendered templates/version, participant or shared instructions, opponent details, chat mode, banter level or resignation apply from that turn. Only affected sides **reset the cached prefix** and discard exchanges made under the old prompt; the next request starts with the new system instructions and complete current PGN/position. Unchanged prompts keep their prefix. Reasoning-effort changes can also invalidate provider caching. Prompt refresh leaves persisted moves, PGN, attempts and spend unchanged.
+
+## Play from here
+
+Review a finished game and select a position with the move list or board controls. Choose **Play from here**, then **Play as White** or **Play as Black**. The original model on the opposite side is your opponent. If that side was human, choose the other color. A position after checkmate or a board draw has already ended. The last position of a resignation, adjudication or forfeit can still be playable.
+
+The new game opens at the selected position. Choose **Start practice** to play, using the same OpenRouter connection as a tournament. Play uses the standalone defaults, including no move time limit, three attempts per move and optional chat. Earlier moves, including any book opening, are shown as inherited history. Repetition, castling, en passant and the fifty-move rule use that history. The fork starts with zero spend and fresh chat, evaluation and attempt history.
+
+Open **Practice** in the toolbar to find your practice games. Each practice game can link back to its source. If the source is deleted, the fork keeps its board and history. Practice contributes to the operator’s Spend total under **Cost & reliability** as a separate amount, including reported charges on unfinished and cancelled practice games. Tournament views, model analytics and Elo exclude practice games.
+
+`POST /api/games/{id}/practice` accepts a non-negative integer `ply` (0 for the starting position), `side` of `WHITE` or `BLACK`, an optional UUID `clientRequestId`, and an optional `moveId` to confirm the exact canonical row of the selected position. A retry with the same request ID, source, ply, side and optional move ID returns the existing game with HTTP 201, even after the source is deleted. Reusing the ID for another position or side on the same source returns 409. The server checks that the position can be reconstructed from canonical plies, using the earliest row for any historical duplicate. Invalid input returns 400, a missing source 404, and ineligible games or positions 409. `GET /api/games/practice` lists the forks. Game responses include `practiceKind`, `practiceSourceGameId` when present and `practiceSourcePly`. Inherited moves have `isInherited: true`. Game and move snapshots mark the exact canonical row for each ply with `isCanonical`. The normal start, pause, resume and human move routes apply.
 
 ## Time limit per move
 

@@ -139,6 +139,8 @@ export interface AnalyticsComparisonResponse {
 }
 
 export interface AnalyticsHealthResponse {
+  /** Portion of total spend paid for practice games. */
+  practiceCostUsd?: number;
   windowDays: number;
   tournamentId: string | null;
   gamesCount: number;

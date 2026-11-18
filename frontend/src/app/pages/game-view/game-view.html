@@ -22,10 +22,30 @@
   }
 
   <div class="view-actions">
-    <button mat-stroked-button (click)="goToTournament()" [disabled]="!g.tournamentId">
-      <mat-icon>arrow_back</mat-icon>
-      Back to Tournament
-    </button>
+    @if (g.practiceKind) {
+      <a mat-stroked-button routerLink="/practice">
+        <mat-icon>arrow_back</mat-icon>
+        Back to Practice
+      </a>
+      @if (g.practiceSourceGameId) {
+        <a mat-button [routerLink]="['/games', g.practiceSourceGameId]">Source game</a>
+      }
+      @if (g.status === 'WAITING') {
+        <button
+          mat-flat-button
+          color="primary"
+          (click)="resumeGame()"
+          [disabled]="!gameActionsAvailable()"
+        >
+          Start practice
+        </button>
+      }
+    } @else {
+      <button mat-stroked-button (click)="goToTournament()" [disabled]="!g.tournamentId">
+        <mat-icon>arrow_back</mat-icon>
+        Back to Tournament
+      </button>
+    }
     <button mat-button routerLink="/tournaments">
       <mat-icon>format_list_bulleted</mat-icon>
       All Tournaments
@@ -296,6 +316,22 @@
           >
             <mat-icon>download</mat-icon>
           </button>
+          @if (practicePly() !== null) {
+            <button
+              mat-button
+              [matMenuTriggerFor]="practiceSides"
+              [disabled]="creatingPractice() || !gameActionsAvailable()"
+            >
+              Play from here
+            </button>
+            <mat-menu #practiceSides="matMenu">
+              @for (side of practiceModelSides(); track side) {
+                <button mat-menu-item (click)="playFromHere(side)">
+                  Play as {{ side === 'WHITE' ? 'White' : 'Black' }}
+                </button>
+              }
+            </mat-menu>
+          }
         </div>
 
         <div class="capture-strip bottom">

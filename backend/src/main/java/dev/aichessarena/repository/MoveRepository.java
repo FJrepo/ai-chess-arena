@@ -12,7 +12,7 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
 
     /** The game's moves in play order: White and Black share a move number, and "WHITE" sorts after "BLACK". */
     public List<Move> findByGameId(UUID gameId) {
-        return list("game.id = ?1 order by moveNumber, color desc, createdAt", gameId);
+        return list("game.id = ?1 order by moveNumber, color desc, createdAt, id", gameId);
     }
 
     /** Completed moves played by a side, excluding the authored opening. */

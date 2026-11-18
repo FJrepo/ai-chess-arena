@@ -4,7 +4,6 @@ import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
-import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -93,7 +92,7 @@ public class GameConversationService {
         history.add(new OpenRouterService.ChatMsg("system", prompt));
     }
 
-    private Board initializeBoard(UUID gameId, Game game) {
+    Board initializeBoard(UUID gameId, Game game) {
         Board board = chessService.boardFromFen(game.currentFen);
         List<Move> moves = moveRepository.findByGameId(gameId);
         if (moves.isEmpty()) {
@@ -120,7 +119,7 @@ public class GameConversationService {
                     color,
                     "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName,
                     opponentDescriptor(
-                            "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
+                            game.playerType("WHITE".equals(color) ? "BLACK" : "WHITE"),
                             "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
                     ),
                     chatMode,
@@ -131,7 +130,7 @@ public class GameConversationService {
         var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
         String opponentName = "WHITE".equals(color) ? game.blackPlayerName : game.whitePlayerName;
         String opponentModel = opponentDescriptor(
-                "WHITE".equals(color) ? game.blackParticipant : game.whiteParticipant,
+                game.playerType("WHITE".equals(color) ? "BLACK" : "WHITE"),
                 "WHITE".equals(color) ? game.blackModelId : game.whiteModelId
         );
 
@@ -163,8 +162,8 @@ public class GameConversationService {
         );
     }
 
-    private String opponentDescriptor(TournamentParticipant participant, String modelId) {
-        if (participant != null && participant.controlType == TournamentParticipant.ControlType.HUMAN) {
+    private String opponentDescriptor(Game.PlayerType type, String modelId) {
+        if (type == Game.PlayerType.HUMAN) {
             return "human player";
         }
         return modelId != null && !modelId.isBlank() ? modelId : "unknown model";
