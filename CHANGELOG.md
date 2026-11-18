@@ -24,6 +24,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Keep the Champion column reachable within the bracket and make room for the first match on shorter desktop windows.
 - System Status shows a neutral validation state for untested OpenRouter keys and unavailable checks. Testing the key updates the status card.
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.

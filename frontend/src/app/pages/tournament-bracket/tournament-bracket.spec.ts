@@ -156,7 +156,11 @@ describe('TournamentBracket', () => {
     component.tournament.set({ ...current, games });
     fixture.detectChanges();
 
-    expect(runBanner(fixture)).toContain('2 games running');
+    const summary = (fixture.nativeElement as HTMLElement).querySelector('.run-summary')!;
+    const statuses = summary.querySelectorAll('[role="status"]');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].nextElementSibling?.textContent?.trim()).toMatch(/^Watch live/);
+    expect(runBanner(fixture)).toMatch(/2 games running .* spent .* need attention$/);
     const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
       MatMenuHarness.with({ triggerText: /^Watch live/ }),
     );
@@ -227,11 +231,8 @@ describe('TournamentBracket', () => {
   });
 
   function runBanner(fixture: ComponentFixture<TournamentBracket>): string {
-    return [...(fixture.nativeElement as HTMLElement).querySelectorAll('.run-status')]
-      .map((part) => part.textContent)
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const status = (fixture.nativeElement as HTMLElement).querySelector('.run-status')!;
+    return status.textContent.replace(/\s+/g, ' ').trim();
   }
 
   it('queues Resume with a full run, keeps the pause reason, and cancels from the card', () => {
@@ -784,7 +785,15 @@ describe('TournamentBracket', () => {
   it('shows the winner of a completed tournament after the final', () => {
     const el = render(tournament('COMPLETED', 'White', finalGame({ advancedPlayerName: 'White' })));
 
-    expect(el.querySelector('.champion-card')?.textContent).toContain('White');
+    const bracket = el.querySelector<HTMLElement>(
+      '[role="region"][aria-label="Tournament bracket"]',
+    );
+    expect(bracket?.tabIndex).toBe(0);
+    expect([...bracket!.querySelectorAll('h3')].map((heading) => heading.textContent)).toEqual([
+      'Final',
+      'Champion',
+    ]);
+    expect(bracket?.querySelector('.champion-card')?.textContent).toContain('White');
   });
 
   it('shows the winner of a final decided by the draw policy', () => {

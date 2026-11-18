@@ -102,23 +102,6 @@
                   (limit <span class="num">{{ t.maxConcurrentGames ?? 2 }}</span>)
                 }
               }
-            </p>
-            @if (liveGames.length === 1) {
-              <a mat-flat-button [routerLink]="['/games', liveGames[0].id]">Watch live</a>
-            } @else if (liveGames.length > 1) {
-              <button mat-flat-button [matMenuTriggerFor]="liveMenu">
-                Watch live
-                <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
-              </button>
-              <mat-menu #liveMenu="matMenu" aria-label="Watch live">
-                @for (game of liveGames; track game.id) {
-                  <a mat-menu-item class="live-matchup" [routerLink]="['/games', game.id]">
-                    {{ game.whitePlayerName || 'TBD' }} vs {{ game.blackPlayerName || 'TBD' }}
-                  </a>
-                }
-              </mat-menu>
-            }
-            <p class="run-status" role="status">
               @if (showRunTotals) {
                 · {{ runSpend() | currency: 'USD' }}
                 @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
@@ -146,12 +129,27 @@
                 }
               }
             </p>
+            @if (liveGames.length === 1) {
+              <a mat-flat-button [routerLink]="['/games', liveGames[0].id]">Watch live</a>
+            } @else if (liveGames.length > 1) {
+              <button mat-flat-button [matMenuTriggerFor]="liveMenu">
+                Watch live
+                <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
+              </button>
+              <mat-menu #liveMenu="matMenu" aria-label="Watch live">
+                @for (game of liveGames; track game.id) {
+                  <a mat-menu-item class="live-matchup" [routerLink]="['/games', game.id]">
+                    {{ game.whitePlayerName || 'TBD' }} vs {{ game.blackPlayerName || 'TBD' }}
+                  </a>
+                }
+              </mat-menu>
+            }
           </div>
           @if (t.autoRunPauseReason) {
             <p>{{ t.autoRunPauseReason }}</p>
           }
           <div class="run-controls">
-            <mat-form-field appearance="outline">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
               <mat-label>Concurrent games</mat-label>
               <mat-select [(ngModel)]="runConcurrency" [disabled]="!canRun()">
                 @for (n of concurrencyOptions; track n) {
@@ -159,7 +157,7 @@
                 }
               </mat-select>
             </mat-form-field>
-            <mat-form-field appearance="outline">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
               <mat-label>Budget (USD, optional)</mat-label>
               <input
                 matInput
@@ -214,8 +212,8 @@
             </p>
           }
           <p class="run-hint">
-            Queued resumes get the next slots. Human games start manually. In-flight answers can
-            exceed the budget.
+            Queued resumes go first. Start human games manually. In-flight answers can exceed the
+            budget.
           </p>
         </mat-card-content>
       </mat-card>

@@ -1,3 +1,5 @@
+@use '@angular/material' as mat;
+
 .bracket-page {
   display: flex;
   flex-direction: column;
@@ -304,6 +306,12 @@
   }
 }
 
+// Header facts stay on one line each; the row wraps between facts, never inside one.
+.count-tag,
+.champion-tag {
+  white-space: nowrap;
+}
+
 .champion-tag {
   display: inline-flex;
   align-items: center;
@@ -322,34 +330,56 @@
 }
 
 .auto-run-panel {
-  margin-bottom: 20px;
+  mat-card-content {
+    display: grid;
+    gap: var(--app-space-2);
+    padding: var(--app-space-2) var(--app-space-4);
 
-  .run-summary {
+    p {
+      margin: 0;
+    }
+  }
+
+  .run-summary,
+  .run-controls,
+  .run-save-controls {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--app-space-2);
-    margin-block: var(--app-space-2) var(--app-space-3);
   }
 
   .run-status {
     font-weight: 600;
-    margin: 0;
   }
+
   .run-controls {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
+    gap: var(--app-space-3);
+    @include mat.form-field-overrides(
+      (
+        outlined-disabled-input-text-color: var(--mat-sys-on-surface-variant),
+        outlined-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+      )
+    );
+    @include mat.select-overrides(
+      (
+        disabled-trigger-text-color: var(--mat-sys-on-surface-variant),
+      )
+    );
+    @include mat.button-overrides(
+      (
+        outlined-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+        protected-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+      )
+    );
+
+    mat-form-field {
+      @include mat.form-field-density(-4);
+    }
   }
-  .run-save-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
+
   .run-hint {
     color: var(--mat-sys-on-surface-variant);
-    font-size: 13px;
+    font-size: var(--app-text-secondary-size);
   }
 }

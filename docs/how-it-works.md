@@ -63,7 +63,9 @@ Choose **Bracket draw** under **Tournament Settings → Matches** on the setup p
 
 Participants are paired in seed order, lowest first. When the field is not a power of two, the lowest seed numbers receive byes; the rest are paired in seed order. For example, with five participants, seeds 0, 1 and 2 receive byes and seeds 3 and 4 play. The **Participants by seed** panel shows the stored seeds after generation. A random draw can happen to produce the original order.
 
-**Watch live** beside the running-game count opens the only live game directly. When several games are running, choose a matchup from the menu. The shortcut appears while at least one game is running, including manually started games. Choose **Review** on a finished matchup to open the game.
+**Watch live** follows the run status and opens the only live game directly. When several games are running, choose a matchup from the menu. The shortcut appears while at least one game is running, including manually started games. Choose **Review** on a finished matchup to open the game.
+
+Wide brackets scroll horizontally inside the bracket panel. Focus the bracket and use the arrow keys to reach later rounds and the **Champion** column.
 
 API creation: `POST /api/tournaments` accepts `drawMode: "RANDOM" | "ORDER"`. Omitted or null defaults to **ORDER**, matching the existing generation API's seed-order compatibility rule; the UI explicitly sends RANDOM by default. Invalid modes (including an empty string) return 400 even when generation is disabled; modes are case-insensitive. `generateBracket: true` requires at least two participants and returns 400 before storing anything otherwise. `generateBracket` omitted, null or false creates a draft with no bracket, regardless of lineup size. This preserves API clients that create with participants, add more participants and then request manual generation, including a random draw. The flag accepts JSON booleans or null, rejecting strings and numbers. The UI explicitly sends true.
 

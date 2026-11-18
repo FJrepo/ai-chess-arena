@@ -77,6 +77,11 @@ $warning: mat.$orange-palette;
 .bracket-content {
   position: relative;
   min-width: min-content;
+
+  // Fit the extra column at the desktop page width, with local scrolling on smaller windows.
+  &:has(.champion-round) {
+    --bracket-gap: var(--app-bracket-gap-compact);
+  }
 }
 
 .connector-layer {
