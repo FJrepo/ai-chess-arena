@@ -6,6 +6,7 @@ import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
+import dev.aichessarena.service.GameConfigurationHistory;
 import dev.aichessarena.service.GameEngineService;
 import dev.aichessarena.service.GameLifecycleService;
 import dev.aichessarena.service.ExportService;
@@ -44,6 +45,9 @@ public class GameResource {
     @Inject
     GameStream gameStream;
 
+    @Inject
+    GameConfigurationHistory configurations;
+
     @GET
     @Path("/{id}")
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -54,7 +58,8 @@ public class GameResource {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         return Response.ok(DtoMapper.toDto(game, true, gameRepository.queuedResumeCapacity(game),
-                moveAttemptRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList(), gameStream.id())).build();
+                moveAttemptRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList(),
+                gameStream.id(), configurations.read(id))).build();
     }
 
     @POST

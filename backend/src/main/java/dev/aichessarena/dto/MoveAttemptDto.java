@@ -26,5 +26,6 @@ public record MoveAttemptDto(
         Integer modelMaxCompletionTokens,
         Integer cachedPromptTokens,
         Integer cacheWriteTokens,
-        Long turnStatusRevision
+        Long turnStatusRevision,
+        Integer configurationRevision
 ) {}

@@ -27,6 +27,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Export](#export)
 - [Leaderboard](#leaderboard)
 - [Live settings](#live-settings)
+- [Configuration history](#configuration-history)
 - [Scope and interpretation](#scope-and-interpretation)
 
 ## Connecting OpenRouter
@@ -85,6 +86,8 @@ Existing tournaments without a bracket, including API drafts, keep **Generate To
 Choose **Run this tournament again** on the bracket page to open a new, editable setup with the source tournament’s current lineup and settings. The draft includes the players’ names, model IDs, control types, reasoning efforts and custom instructions, plus the match rules, opening policy, prompt options, concurrency and budget. The URL contains only the source tournament ID. Changes to the draft stay in memory until you choose **Create Tournament**.
 
 The draft uses the original stored seed order by default. Choose **Random draw** to reshuffle. **Before you create** shows changes from the source, including a different draw choice or an original draw method that was never recorded. Random-book policies select new book lines. The draft uses the current prompt rules. Historical full system-template overrides require acknowledgement. Refresh the model catalog if a model is unavailable, or replace or remove the participant. Choose a different line or opening policy if a fixed opening is unavailable. Legacy attempt limits outside 1–20 use the same effective limit as the game engine and appear in the preview. An out-of-range move timeout needs an explicit edit. A lineup that already uses the highest possible seed can be reused as-is. Remove that participant before appending another.
+
+Expand **Compare with the first game’s starting settings** under **Before you create** to compare the draft with the earliest game that actually started. This comparison covers play settings and the two participating sides. The main preview compares the current tournament with the draft, including instructions and run limits. If the first game predates configuration history, its starting settings are unknown.
 
 Create gives the tournament and its participants new IDs, prepares a new bracket and leaves auto-run off. Play and model charges begin only after you start a game or run the tournament. The source, its results and its spend stay with the original tournament.
 
@@ -643,6 +646,14 @@ WebSocket clients opt in with `{"type":"subscribe","gameId":"…","protocol":2}`
 Opening a finished game selects the final ply. When you navigate the board, the move list highlights and scrolls to the selected ply.
 
 Tournament settings changed with `PUT /api/tournaments/{id}` while a game is running (time limit, attempts, output-token limit, chat mode, banter level, resignation, adjudication, reasoning effort) apply from its next turn, and so does a participant's reasoning-effort override. Chat-mode, active banter and resignation changes rebuild affected system prompts; unchanged prompts retain their prefix.
+
+## Configuration history
+
+Open **Configuration history** in a game to see the settings captured when play first started. The start snapshot includes the play rules, timeout, attempts, output cap, opening, chat, both players and their requested reasoning effort. When a model turn begins, the game captures a revision from the settings that its game loop read for that turn. Consecutive turns with the same settings share a revision. Reverting to an earlier setting creates a new revision when a turn uses it.
+
+The attempt table identifies the move, side, attempt number and revision. If you change effort from Medium to High during a request, that request and its retries keep the earlier settings. The next turn uses the new revision. Requested effort is the configured level for that side. Effort sent can differ if the provider catalog maps it to a supported level. Reasoning tokens and reporting coverage come from provider-reported usage. A dash means the provider did not report a count. The start or an old attempt’s revision is **Unknown** when the game or attempt predates this feature. Resuming an older game can record new revisions while its start remains unknown.
+
+The game snapshot from `GET /api/games/{id}` adds `startingConfiguration` and ordered `configurationHistory` entries with `revision` and `settings`. The first model turn uses revision 1. A turn prepared before play was stopped can have a revision without a stored attempt. Each recorded attempt includes its `configurationRevision` when known, including on `GET /api/games/{id}/attempts`. Game entries in a tournament response include their starting snapshot. The backend captures instruction and legacy prompt fingerprints for equality and displays their changes without retaining historical text. A new revision invalidates game details after commit and clients reload the whole game snapshot.
 
 ## Scope and interpretation
 

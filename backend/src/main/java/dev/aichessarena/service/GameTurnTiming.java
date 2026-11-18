@@ -30,10 +30,13 @@ class GameTurnTiming {
     @Inject
     TransactionSynchronizationRegistry registry;
 
-    record TurnTimes(Instant startedAt, Instant deadlineAt) {
+    @Inject
+    GameConfigurationHistory configurations;
+
+    record TurnTimes(Instant startedAt, Instant deadlineAt, Integer configurationRevision) {
         static TurnTimes start(Integer timeoutSeconds) {
             Instant startedAt = Instant.now();
-            return new TurnTimes(startedAt, timeoutSeconds == null ? null : startedAt.plusSeconds(timeoutSeconds));
+            return new TurnTimes(startedAt, timeoutSeconds == null ? null : startedAt.plusSeconds(timeoutSeconds), null);
         }
     }
 
@@ -59,9 +62,15 @@ class GameTurnTiming {
         boolean appliesTone = game.turnChatMode.allowsMessages()
                 && !PromptService.isLegacyTemplateVersion(request.promptVersion());
         game.turnBanterLevel = appliesTone ? request.tournamentBanterLevel() : null;
-        updates.changed(game);
+        GameConfigurationHistory.Revision revision = request.configuration() == null
+                ? null : configurations.recordTurn(id, request.configuration());
+        if (revision != null && revision.added()) {
+            updates.changed(game, updates.change("gameDetailsChanged", id));
+        } else {
+            updates.changed(game);
+        }
         AfterCommit.run(registry, () -> socket.broadcastGameStatus(id, "IN_PROGRESS", null, null, totalMoves,
                 cost, color, timing.startedAt(), timing.deadlineAt(), null, chatMode, banter));
-        return timing;
+        return revision == null ? timing : new TurnTimes(timing.startedAt(), timing.deadlineAt(), revision.number());
     }
 }

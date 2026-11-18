@@ -1,0 +1,23 @@
+:host {
+  display: block;
+  margin-block: var(--app-space-4);
+}
+.table-scroll {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  padding: var(--app-space-1) var(--app-space-2);
+  border-bottom: var(--app-rule-width) solid var(--app-table-rule);
+  text-align: start;
+}
+.num {
+  text-align: end;
+}
+h3 {
+  margin-block: var(--app-space-3) var(--app-space-2);
+}

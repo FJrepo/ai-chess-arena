@@ -82,6 +82,73 @@ describe('TournamentSetup', () => {
     expect(create.mock.calls[0][0]).not.toHaveProperty('games');
   });
 
+  it('compares the first game’s starting effort with what the rematch will use', async () => {
+    const api = createApiService();
+    const source = { ...rematchSource(), reasoningEffort: 'high' } as Tournament;
+    const firstGame = {
+      ...source.games[0],
+      id: 'first-game',
+      startedAt: '2026-11-18T10:00:00',
+      whiteParticipantId: 'old-p1',
+      blackParticipantId: 'old-p2',
+      startingConfiguration: {
+        format: source.format,
+        drawPolicy: source.drawPolicy,
+        matchupBestOf: source.matchupBestOf,
+        finalsBestOf: source.finalsBestOf,
+        openingMode: source.openingMode,
+        configuredOpeningId: source.openingId,
+        moveTimeoutSeconds: 120,
+        maxRetries: 9,
+        maxOutputTokens: 8192,
+        chatMode: 'MANDATORY',
+        banterLevel: 'PLAYFUL',
+        resignationAllowed: true,
+        adjudicationEnabled: true,
+        legalMoveHints: true,
+        reasoningEffort: 'medium',
+        white: {
+          playerName: 'Model',
+          modelId: 'a/one',
+          controlType: 'AI',
+          reasoningEffortOverride: 'high',
+          requestedReasoningEffort: 'high',
+        },
+        black: { playerName: 'Human', controlType: 'HUMAN' },
+      },
+    } as Tournament['games'][number];
+    source.games = [
+      { ...firstGame, id: 'later-game', startedAt: '2026-11-18T10:01:00' },
+      firstGame,
+    ];
+    api.getTournament = () => of(source);
+    const fixture = await renderSetup(api, 'old');
+    const setup = fixture.componentInstance;
+
+    expect(setup.reasoningEffort).toBe('high');
+    expect(setup.rematchStartingGame()?.id).toBe('first-game');
+    expect(setup.rematchHistoricalChanges(firstGame)).toEqual([
+      { setting: 'Reasoning effort', before: 'Medium', after: 'High' },
+    ]);
+    expect(
+      fixture.nativeElement.querySelector(
+        'details [aria-label="Changes from the first game’s start"]',
+      ).textContent,
+    ).toMatch(/Reasoning effort\s*Medium\s*High/);
+  });
+
+  it('says when the first game predates configuration history', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.games = [{ ...source.games[0], startedAt: '2026-11-18T10:00:00' }];
+    api.getTournament = () => of(source);
+    const fixture = await renderSetup(api, 'old');
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Starting settings are unknown for this game.',
+    );
+  });
+
   it('uses hints on for older sources and previews changes to the new draft', async () => {
     const api = createApiService();
     const source = rematchSource();

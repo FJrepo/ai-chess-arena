@@ -45,6 +45,10 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Configuration history migration (V26)
+
+Back up the database before upgrading and recreate both application services together. Flyway `V26__game_configuration_history.sql` adds a nullable game-start snapshot, an ordered configuration history per game and an optional reference from each model attempt. No backfill runs. Older starting settings and attempt revisions are unknown, and earlier standings, game history and costs are retained. The usual restart recovery pauses interrupted games. Restore the pre-upgrade backup if rolling back the schema. See [Configuration history](how-it-works.md#configuration-history).
+
 ## Legal move hints migration (V25)
 
 Flyway adds a required tournament hint flag with a default of true and expands the move prompt version column to 96 characters. Existing tournaments retain hints on, including drafts and in-progress tournaments. Historical moves, prompt metadata, scores and costs are preserved. Back up the database before upgrading, rebuild and recreate the backend and frontend, and restore the pre-upgrade backup if rolling back the schema.

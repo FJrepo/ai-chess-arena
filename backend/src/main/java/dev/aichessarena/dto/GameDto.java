@@ -1,5 +1,6 @@
 package dev.aichessarena.dto;
 
+import dev.aichessarena.entity.GameConfiguration;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -64,7 +65,9 @@ public record GameDto(
         String turnChatMode,
         String turnBanterLevel,
         List<MoveAttemptDto> attempts,
-        String streamId
+        String streamId,
+        GameConfiguration startingConfiguration,
+        List<GameConfigurationRevisionDto> configurationHistory
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

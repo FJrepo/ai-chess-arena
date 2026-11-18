@@ -1,0 +1,83 @@
+<mat-expansion-panel>
+  <mat-expansion-panel-header>
+    <mat-panel-title>Configuration history</mat-panel-title>
+  </mat-expansion-panel-header>
+  <ng-template matExpansionPanelContent>
+    <h3>Starting settings</h3>
+    @if (startingFields(); as fields) {
+      <div class="table-scroll">
+        <table aria-label="Starting settings">
+          <tbody>
+            @for (field of fields; track field.setting) {
+              <tr>
+                <th scope="row">{{ field.setting }}</th>
+                <td>{{ field.value }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <p>{{ game().status === 'WAITING' ? 'Captured when the game starts.' : 'Unknown' }}</p>
+    }
+
+    @for (entry of revisions(); track entry.revision) {
+      @if (entry.fields.length) {
+        <h3>Revision {{ entry.revision }}</h3>
+        <div class="table-scroll">
+          <table [attr.aria-label]="'Settings changed in revision ' + entry.revision">
+            <thead>
+              <tr>
+                <th scope="col">Setting</th>
+                <th scope="col">Before</th>
+                <th scope="col">After</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (field of entry.fields; track field.setting) {
+                <tr>
+                  <th scope="row">{{ field.setting }}</th>
+                  <td>{{ field.before }}</td>
+                  <td>{{ field.after }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+
+    @if (attempts().length) {
+      <h3>Model attempts</h3>
+      <p>{{ reportingCount() }} of {{ attempts().length }} attempts reported reasoning tokens.</p>
+      <div class="table-scroll">
+        <table aria-label="Model attempts and their configuration">
+          <thead>
+            <tr>
+              <th scope="col">Move</th>
+              <th scope="col" class="num">Attempt</th>
+              <th scope="col" class="num">Revision</th>
+              <th scope="col">Requested effort</th>
+              <th scope="col">Effort sent</th>
+              <th scope="col" class="num">Reasoning tokens</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (attempt of attempts(); track attempt.id) {
+              <tr>
+                <th scope="row">
+                  {{ attempt.moveNumber }} {{ attempt.color === 'WHITE' ? 'White' : 'Black' }}
+                </th>
+                <td class="num">{{ attempt.attemptNumber }}</td>
+                <td class="num">{{ attempt.configurationRevision ?? 'Unknown' }}</td>
+                <td>{{ requested(attempt) }}</td>
+                <td>{{ sent(attempt) }}</td>
+                <td class="num">{{ attempt.reasoningTokens ?? '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </ng-template>
+</mat-expansion-panel>

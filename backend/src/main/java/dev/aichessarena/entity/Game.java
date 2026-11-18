@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "games")
@@ -55,6 +57,10 @@ public class Game extends PanacheEntityBase {
 
     @Column(name = "live_revision", nullable = false)
     public long liveRevision;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "starting_configuration")
+    public GameConfiguration startingConfiguration;
 
     @Column(name = "turn_started_at")
     public Instant turnStartedAt;
