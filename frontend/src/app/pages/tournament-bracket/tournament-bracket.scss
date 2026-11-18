@@ -38,6 +38,9 @@
 
     h2 {
       margin: 0;
+      // Long or unbroken titles wrap inside the header instead of running under the actions.
+      min-width: 0;
+      overflow-wrap: anywhere;
       font-size: 1.6rem;
       font-weight: 800;
       letter-spacing: 0.04em;
