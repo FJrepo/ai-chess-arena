@@ -45,16 +45,10 @@
 }
 
 .attention-marker {
-  display: inline-grid;
-  place-items: center;
-  inline-size: var(--app-space-3);
-  block-size: var(--app-space-4);
+  inline-size: var(--app-space-2);
+  block-size: var(--app-space-2);
   border-radius: var(--mat-sys-corner-full);
-  background: var(--app-warning-text);
-  color: var(--mat-sys-surface);
-  font-size: var(--app-text-secondary-size);
-  font-weight: 700;
-  line-height: 1;
+  background: var(--app-attention-dot);
 }
 
 .menu-note {

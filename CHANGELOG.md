@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- The Live games button marks paused games that need attention with a small amber dot next to the count (hover it for the number) instead of an exclamation mark.
+
 ## [2.0.0] - 2026-11-18
 
 **Benchmarks you can repeat**: measure models against a fixed Stockfish setup, rerun with one change, and see exactly what improved, what regressed and what it cost.

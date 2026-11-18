@@ -114,6 +114,10 @@ describe('LiveGamesSwitcher', () => {
     expect(marker()).toBeNull();
     showGames(pausedGame);
     expect(marker()?.getAttribute('aria-hidden')).toBe('true');
+    expect(marker()?.textContent?.trim()).toBe('');
+    expect(marker()?.getAttribute('title')).toBe('1 game needs attention');
+    showGames(pausedGame, { ...pausedGame, id: 'another-pause' });
+    expect(marker()?.getAttribute('title')).toBe('2 games need attention');
     showGames(runningGame);
     expect(marker()).toBeNull();
   });

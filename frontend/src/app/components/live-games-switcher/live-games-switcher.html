@@ -22,7 +22,11 @@
       }
     </span>
     @if (attention > 0) {
-      <span class="attention-marker" aria-hidden="true">!</span>
+      <span
+        class="attention-marker"
+        aria-hidden="true"
+        [attr.title]="attention + (attention === 1 ? ' game needs' : ' games need') + ' attention'"
+      ></span>
     }
   </span>
   <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>

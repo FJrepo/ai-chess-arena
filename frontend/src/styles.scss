@@ -116,6 +116,7 @@ html {
   --app-success-border: #{map.get(mat.$green-palette, 40)};
   --app-success-fill: color-mix(in srgb, var(--app-success-border) 8%, transparent);
   --app-live-lamp: #{map.get(mat.$green-palette, 40)};
+  --app-attention-dot: #{map.get(mat.$orange-palette, 50)};
   --app-warning-text: #{map.get(mat.$orange-palette, 30)};
   --app-warning-border: #{map.get(mat.$orange-palette, 40)};
   --app-warning-fill: color-mix(in srgb, var(--app-warning-border) 7%, transparent);
@@ -214,6 +215,7 @@ body.dark-theme {
   --app-success-border: color-mix(in srgb, var(--app-success-text) 60%, transparent);
   --app-success-fill: color-mix(in srgb, var(--app-success-text) 14%, transparent);
   --app-live-lamp: #{map.get(mat.$green-palette, 80)};
+  --app-attention-dot: #{map.get(mat.$orange-palette, 70)};
   --app-warning-text: #{map.get(mat.$orange-palette, 80)};
   --app-warning-border: color-mix(in srgb, var(--app-warning-text) 60%, transparent);
   --app-warning-fill: color-mix(in srgb, var(--app-warning-text) 10%, transparent);
