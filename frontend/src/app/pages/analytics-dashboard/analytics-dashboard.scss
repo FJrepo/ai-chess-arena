@@ -466,21 +466,19 @@
   border-left: 1px solid var(--app-divider);
 }
 
-.analytics-table .quality-acpl {
-  text-align: right;
-  text-transform: none;
-  letter-spacing: normal;
-
-  .table-note {
-    font-weight: 400;
-    white-space: nowrap;
-  }
+.quality-table th.num,
+.conversion-table th.num {
+  font-family: inherit;
 }
 
-.model-with-sample {
-  display: flex;
-  align-items: baseline;
-  gap: var(--app-space-1);
+.analytics-table .quality-acpl {
+  white-space: nowrap;
+
+  .table-note {
+    font-weight: var(--mat-sys-body-medium-weight);
+    letter-spacing: normal;
+    text-transform: none;
+  }
 }
 
 // ?! / ? / ?? markers in the move-quality header, in the game view's tones.

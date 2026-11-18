@@ -462,7 +462,7 @@ Analysis includes a bracket overview with series scores and the champion, PGN ex
 The analytics page shares its analysis window, tournament, legal move hints and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
 
 - **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
-- **Play quality:** Move Quality and Conversion. The average centipawn loss column marks lower values as better. Move Quality shows the number of judged games beside each model, or the judged move count when the game count is unavailable. Conversion shows how many of each model's games had an evaluation. Rows without a sample show “no judged games”.
+- **Play quality:** Move Quality and Conversion. Move Quality sorts by average centipawn loss, lowest first. Its sample counts distinct games with at least one judged move by the model, or shows the judged move count when the game count is unavailable. Conversion counts evaluated model sides, so a self-play game can count twice for a model. Both tables show “no judged games” for a reported zero and “sample not reported” when the sample is unknown.
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** total spend and match count for the selected engine-health scope, followed by engine-health metrics, the Trust Index, Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Average and p95 latencies use seconds with one decimal. When more than half the models have insufficient data, the Trust Index leads with how many have enough data and shows the average score below. Otherwise, any insufficient-data count appears beside the score. Each report loads independently.
 
@@ -516,7 +516,7 @@ The *Conversion* table uses the same completion-time window, tournament and mini
 - **Thrown away:** of the games with a winning position, games that ended in a draw or a loss (including the model's own forfeit).
 - **Missed mates:** the number of judged model moves that [missed a forced mate](#missed-mates), independently of whether the game reached the winning-position threshold or was ultimately won.
 
-The table shows evaluated-game coverage per model. Games with no evaluations cannot prove a winning position and are left out; a model with no evaluated games shows **n/a** for position/outcome counts. Missed mates show **n/a** without any judged moves. Observed zero counts stay zero. Partial coverage describes the available evaluations, not every position of a game. With self-play, each model side counts separately, as in the other tables.
+The table shows how many of each model's sides had evaluations. Games with no evaluations cannot prove a winning position and are left out. A model with zero evaluated sides shows **no judged games** and **n/a** for position and outcome counts. When the sample is unknown, the row shows **sample not reported** and unavailable metrics show **n/a**. Missed mates show **n/a** without any judged moves. Observed zero metrics stay zero. Coverage counts sides in games with at least one evaluation.
 
 Comparison API rows carry `conversion` with `evaluatedGames`, `winningPositionsReached`, `converted`, `adjudicatedWins`, `thrownAway` and `missedMates`; unknown counts may be omitted. All metrics derive from stored evaluations, including historical games; there is no backfill or engine re-analysis.
 

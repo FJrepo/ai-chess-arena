@@ -307,7 +307,12 @@
                 <thead>
                   <tr>
                     <th class="col-model">Model</th>
-                    <th class="quality-acpl" scope="col" aria-describedby="quality-acpl-direction">
+                    <th
+                      class="num quality-acpl"
+                      scope="col"
+                      aria-sort="ascending"
+                      aria-describedby="quality-acpl-direction"
+                    >
                       Avg. centipawn loss <span aria-hidden="true">↓</span>
                       <span id="quality-acpl-direction" class="table-note" aria-hidden="true">
                         lower is better
@@ -331,25 +336,23 @@
                   @for (row of qualityRows(); track row.modelId) {
                     <tr>
                       <td class="col-model">
-                        <div class="model-with-sample">
-                          <strong class="model-id">{{ row.modelId }}</strong>
-                          <span class="table-note judged-sample">
-                            <span aria-hidden="true">·&nbsp;</span>
-                            @if (row.analyzedGames; as games) {
-                              <span class="num">{{ games | number }}</span>
-                              {{ games === 1 ? 'game judged' : 'games judged' }}
-                            } @else if (
-                              (row.analyzedGames === undefined || row.analyzedGames === null) &&
-                              row.analyzedMoves
-                            ) {
-                              <span class="num">{{ row.analyzedMoves | number }}</span>
-                              {{ row.analyzedMoves === 1 ? 'move judged' : 'moves judged' }}
-                            } @else {
-                              no judged games
-                            }
-                          </span>
-                        </div>
-                        <span class="table-note">{{ effortLabel(row.reasoning?.effort) }}</span>
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                        <span class="table-note judged-sample">
+                          @let games = row.analyzedGames;
+                          @let sample = games ?? row.analyzedMoves;
+                          @if (sample) {
+                            <span class="num">{{ sample | number }}</span>
+                            {{ games ? 'game' : 'move' }}{{ sample === 1 ? '' : 's' }} judged
+                          } @else if (sample === 0) {
+                            no judged games
+                          } @else {
+                            sample not reported
+                          }
+                          @if (row.reasoning; as reasoning) {
+                            <span aria-hidden="true"> · </span>
+                            {{ effortLabel(reasoning.effort) }}
+                          }
+                        </span>
                       </td>
                       <td class="num">{{ formatAcpl(row.averageCentipawnLoss) }}</td>
                       <td class="num">
@@ -408,26 +411,19 @@
                   @for (row of conversionRows(); track row.modelId) {
                     <tr>
                       <td class="col-model">
-                        <div class="model-with-sample">
-                          <strong class="model-id">{{ row.modelId }}</strong>
-                          <span class="table-note judged-sample">
-                            <span aria-hidden="true">·&nbsp;</span>
-                            @if (row.conversion?.evaluatedGames; as evaluatedGames) {
-                              <span class="num">{{ evaluatedGames | number }}</span> of
-                              <span class="num">{{ row.gamesPlayed | number }}</span>
-                              {{ row.gamesPlayed === 1 ? 'game evaluated' : 'games evaluated' }}
-                            } @else {
-                              no judged games
-                            }
-                          </span>
-                        </div>
-                        @if (!row.conversion?.evaluatedGames) {
-                          <span class="table-note">
-                            <span class="num">0</span> of
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                        <span class="table-note judged-sample">
+                          @let evaluatedSides = row.conversion?.evaluatedGames;
+                          @if (evaluatedSides) {
+                            <span class="num">{{ evaluatedSides | number }}</span> of
                             <span class="num">{{ row.gamesPlayed | number }}</span>
-                            {{ row.gamesPlayed === 1 ? 'game evaluated' : 'games evaluated' }}
-                          </span>
-                        }
+                            {{ row.gamesPlayed === 1 ? 'side evaluated' : 'sides evaluated' }}
+                          } @else if (evaluatedSides === 0) {
+                            no judged games
+                          } @else {
+                            sample not reported
+                          }
+                        </span>
                       </td>
                       <td class="num">
                         {{ conversionCount(row.conversion?.winningPositionsReached) }}

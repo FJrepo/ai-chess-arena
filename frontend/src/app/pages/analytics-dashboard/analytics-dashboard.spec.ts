@@ -168,6 +168,8 @@ describe('AnalyticsDashboard', () => {
       'Judged moves',
     ]);
     const header = quality.querySelector('thead th:nth-child(2)')!;
+    expect(header.classList.contains('num')).toBe(true);
+    expect(header.getAttribute('aria-sort')).toBe('ascending');
     const descriptionId = header.getAttribute('aria-describedby');
     expect(header.querySelector(`[id="${descriptionId}"]`)?.textContent?.trim()).toBe(
       'lower is better',
@@ -188,27 +190,27 @@ describe('AnalyticsDashboard', () => {
     );
   });
 
-  it('shows the judged sample beside each model in Move Quality', async () => {
+  it('shows the judged sample with effort below each model in Move Quality', async () => {
     const cases = [
       {
         modelId: 'model.single-game',
         overrides: { analyzedGames: 1, analyzedMoves: 12, averageCentipawnLoss: 30 },
-        sample: '1 game judged',
+        note: '1 game judged',
       },
       {
         modelId: 'model.many-games',
         overrides: { analyzedGames: 18, analyzedMoves: 412, averageCentipawnLoss: 33 },
-        sample: '18 games judged',
+        note: '18 games judged',
       },
       {
         modelId: 'model.moves-only',
         overrides: { analyzedMoves: 1, averageCentipawnLoss: 40 },
-        sample: '1 move judged',
+        note: '1 move judged',
       },
       {
         modelId: 'model.many-moves',
         overrides: { analyzedMoves: 28, averageCentipawnLoss: 45 },
-        sample: '28 moves judged',
+        note: '28 moves judged',
       },
       {
         modelId: 'model.zero',
@@ -217,14 +219,22 @@ describe('AnalyticsDashboard', () => {
           analyzedMoves: 0,
           reasoning: { effort: 'xhigh', reportedMoves: 0, modelMoves: 1 },
         } satisfies Partial<AnalyticsComparisonModel>,
-        sample: 'no judged games',
+        note: 'no judged games · Extra high',
+      },
+      {
+        modelId: 'model.zero-moves',
+        overrides: {
+          analyzedMoves: 0,
+          reasoning: { effort: 'mixed', reportedMoves: 0, modelMoves: 1 },
+        } satisfies Partial<AnalyticsComparisonModel>,
+        note: 'no judged games · Mixed effort',
       },
       {
         modelId: 'model.missing',
         overrides: {
           reasoning: { effort: 'default', reportedMoves: 0, modelMoves: 1 },
         } satisfies Partial<AnalyticsComparisonModel>,
-        sample: 'no judged games',
+        note: 'sample not reported · No explicit effort',
       },
     ];
     const { harness } = await renderDashboard('?tab=quality', {
@@ -240,14 +250,12 @@ describe('AnalyticsDashboard', () => {
     const table = harness.routeNativeElement!.querySelector('.quality-table')!;
     const models = Array.from(table.querySelectorAll('tbody .model-id'));
     expect(models).toHaveLength(cases.length);
-    for (const { modelId, sample } of cases) {
+    for (const { modelId, note } of cases) {
       const model = models.find((cell) => cell.textContent === modelId);
-      expect(model?.nextElementSibling?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        `· ${sample}`,
-      );
+      const sample = model?.nextElementSibling;
+      expect(sample?.classList.contains('table-note')).toBe(true);
+      expect(sample?.textContent?.replace(/\s+/g, ' ').trim()).toBe(note);
     }
-    expect(table.textContent).toContain('Extra high');
-    expect(table.textContent).toContain('No explicit effort');
   });
 
   it('updates the tab query parameter with replaceUrl and keeps other parameters', async () => {
@@ -1003,40 +1011,36 @@ describe('AnalyticsDashboard', () => {
     expect(table?.textContent).toContain('Adjudicated wins');
     const rows = Array.from(table?.querySelectorAll('tbody tr') ?? []);
     const converted = rows.find((row) => row.textContent?.includes('model.converted'));
-    expect(
-      converted?.querySelector('.model-id')?.nextElementSibling?.textContent?.replace(/\s+/g, ' '),
-    ).toContain('2 of 3 games evaluated');
+    expect(converted?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      '2 of 3 sides evaluated',
+    );
     expect(
       Array.from(converted?.querySelectorAll('td.num') ?? []).map((cell) =>
         cell.textContent?.trim(),
       ),
     ).toEqual(['2', '1', '1', '1', '4']);
     const unknown = rows.find((row) => row.textContent?.includes('model.unknown'));
+    expect(unknown?.querySelector('.col-model')?.children).toHaveLength(2);
+    expect(unknown?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      'sample not reported',
+    );
     expect(
-      Array.from(unknown?.querySelectorAll('td.num') ?? []).every(
-        (cell) => cell.textContent?.trim() === 'n/a',
-      ),
-    ).toBe(true);
+      Array.from(unknown?.querySelectorAll('td.num') ?? [], (cell) => cell.textContent?.trim()),
+    ).toEqual(['n/a', 'n/a', 'n/a', 'n/a', 'n/a']);
     const zero = rows.find((row) => row.textContent?.includes('model.zero'));
-    expect(
-      zero?.querySelector('.model-id')?.nextElementSibling?.textContent?.replace(/\s+/g, ' '),
-    ).toContain('1 of 1 game evaluated');
+    expect(zero?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      '1 of 1 side evaluated',
+    );
     expect(
       Array.from(zero?.querySelectorAll('td.num') ?? []).every(
         (cell) => cell.textContent?.trim() === '0',
       ),
     ).toBe(true);
-    for (const row of [
-      unknown,
-      rows.find((row) => row.textContent?.includes('model.unevaluated')),
-    ]) {
-      expect(row?.querySelector('.model-id')?.nextElementSibling?.textContent).toContain(
-        'no judged games',
-      );
-      expect(row?.querySelector('.col-model')?.textContent?.replace(/\s+/g, ' ')).toContain(
-        '0 of 5 games evaluated',
-      );
-    }
+    const unevaluated = rows.find((row) => row.textContent?.includes('model.unevaluated'));
+    expect(unevaluated?.querySelector('.col-model')?.children).toHaveLength(2);
+    expect(unevaluated?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      'no judged games',
+    );
     expect(element.querySelector('.conversion-table-card .table-footnote')?.textContent).toContain(
       '≥90%',
     );

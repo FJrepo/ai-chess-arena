@@ -21,7 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
-- Play quality spells out average centipawn loss, marks lower values as better, and shows sample sizes beside model names.
+- Play quality spells out average centipawn loss, marks lower values as better, and shows sample sizes under model names, distinguishing unreported samples from zero.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 - The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
 
