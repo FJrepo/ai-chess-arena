@@ -9,11 +9,12 @@ import {
   inject,
   signal,
   viewChild,
+  viewChildren,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
+import { MatMenuItem, MatMenuModule, MatMenuTrigger } from '@angular/material/menu';
 import { RouterLink } from '@angular/router';
 import { auditTime, finalize, merge, timer, timeout } from 'rxjs';
 import type { LiveGameSummary, LiveGamesSnapshot } from '../../models/live-games.model';
@@ -34,6 +35,7 @@ export class LiveGamesSwitcher implements OnInit {
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
   private readonly trigger = viewChild(MatMenuTrigger);
+  private readonly menuItems = viewChildren(MatMenuItem);
   private inFlight = false;
   private refreshPending = false;
 
@@ -74,24 +76,21 @@ export class LiveGamesSwitcher implements OnInit {
     const focusedId = focused?.getAttribute('data-live-game-id');
     this.snapshot.set(snapshot);
     const trigger = this.trigger();
-    if (!focusedId || !trigger?.menuOpen || this.rows().some((row) => row.id === focusedId)) return;
-
+    if (!focusedId || !trigger?.menuOpen) return;
     if (!this.rows().length) {
       trigger.closeMenu();
-    } else {
-      afterNextRender(
-        () => {
-          if (
-            trigger.menuOpen &&
-            (this.document.activeElement === focused ||
-              this.document.activeElement === this.document.body)
-          ) {
-            trigger.menu?.focusFirstItem('keyboard');
-          }
-        },
-        { injector: this.injector },
-      );
+      return;
     }
+
+    afterNextRender(
+      () => {
+        if (trigger.menuOpen && this.document.activeElement === this.document.body) {
+          const index = this.rows().findIndex((row) => row.id === focusedId);
+          this.menuItems()[Math.max(0, index)]?.focus('keyboard');
+        }
+      },
+      { injector: this.injector },
+    );
   }
 
   private refresh(): void {
