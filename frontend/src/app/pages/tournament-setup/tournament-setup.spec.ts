@@ -135,6 +135,15 @@ describe('TournamentSetup', () => {
         'details [aria-label="Changes from the first game’s start"]',
       ).textContent,
     ).toMatch(/Reasoning effort\s*Medium\s*High/);
+    setup.editParticipant(0);
+    setup.newPlayerName = 'Refined name';
+    setup.addParticipant();
+    fixture.detectChanges();
+    expect(setup.rematchHistoricalChanges(firstGame)).toContainEqual({
+      setting: 'White player',
+      before: 'Model',
+      after: 'Refined name',
+    });
   });
 
   it('says when the first game predates configuration history', async () => {

@@ -1022,6 +1022,7 @@ Your opponent is %s (%s).`;
     this.participants.update((list) => {
       const previous = editing === null ? undefined : list[editing];
       const participant: SetupParticipant = {
+        ...(previous?.id ? { id: previous.id } : {}),
         playerName: this.newPlayerName.trim(),
         controlType: this.newControlType,
         modelId: this.newControlType === 'AI' ? this.newModelId : null,

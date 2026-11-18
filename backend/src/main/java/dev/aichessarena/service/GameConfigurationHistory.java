@@ -69,8 +69,8 @@ public class GameConfigurationHistory {
 
     record Revision(int number, boolean added) {}
 
-    /** The caller holds the game lock. The supplied settings were captured when preparing this turn. */
-    Revision recordTurn(UUID gameId, GameConfiguration settings) {
+    /** The caller holds the game lock. Settings describe a model turn or the adjudication decision. */
+    Revision recordRevision(UUID gameId, GameConfiguration settings) {
         GameConfigurationRevision latest = entityManager.createQuery("""
                 from GameConfigurationRevision r where r.gameId = :gameId order by r.revision desc
                 """, GameConfigurationRevision.class)

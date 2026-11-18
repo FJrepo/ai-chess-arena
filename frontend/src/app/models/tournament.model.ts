@@ -196,6 +196,7 @@ export interface Game {
     plies: number;
     evaluationCp?: number | null;
     evaluationMate?: number | null;
+    configurationRevision?: number | null;
   } | null;
   /**
    * Grows with every status change (start, pause, game over); status-change updates carry it too, so an older

@@ -13,3 +13,9 @@ ALTER TABLE move_attempts ADD COLUMN configuration_revision INTEGER,
         FOREIGN KEY (game_id, configuration_revision)
         REFERENCES game_configuration_revisions(game_id, revision)
         DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE games ADD COLUMN adjudication_configuration_revision INTEGER,
+    ADD CONSTRAINT games_adjudication_configuration_fk
+        FOREIGN KEY (id, adjudication_configuration_revision)
+        REFERENCES game_configuration_revisions(game_id, revision)
+        DEFERRABLE INITIALLY DEFERRED;

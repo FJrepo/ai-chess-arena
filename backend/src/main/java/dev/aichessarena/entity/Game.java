@@ -62,6 +62,9 @@ public class Game extends PanacheEntityBase {
     @Column(name = "starting_configuration")
     public GameConfiguration startingConfiguration;
 
+    @Column(name = "adjudication_configuration_revision")
+    public Integer adjudicationConfigurationRevision;
+
     @Column(name = "turn_started_at")
     public Instant turnStartedAt;
 

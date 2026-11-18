@@ -163,7 +163,8 @@ class GameLoopFreshStateIT {
                         + (attempt.reasoningEffort != null ? attempt.reasoningEffort.apiValue() : "-"))
                 .toList());
         assertEquals(List.of(
-                "ACCEPTED WHITE 1 medium", "ACCEPTED BLACK 1 medium", "ACCEPTED WHITE 2 medium",
+                "ACCEPTED WHITE 1 medium", "ACCEPTED BLACK 1 medium", "ILLEGAL_MOVE WHITE 2 medium",
+                "ACCEPTED WHITE 2 medium",
                 "ACCEPTED BLACK 2 low", "ACCEPTED WHITE 3 high", "ACCEPTED BLACK 3 low",
                 "PROVIDER_FATAL WHITE 4 high"), recorded);
         given().when().get("/api/games/{id}", ids[1]).then().statusCode(200)
@@ -174,10 +175,15 @@ class GameLoopFreshStateIT {
                 .body("configurationHistory[1].settings.reasoningEffort", equalTo("high"))
                 .body("configurationHistory[1].settings.black.requestedReasoningEffort", equalTo("low"))
                 .body("configurationHistory[2].settings.banterLevel", equalTo("SPICY"))
-                .body("attempts.configurationRevision", equalTo(List.of(1, 1, 1, 2, 3, 3, 3)));
+                .body("attempts.configurationRevision", equalTo(List.of(1, 1, 1, 1, 2, 3, 3, 3)));
         given().when().get("/api/games/{id}/attempts", ids[1]).then().statusCode(200)
-                .body("[3].reasoningEffort", equalTo("low"))
-                .body("[3].configurationRevision", equalTo(2));
+                .body("[2].reasoningEffort", equalTo("medium"))
+                .body("[2].configurationRevision", equalTo(1))
+                .body("[3].reasoningEffort", equalTo("medium"))
+                .body("[3].configurationRevision", equalTo(1))
+                .body("[3].attemptNumber", equalTo(2))
+                .body("[4].reasoningEffort", equalTo("low"))
+                .body("[4].configurationRevision", equalTo(2));
         given().when().get("/api/tournaments/{id}", ids[0]).then().statusCode(200)
                 .body("reasoningEffort", equalTo("high"))
                 .body("games[0].startingConfiguration.reasoningEffort", equalTo("medium"));
@@ -260,6 +266,7 @@ class GameLoopFreshStateIT {
     private static final class ScriptedModel extends OpenRouterService {
         private final UUID tournamentId;
         private final UUID blackParticipantId;
+        private boolean retryPending;
         final List<String> systemPrompts = Collections.synchronizedList(new ArrayList<>());
         final List<String> prompts = Collections.synchronizedList(new ArrayList<>());
         final List<Integer> maxOutputTokens = Collections.synchronizedList(new ArrayList<>());
@@ -273,6 +280,11 @@ class GameLoopFreshStateIT {
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                                 int maxOutputTokens, ReasoningEffort reasoningEffort) {
+            if (retryPending) {
+                retryPending = false;
+                assertEquals(ReasoningEffort.MEDIUM, reasoningEffort);
+                return answer(SETTINGS_CHANGED_DURING_TURN);
+            }
             int turn = prompts.size();
             prompts.add(messages.getLast().content());
             systemPrompts.add(messages.getFirst().content());
@@ -290,6 +302,8 @@ class GameLoopFreshStateIT {
                         .when().put("/api/tournaments/{id}/participants/{pid}", tournamentId.toString(),
                                 blackParticipantId.toString())
                         .then().statusCode(200);
+                retryPending = true;
+                return new LlmResponse("{\"move\":\"Ke8\"}", 8, 3, null, 1, null, false, null);
             }
             if (turn == 3) {
                 // Change tone alone while a request is in flight: this request retains its original prompt.
@@ -299,6 +313,10 @@ class GameLoopFreshStateIT {
             if (turn >= SCRIPT.size()) {
                 return LlmResponse.providerFailure(ProviderOutcome.FATAL, 402, "Script finished", 1, null);
             }
+            return answer(turn);
+        }
+
+        private LlmResponse answer(int turn) {
             String answer = "{\"move\":\"%s\",\"message\":\"Move %d\"}".formatted(SCRIPT.get(turn), turn + 1);
             return new LlmResponse(answer, 10, 5, COST_PER_ANSWER, 1, answer, false, null);
         }

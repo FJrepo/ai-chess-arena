@@ -247,6 +247,10 @@ public class GameLifecycleService {
         if (game == null || isTerminal(game) || isTournamentCancelled(game)) {
             return;
         }
+        completeLockedGame(game, endInfo);
+    }
+
+    private void completeLockedGame(Game game, ChessService.GameEndInfo endInfo) {
         game.status = GameStatus.COMPLETED;
         game.resumeRequestedAt = null;
         game.result = GameResult.valueOf(endInfo.result());
@@ -281,7 +285,10 @@ public class GameLifecycleService {
         if (winner == null) {
             return false;
         }
-        completeGame(gameId, new ChessService.GameEndInfo(winner + "_WINS", "ADJUDICATION"));
+        if (configurations != null) {
+            game.adjudicationConfigurationRevision = configurations.recordRevision(gameId, configurations.capture(game)).number();
+        }
+        completeLockedGame(game, new ChessService.GameEndInfo(winner + "_WINS", "ADJUDICATION"));
         return true;
     }
 

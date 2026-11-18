@@ -172,7 +172,8 @@ public final class DtoMapper {
         int sign = "WHITE".equals(color) ? 1 : -1;
         return new AdjudicationDto(color, WinAdjudication.WINDOW_PLIES,
                 last.evaluationCp != null ? sign * last.evaluationCp : null,
-                last.evaluationMate != null ? Math.abs(last.evaluationMate) : null);
+                last.evaluationMate != null ? Math.abs(last.evaluationMate) : null,
+                game.adjudicationConfigurationRevision);
     }
 
     public static MoveAttemptDto toDto(MoveAttempt a) {

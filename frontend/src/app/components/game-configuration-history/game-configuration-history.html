@@ -47,6 +47,10 @@
       }
     }
 
+    @if (game().adjudication?.configurationRevision; as revision) {
+      <p>Adjudication used revision {{ revision }}.</p>
+    }
+
     @if (attempts().length) {
       <h3>Model attempts</h3>
       <p>{{ reportingCount() }} of {{ attempts().length }} attempts reported reasoning tokens.</p>

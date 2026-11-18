@@ -63,7 +63,7 @@ class GameTurnTiming {
                 && !PromptService.isLegacyTemplateVersion(request.promptVersion());
         game.turnBanterLevel = appliesTone ? request.tournamentBanterLevel() : null;
         GameConfigurationHistory.Revision revision = request.configuration() == null
-                ? null : configurations.recordTurn(id, request.configuration());
+                ? null : configurations.recordRevision(id, request.configuration());
         if (revision != null && revision.added()) {
             updates.changed(game, updates.change("gameDetailsChanged", id));
         } else {
