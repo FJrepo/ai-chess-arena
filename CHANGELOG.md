@@ -19,10 +19,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   - `generateBracket` omitted or null -> generates the bracket on `POST /api/tournaments` (was: draft). Creation still checks the OpenRouter credential first (HTTP 409 without a key); after that, fewer than two participants returns HTTP 400 unless the request sends `"generateBracket": false`.
   - `POST /api/games/{id}/start` without `queueIfFull` -> queues a paused game when the auto-run's slots are full (was: HTTP 409). Send `?queueIfFull=false` for the old behaviour. An empty, non-boolean or repeated `queueIfFull` returns HTTP 400.
 
+- Flyway `V32__durable_runs.sql` records which game loop owns a game and whether a model request is in flight. The previous version kept no such record, so the upgrade pauses games it left in progress (check spend, then resume) and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. See [Durable runs migration (V32)](docs/deployment.md#durable-runs-migration-v32).
+
 ### Added
 
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
+- The **Live games** menu shows why a paused game needs attention.
 
 ### Changed
 
@@ -30,6 +33,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
 - Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.
 - Removed the `trashTalkEnabled` flag, replaced by chat modes since 1.4, from the API and the database.
+- Runs survive a backend restart: games whose model request was never sent resume on their own, auto-runs keep running and queued resumes keep their places. A game with a request in flight pauses with a reason to check spend, so a possibly charged request is never sent twice. Practice and Stockfish games follow the same rules. See [Restarts](docs/how-it-works.md#restarts).
 
 ### Fixed
 

@@ -119,11 +119,11 @@ Auto-run starts ready **Waiting** model-vs-model games in bracket order (earlier
 
 Paused games leave their concurrency slot free. Fix any provider or cut-off answer issue in the game view before resuming. **Pause** stops scheduling and pauses every running game through the normal game lifecycle. **Resume run** restarts scheduling. A paused run rejects new starts until resumed. **Save limits** appears only for a running or paused run and is enabled only when valid form values differ from the applied limits. **Unsaved changes** appears beside it until you save, resume with the edits, or revert them. Saving changes the budget/concurrency immediately without resuming a paused run. Reducing concurrency pauses games beyond the new limit, keeping the earliest bracket games running.
 
-During auto-run, **Resume** starts a paused game immediately if a slot is free after accounting for older queued requests. When all slots are occupied or reserved, the bracket and game view show the queued request, the running count and limit, and **Cancel**. The pause reason stays visible. The scheduler reserves slots in request order before starting new games. A request whose prior loop is still stopping reserves one slot, and the scheduler can use the remaining slots for other games. Queued requests survive user, budget and restart pauses. Repeated clicks keep the original place. Resuming, cancelling the request, or ending the game or run clears it. If the request changes after the page loads, **Cancel** refreshes the game and shows the current state.
+During auto-run, **Resume** starts a paused game immediately if a slot is free after accounting for older queued requests. When all slots are occupied or reserved, the bracket and game view show the queued request, the running count and limit, and **Cancel**. The pause reason stays visible. The scheduler reserves slots in request order before starting new games. A request whose prior loop is still stopping reserves one slot, and the scheduler can use the remaining slots for other games. Queued requests survive user and budget pauses and backend restarts. Repeated clicks keep the original place. Resuming, cancelling the request, or ending the game or run clears it. If the request changes after the page loads, **Cancel** refreshes the game and shows the current state.
 
 Spend is the sum of every game’s `totalCostUsd` in the tournament, including historical spend and failed or discarded attempts. Before every model request (including retries), and after every recorded attempt, the backend compares spend against the cap. At or above it, the run becomes **Paused** with `Budget of $X reached ($Y spent)` and every unfinished running game pauses with that reason. An accepted terminal move (mate or automatic draw), resignation or eligible adjudication using already stored evaluations completes and advances the series/bracket before its attempt triggers the budget pause; finished games keep their results. Cancellation still prevents completion and advancement. Lowering a running budget below current spend pauses immediately. Raise or remove the cap and resume the run to serve queued requests. Resume other paused games individually. **A budget is not a hard billing limit:** one in-flight answer can overshoot it slightly; with concurrent games, several already in-flight answers can still add cost after pausing. Provider-reported spend remains authoritative.
 
-Without an enabled run (`OFF`), manual play ignores the saved run budget and concurrency settings. Finishing a run sets `FINISHED`; cancellation switches it `OFF` and is final. After a backend restart, a previously `RUNNING` run becomes `PAUSED` with **Backend restarted**; GameRecovery pauses its interrupted games. Resume the run to re-enable scheduling. Notifications trigger scheduling after commit, with a 10-second safety tick; no model request or automatic start is made during startup recovery.
+Without an enabled run (`OFF`), manual play ignores the saved run budget and concurrency settings. Finishing a run sets `FINISHED`; cancellation switches it `OFF` and is final. A backend restart keeps a `RUNNING` run running: its interrupted games resume or pause as described in [Restarts](#restarts), and scheduling continues once startup recovery is done. Resumed games keep their slots, queued resumes keep their places, and budget checks apply to every resumed request. Notifications trigger scheduling after commit, with a 10-second safety tick.
 
 API (all changes take the tournament row lock):
 
@@ -594,9 +594,25 @@ Comparison API rows carry `resignations`, `resignationsEvaluated`, `resignations
 
 ### Provider problems and resuming games
 
-OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; so does an answer that is cut off at the output-token limit. Games interrupted by a restart can be resumed.
+OpenRouter outages, rate limits or an invalid API key pause the game with the reason instead of deciding it; so does an answer that is cut off at the output-token limit. For games interrupted by a backend restart, see [Restarts](#restarts).
 
 Recognized OpenRouter failures (rate limits, server or network errors, invalid key, no credits) are retried or pause the game with the reason, and the game can be resumed. A request that simply exceeds the time limit per move still counts as the model's timeout; one that exceeds the technical 10-minute safety cap does not.
+
+### Restarts
+
+Game loops do not survive a backend restart, but the database records which loop owns each game and whether a model request is in flight. Before a request is sent, the backend commits that it is in flight; the transaction that records the answer (attempt, move or resignation, with its cost) clears it. At startup each interrupted game is decided once:
+
+| State at the restart | After the restart |
+|---|---|
+| A model was to move and no request was in flight (also between retries or during a provider back-off) | Resumes automatically. The turn starts again with a new clock and attempt 1, as after a manual resume. |
+| A model request was in flight | Pauses with **A model request (model, side, move) was in flight during a backend restart and may already have been charged. Check spend, then resume.** The request is never sent again automatically; a queued resume of that game is withdrawn. |
+| Stockfish was to move | Resumes; engine moves cost nothing. |
+| A human was to move | Keeps waiting for the human move. |
+| A model was to move and no OpenRouter key is configured | Pauses with a request to connect OpenRouter. |
+
+This applies to tournament games, practice games and Stockfish practice alike. A paused game whose answer was still outstanding (for example, paused by the budget while its request was out) is also marked for inspection. Check the provider's spend for the game and resume it from the game view; the answer from before the restart is never recorded, so the game's spend may be missing that request. The **Live games** menu shows the reason under **Needs attention**.
+
+Each loop holds an ownership token with a lease, checked under the tournament and game row locks on every write. Recovery hands each game to at most one new loop, so a loop never runs twice; a loop from before the restart can no longer commit a move, record an attempt or change the game's status. If a loop ends without releasing its game (for example during a database outage), the 10-second safety tick applies the same rules once its lease expires (the OpenRouter safety cap plus 5 minutes).
 
 ## Board colours
 
@@ -655,11 +671,11 @@ Live games over WebSocket show the board, move list, model chat, retries, and an
 
 ### Live games switcher
 
-Choose **Live games** in the header to open any running game. The number counts running games across tournaments and practice. Paused games appear underneath as **Needs attention**, followed by the latest finished or forfeited game with two players. Within the running and paused groups, the most recently started games appear first. Rows show the tournament or **Practice**, both players, and for running games the current full-move number and the latest position's Stockfish evaluation when available. If nothing is running, **No live games** appears above any paused games and the last-finished link.
+Choose **Live games** in the header to open any running game. The number counts running games across tournaments and practice. Paused games appear underneath as **Needs attention**, with their pause reason when there is one, followed by the latest finished or forfeited game with two players. Within the running and paused groups, the most recently started games appear first. Rows show the tournament or **Practice**, both players, and for running games the current full-move number and the latest position's Stockfish evaluation when available. If nothing is running, **No live games** appears above any paused games and the last-finished link.
 
 Keyboard users can open the menu with Enter, move between games with the arrow keys, and open the selected game with Enter. The header refreshes after committed game and evaluation updates, including games playing elsewhere in the Arena. It also refreshes every 15 seconds while a connection is unavailable.
 
-`GET /api/games/live` returns ordered `active` summaries and an optional `lastFinished` summary. For immediate refreshes, send `{"type":"watchLiveGames"}` on the existing game WebSocket. It acknowledges registration with `{"type":"liveGamesChanged"}` and sends the same notification when a new read is needed. This subscription can share the socket with a game's live stream.
+`GET /api/games/live` returns ordered `active` summaries and an optional `lastFinished` summary. A paused summary carries its `statusDetail`. For immediate refreshes, send `{"type":"watchLiveGames"}` on the existing game WebSocket. It acknowledges registration with `{"type":"liveGamesChanged"}` and sends the same notification when a new read is needed. This subscription can share the socket with a game's live stream.
 
 ### Live game synchronization
 
