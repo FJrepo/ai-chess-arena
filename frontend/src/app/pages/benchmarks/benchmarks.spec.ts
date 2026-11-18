@@ -18,7 +18,7 @@ const run: BenchmarkRun = {
   run: {
     id: 'fixture-run',
     name: 'Sample ladder',
-    createdAt: '2026-01-01T15:00:00',
+    createdAt: '2026-01-01T15:00:00Z',
     status: 'PAUSED',
     pauseReason: 'Budget reached',
     rerunOf: null,

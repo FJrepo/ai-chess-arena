@@ -16,10 +16,10 @@ const model = (overrides: Partial<LeaderboardModel> = {}): LeaderboardModel => (
   draws: 0,
   losses: 0,
   forfeits: 0,
-  lastPlayed: '2026-11-01T12:00:00',
+  lastPlayed: '2026-11-01T12:00:00Z',
   provisional: true,
   alias: false,
-  ratingHistory: [{ gameId: 'game-1', completedAt: '2026-11-01T12:00:00', rating: 1516 }],
+  ratingHistory: [{ gameId: 'game-1', completedAt: '2026-11-01T12:00:00Z', rating: 1516 }],
   ...overrides,
 });
 

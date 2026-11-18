@@ -96,6 +96,21 @@ describe('TournamentList', () => {
     ]);
   });
 
+  it('shows a UTC creation instant as the date in the browser time zone', async () => {
+    const restoreTimeZone = useTimeZone('Europe/Vienna');
+    try {
+      // 23:15 UTC on 18 November is already 00:15 on 19 November in Vienna.
+      const harness = await renderList([
+        tournament('Late Cup', 'CREATED', 1, 2, 0, '2026-11-18T23:15:24.540714Z'),
+      ]);
+      expect(harness.routeNativeElement!.querySelector('.date')?.textContent?.trim()).toBe(
+        'Created Nov 19, 2026',
+      );
+    } finally {
+      restoreTimeZone();
+    }
+  });
+
   it('filters tournaments by search, status, and best-of', () => {
     const component = new TournamentList({} as any);
     component.tournaments.set([
@@ -264,6 +279,19 @@ describe('TournamentList', () => {
     expect(component.onboardingSummary()).not.toContain('failed');
   });
 });
+
+/** Runs Date in another local zone (Node applies TZ changes immediately); returns the restore step. */
+function useTimeZone(zone: string): () => void {
+  const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process
+    ?.env;
+  if (!env) throw new Error('time zone tests need the Node test runner');
+  const previous = env['TZ'];
+  env['TZ'] = zone;
+  return () => {
+    if (previous === undefined) delete env['TZ'];
+    else env['TZ'] = previous;
+  };
+}
 
 async function renderList(tournaments: Tournament[]) {
   TestBed.configureTestingModule({
