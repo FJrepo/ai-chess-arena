@@ -429,7 +429,9 @@ public class GameEngineService {
             throw new IllegalArgumentException("Move is required");
         }
 
-        Board board = chessService.boardFromFen(game.currentFen);
+        Board board = game.isPractice()
+                ? gameConversationService.initializeBoard(gameId, game)
+                : chessService.boardFromFen(game.currentFen);
         String sideToMove = chessService.getSideToMove(board);
         if (!isHumanTurn(game, sideToMove)) {
             throw new WebApplicationException("It is not a human-controlled turn", Response.Status.CONFLICT);
@@ -464,8 +466,7 @@ public class GameEngineService {
     }
 
     private boolean isHumanTurn(Game game, String color) {
-        var participant = "WHITE".equals(color) ? game.whiteParticipant : game.blackParticipant;
-        return participant != null && participant.controlType == dev.aichessarena.entity.TournamentParticipant.ControlType.HUMAN;
+        return game.playerType(color) == Game.PlayerType.HUMAN;
     }
 
     /** Claims the game for a new loop; returns null if a loop (running or stopping) already owns it. */

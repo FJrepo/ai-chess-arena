@@ -1,0 +1,23 @@
+.practice-page {
+  max-width: var(--app-page-max-width);
+  margin-inline: auto;
+  padding: var(--app-page-gap);
+}
+.table-scroll {
+  margin-block: var(--app-page-gap);
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--mat-sys-surface);
+}
+th,
+td {
+  text-align: start;
+  padding: var(--app-space-2) var(--app-space-4);
+  border-bottom: var(--app-rule-width) solid var(--app-table-rule);
+}
+.num {
+  text-align: end;
+}

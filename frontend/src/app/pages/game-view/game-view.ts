@@ -285,6 +285,51 @@ export class GameView implements OnInit, OnDestroy {
     return lastMoveSquares(previousFen, move.fen);
   });
 
+  readonly creatingPractice = signal(false);
+  private practiceRequest?: {
+    sourceId: string;
+    ply: number;
+    side: 'WHITE' | 'BLACK';
+    id: string;
+    moveId?: string;
+  };
+
+  readonly practiceModelSides = computed(() => {
+    const game = this.game();
+    if (!game || (game.status !== 'COMPLETED' && game.status !== 'FORFEIT')) return [];
+    const sides: ('WHITE' | 'BLACK')[] = [];
+    const hasWhite =
+      game.whiteParticipantId || (game.whitePlayerName && game.whitePlayerName !== 'BYE');
+    const hasBlack =
+      game.blackParticipantId || (game.blackPlayerName && game.blackPlayerName !== 'BYE');
+    if (!hasWhite || !hasBlack) return sides;
+    if (game.blackControlType === 'AI' && game.blackModelId) sides.push('WHITE');
+    if (game.whiteControlType === 'AI' && game.whiteModelId) sides.push('BLACK');
+    return sides;
+  });
+
+  readonly practicePly = computed(() => {
+    if (!this.practiceModelSides().length) return null;
+    const moves = this.moves();
+    const selected = moves[this.currentMoveIndex()];
+    if (
+      selected &&
+      moves.find((move) => move.moveNumber === selected.moveNumber && move.color === selected.color)
+        ?.id !== selected.id
+    )
+      return null;
+
+    if (
+      this.currentMoveIndex() === moves.length - 1 &&
+      ['CHECKMATE', 'STALEMATE', 'REPETITION', 'INSUFFICIENT_MATERIAL', 'FIFTY_MOVE'].includes(
+        this.game()?.resultReason ?? '',
+      )
+    )
+      return null;
+
+    return selected ? (selected.moveNumber - 1) * 2 + (selected.color === 'WHITE' ? 1 : 2) : 0;
+  });
+
   isLive!: () => boolean;
   overrideAllowed = computed(() => this.gameActionsAvailable() && this.game()?.status === 'PAUSED');
   activeColor!: () => 'WHITE' | 'BLACK' | null;
@@ -375,9 +420,11 @@ export class GameView implements OnInit, OnDestroy {
         type: 'move',
         quality: badge ? { badge, tooltip: qualityTooltip(move.quality) } : null,
         label: `${move.color === 'WHITE' ? 'White' : 'Black'} played ${move.san}`,
-        detail: move.isBook
-          ? 'Book move'
-          : `${this.timelinePlayerName(move.color, move.modelId)}${overrideSuffix}`,
+        detail: move.isInherited
+          ? 'From source game'
+          : move.isBook
+            ? 'Book move'
+            : `${this.timelinePlayerName(move.color, move.modelId)}${overrideSuffix}`,
         attemptSummary,
         tone: move.isOverride ? 'warning' : 'move',
         icon: move.isOverride ? 'edit' : 'arrow_right_alt',
@@ -612,6 +659,8 @@ export class GameView implements OnInit, OnDestroy {
     this.gameActionsAvailable.set(false);
     this.savingLimit.set(false);
     this.humanMoveSubmitting.set(false);
+    this.creatingPractice.set(false);
+    this.practiceRequest = undefined;
     this.pendingPromotion.set(null);
   }
 
@@ -626,6 +675,7 @@ export class GameView implements OnInit, OnDestroy {
 
   private installSnapshot(game: Game): void {
     const previous = this.game();
+    if (!previous && game.practiceKind && game.blackControlType === 'HUMAN') this.flipped.set(true);
     const selected = this.moves()[this.currentMoveIndex()];
     const wasAtLatest = previous === null || this.currentMoveIndex() === this.moves().length - 1;
     const moves = sortMovesInPlayOrder(game.moves ?? []);
@@ -1261,7 +1311,12 @@ export class GameView implements OnInit, OnDestroy {
     this.runGameAction(this.api.startGame(this.gameId, true), {
       next: (game) => this.applyResumeSnapshot(game),
       error: (err) => {
-        this.showServerError(err, 'Failed to resume the game.');
+        this.showServerError(
+          err,
+          this.game()?.status === 'WAITING'
+            ? 'Failed to start the practice game.'
+            : 'Failed to resume the game.',
+        );
       },
     });
   }
@@ -1399,6 +1454,43 @@ export class GameView implements OnInit, OnDestroy {
         },
       },
     );
+  }
+
+  playFromHere(side: 'WHITE' | 'BLACK'): void {
+    const game = this.game();
+    const ply = this.practicePly();
+    if (
+      !game ||
+      !this.gameActionsAvailable() ||
+      ply == null ||
+      this.creatingPractice() ||
+      !this.practiceModelSides().includes(side)
+    )
+      return;
+    const moveId = this.moves()[this.currentMoveIndex()]?.id;
+    let request = this.practiceRequest;
+    if (
+      !request ||
+      request.sourceId !== game.id ||
+      request.ply !== ply ||
+      request.side !== side ||
+      request.moveId !== moveId
+    ) {
+      request = { sourceId: game.id, ply, side, id: crypto.randomUUID(), moveId };
+      this.practiceRequest = request;
+    }
+    this.creatingPractice.set(true);
+    this.runGameAction(this.api.createPractice(game.id, ply, side, request.id, moveId), {
+      next: (practice) => {
+        this.creatingPractice.set(false);
+        this.practiceRequest = undefined;
+        void this.router.navigate(['/games', practice.id]);
+      },
+      error: (err) => {
+        this.creatingPractice.set(false);
+        this.showServerError(err, 'Could not create the practice game.');
+      },
+    });
   }
 
   goToTournament() {

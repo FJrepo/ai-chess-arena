@@ -91,11 +91,11 @@ public final class DtoMapper {
                 g.id,
                 g.tournament != null ? g.tournament.id : null,
                 g.whitePlayerName,
-                g.whiteParticipant != null ? g.whiteParticipant.controlType.name() : "AI",
+                g.playerType("WHITE").name(),
                 g.whiteModelId,
                 g.whiteParticipant != null ? g.whiteParticipant.id : null,
                 g.blackPlayerName,
-                g.blackParticipant != null ? g.blackParticipant.controlType.name() : "AI",
+                g.playerType("BLACK").name(),
                 g.blackModelId,
                 g.blackParticipant != null ? g.blackParticipant.id : null,
                 g.status.name(),
@@ -121,7 +121,8 @@ public final class DtoMapper {
                 g.turnStartedAt, g.turnDeadlineAt,
                 g.turnChatMode != null ? g.turnChatMode.name() : null,
                 g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
-                attempts, streamId, g.startingConfiguration, configurationHistory
+                attempts, streamId, g.startingConfiguration, configurationHistory,
+                g.practiceKind == null ? null : g.practiceKind.name(), g.practiceSourceGameId, g.practiceSourcePly
         );
     }
 
@@ -199,7 +200,7 @@ public final class DtoMapper {
                 m.createdAt,
                 toDto(quality),
                 m.chatMode != null ? m.chatMode.name() : null,
-                m.isBook
+                m.isBook, m.isInherited
         );
     }
 

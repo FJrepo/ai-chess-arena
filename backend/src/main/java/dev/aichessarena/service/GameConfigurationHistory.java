@@ -44,15 +44,16 @@ public class GameConfigurationHistory {
                 tournament == null ? null : apiValue(tournament.reasoningEffort),
                 tournament == null ? null : fingerprint(tournament.sharedCustomInstructions),
                 tournament == null ? null : fingerprint(tournament.defaultSystemPrompt),
-                player(game.whiteParticipant, game.whitePlayerName, game.whiteModelId, game.requestedReasoningEffort("WHITE")),
-                player(game.blackParticipant, game.blackPlayerName, game.blackModelId, game.requestedReasoningEffort("BLACK"))
+                player(game.whiteParticipant, game.whitePlayerName, game.whiteModelId, game.playerType("WHITE"),
+                        game.requestedReasoningEffort("WHITE")),
+                player(game.blackParticipant, game.blackPlayerName, game.blackModelId, game.playerType("BLACK"),
+                        game.requestedReasoningEffort("BLACK"))
         );
     }
 
     private GameConfiguration.Player player(TournamentParticipant participant, String name, String modelId,
-                                            ReasoningEffort requested) {
-        return new GameConfiguration.Player(name, modelId,
-                participant == null ? TournamentParticipant.ControlType.AI.name() : participant.controlType.name(),
+                                            Game.PlayerType type, ReasoningEffort requested) {
+        return new GameConfiguration.Player(name, modelId, type.name(),
                 participant == null ? null : apiValue(participant.reasoningEffort),
                 apiValue(requested),
                 participant == null ? null : fingerprint(participant.customInstructions),

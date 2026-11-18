@@ -181,6 +181,47 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
 }
 
 describe('GameView', () => {
+  it('forks the selected playable ply on the only side with an opposing model', () => {
+    const createPractice = vi.fn(() => of(gameWith({ id: 'fork' })));
+    const { component } = createComponent({ api: { createPractice } });
+    component.gameActionsAvailable.set(true);
+    component.game.set(
+      gameWith({
+        status: 'COMPLETED',
+        resultReason: 'REPETITION',
+        blackControlType: 'HUMAN',
+        blackModelId: null,
+      }),
+    );
+    component.moves.set([
+      storedMove(1, 'WHITE', 'e4', AFTER_E4),
+      storedMove(1, 'BLACK', 'e5', AFTER_E5),
+    ]);
+    component.currentMoveIndex.set(1);
+    expect(component.practicePly()).toBeNull();
+    component.playFromHere('BLACK');
+
+    component.currentMoveIndex.set(0);
+    expect(component.practicePly()).toBe(1);
+    expect(component.practiceModelSides()).toEqual(['BLACK']);
+    component.playFromHere('WHITE');
+    expect(createPractice).not.toHaveBeenCalled();
+    component.playFromHere('BLACK');
+    expect(createPractice).toHaveBeenCalledWith('g-1', 1, 'BLACK', expect.any(String), 'm-1-WHITE');
+  });
+
+  it('reuses the same fork request id when a failed response is retried for the same position', () => {
+    const createPractice = vi.fn(() => throwError(() => ({ status: 502 })));
+    const { component } = createComponent({ api: { createPractice } });
+    component.gameActionsAvailable.set(true);
+    component.game.set(gameWith({ status: 'FORFEIT' }));
+    component.currentMoveIndex.set(-1);
+    component.playFromHere('WHITE');
+    component.playFromHere('WHITE');
+    expect(createPractice).toHaveBeenCalledTimes(2);
+    expect(createPractice.mock.calls[0]).toEqual(createPractice.mock.calls[1]);
+  });
+
   it('downloads improved PGN as UTF-8 through the existing action', () => {
     vi.useFakeTimers();
     const createObjectURL = vi.fn().mockReturnValue('blob:export');

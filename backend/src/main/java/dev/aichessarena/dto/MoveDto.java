@@ -26,5 +26,6 @@ public record MoveDto(
         MoveQualityDto quality,
         /** The chat mode that applied to a model move (OFF, OPTIONAL, MANDATORY); omitted for human moves and overrides. */
         String chatMode,
-        boolean isBook
+        boolean isBook,
+        boolean isInherited
 ) {}

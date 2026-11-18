@@ -49,7 +49,8 @@ public class AnalyticsWindowLoader {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
         List<Game> games = gameRepository.findInWindow(cutoff, tournamentId, legalMoveHints).stream()
                 .filter(game -> !AnalyticsGameOutcomeClassifier.isBye(game))
-                .filter(game -> game.status != Game.GameStatus.CANCELLED)
+                .filter(game -> !includeModelAnalytics || !game.isPractice())
+                .filter(game -> game.status != Game.GameStatus.CANCELLED || game.isPractice())
                 .toList();
         return scopeFor(
                 cutoff,

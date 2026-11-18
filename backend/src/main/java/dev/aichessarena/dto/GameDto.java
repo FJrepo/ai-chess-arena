@@ -67,7 +67,10 @@ public record GameDto(
         List<MoveAttemptDto> attempts,
         String streamId,
         GameConfiguration startingConfiguration,
-        List<GameConfigurationRevisionDto> configurationHistory
+        List<GameConfigurationRevisionDto> configurationHistory,
+        String practiceKind,
+        UUID practiceSourceGameId,
+        Integer practiceSourcePly
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

@@ -61,6 +61,10 @@ public class Move extends PanacheEntityBase {
     @Column(name = "is_book", nullable = false)
     public boolean isBook;
 
+    /** Canonical history copied into a practice game, with no charge or attempt attached. */
+    @Column(name = "is_inherited", nullable = false)
+    public boolean isInherited;
+
     @Column(name = "is_override", nullable = false)
     public boolean isOverride = false;
 

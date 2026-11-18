@@ -299,8 +299,12 @@ public class GameMoveService {
     private void updateGameState(Game game, String fen, String san, int moveNumber, String color) {
         game.currentFen = fen;
 
-        String moveStr = "WHITE".equals(color) ? moveNumber + ". " + san : san;
-        game.pgn = (game.pgn == null ? "" : game.pgn + " ") + moveStr;
+        game.pgn = appendPgn(game.pgn, san, moveNumber, color);
         gameRepository.persist(game);
+    }
+
+    static String appendPgn(String pgn, String san, int moveNumber, String color) {
+        String moveStr = "WHITE".equals(color) ? moveNumber + ". " + san : san;
+        return (pgn == null ? "" : pgn + " ") + moveStr;
     }
 }
