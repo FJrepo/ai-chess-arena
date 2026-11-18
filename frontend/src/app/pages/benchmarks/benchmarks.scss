@@ -161,6 +161,15 @@ dt,
   gap: var(--app-space-4);
 }
 
+.reload-confirmation {
+  display: grid;
+  gap: var(--app-space-3);
+}
+
+.create-form + .reload-confirmation {
+  margin-block-start: var(--app-space-4);
+}
+
 .create-form fieldset {
   min-width: 0;
   margin: 0;
@@ -411,4 +420,8 @@ td.num,
     font-weight: inherit;
     color: var(--mat-sys-on-surface-variant);
   }
+}
+
+.rerun-preview {
+  margin-block-end: var(--app-space-4);
 }

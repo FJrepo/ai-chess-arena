@@ -6,7 +6,15 @@ import {
   TitleCasePipe,
   formatCurrency,
 } from '@angular/common';
-import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  LOCALE_ID,
+  WritableSignal,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -22,10 +30,12 @@ import type {
   BenchmarkGame,
   BenchmarkModelResult,
   BenchmarkPair,
+  BenchmarkRerunChanges,
   BenchmarkRun,
   BenchmarkRunSettings,
   BenchmarkSummary,
   CreateBenchmarkRequest,
+  RerunBenchmarkRequest,
 } from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
 import {
@@ -40,6 +50,9 @@ import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 
 const pendingSubmissionsKey = 'benchmark-pending-submissions';
+const pendingRerunsKey = 'benchmark-pending-reruns';
+const promptChatSuffix = { OFF: '-silent', OPTIONAL: '', MANDATORY: '-chat-required' };
+const noHintsSuffix = '-no-hints';
 
 @Component({
   selector: 'app-benchmarks',
@@ -69,6 +82,13 @@ export class Benchmarks {
   private readonly locale = inject(LOCALE_ID);
   private readonly reload = new Subject<void>();
   private readonly pendingSubmissions = signal(this.readPendingSubmissions());
+  private readonly pendingReruns = signal(this.readPendingReruns());
+  private readonly unprotectedStart = signal<(() => void) | null>(null);
+
+  readonly pendingRerun = computed(() => {
+    const id = this.runId();
+    return id === null ? null : (this.pendingReruns().get(id) ?? null);
+  });
 
   readonly runId = signal<string | null>(null);
   readonly runs = signal<BenchmarkSummary[] | null>(null);
@@ -77,7 +97,22 @@ export class Benchmarks {
   readonly busy = signal(false);
   readonly loadError = signal('');
   readonly actionError = signal('');
-  readonly hasPendingSubmission = computed(() => this.pendingSubmissions().size > 0);
+  readonly needsReloadConfirmation = computed(() => this.unprotectedStart() !== null);
+  readonly reloadConfirmationDisabled = computed(
+    () => this.busy() || (this.runId() !== null && this.loading()),
+  );
+  readonly hasPendingSubmission = computed(() =>
+    [...this.pendingSubmissions().keys()].some((key) => !key.startsWith('rerun:')),
+  );
+  readonly rerunOpen = signal(false);
+  readonly rerunSettings = {
+    modelId: 'Model ID',
+    reasoningEffort: 'Requested effort',
+    legalMoveHints: 'Legal move hints',
+    chatMode: 'Chat mode',
+    budgetUsd: 'Budget (USD)',
+  };
+  readonly rerunSettingKeys = Object.keys(this.rerunSettings) as (keyof BenchmarkRerunChanges)[];
   readonly efforts = REASONING_EFFORTS;
   readonly effortLabel = reasoningEffortLabel;
   readonly reasonLabel = resultReasonLabel;
@@ -100,6 +135,12 @@ export class Benchmarks {
   chatMode: CreateBenchmarkRequest['chatMode'] = 'OFF';
   budget = '';
   concurrency: number | null = 2;
+  rerunSetting: keyof BenchmarkRerunChanges | '' = '';
+  rerunModelFrom = '';
+  rerunModelTo = '';
+  rerunEffort: BenchmarkRun['reasoningEffort'] = 'default';
+  rerunChat: BenchmarkRun['chatMode'] = 'OFF';
+  rerunBudget = '';
   resumeBudget = '';
   resumeConcurrency: number | null = null;
   readonly recipes = BENCHMARK_RECIPES;
@@ -114,6 +155,8 @@ export class Benchmarks {
           this.runId.set(id);
           this.report.set(null);
           this.actionError.set('');
+          this.rerunOpen.set(false);
+          this.cancelUnprotectedStart();
           return this.reload.pipe(
             startWith(undefined),
             switchMap(() => {
@@ -180,10 +223,14 @@ export class Benchmarks {
   get modelError(): string {
     const ids = this.modelIds;
     if (ids.length === 0 || ids.length > 8) return 'Enter one to eight model IDs.';
-    if (ids.some((id) => id.length > 255 || !/^~?[\w.-]+\/[\w.:-]+$/.test(id))) {
+    if (ids.some((id) => !this.validModelId(id))) {
       return 'Use provider/model IDs.';
     }
     return new Set(ids).size !== ids.length ? 'Each model ID must be different.' : '';
+  }
+
+  private validModelId(id: string): boolean {
+    return id.length <= 255 && /^~?[\w.-]+\/[\w.:-]+$/.test(id);
   }
 
   private validStrength(value: number | null): value is number {
@@ -218,24 +265,65 @@ export class Benchmarks {
     }
   }
 
-  private setPendingSubmission(fingerprint: string, requestId: string | null): void {
-    const pending = new Map(this.pendingSubmissions());
-    if (requestId === null) pending.delete(fingerprint);
-    else pending.set(fingerprint, requestId);
-    this.pendingSubmissions.set(pending);
+  private persistPending(storageKey: string, pending: ReadonlyMap<string, unknown>): boolean {
     try {
       if (pending.size) {
-        sessionStorage.setItem(pendingSubmissionsKey, JSON.stringify(Object.fromEntries(pending)));
+        sessionStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(pending)));
       } else {
-        sessionStorage.removeItem(pendingSubmissionsKey);
+        sessionStorage.removeItem(storageKey);
       }
+      return true;
     } catch {
-      // In-memory retries still work when storage is unavailable.
+      return false;
     }
   }
 
+  private startWithPendingRequest<T>(
+    pending: WritableSignal<Map<string, T>>,
+    storageKey: string,
+    key: string,
+    request: T,
+    submit: () => void,
+  ): void {
+    const next = new Map(pending()).set(key, request);
+    const start = () => {
+      pending.set(next);
+      submit();
+    };
+    if (this.persistPending(storageKey, next)) {
+      start();
+    } else {
+      this.unprotectedStart.set(() => {
+        this.persistPending(storageKey, next);
+        start();
+      });
+    }
+  }
+
+  private clearPendingRequest<T>(
+    pending: WritableSignal<Map<string, T>>,
+    storageKey: string,
+    key: string,
+  ): void {
+    const next = new Map(pending());
+    next.delete(key);
+    pending.set(next);
+    this.persistPending(storageKey, next);
+  }
+
+  confirmUnprotectedStart(): void {
+    if (this.reloadConfirmationDisabled()) return;
+    const start = this.unprotectedStart();
+    this.cancelUnprotectedStart();
+    start?.();
+  }
+
+  cancelUnprotectedStart(): void {
+    this.unprotectedStart.set(null);
+  }
+
   create(): void {
-    if (this.busy()) return;
+    if (this.busy() || this.needsReloadConfirmation()) return;
     this.actionError.set('');
     const name = this.name.trim();
     const low = this.lowerStrength;
@@ -262,28 +350,216 @@ export class Benchmarks {
       const fingerprint = JSON.stringify(details);
       const pendingId = this.pendingSubmissions().get(fingerprint);
       const clientRequestId = pendingId ?? newRequestId();
-      if (!pendingId) this.setPendingSubmission(fingerprint, clientRequestId);
-      this.busy.set(true);
-      this.api
-        .createBenchmark({ ...details, clientRequestId })
-        .pipe(
-          takeUntilDestroyed(this.destroyRef),
-          finalize(() => this.busy.set(false)),
-        )
-        .subscribe({
-          next: ({ run }) => {
-            this.setPendingSubmission(fingerprint, null);
-            void this.router.navigate(['/benchmarks', run.id]);
-          },
-          error: (error) => {
-            const status = error?.status;
-            if (status >= 400 && status < 500 && status !== 408) {
-              this.setPendingSubmission(fingerprint, null);
-            }
-            this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.');
-          },
-        });
+      const clearPending = () =>
+        this.clearPendingRequest(this.pendingSubmissions, pendingSubmissionsKey, fingerprint);
+      const submit = () =>
+        this.submitCreation(
+          this.api.createBenchmark({ ...details, clientRequestId }),
+          clearPending,
+          (id) => void this.router.navigate(['/benchmarks', id]),
+          clearPending,
+        );
+      if (pendingId) {
+        submit();
+      } else {
+        this.startWithPendingRequest(
+          this.pendingSubmissions,
+          pendingSubmissionsKey,
+          fingerprint,
+          clientRequestId,
+          submit,
+        );
+      }
     }
+  }
+
+  openRerun(source: BenchmarkRun): void {
+    this.cancelUnprotectedStart();
+    this.rerunSetting = '';
+    this.rerunModelFrom = source.definition.modelIds[0];
+    this.rerunModelTo = '';
+    this.rerunEffort = source.reasoningEffort;
+    this.rerunChat = source.chatMode;
+    this.rerunBudget = source.budgetUsd;
+    this.actionError.set('');
+    this.rerunOpen.set(true);
+  }
+
+  rerunChange(source: BenchmarkRun): Partial<BenchmarkRerunChanges> {
+    switch (this.rerunSetting) {
+      case 'modelId':
+        return { modelId: { from: this.rerunModelFrom, to: this.rerunModelTo.trim() } };
+      case 'reasoningEffort':
+        return { reasoningEffort: this.rerunEffort };
+      case 'legalMoveHints':
+        return { legalMoveHints: !source.legalMoveHints };
+      case 'chatMode':
+        return { chatMode: this.rerunChat };
+      case 'budgetUsd':
+        return { budgetUsd: canonicalBudget(this.rerunBudget.trim()) };
+      default:
+        return {};
+    }
+  }
+
+  rerunValidation(source: BenchmarkRun, change: Partial<BenchmarkRerunChanges>): string {
+    const { modelId, reasoningEffort, chatMode, budgetUsd } = change;
+    if (modelId) {
+      if (!this.validModelId(modelId.to)) return 'Enter a provider/model ID.';
+      if (source.definition.modelIds.includes(modelId.to)) {
+        return 'Choose a model ID outside the source lineup.';
+      }
+    }
+    if (budgetUsd !== undefined && (!isBudgetDecimal(budgetUsd) || budgetUsd === '0')) {
+      return 'Enter a positive USD budget to the cent.';
+    }
+    if (
+      reasoningEffort === source.reasoningEffort ||
+      chatMode === source.chatMode ||
+      budgetUsd === canonicalBudget(source.budgetUsd)
+    ) {
+      return 'Choose a different value or select No change.';
+    }
+    return '';
+  }
+
+  rerunPreview(source: BenchmarkRun, change: Partial<BenchmarkRerunChanges>) {
+    const definition = source.definition;
+    const hints = change.legalMoveHints ?? source.legalMoveHints;
+    const chat = change.chatMode ?? source.chatMode;
+    const sourcePromptSuffix =
+      promptChatSuffix[source.chatMode] + (source.legalMoveHints ? '' : noHintsSuffix);
+    const promptFamily = sourcePromptSuffix
+      ? definition.promptVersion.slice(0, -sourcePromptSuffix.length)
+      : definition.promptVersion;
+    const promptVersion = promptFamily + promptChatSuffix[chat] + (hints ? '' : noHintsSuffix);
+    const budget = canonicalBudget(source.budgetUsd);
+    const models = definition.modelIds.map((id) =>
+      id === change.modelId?.from ? change.modelId.to : id,
+    );
+    return [
+      { setting: 'Model IDs', before: definition.modelIds.join(', '), after: models.join(', ') },
+      {
+        setting: 'Requested effort',
+        before: this.effortLabel(source.reasoningEffort),
+        after: this.effortLabel(change.reasoningEffort ?? source.reasoningEffort),
+      },
+      {
+        setting: 'Legal move hints',
+        before: source.legalMoveHints ? 'On' : 'Off',
+        after: hints ? 'On' : 'Off',
+      },
+      { setting: 'Chat mode', before: source.chatMode, after: chat },
+      { setting: 'Budget (USD)', before: budget, after: change.budgetUsd ?? budget },
+      { setting: 'Prompt version', before: definition.promptVersion, after: promptVersion },
+      ...[
+        ['Opening suite', definition.suite],
+        ['Stockfish levels', definition.targetStrengths.join(' / ')],
+        ['Model colors', definition.modelColors.join(' / ')],
+        ['Stockfish executable SHA-256', definition.engineSha256],
+        [
+          'Stockfish NNUE weights',
+          definition.engineNetworks.map((nnue) => nnue.name + ' ' + nnue.sha256).join(', '),
+        ],
+        ['Search nodes', definition.searchNodes],
+        ['Threads', definition.threads],
+        ['Hash (MiB)', definition.hashMiB],
+        ['Concurrent games', source.maxConcurrentGames],
+      ].map(([setting, value]) => ({ setting, before: value, after: value })),
+    ];
+  }
+
+  createRerun(source: BenchmarkRun): void {
+    if (
+      this.busy() ||
+      this.loading() ||
+      this.needsReloadConfirmation() ||
+      this.pendingReruns().has(source.run.id)
+    ) {
+      return;
+    }
+    const change = this.rerunChange(source);
+    const validation = this.rerunValidation(source, change);
+    this.actionError.set(validation);
+    if (validation) return;
+    const request: RerunBenchmarkRequest = {
+      clientRequestId: newRequestId(),
+      change,
+      expectedRunSettings: {
+        budgetUsd: canonicalBudget(source.budgetUsd),
+        maxConcurrentGames: source.maxConcurrentGames,
+      },
+    };
+    this.startWithPendingRequest(this.pendingReruns, pendingRerunsKey, source.run.id, request, () =>
+      this.recoverRerun(source.run.id),
+    );
+  }
+
+  recoverRerun(sourceId: string): void {
+    if (this.busy() || this.loading()) return;
+    const request = this.pendingReruns().get(sourceId);
+    if (!request) return;
+    this.actionError.set('');
+    this.submitCreation(
+      this.api.rerunBenchmark(sourceId, request),
+      () => this.clearPendingRequest(this.pendingReruns, pendingRerunsKey, sourceId),
+      (id) =>
+        void this.router.navigate(['/benchmarks', 'compare'], {
+          queryParams: { base: sourceId, candidate: id },
+        }),
+    );
+  }
+
+  startSeparateRerun(source: BenchmarkRun): void {
+    if (this.busy() || this.loading()) return;
+    this.clearPendingRequest(this.pendingReruns, pendingRerunsKey, source.run.id);
+    this.openRerun(source);
+  }
+
+  private readPendingReruns(): Map<string, RerunBenchmarkRequest> {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(pendingRerunsKey) ?? '{}') as Record<
+        string,
+        RerunBenchmarkRequest
+      >;
+      return new Map(
+        Object.entries(stored).filter(
+          ([, request]) =>
+            typeof request?.clientRequestId === 'string' &&
+            request.change !== null &&
+            typeof request.change === 'object' &&
+            typeof request.expectedRunSettings?.budgetUsd === 'string' &&
+            Number.isInteger(request.expectedRunSettings.maxConcurrentGames),
+        ),
+      );
+    } catch {
+      return new Map();
+    }
+  }
+
+  private submitCreation(
+    request: Observable<BenchmarkRun>,
+    clearPending: () => void,
+    onCreated: (id: string) => void,
+    clearOnClientError?: () => void,
+  ): void {
+    this.busy.set(true);
+    request
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.busy.set(false)),
+      )
+      .subscribe({
+        next: ({ run }) => {
+          clearPending();
+          onCreated(run.id);
+        },
+        error: (error) => {
+          const status = error?.status;
+          if (status >= 400 && status < 500 && status !== 408) clearOnClientError?.();
+          this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.');
+        },
+      });
   }
 
   changeRun(run: BenchmarkSummary, action: 'pause' | 'resume' | 'cancel'): void {

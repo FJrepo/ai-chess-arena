@@ -24,6 +24,23 @@
           Refresh
         </button>
         @if (report(); as data) {
+          <button
+            mat-stroked-button
+            type="button"
+            [disabled]="loading() || busy()"
+            (click)="openRerun(data)"
+          >
+            Rerun
+          </button>
+          <a
+            mat-stroked-button
+            routerLink="/benchmarks/compare"
+            [queryParams]="{
+              base: data.run.rerunOf ?? data.run.id,
+              candidate: data.run.rerunOf ? data.run.id : null,
+            }"
+            >Compare runs</a
+          >
           @if (data.run.status === 'RUNNING') {
             <button
               mat-stroked-button
@@ -51,7 +68,10 @@
 
     @if (report(); as data) {
       @if (
-        data.run.pauseReason || data.run.status === 'PAUSED' || hasPausedGames() || actionError()
+        data.run.pauseReason ||
+        data.run.status === 'PAUSED' ||
+        hasPausedGames() ||
+        (!rerunOpen() && actionError())
       ) {
         <div class="run-management">
           @if (data.run.pauseReason) {
@@ -87,7 +107,7 @@
               Open a paused game and choose Resume to return it to play or queue it for a free slot.
             </p>
           }
-          @if (actionError()) {
+          @if (!rerunOpen() && actionError()) {
             <p class="error" role="alert">{{ actionError() }}</p>
           }
         </div>
@@ -110,7 +130,7 @@
           <p class="secondary" role="status">A benchmark creation may already be in progress</p>
         }
 
-        <form class="create-form" (ngSubmit)="create()">
+        <form class="create-form" [inert]="needsReloadConfirmation()" (ngSubmit)="create()">
           <div class="recipe-row">
             <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
               <mat-label>Recipe</mat-label>
@@ -213,7 +233,7 @@
           </fieldset>
 
           <div class="form-footer">
-            <button mat-flat-button type="submit" [disabled]="busy()">
+            <button mat-flat-button type="submit" [disabled]="busy() || needsReloadConfirmation()">
               {{ busy() ? 'Creating…' : 'Create and start run' }}
             </button>
             <p class="secondary">
@@ -224,6 +244,9 @@
             <p class="error" role="alert">{{ actionError() }}</p>
           }
         </form>
+        @if (needsReloadConfirmation()) {
+          <ng-container *ngTemplateOutlet="reloadConfirmation" />
+        }
       </section>
 
       @if (runs(); as saved) {
@@ -266,6 +289,163 @@
   }
 
   @if (report(); as data) {
+    @if (rerunOpen()) {
+      @let change = rerunChange(data);
+      @let validation = rerunValidation(data, change);
+      <section class="panel" aria-labelledby="rerun-title">
+        <h2 id="rerun-title">Before you rerun</h2>
+        @if (pendingRerun()) {
+          <p class="pause-note" role="status">
+            A rerun may already have been created. Recover it or start a separate rerun.
+          </p>
+        } @else {
+          <p>The new run starts automatically and uses its own budget.</p>
+          <form
+            id="rerun-form"
+            aria-label="Rerun benchmark"
+            [inert]="needsReloadConfirmation()"
+            (ngSubmit)="createRerun(data)"
+          >
+            <div class="form-grid">
+              <mat-form-field appearance="outline">
+                <mat-label>Setting to change</mat-label>
+                <select matNativeControl name="rerunSetting" [(ngModel)]="rerunSetting">
+                  <option value="">No change (measure variance)</option>
+                  @for (setting of rerunSettingKeys; track setting) {
+                    <option [value]="setting">{{ rerunSettings[setting] }}</option>
+                  }
+                </select>
+              </mat-form-field>
+              @switch (rerunSetting) {
+                @case ('modelId') {
+                  <mat-form-field appearance="outline">
+                    <mat-label>Model to replace</mat-label>
+                    <select matNativeControl name="rerunModelFrom" [(ngModel)]="rerunModelFrom">
+                      @for (model of data.definition.modelIds; track model) {
+                        <option [value]="model">{{ model }}</option>
+                      }
+                    </select>
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Replacement model ID</mat-label>
+                    <input
+                      matInput
+                      name="rerunModelTo"
+                      maxlength="255"
+                      [(ngModel)]="rerunModelTo"
+                    />
+                  </mat-form-field>
+                }
+                @case ('reasoningEffort') {
+                  <mat-form-field appearance="outline">
+                    <mat-label>New effort</mat-label>
+                    <select matNativeControl name="rerunEffort" [(ngModel)]="rerunEffort">
+                      <option value="default">Model default</option>
+                      @for (effort of efforts; track effort) {
+                        <option [value]="effort">{{ effortLabel(effort) }}</option>
+                      }
+                    </select>
+                  </mat-form-field>
+                }
+                @case ('chatMode') {
+                  <mat-form-field appearance="outline">
+                    <mat-label>New chat mode</mat-label>
+                    <select matNativeControl name="rerunChat" [(ngModel)]="rerunChat">
+                      <option value="OFF">Off</option>
+                      <option value="OPTIONAL">Optional</option>
+                      <option value="MANDATORY">Mandatory</option>
+                    </select>
+                  </mat-form-field>
+                }
+                @case ('budgetUsd') {
+                  <mat-form-field appearance="outline">
+                    <mat-label>New budget (USD)</mat-label>
+                    <input
+                      matInput
+                      name="rerunBudget"
+                      inputmode="decimal"
+                      [(ngModel)]="rerunBudget"
+                    />
+                  </mat-form-field>
+                }
+              }
+            </div>
+            <div class="table-scroll rerun-preview">
+              <table aria-label="Rerun settings">
+                <thead>
+                  <tr>
+                    <th scope="col">Setting</th>
+                    <th scope="col">Source run</th>
+                    <th scope="col">New run</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of rerunPreview(data, change); track row.setting) {
+                    <tr>
+                      <th scope="row">{{ row.setting }}</th>
+                      <td>{{ row.before || '—' }}</td>
+                      <td>
+                        @if (row.after !== row.before) {
+                          <strong>{{ row.after || '—' }}</strong>
+                          <span class="cdk-visually-hidden"> (changed)</span>
+                        } @else {
+                          {{ row.after || '—' }}
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </form>
+        }
+        @if (pendingRerun() ? actionError() : validation || actionError(); as error) {
+          <p class="error" role="alert">{{ error }}</p>
+        }
+        @if (needsReloadConfirmation()) {
+          <ng-container *ngTemplateOutlet="reloadConfirmation" />
+        } @else {
+          <div class="page-actions run-actions">
+            @if (pendingRerun()) {
+              <button
+                mat-flat-button
+                type="button"
+                [disabled]="busy() || loading()"
+                (click)="recoverRerun(data.run.id)"
+              >
+                Recover rerun
+              </button>
+              <button
+                mat-button
+                type="button"
+                [disabled]="busy() || loading()"
+                (click)="startSeparateRerun(data)"
+              >
+                Start a separate rerun
+              </button>
+            } @else {
+              <button
+                mat-flat-button
+                type="submit"
+                form="rerun-form"
+                [disabled]="busy() || loading() || !!validation"
+              >
+                Create and start rerun
+              </button>
+            }
+            <button
+              mat-button
+              type="button"
+              [disabled]="busy()"
+              (click)="rerunOpen.set(false); actionError.set('')"
+            >
+              Close
+            </button>
+          </div>
+        }
+      </section>
+    }
+
     <section class="panel" aria-labelledby="model-results">
       <h2 id="model-results">Model results</h2>
       <div class="table-scroll">
@@ -558,6 +738,27 @@
     }
   }
 </div>
+
+<ng-template #reloadConfirmation>
+  <div class="reload-confirmation">
+    <p id="reload-protection-warning" class="pause-note" role="alert">
+      Reload protection is unavailable in this browser (storage blocked). If you reload before the
+      run appears, a second run could be started. Start anyway?
+    </p>
+    <div class="page-actions run-actions">
+      <button
+        mat-flat-button
+        type="button"
+        aria-describedby="reload-protection-warning"
+        [disabled]="reloadConfirmationDisabled()"
+        (click)="confirmUnprotectedStart()"
+      >
+        Start anyway
+      </button>
+      <button mat-button type="button" (click)="cancelUnprotectedStart()">Go back</button>
+    </div>
+  </div>
+</ng-template>
 
 <ng-template #runStatus let-status>
   <span class="status-chip" [attr.data-status]="status">

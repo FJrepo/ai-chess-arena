@@ -3,7 +3,11 @@ import { TestBed } from '@angular/core/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import type { BenchmarkRun, CreateBenchmarkRequest } from '../../models/benchmark.model';
+import type {
+  BenchmarkRun,
+  CreateBenchmarkRequest,
+  RerunBenchmarkRequest,
+} from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
 import { BENCHMARK_RECIPES } from '../../utils/benchmark-recipes';
 import { Benchmarks } from './benchmarks';
@@ -17,6 +21,7 @@ const run: BenchmarkRun = {
     createdAt: '2026-01-01T15:00:00',
     status: 'PAUSED',
     pauseReason: 'Budget reached',
+    rerunOf: null,
   },
   definition: {
     suite: 'stockfish-ladder-v1',
@@ -29,6 +34,7 @@ const run: BenchmarkRun = {
     searchNodes: 50000,
     threads: 1,
     hashMiB: 16,
+    promptVersion: 'v2-silent-no-hints',
   },
   legalMoveHints: false,
   reasoningEffort: 'low',
@@ -86,6 +92,9 @@ function setup(id?: string) {
     createBenchmark: vi.fn<(request: CreateBenchmarkRequest) => Observable<BenchmarkRun>>(() =>
       of(run),
     ),
+    rerunBenchmark: vi.fn<(id: string, request: RerunBenchmarkRequest) => Observable<BenchmarkRun>>(
+      () => of({ ...run, run: { ...run.run, id: 'candidate-run' } }),
+    ),
     pauseBenchmark: vi.fn(() => of(run)),
     cancelBenchmark: vi.fn(() =>
       of({ ...run, run: { ...run.run, status: 'CANCELLED', pauseReason: null } }),
@@ -112,6 +121,17 @@ function fillCreateForm(component: Benchmarks, budget = '1') {
   component.budget = budget;
 }
 
+function clickButton(page: HTMLElement, label: string) {
+  const button = [...page.querySelectorAll('button')].find(
+    (element) => element.textContent.trim() === label,
+  );
+  expect(button).toBeDefined();
+  button!.click();
+}
+
+const reloadWarning =
+  'Reload protection is unavailable in this browser (storage blocked). If you reload before the run appears, a second run could be started. Start anyway?';
+
 const spendCases = [
   { amount: 0.000049, total: '<$0.01', game: '<$0.0001' },
   { amount: 0.004321, total: '<$0.01', game: '$0.0043' },
@@ -128,6 +148,12 @@ describe('Benchmarks', () => {
 
   it('validates the create form and starts a run with exact budget and chosen models', () => {
     const { component, api, navigate } = setup();
+    api.createBenchmark.mockImplementationOnce(({ clientRequestId, ...details }) => {
+      expect(JSON.parse(sessionStorage.getItem('benchmark-pending-submissions') ?? '{}')).toEqual({
+        [JSON.stringify(details)]: clientRequestId,
+      });
+      return of(run);
+    });
     component.name = 'Opening comparison';
     component.modelsText = 'fixture/one\nfixture/one';
     component.budget = '.50';
@@ -324,19 +350,30 @@ describe('Benchmarks', () => {
     expect(api.createBenchmark.mock.calls[2][0].clientRequestId).toBe(firstId);
   });
 
-  it('can retry in memory with session storage blocked', () => {
+  it('asks before creating with storage blocked and retries with the confirmed UUID', () => {
     const storage = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
       throw new DOMException('Storage blocked', 'SecurityError');
     });
+    const uuid = vi.spyOn(crypto, 'randomUUID');
     try {
-      const { component, api, navigate } = setup();
+      const { component, fixture, api, navigate } = setup();
       api.createBenchmark.mockReturnValueOnce(throwError(() => ({ status: 0 })));
       fillCreateForm(component);
       component.create();
+      expect(api.createBenchmark).not.toHaveBeenCalled();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain(reloadWarning);
+      const pendingId = uuid.mock.results.at(-1)?.value;
+      expect(pendingId).toMatch(/^[0-9a-f-]{36}$/);
+      clickButton(fixture.nativeElement, 'Start anyway');
+      expect(api.createBenchmark).toHaveBeenCalledTimes(1);
+      expect(api.createBenchmark.mock.calls[0][0].clientRequestId).toBe(pendingId);
       component.create();
+      expect(api.createBenchmark).toHaveBeenCalledTimes(2);
       expect(api.createBenchmark.mock.calls[1][0]).toEqual(api.createBenchmark.mock.calls[0][0]);
       expect(navigate).toHaveBeenCalledWith(['/benchmarks', run.run.id]);
     } finally {
+      uuid.mockRestore();
       storage.mockRestore();
     }
   });
@@ -380,6 +417,136 @@ describe('Benchmarks', () => {
     expect(fixture.nativeElement.textContent).toContain(alias);
     expect(fixture.nativeElement.textContent).toContain('anthropic/claude-sonnet-5');
   });
+
+  it('asks before posting or reposting after a reload when storage rejects writes', () => {
+    const { fixture, api, component } = setup(run.run.id);
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage blocked', 'QuotaExceededError');
+    });
+    const uuid = vi.spyOn(crypto, 'randomUUID');
+    try {
+      api.rerunBenchmark.mockReturnValue(throwError(() => ({ status: 0 })));
+      const page: HTMLElement = fixture.nativeElement;
+      fixture.detectChanges();
+      clickButton(page, 'Rerun');
+      fixture.detectChanges();
+      clickButton(page, 'Create and start rerun');
+      expect(api.rerunBenchmark).not.toHaveBeenCalled();
+      fixture.detectChanges();
+      expect(page.textContent).toContain(reloadWarning);
+
+      clickButton(page, 'Go back');
+      fixture.detectChanges();
+      expect(api.rerunBenchmark).not.toHaveBeenCalled();
+      expect(page.textContent).not.toContain('A rerun may already have been created');
+      expect(page.textContent).not.toContain(reloadWarning);
+      clickButton(page, 'Create and start rerun');
+      fixture.detectChanges();
+      const pendingId = uuid.mock.results.at(-1)?.value;
+      expect(pendingId).toMatch(/^[0-9a-f-]{36}$/);
+      clickButton(page, 'Start anyway');
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(1);
+      const original = api.rerunBenchmark.mock.calls[0][1];
+      expect(original.clientRequestId).toBe(pendingId);
+      expect(component.pendingRerun()).toEqual(original);
+
+      fixture.detectChanges();
+      expect(page.textContent).not.toContain('Create and start rerun');
+      clickButton(page, 'Recover rerun');
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(2);
+      expect(api.rerunBenchmark).toHaveBeenLastCalledWith(run.run.id, original);
+      fixture.destroy();
+
+      const reloaded = TestBed.createComponent(Benchmarks);
+      const nextPage: HTMLElement = reloaded.nativeElement;
+      reloaded.detectChanges();
+      clickButton(nextPage, 'Rerun');
+      reloaded.detectChanges();
+      clickButton(nextPage, 'Create and start rerun');
+      reloaded.detectChanges();
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(2);
+      expect(nextPage.textContent).toContain(reloadWarning);
+    } finally {
+      uuid.mockRestore();
+      storage.mockRestore();
+    }
+  });
+
+  it.each(['Recover rerun', 'Start a separate rerun'])(
+    'requires an explicit reload choice after an unconfirmed submission (%s)',
+    async (choice) => {
+      const { fixture, api, navigate } = setup(run.run.id);
+      fixture.detectChanges();
+      const page: HTMLElement = fixture.nativeElement;
+      clickButton(page, 'Rerun');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const setting = page.querySelector<HTMLSelectElement>('select[name="rerunSetting"]')!;
+      setting.value = 'legalMoveHints';
+      setting.dispatchEvent(new Event('change'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const diff = page.querySelector('table[aria-label="Rerun settings"]')!;
+      const hints = [...diff.querySelectorAll('tr')].find((row) =>
+        row.textContent.includes('Legal move hints'),
+      );
+      expect(hints?.textContent).toMatch(/Off.*On/);
+      expect(api.rerunBenchmark).not.toHaveBeenCalled();
+      api.rerunBenchmark.mockImplementationOnce((sourceId, request) => {
+        expect(JSON.parse(sessionStorage.getItem('benchmark-pending-reruns') ?? '{}')).toEqual({
+          [sourceId]: request,
+        });
+        return throwError(() => ({ status: 0 }));
+      });
+      clickButton(page, 'Create and start rerun');
+      const original = api.rerunBenchmark.mock.calls[0][1];
+      expect(original.change).toEqual({ legalMoveHints: true });
+      fixture.destroy();
+
+      api.getBenchmark.mockReturnValue(of({ ...run, budgetUsd: '9.00', maxConcurrentGames: 3 }));
+      const reloaded = TestBed.createComponent(Benchmarks);
+      reloaded.detectChanges();
+      const nextPage: HTMLElement = reloaded.nativeElement;
+      clickButton(nextPage, 'Rerun');
+      reloaded.detectChanges();
+      expect(nextPage.textContent).toContain('A rerun may already have been created');
+      expect(nextPage.textContent).not.toContain('Create and start rerun');
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(1);
+
+      const error = 'The source run limits changed.';
+      api.rerunBenchmark.mockReturnValueOnce(throwError(() => ({ status: 409, error: { error } })));
+      clickButton(nextPage, 'Recover rerun');
+      reloaded.detectChanges();
+      const rerunPanel = nextPage.querySelector('[aria-labelledby="rerun-title"]')!;
+      expect(rerunPanel.querySelector('[role="alert"]')?.textContent).toBe(error);
+      expect(rerunPanel.textContent).not.toContain('Create and start rerun');
+      expect(JSON.parse(sessionStorage.getItem('benchmark-pending-reruns') ?? '{}')).toEqual({
+        [run.run.id]: original,
+      });
+      expect(api.rerunBenchmark).toHaveBeenLastCalledWith(run.run.id, original);
+
+      clickButton(nextPage, choice);
+      if (choice === 'Recover rerun') {
+        expect(api.rerunBenchmark).toHaveBeenLastCalledWith(run.run.id, original);
+      } else {
+        reloaded.detectChanges();
+        await reloaded.whenStable();
+        reloaded.detectChanges();
+        expect(api.rerunBenchmark).toHaveBeenCalledTimes(2);
+        clickButton(nextPage, 'Create and start rerun');
+        const separate = api.rerunBenchmark.mock.calls[2][1];
+        expect(separate.clientRequestId).not.toBe(original.clientRequestId);
+        expect(separate.change).toEqual({});
+        expect(separate.expectedRunSettings).toEqual({ budgetUsd: '9', maxConcurrentGames: 3 });
+      }
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(3);
+      expect(sessionStorage.getItem('benchmark-pending-reruns')).toBeNull();
+      expect(navigate).toHaveBeenCalledWith(['/benchmarks', 'compare'], {
+        queryParams: { base: run.run.id, candidate: 'candidate-run' },
+      });
+    },
+  );
 
   it('renders scores, the incomplete pair, both game links, and spend', () => {
     const { fixture, api, component } = setup(run.run.id);
