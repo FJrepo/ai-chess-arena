@@ -290,6 +290,41 @@ class OpenRouterServiceChatTest {
         return new java.util.concurrent.CompletableFuture<>();
     }
 
+    @Test
+    void aTlsHandshakeStillPendingAtTheMoveDeadlineIsAProviderProblemNotATimeout() throws Exception {
+        try (LoopbackTls server = LoopbackTls.stallingHandshake()) {
+            OpenRouterService service = service(server.baseUrl());
+
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    in(Duration.ofMillis(500)), 100);
+
+            assertEquals(1, server.connections.get());
+            assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+            assertTrue(response.isProviderFailure(), "never the model's timeout");
+            assertFalse(response.timedOut());
+            assertTrue(response.connectionPending());
+            assertTrue(response.deliveryUncertain(), "no connect failure confirms that nothing was delivered");
+        }
+    }
+
+    @Test
+    void aTlsConnectionThatNeverAnswersStaysALossOnTime() throws Exception {
+        try (LoopbackTls server = LoopbackTls.silentAfterHandshake()) {
+            OpenRouterService service = service(server.baseUrl());
+            var client = server.trustingClient();
+            service.chatSender = (request, handler) -> client.sendAsync(request, handler);
+
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    in(Duration.ofMillis(1_500)), 100);
+
+            assertEquals(1, server.requests.get(), "the request reached the server");
+            assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+            assertTrue(response.timedOut());
+            assertFalse(response.connectionPending());
+            assertTrue(response.deliveryUncertain());
+        }
+    }
+
     /** Reads one HTTP/1.1 request with a Content-Length body. */
     private static void readRequest(java.io.InputStream in) throws IOException {
         StringBuilder head = new StringBuilder();

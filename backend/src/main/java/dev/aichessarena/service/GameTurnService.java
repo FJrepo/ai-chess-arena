@@ -205,7 +205,8 @@ public class GameTurnService {
                         delayMs == null ? null : TimeUnit.MILLISECONDS.toNanos(delayMs),
                         llmResponse.deliveryUncertain()), recorded);
                 if (action == Action.PAUSE_DELIVERY_UNCERTAIN) {
-                    return pauseForInspection(request, GameLifecycleService.DELIVERY_UNCERTAIN);
+                    return pauseForInspection(request, llmResponse.connectionPending()
+                            ? GameLifecycleService.CONNECTION_PENDING : GameLifecycleService.DELIVERY_UNCERTAIN);
                 }
                 if (action == Action.PAUSE_UNRECORDED) {
                     return pauseForInspection(request, GameLifecycleService.UNRECORDED_ANSWER);
