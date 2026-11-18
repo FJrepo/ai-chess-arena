@@ -23,6 +23,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
 - Play quality spells out average centipawn loss, marks lower values as better, and shows sample sizes beside model names.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
+- The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
 
 ### Fixed
 
@@ -32,6 +33,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
+- The five Analytics filters fit on one row at 1280 px. Cost & reliability section links restore heading focus on navigation, including Back and Forward. A waiting jump yields to filter edits, focus changes and **Sync Data**. Background refreshes leave jump links responsive when report data is already visible.
 - Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
 
 ## [1.7.1] - 2026-11-17

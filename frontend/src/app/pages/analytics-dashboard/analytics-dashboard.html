@@ -63,7 +63,7 @@
       />
       <mat-icon matPrefix>leaderboard</mat-icon>
     </mat-form-field>
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-effort">
       <mat-label>Comparison effort</mat-label>
       <mat-select [(ngModel)]="selectedReasoningEffort" (ngModelChange)="onCommonFiltersChanged()">
         <mat-option value="">All efforts</mat-option>
@@ -96,6 +96,7 @@
     mat-align-tabs="start"
     [selectedIndex]="selectedTabIndex()"
     (selectedIndexChange)="onTabChange($event)"
+    (animationDone)="onTabAnimationDone()"
   >
     <mat-tab>
       <ng-template mat-tab-label>
@@ -574,10 +575,6 @@
         Cost &amp; reliability
       </ng-template>
       <section class="tab-content">
-        <p class="tab-intro">
-          What models cost to run, how efficiently they use the engine and how reliably they
-          respond.
-        </p>
         <ng-template #healthKpiEmpty>
           <div class="value num">—</div>
           <div class="sub">
@@ -602,16 +599,36 @@
             }}
           </div>
         </ng-template>
-        <div class="kpi-grid cost-kpi-grid">
-          <div class="kpi-card">
-            <div class="label">Total Cost</div>
-            @if (health(); as h) {
-              <div class="value num">{{ h.costTotalUsd | currency: 'USD' }}</div>
-              <div class="sub">Across {{ h.gamesCount }} matches</div>
-            } @else {
-              <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
-            }
+        <div class="kpi-card spend-card">
+          <div class="spend-header">
+            <div>
+              <h2 id="spend" tabindex="-1" #costSectionHeading>Spend</h2>
+              @if (health(); as h) {
+                <p class="spend-headline">
+                  <span class="value num">{{ h.costTotalUsd | currency: 'USD' }}</span>
+                  <span>
+                    across <span class="num">{{ h.gamesCount | number }}</span>
+                    {{ h.gamesCount === 1 ? 'match' : 'matches' }}
+                  </span>
+                </p>
+              } @else {
+                <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
+              }
+            </div>
+            <nav class="cost-jump-links" aria-label="Cost and reliability sections">
+              @for (link of costJumpLinks(); track link.id) {
+                <a [href]="link.href" (click)="followCostJumpLink($event, link.url)">
+                  {{ link.label }}
+                </a>
+              }
+            </nav>
           </div>
+          <p class="tab-intro">
+            What models cost to run, how efficiently they use the engine and how reliably they
+            respond.
+          </p>
+        </div>
+        <div class="kpi-grid cost-kpi-grid">
           <div class="kpi-card">
             <div class="label">Move Volume</div>
             @if (health(); as h) {
@@ -624,8 +641,10 @@
           <div class="kpi-card">
             <div class="label">Avg Latency</div>
             @if (health(); as h) {
-              <div class="value num">{{ formatMs(h.averageResponseTimeMs) }}</div>
-              <div class="sub">P95: {{ formatMs(h.p95ResponseTimeMs) }}</div>
+              <div class="value num">{{ formatSeconds(h.averageResponseTimeMs) }}</div>
+              <div class="sub">
+                P95: <span class="num">{{ formatSeconds(h.p95ResponseTimeMs) }}</span>
+              </div>
             } @else {
               <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
             }
@@ -645,43 +664,63 @@
           </div>
           <div class="kpi-card">
             <div class="label">Trust Index</div>
-            @if (reliability(); as r) {
-              <div class="value num">{{ formatScore(reliabilityAverageScore()) }}</div>
-              <div class="sub">Average across {{ r.models.length }} models</div>
-            } @else {
-              <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
-            }
-          </div>
-          <div class="kpi-card">
-            <div class="label">Low Confidence</div>
-            @if (reliability(); as r) {
-              <div class="value num">{{ reliabilityLowConfidenceCount() }}</div>
-              <div class="sub">Models with insufficient data</div>
+            @if (reliability()?.models?.length; as modelCount) {
+              @let insufficientCount = reliabilityInsufficientCount();
+              @let modelLabel = modelCount === 1 ? 'model' : 'models';
+              @if (insufficientCount > modelCount / 2) {
+                @let enoughCount = modelCount - insufficientCount;
+                <p class="trust-headline">
+                  Only <span class="num">{{ enoughCount | number }}</span> of
+                  <span class="num">{{ modelCount | number }}</span>
+                  {{ modelLabel }} {{ enoughCount === 1 || modelCount === 1 ? 'has' : 'have' }}
+                  enough data
+                </p>
+                <div class="sub trust-average">
+                  Average score:
+                  <span class="num">{{ formatScore(reliabilityAverageScore()) }}</span>
+                </div>
+              } @else {
+                <div class="trust-score">
+                  <div class="value num">{{ formatScore(reliabilityAverageScore()) }}</div>
+                  @if (insufficientCount) {
+                    <div class="sub trust-sample">
+                      <span class="num">{{ insufficientCount | number }}</span> of
+                      <span class="num">{{ modelCount | number }}</span>
+                      {{ modelLabel }} {{ insufficientCount === 1 ? 'has' : 'have' }} insufficient
+                      data
+                    </div>
+                  }
+                </div>
+                <div class="sub">
+                  Average across <span class="num">{{ modelCount | number }}</span>
+                  {{ modelLabel }}
+                </div>
+              }
             } @else {
               <ng-container [ngTemplateOutlet]="reliabilityKpiEmpty"></ng-container>
             }
           </div>
         </div>
 
-        @if (healthLoading()) {
-          <div class="loading-state">
-            <mat-spinner diameter="40"></mat-spinner>
-            <span>Analyzing engine performance...</span>
-          </div>
-        }
+        <div class="table-card">
+          <h2>Per-Model Performance Metrics</h2>
+          @if (healthLoading()) {
+            <div class="loading-state">
+              <mat-spinner diameter="40"></mat-spinner>
+              <span>Analyzing engine performance...</span>
+            </div>
+          }
 
-        @if (healthError()) {
-          <div class="error-card">
-            <mat-icon>error_outline</mat-icon>
-            {{ healthError() }}
-          </div>
-        }
+          @if (healthError()) {
+            <div class="error-card">
+              <mat-icon>error_outline</mat-icon>
+              {{ healthError() }}
+            </div>
+          }
 
-        @if (health(); as h) {
-          <div class="table-card">
-            <h2>Per-Model Performance Metrics</h2>
+          @if (health(); as h) {
             <div class="table-wrap">
-              <table class="analytics-table">
+              <table class="analytics-table health-table">
                 <thead>
                   <tr>
                     <th class="col-model">Model Identity</th>
@@ -702,7 +741,7 @@
                       <td class="num">{{ row.movesCount | number }}</td>
                       <td class="num">{{ row.retriesTotal | number }}</td>
                       <td class="num">{{ row.averageRetriesPerMove | number: '1.2-2' }}</td>
-                      <td class="num">{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td class="num">{{ formatSeconds(row.averageResponseTimeMs) }}</td>
                       <td class="num">{{ row.totalCostUsd | currency: 'USD' }}</td>
                       <td class="num">
                         {{ row.averageCostPerMoveUsd | currency: 'USD' : 'symbol' : '1.4-4' }}
@@ -718,15 +757,15 @@
                 </tbody>
               </table>
             </div>
-          </div>
-        }
+          }
+        </div>
 
-        <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
-        @if (comparison()) {
-          <div class="table-card cache-table-card">
-            <div class="section-header">
-              <h2>Prompt caching</h2>
-            </div>
+        <div class="table-card cache-table-card">
+          <div class="section-header">
+            <h2 id="prompt-caching" tabindex="-1" #costSectionHeading>Prompt caching</h2>
+          </div>
+          <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
+          @if (comparison()) {
             <div class="table-wrap">
               <table class="analytics-table cache-table">
                 <thead>
@@ -762,26 +801,28 @@
               </table>
             </div>
             <p class="table-footnote">{{ cacheExplanation }}</p>
-          </div>
-        }
+          }
+        </div>
 
-        @if (reliabilityLoading()) {
-          <div class="loading-state">
-            <mat-spinner diameter="40"></mat-spinner>
-            <span>Calculating reliability scores...</span>
-          </div>
-        }
+        <div class="table-card reliability-table-card">
+          <h2 id="reliability" tabindex="-1" #costSectionHeading>
+            Reliability Ranking & Stability
+          </h2>
+          @if (reliabilityLoading()) {
+            <div class="loading-state">
+              <mat-spinner diameter="40"></mat-spinner>
+              <span>Calculating reliability scores...</span>
+            </div>
+          }
 
-        @if (reliabilityError()) {
-          <div class="error-card">
-            <mat-icon>error_outline</mat-icon>
-            {{ reliabilityError() }}
-          </div>
-        }
+          @if (reliabilityError()) {
+            <div class="error-card">
+              <mat-icon>error_outline</mat-icon>
+              {{ reliabilityError() }}
+            </div>
+          }
 
-        @if (reliability(); as r) {
-          <div class="table-card reliability-table-card">
-            <h2>Reliability Ranking & Stability</h2>
+          @if (reliability(); as r) {
             <div class="table-wrap">
               <table class="analytics-table reliability-table">
                 <thead>
@@ -811,7 +852,7 @@
                       <td class="num">{{ percent(row.firstTryLegalRate) }}</td>
                       <td class="num">{{ row.forfeitRate * 100 | number: '1.1-1' }}%</td>
                       <td class="num">{{ row.averageRetriesPerMove | number: '1.2-2' }}</td>
-                      <td class="num">{{ formatMs(row.averageResponseTimeMs) }}</td>
+                      <td class="num">{{ formatSeconds(row.averageResponseTimeMs) }}</td>
                     </tr>
                   } @empty {
                     <tr>
@@ -824,8 +865,8 @@
               </table>
             </div>
             <p class="table-footnote">{{ scoreExplanation }}</p>
-          </div>
-        }
+          }
+        </div>
       </section>
     </mat-tab>
   </mat-tab-group>

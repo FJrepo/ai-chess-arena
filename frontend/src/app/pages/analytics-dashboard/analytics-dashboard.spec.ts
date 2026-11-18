@@ -1,3 +1,4 @@
+import { Location, PlatformLocation } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Observable, of, Subject } from 'rxjs';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -8,6 +9,7 @@ import {
   AnalyticsComparisonModel,
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
+  ModelReliability,
   ModelReliabilityResponse,
 } from '../../models/analytics.model';
 import { AnalyticsDashboard } from './analytics-dashboard';
@@ -25,6 +27,7 @@ describe('AnalyticsDashboard', () => {
       tab: 'cost',
       label: 'Cost & reliability',
       headings: [
+        'Spend',
         'Per-Model Performance Metrics',
         'Prompt caching',
         'Reliability Ranking & Stability',
@@ -53,17 +56,9 @@ describe('AnalyticsDashboard', () => {
     }
     if (tab === 'cost') {
       const grid = element.querySelector('.cost-kpi-grid')!;
-      expect(grid.querySelectorAll(':scope > .kpi-card')).toHaveLength(6);
       expect(
         Array.from(grid.querySelectorAll('.label')).map((node) => node.textContent?.trim()),
-      ).toEqual([
-        'Total Cost',
-        'Move Volume',
-        'Avg Latency',
-        'Total Tokens',
-        'Trust Index',
-        'Low Confidence',
-      ]);
+      ).toEqual(['Move Volume', 'Avg Latency', 'Total Tokens', 'Trust Index']);
       expect(element.querySelector('.kpi-grid, .table-card')).toBe(grid);
       expect(element.querySelectorAll('.kpi-grid')).toHaveLength(1);
       expect(element.querySelector('.table-footnote')?.textContent).toContain('All attempts');
@@ -508,37 +503,37 @@ describe('AnalyticsDashboard', () => {
       source: 'health' as const,
       loading: 'Analyzing engine performance...',
       error: 'Failed to load engine health metrics.',
-      headings: ['Prompt caching', 'Reliability Ranking & Stability'],
+      missingTable: '.health-table',
       missingCards: [0, 1, 2, 3],
     },
     {
       source: 'reliability' as const,
       loading: 'Calculating reliability scores...',
       error: 'Failed to load model reliability metrics.',
-      headings: ['Per-Model Performance Metrics', 'Prompt caching'],
-      missingCards: [4, 5],
+      missingTable: '.reliability-table',
+      missingCards: [4],
     },
     {
       source: 'comparison' as const,
       loading: 'Comparing model results...',
       error: 'Failed to load model comparison metrics.',
-      headings: ['Per-Model Performance Metrics', 'Reliability Ranking & Stability'],
+      missingTable: '.cache-table',
       missingCards: [],
     },
   ])(
     'preserves the KPI grid and other tables while $source loads or fails',
-    async ({ source, loading, error, headings, missingCards }) => {
+    async ({ source, loading, error, missingTable, missingCards }) => {
       const response = new Subject<never>();
       const { harness } = await renderDashboard('?tab=cost', { [source]: response });
       const element = harness.routeNativeElement!;
       const grid = element.querySelector('.cost-kpi-grid')!;
-      const cards = Array.from(grid.querySelectorAll('.kpi-card'));
-      expect(cards).toHaveLength(6);
+      const cards = Array.from(element.querySelectorAll('.spend-card, .cost-kpi-grid .kpi-card'));
+      expect(cards).toHaveLength(5);
       expect(element.querySelector('.kpi-grid, .loading-state, .table-card')).toBe(grid);
       expect(element.textContent).toContain(loading);
-      expect(
-        Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
-      ).toEqual(headings);
+      expect(element.querySelector(missingTable)).toBeNull();
+      expect(element.querySelectorAll('.table-card table')).toHaveLength(2);
+      expect(element.querySelectorAll('h2[id]')).toHaveLength(3);
       for (const index of missingCards) {
         expect(cards[index].querySelector('.value')?.textContent).toBe('—');
         expect(cards[index].querySelector('.sub')?.textContent).toContain('Loading...');
@@ -548,13 +543,15 @@ describe('AnalyticsDashboard', () => {
       harness.detectChanges();
       expect(element.textContent).toContain(error);
       expect(element.querySelector('.cost-kpi-grid')).toBe(grid);
-      expect(Array.from(grid.querySelectorAll('.kpi-card'))).toEqual(cards);
+      expect(Array.from(element.querySelectorAll('.spend-card, .cost-kpi-grid .kpi-card'))).toEqual(
+        cards,
+      );
       for (const index of missingCards) {
         expect(cards[index].querySelector('.sub')?.textContent).toContain('Unavailable');
       }
-      expect(
-        Array.from(element.querySelectorAll('h2')).map((node) => node.textContent?.trim()),
-      ).toEqual(headings);
+      expect(element.querySelector(missingTable)).toBeNull();
+      expect(element.querySelectorAll('.table-card table')).toHaveLength(2);
+      expect(element.querySelectorAll('h2[id]')).toHaveLength(3);
     },
   );
 
@@ -569,11 +566,379 @@ describe('AnalyticsDashboard', () => {
     harness.detectChanges();
 
     expect(Array.from(element.querySelectorAll('.cost-kpi-grid .kpi-card'))).toEqual(cards);
-    expect(cards[4].querySelector('.value')?.textContent).toBe('0.0');
-    expect(cards[4].querySelector('.sub')?.textContent).toContain('Average across 0 models');
-    expect(cards[5].querySelector('.value')?.textContent).toBe('0');
+    expect(cards[3].querySelector('.value')?.textContent).toBe('—');
+    expect(cards[3].querySelector('.sub')?.textContent).toContain('No reliability data available.');
+    expect(cards[3].querySelector('.trust-sample')).toBeNull();
     expect(element.textContent).not.toContain('Calculating reliability scores...');
     expect(element.textContent).toContain('No reliability data available for current criteria.');
+  });
+
+  it.each([
+    { costTotalUsd: 46.8, gamesCount: 78, headline: '$46.80 across 78 matches' },
+    { costTotalUsd: 0.25, gamesCount: 1, headline: '$0.25 across 1 match' },
+    { costTotalUsd: 0, gamesCount: 0, headline: '$0.00 across 0 matches' },
+  ])('leads the cost tab with $headline from engine health', async (health) => {
+    const { harness, component } = await renderDashboard('?tab=cost');
+    component.health.update((report) => ({
+      ...report!,
+      costTotalUsd: health.costTotalUsd,
+      gamesCount: health.gamesCount,
+    }));
+    harness.detectChanges();
+
+    const lead = harness.routeNativeElement!.querySelector('.tab-content')?.firstElementChild;
+    expect(lead?.querySelector('h2')?.textContent).toBe('Spend');
+    expect(lead?.querySelector('.spend-headline')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      health.headline,
+    );
+  });
+
+  it.each([
+    { insufficient: 8, total: 9, headline: 'Only 1 of 9 models has enough data' },
+    { insufficient: 3, total: 5, headline: 'Only 2 of 5 models have enough data' },
+    { insufficient: 3, total: 6, note: '3 of 6 models have insufficient data' },
+    { insufficient: 1, total: 9, note: '1 of 9 models has insufficient data' },
+    { insufficient: 1, total: 1, headline: 'Only 0 of 1 model has enough data' },
+    { insufficient: 0, total: 9 },
+  ])('shows the Trust Index for $insufficient of $total insufficient models', async (sample) => {
+    const models = Array.from({ length: sample.total }, (_, index) =>
+      reliabilityRow(`model.${index}`, { insufficientData: index < sample.insufficient }),
+    );
+    const { harness } = await renderDashboard('?tab=cost', {
+      reliability: of({ windowDays: 30, tournamentId: null, minGames: 0, models }),
+    });
+    const card = harness.routeNativeElement!.querySelector('.cost-kpi-grid .kpi-card:last-child')!;
+    const headline = card.querySelector('.trust-headline');
+    const score = card.querySelector('.trust-score');
+    if (sample.headline) {
+      expect(headline?.textContent?.replace(/\s+/g, ' ').trim()).toBe(sample.headline);
+      const average = card.querySelector('.trust-average');
+      expect(headline?.nextElementSibling).toBe(average);
+      expect(average?.textContent?.trim()).toBe('Average score: 81.3');
+      expect(score).toBeNull();
+    } else {
+      expect(headline).toBeNull();
+      expect(score?.querySelector('.value')?.textContent).toBe('81.3');
+      const note = score?.querySelector('.trust-sample');
+      expect(note?.textContent?.replace(/\s+/g, ' ').trim()).toBe(sample.note);
+    }
+  });
+
+  it('renders seconds and missing latencies in the cost KPIs and both latency columns', async () => {
+    const { harness, component } = await renderDashboard('?tab=cost', {
+      reliability: of({
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        models: [
+          reliabilityRow('model.fast', { averageResponseTimeMs: 812 }),
+          reliabilityRow('model.unknown', { averageResponseTimeMs: null }),
+        ],
+      }),
+    });
+    component.health.update((report) => ({
+      ...report!,
+      averageResponseTimeMs: 4720,
+      p95ResponseTimeMs: 12010,
+      models: [4720, null].map((averageResponseTimeMs, index) => ({
+        modelId: `model.${index}`,
+        movesCount: 5,
+        retriesTotal: 0,
+        averageRetriesPerMove: 0,
+        averageResponseTimeMs,
+        promptTokensTotal: 1000,
+        completionTokensTotal: 100,
+        totalCostUsd: 0.1,
+        averageCostPerMoveUsd: 0.02,
+      })),
+    }));
+    harness.detectChanges();
+
+    const element = harness.routeNativeElement!;
+    const latencyCard = element.querySelectorAll('.cost-kpi-grid .kpi-card')[1];
+    expect(latencyCard.querySelector('.value')?.textContent).toBe('4.7 s');
+    expect(latencyCard.querySelector('.sub')?.textContent).toContain('P95: 12.0 s');
+    expect(
+      Array.from(element.querySelectorAll('.health-table tbody td:nth-child(5)')).map(
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(['4.7 s', 'n/a']);
+    expect(
+      Array.from(element.querySelectorAll('.reliability-table tbody td:last-child')).map(
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(['0.8 s', 'n/a']);
+
+    component.health.update((report) => ({
+      ...report!,
+      averageResponseTimeMs: null,
+      p95ResponseTimeMs: null,
+    }));
+    harness.detectChanges();
+    expect(latencyCard.querySelector('.value')?.textContent).toBe('n/a');
+    expect(latencyCard.querySelector('.sub')?.textContent).toContain('P95: n/a');
+  });
+
+  it('focuses Reliability when navigation changes only the tab, including on Forward', async () => {
+    const { harness, component } = await renderDashboard('?tab=overview#reliability');
+    const element = harness.routeNativeElement!;
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(PlatformLocation);
+    router.setUpLocationChangeListener();
+    expect(element.querySelector('#reliability')).toBeNull();
+
+    expect(await harness.navigateByUrl('/analytics?tab=cost#reliability', AnalyticsDashboard)).toBe(
+      component,
+    );
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('reliability'));
+
+    location.back();
+    await vi.waitFor(() => {
+      expect(router.url).toBe('/analytics?tab=overview#reliability');
+      expect(element.querySelector('[aria-selected="true"]')?.textContent).toContain('Overview');
+    });
+    location.forward();
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('reliability'));
+  });
+
+  it('focuses both sections when going Back and Forward between section URLs', async () => {
+    const { harness } = await renderDashboard('?tab=cost#spend');
+    const location = TestBed.inject(PlatformLocation);
+    TestBed.inject(Router).setUpLocationChangeListener();
+    expect(document.activeElement?.id).toBe('spend');
+
+    await harness.navigateByUrl('/analytics?tab=cost#prompt-caching');
+    expect(document.activeElement?.id).toBe('prompt-caching');
+    location.back();
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('spend'));
+    location.forward();
+    await vi.waitFor(() => expect(document.activeElement?.id).toBe('prompt-caching'));
+  });
+
+  it('scrolls and focuses a cold deep link once after the delayed comparison report renders', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+    const scroll = vi.fn();
+    Object.defineProperty(heading, 'scrollIntoView', { value: scroll });
+    expect(document.activeElement).not.toBe(heading);
+    expect(element.querySelector('.cache-table')).toBeNull();
+
+    comparison.next(comparisonReport());
+    comparison.complete();
+    harness.detectChanges();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(heading);
+    element.querySelector<HTMLInputElement>('.filter-min-games input')!.focus();
+    harness.detectChanges();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'center' });
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  });
+
+  it('keeps focus in Min Games when an edit supersedes a pending jump and the new report arrives', async () => {
+    const { harness, api } = await renderDashboard('?tab=cost');
+    const element = harness.routeNativeElement!;
+    const input = element.querySelector<HTMLInputElement>('.filter-min-games input')!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+    const original = new Subject<AnalyticsComparisonResponse>();
+    const replacement = new Subject<AnalyticsComparisonResponse>();
+    api.getAnalyticsComparison.mockReturnValueOnce(original).mockReturnValueOnce(replacement);
+    input.focus();
+    input.value = '3';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await harness.navigateByUrl('/analytics?tab=cost#reliability');
+    expect(document.activeElement).toBe(input);
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minGames: 3 }),
+    );
+
+    input.value = '4';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minGames: 4 }),
+    );
+    replacement.next(comparisonReport(4));
+    replacement.complete();
+    harness.detectChanges();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(input);
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('cancels a pending jump when focus moves outside the dashboard', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      outside.focus();
+      expect(document.activeElement).toBe(outside);
+      comparison.next(comparisonReport());
+      comparison.complete();
+      harness.detectChanges();
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('fulfils the newer jump when navigation changes the target before reports arrive', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    expect(document.activeElement?.id).not.toBe('reliability');
+
+    await harness.navigateByUrl('/analytics?tab=cost#spend');
+    expect(document.activeElement?.id).toBe('spend');
+    comparison.next(comparisonReport());
+    comparison.complete();
+    harness.detectChanges();
+    expect(document.activeElement).toBe(element.querySelector('h2#spend'));
+  });
+
+  it('discards a pending jump when the user selects another tab', async () => {
+    const comparison = new Subject<AnalyticsComparisonResponse>();
+    const { harness } = await renderDashboard('?tab=cost#reliability', { comparison });
+    const element = harness.routeNativeElement!;
+    const overview = element.querySelector<HTMLElement>('[role="tab"]:first-child')!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+
+    overview.click();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/analytics?tab=overview');
+    comparison.next(comparisonReport());
+    comparison.complete();
+    harness.detectChanges();
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('drops a pending jump when the user refreshes manually before the report arrives', async () => {
+    const initial = new Subject<AnalyticsComparisonResponse>();
+    const refreshed = new Subject<AnalyticsComparisonResponse>();
+    const { harness, api } = await renderDashboard('?tab=cost', {
+      comparison: initial,
+    });
+    const element = harness.routeNativeElement!;
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(PlatformLocation);
+    router.setUpLocationChangeListener();
+    await harness.navigateByUrl('/analytics?tab=cost#reliability');
+    location.back();
+    await vi.waitFor(() => expect(router.url).toBe('/analytics?tab=cost'));
+
+    const sync = element.querySelector<HTMLButtonElement>('.refresh-btn')!;
+    sync.focus();
+    location.forward();
+    await vi.waitFor(() => expect(router.url).toBe('/analytics?tab=cost#reliability'));
+    await harness.fixture.whenStable();
+    expect(document.activeElement).toBe(sync);
+    expect(element.querySelector('.cache-table')).toBeNull();
+
+    api.getAnalyticsComparison.mockReturnValueOnce(refreshed);
+    sync.click();
+    expect(initial.observed).toBe(false);
+    expect(refreshed.observed).toBe(true);
+    refreshed.next(comparisonReport());
+    refreshed.complete();
+    harness.detectChanges();
+
+    expect(element.querySelector('.cache-table')).toBeTruthy();
+    expect(document.activeElement).toBe(sync);
+  });
+
+  it('jumps at once during a background refresh that keeps the current reports', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const { harness, api } = await renderDashboard('?tab=cost');
+      const element = harness.routeNativeElement!;
+      const link = element.querySelector<HTMLAnchorElement>('a[href$="#reliability"]')!;
+      const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+      const comparison = new Subject<AnalyticsComparisonResponse>();
+      const health = new Subject<AnalyticsHealthResponse>();
+      api.getAnalyticsComparison.mockReturnValueOnce(comparison);
+      api.getAnalyticsHealth.mockReturnValueOnce(health);
+      vi.advanceTimersByTime(15000);
+      harness.detectChanges();
+
+      expect(element.querySelector('.cache-table')).toBeTruthy();
+      expect(element.querySelector('.health-table')).toBeTruthy();
+      link.focus();
+      link.click();
+      await harness.fixture.whenStable();
+
+      expect(TestBed.inject(Router).url).toBe('/analytics?tab=cost#reliability');
+      expect(comparison.observed).toBe(true);
+      expect(health.observed).toBe(true);
+      expect(document.activeElement).toBe(heading);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('focuses Reliability again when the same jump link is clicked twice', async () => {
+    const { harness } = await renderDashboard('?tab=cost');
+    const element = harness.routeNativeElement!;
+    const link = element.querySelector<HTMLAnchorElement>('a[href$="#reliability"]')!;
+    const heading = element.querySelector<HTMLElement>('h2#reliability')!;
+    const focus = vi.spyOn(heading, 'focus');
+    for (const count of [1, 2]) {
+      link.focus();
+      link.click();
+      await harness.fixture.whenStable();
+      expect(document.activeElement).toBe(heading);
+      expect(focus).toHaveBeenCalledTimes(count);
+    }
+  });
+
+  it('leaves focus alone on query-only changes with or without a retained fragment', async () => {
+    const { harness } = await renderDashboard('?tab=cost');
+    const element = harness.routeNativeElement!;
+    const input = element.querySelector<HTMLInputElement>('.filter-min-games input')!;
+    input.focus();
+    await harness.navigateByUrl('/analytics?tab=cost&window=7');
+    expect(document.activeElement).toBe(input);
+
+    await harness.navigateByUrl('/analytics?tab=cost&window=7#reliability');
+    expect(document.activeElement?.id).toBe('reliability');
+    input.focus();
+    await harness.navigateByUrl('/analytics?tab=cost&window=90#reliability');
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('replaces the current history entry on every cost jump and keeps query parameters', async () => {
+    const { harness } = await renderDashboard('?tab=cost&window=7');
+    const element = harness.routeNativeElement!;
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(PlatformLocation);
+    const pushState = vi.spyOn(location, 'pushState');
+    const replaceState = vi.spyOn(location, 'replaceState');
+    const links = Array.from(element.querySelectorAll<HTMLAnchorElement>('.cost-jump-links a'));
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      'Spend',
+      'Prompt caching',
+      'Reliability',
+    ]);
+    for (const index of [0, 1, 2, 2, 0]) {
+      const link = links[index];
+      const fragment = ['spend', 'prompt-caching', 'reliability'][index];
+      const url = `/analytics?tab=cost&window=7#${fragment}`;
+      expect(link.getAttribute('href')).toBe(url);
+      link.click();
+      await harness.fixture.whenStable();
+      expect(router.url).toBe(url);
+      expect(location.hash).toBe(`#${fragment}`);
+      const heading = element.querySelector(`h2#${fragment}`);
+      expect(heading?.getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(heading);
+    }
+    expect(pushState).not.toHaveBeenCalled();
+    expect(replaceState).toHaveBeenCalledTimes(5);
   });
 
   it('renders conversion counts, coverage and n/a in the selected comparison scope', async () => {
@@ -1055,6 +1420,29 @@ function comparisonRow(modelId: string, overrides: Partial<AnalyticsComparisonMo
   return { ...baseRow(modelId), ...overrides };
 }
 
+function reliabilityRow(
+  modelId: string,
+  overrides: Partial<ModelReliability> = {},
+): ModelReliability {
+  return {
+    modelId,
+    gamesPlayed: 5,
+    gamesCompleted: 5,
+    forfeitCount: 0,
+    forfeitRate: 0,
+    timeoutForfeitRate: 0,
+    averageRetriesPerMove: 0.1,
+    firstTryLegalRate: 0.9,
+    averageResponseTimeMs: 1200,
+    averageCostPerMoveUsd: 0.08,
+    movesSampled: 30,
+    finalScore: 81.3,
+    band: 'B',
+    insufficientData: false,
+    ...overrides,
+  };
+}
+
 function baseRow(modelId: string): AnalyticsComparisonRow {
   return {
     modelId,
@@ -1088,7 +1476,26 @@ function baseRow(modelId: string): AnalyticsComparisonRow {
 }
 
 function createDashboard(): AnalyticsDashboard {
-  return new AnalyticsDashboard({} as ApiService, {} as ActivatedRoute, {} as Router);
+  TestBed.configureTestingModule({ providers: [provideRouter([])] });
+  return TestBed.runInInjectionContext(
+    () =>
+      new AnalyticsDashboard(
+        {} as ApiService,
+        {} as ActivatedRoute,
+        TestBed.inject(Router),
+        TestBed.inject(Location),
+      ),
+  );
+}
+
+function comparisonReport(minGames = 0): AnalyticsComparisonResponse {
+  return {
+    windowDays: 30,
+    tournamentId: null,
+    minGames,
+    gamesCount: 3,
+    models: [comparisonRow('model.sample')],
+  };
 }
 
 async function renderDashboard(
@@ -1102,17 +1509,7 @@ async function renderDashboard(
 ) {
   const api = {
     getTournaments: vi.fn(() => responses.tournaments ?? of([])),
-    getAnalyticsComparison: vi.fn(
-      () =>
-        responses.comparison ??
-        of({
-          windowDays: 30,
-          tournamentId: null,
-          minGames: 0,
-          gamesCount: 3,
-          models: [comparisonRow('model.sample')],
-        }),
-    ),
+    getAnalyticsComparison: vi.fn(() => responses.comparison ?? of(comparisonReport())),
     getAnalyticsHealth: vi.fn(
       () =>
         responses.health ??
