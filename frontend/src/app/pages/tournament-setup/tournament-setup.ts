@@ -6,9 +6,13 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  Injector,
   OnDestroy,
   OnInit,
+  QueryList,
   ViewChild,
+  ViewChildren,
+  afterNextRender,
   computed,
   signal,
 } from '@angular/core';
@@ -40,6 +44,7 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
 import { ModelDetails } from '../../components/model-details/model-details';
+import { handoffFocus } from './focus-handoff';
 import {
   REASONING_EFFORT_HINT,
   REASONING_EFFORTS,
@@ -362,6 +367,19 @@ Your opponent is %s (%s).`;
   @ViewChild('participantName', { read: ElementRef })
   private participantName?: ElementRef<HTMLInputElement>;
 
+  @ViewChild('addButton', { read: ElementRef })
+  private addButton?: ElementRef<HTMLButtonElement>;
+
+  @ViewChildren('removeButton', { read: ElementRef })
+  private removeButtons?: QueryList<ElementRef<HTMLButtonElement>>;
+
+  @ViewChild('catalogLoading') private catalogLoading?: ElementRef<HTMLElement>;
+  @ViewChild('catalogRetry', { read: ElementRef })
+  private catalogRetry?: ElementRef<HTMLButtonElement>;
+  @ViewChild('rematchCatalogRetry', { read: ElementRef })
+  private rematchCatalogRetry?: ElementRef<HTMLButtonElement>;
+  @ViewChild(ModelPicker) private modelPicker?: ModelPicker;
+
   @ViewChild('setupAside') private setupAside!: ElementRef<HTMLElement>;
   readonly asideSticky = signal(false);
   /** Space below the sticky toolbar. Shared with the aside's CSS top offset. */
@@ -390,6 +408,11 @@ Your opponent is %s (%s).`;
   newReasoningEffort: ReasoningEffort | null = null;
 
   participants = signal<SetupParticipant[]>([]);
+  private readonly participantRowKeys = new WeakMap<SetupParticipant, SetupParticipant>();
+
+  participantRowKey(participant: SetupParticipant): SetupParticipant {
+    return this.participantRowKeys.get(participant) ?? participant;
+  }
   /** The whole OpenRouter catalog, loaded once; the picker filters it client-side. */
   models = signal<OpenRouterModelOption[]>([]);
   featuredProviders = signal<string[]>([]);
@@ -466,6 +489,7 @@ Your opponent is %s (%s).`;
     private router: Router,
     private route: ActivatedRoute,
     protected connection: OpenRouterAccess = null!,
+    private readonly injector?: Injector,
   ) {}
 
   ngOnInit(): void {
@@ -793,27 +817,66 @@ Your opponent is %s (%s).`;
   }
 
   /** Loads the whole catalog (every text-output model, no cap) once; the picker filters it client-side. */
-  loadModels(): void {
+  loadModels(onSettled?: () => void): void {
     this.modelsLoading.set(true);
     this.modelsError.set(null);
 
-    this.api.getModels({ featuredOnly: false, limit: 0 }).subscribe({
-      next: (response) => {
-        const models = response.data ?? [];
-        this.models.set(models);
-        this.featuredProviders.set(response.featuredProviders ?? []);
-        if (response.error) {
-          this.modelsError.set(response.error);
-        } else if (models.length === 0) {
-          this.modelsError.set('OpenRouter returned no models.');
-        }
-        this.modelsLoading.set(false);
+    const settle = () => {
+      this.modelsLoading.set(false);
+      onSettled?.();
+    };
+    this.subscriptions.add(
+      this.api.getModels({ featuredOnly: false, limit: 0 }).subscribe({
+        next: (response) => {
+          const models = response.data ?? [];
+          this.models.set(models);
+          this.featuredProviders.set(response.featuredProviders ?? []);
+          if (response.error) {
+            this.modelsError.set(response.error);
+          } else if (models.length === 0) {
+            this.modelsError.set('OpenRouter returned no models.');
+          }
+          settle();
+        },
+        error: () => {
+          this.models.set([]);
+          this.modelsError.set('Failed to fetch models from OpenRouter.');
+          settle();
+        },
+      }),
+    );
+  }
+
+  reloadModels(event: Event, fromRematch = false): void {
+    const injector = this.injector;
+    const origin = event.currentTarget;
+    if (!injector || !(origin instanceof HTMLElement)) {
+      this.loadModels();
+      return;
+    }
+
+    let moveFocus = handoffFocus(origin, injector);
+    afterNextRender(
+      () => {
+        const status = this.catalogLoading?.nativeElement;
+        if (status) moveFocus = handoffFocus(moveFocus(status), injector);
       },
-      error: () => {
-        this.models.set([]);
-        this.modelsError.set('Failed to fetch models from OpenRouter.');
-        this.modelsLoading.set(false);
-      },
+      { injector },
+    );
+    this.loadModels(() => {
+      afterNextRender(
+        () => {
+          if (this.modelsError()) {
+            const retry = fromRematch ? this.rematchCatalogRetry : this.catalogRetry;
+            const target = retry ?? this.catalogRetry ?? this.rematchCatalogRetry;
+            moveFocus(target?.nativeElement);
+          } else {
+            // NgModel re-enables the search input in a microtask after the view updates.
+            queueMicrotask(() => moveFocus(this.participantEntryTarget()));
+          }
+        },
+        { injector },
+      );
     });
   }
 
@@ -832,6 +895,29 @@ Your opponent is %s (%s).`;
     if (model) {
       this.newPlayerName = model.name;
     }
+  }
+
+  onModelChosen(modelId: string): void {
+    const origin = this.modelPicker?.searchInput;
+    const needsName = !this.newPlayerName.trim();
+    this.onModelChanged(modelId);
+    const injector = this.injector;
+    if (!injector || !origin) return;
+    const scheduleHandoff = () => {
+      const moveFocus = handoffFocus(origin, injector);
+      afterNextRender(
+        () => {
+          const add = this.addButton?.nativeElement;
+          const target =
+            needsName || !add || add.disabled ? this.participantName?.nativeElement : add;
+          moveFocus(target);
+        },
+        { injector },
+      );
+    };
+    // On pointer selection, Material can restore search focus after emitting the chosen option.
+    if (origin.ownerDocument.activeElement === origin) scheduleHandoff();
+    else queueMicrotask(scheduleHandoff);
   }
 
   selectedModel(): OpenRouterModelOption | null {
@@ -869,6 +955,7 @@ Your opponent is %s (%s).`;
       return;
     }
 
+    const moveFocus = handoffFocus(this.addButton?.nativeElement, this.injector);
     const editing = this.editingParticipantIndex();
     this.participants.update((list) => {
       const previous = editing === null ? undefined : list[editing];
@@ -900,12 +987,26 @@ Your opponent is %s (%s).`;
             ? this.newReasoningEffort
             : null,
       };
+      if (previous) this.participantRowKeys.set(participant, this.participantRowKey(previous));
       return editing === null
         ? [...list, participant]
         : list.map((p, i) => (i === editing ? participant : p));
     });
 
     this.resetParticipantForm();
+    if (this.injector) {
+      // A human entry switches back to the model form when the view updates.
+      afterNextRender(() => moveFocus(this.participantEntryTarget()), {
+        injector: this.injector,
+      });
+    }
+  }
+
+  private participantEntryTarget(): HTMLElement | undefined {
+    if (this.modelPicker && !this.modelPicker.disabled()) {
+      return this.modelPicker.searchInput;
+    }
+    return this.participantName?.nativeElement;
   }
 
   editParticipant(index: number): void {
@@ -930,17 +1031,28 @@ Your opponent is %s (%s).`;
     this.newReasoningEffort = null;
   }
 
-  removeParticipant(index: number) {
+  removeParticipant(index: number): void {
+    const moveFocus = handoffFocus(this.removeButtons?.get(index)?.nativeElement, this.injector);
     this.participants.update((list) => list.filter((_, i) => i !== index));
     const editing = this.editingParticipantIndex();
     if (editing === index) this.resetParticipantForm();
     else if (editing !== null && editing > index) this.editingParticipantIndex.set(editing - 1);
+
+    if (this.injector) {
+      afterNextRender(
+        () => {
+          const button = this.removeButtons?.get(index) ?? this.removeButtons?.last;
+          moveFocus(button?.nativeElement ?? this.participantEntryTarget());
+        },
+        { injector: this.injector },
+      );
+    }
   }
 
   creating = signal(false);
   createError = signal<string | null>(null);
 
-  /** One model for the launch checklist and the Create button: a name, at least two participants, not already submitting. */
+  /** Readiness for creating a tournament, including the rematch and settings checks. */
   readonly readiness = computed(() => {
     const named = !!this.nameValue().trim();
     const count = this.participants().length;
@@ -959,6 +1071,14 @@ Your opponent is %s (%s).`;
         this.openingValid() &&
         this.validMaxRetries() !== null,
     };
+  });
+
+  readonly nextLaunchInput = computed(() => {
+    const { count, named } = this.readiness();
+    if (count === 0) return 'Add your first participant.';
+    if (count === 1) return 'Add a second participant.';
+    if (!named) return 'Enter a tournament name.';
+    return '';
   });
   private readonly rematchReady = computed(() => {
     if (!this.sourceId()) return true;

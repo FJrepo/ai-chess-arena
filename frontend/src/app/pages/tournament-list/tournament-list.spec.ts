@@ -1,9 +1,101 @@
 import { of } from 'rxjs';
+import { TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { MatSelectHarness } from '@angular/material/select/testing';
 import { TournamentList } from './tournament-list';
 import { Tournament } from '../../models/tournament.model';
 import { ApiService, SystemStatusResponse } from '../../services/api.service';
 
 describe('TournamentList', () => {
+  it('uses a focusable button to disclose filters and counts the active hidden controls', async () => {
+    const harness = await renderList([
+      tournament('Alpha Cup', 'CREATED', 1, 4, 2, '2026-03-01T10:00:00Z'),
+      tournament('Bravo Finals', 'IN_PROGRESS', 3, 8, 6, '2026-03-03T10:00:00Z'),
+      tournament('Classic Arena', 'CREATED', 3, 4, 2, '2026-03-02T10:00:00Z'),
+    ]);
+    const element = harness.routeNativeElement!;
+    const button = element.querySelector<HTMLButtonElement>(
+      'button[aria-controls="list-filters"]',
+    )!;
+    const filters = element.querySelector<HTMLElement>('#list-filters')!;
+    const search = element.querySelector<HTMLInputElement>('.search-field input')!;
+    expect(button.type).toBe('button');
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(filters.hidden).toBe(true);
+    expect(search.closest('[hidden]')).toBeNull();
+    expect(button.querySelector('.num')).toBeNull();
+
+    button.click();
+    harness.detectChanges();
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(filters.hidden).toBe(false);
+    const selects = await TestbedHarnessEnvironment.loader(harness.fixture).getAllHarnesses(
+      MatSelectHarness,
+    );
+    await selects[0].clickOptions({ text: 'Not started' });
+    await selects[1].clickOptions({ text: 'Best of 3' });
+    await selects[2].clickOptions({ text: 'Oldest' });
+    expect(button.querySelector('.num')?.textContent?.trim()).toBe('3');
+    expect(element.querySelector('.results-label')?.textContent?.trim()).toBe('1 of 3 tournaments');
+    search.value = 'classic';
+    search.dispatchEvent(new Event('input'));
+    harness.detectChanges();
+    expect(element.querySelector('.card-title')?.textContent?.trim()).toBe('Classic Arena');
+    expect(button.querySelector('.num')?.textContent?.trim()).toBe('3');
+    expect(TestBed.inject(Router).url).toBe('/tournaments?view=arena');
+
+    button.focus();
+    button.click();
+    harness.detectChanges();
+    expect(filters.hidden).toBe(true);
+    expect(button.querySelector('.num')?.textContent?.trim()).toBe('3');
+    button.click();
+    harness.detectChanges();
+    filters.querySelector<HTMLButtonElement>('.reset-button')!.click();
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    expect(search.value).toBe('');
+    expect(button.querySelector('.num')).toBeNull();
+    expect(element.querySelectorAll('.tournament-card')).toHaveLength(3);
+    expect(TestBed.inject(Router).url).toBe('/tournaments?view=arena');
+  });
+
+  it('shows current game activity only on in-progress tournament cards', async () => {
+    const date = '2026-03-01T10:00:00Z';
+    const running = tournament('Alpha Cup', 'IN_PROGRESS', 1, 4, 3, date);
+    running.games[0].status = running.games[1].status = 'IN_PROGRESS';
+    running.games[2].status = 'PAUSED';
+    const quiet = tournament('Bravo Finals', 'IN_PROGRESS', 1, 4, 2, date);
+    const mixed = tournament('Classic Arena', 'IN_PROGRESS', 1, 8, 4, date);
+    mixed.games[0].status = mixed.games[1].status = 'IN_PROGRESS';
+    mixed.games[1].bracketRound = 'Round 2';
+    const single = tournament('Delta Cup', 'IN_PROGRESS', 1, 4, 2, date);
+    single.games[0].status = 'IN_PROGRESS';
+    const harness = await renderList([
+      running,
+      quiet,
+      mixed,
+      single,
+      tournament('Finished Cup', 'COMPLETED', 1, 4, 2, date),
+      tournament('Draft Cup', 'CREATED', 1, 4, 0, date),
+      tournament('Stopped Cup', 'CANCELLED', 1, 4, 2, date),
+    ]);
+    const activity = Array.from(harness.routeNativeElement!.querySelectorAll('.card-activity'));
+    expect(
+      activity.map((line) => line.closest('mat-card')?.querySelector('h2')?.textContent?.trim()),
+    ).toEqual([running.name, quiet.name, mixed.name, single.name]);
+    expect(activity.map((line) => line.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Round 1 · 2 games running',
+      'No games running',
+      '2 games running',
+      'Round 1 · 1 game running',
+    ]);
+  });
+
   it('filters tournaments by search, status, and best-of', () => {
     const component = new TournamentList({} as any);
     component.tournaments.set([
@@ -172,6 +264,31 @@ describe('TournamentList', () => {
     expect(component.onboardingSummary()).not.toContain('failed');
   });
 });
+
+async function renderList(tournaments: Tournament[]) {
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([{ path: 'tournaments', component: TournamentList }]),
+      {
+        provide: ApiService,
+        useValue: {
+          getTournaments: () => of(tournaments),
+          getSystemStatus: () =>
+            of(
+              statusWithKey({
+                source: 'ui',
+                maskedSuffix: null,
+                lastValidatedAt: null,
+                validation: 'valid',
+              }),
+            ),
+        },
+      },
+    ],
+  });
+  const harness = await RouterTestingHarness.create('/tournaments?view=arena');
+  return harness;
+}
 
 function statusWithKey(key: SystemStatusResponse['key']): SystemStatusResponse {
   return {

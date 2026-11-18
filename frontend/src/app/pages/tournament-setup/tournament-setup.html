@@ -55,7 +55,13 @@
         </mat-card-header>
         <mat-card-content>
           @if (modelsLoading()) {
-            <div class="openrouter-status" role="status">
+            <div
+              #catalogLoading
+              class="openrouter-status"
+              role="status"
+              aria-live="polite"
+              tabindex="-1"
+            >
               <mat-spinner diameter="18"></mat-spinner>
               <span>Loading models from OpenRouter...</span>
             </div>
@@ -82,7 +88,13 @@
             <div class="openrouter-status warn" role="alert">
               <mat-icon>warning</mat-icon>
               <span>{{ modelsError() }}</span>
-              <button mat-button type="button" class="retry-button" (click)="loadModels()">
+              <button
+                #catalogRetry
+                mat-button
+                type="button"
+                class="retry-button"
+                (click)="reloadModels($event)"
+              >
                 Retry
               </button>
             </div>
@@ -95,7 +107,8 @@
               [featuredProviders]="featuredProviders()"
               [disabled]="modelsLoading() || models().length === 0"
               [selectedId]="newModelId"
-              (selectedIdChange)="onModelChanged($event)"
+              (optionChosen)="onModelChosen($event)"
+              (selectedIdChange)="!$event && onModelChanged('')"
             />
           }
 
@@ -208,13 +221,19 @@
           }
 
           <div class="add-row">
+            @let seedBlocked = !!sourceId() && !rematchSeedAvailable();
+            @let humanBlocked = newControlType === 'HUMAN' && hasHumanParticipant();
             <div class="add-action">
               <button
+                #addButton
                 mat-stroked-button
+                type="button"
                 class="add-button"
                 (click)="addParticipant()"
                 [disabled]="!canAddParticipant()"
-                [attr.aria-describedby]="canAddParticipant() ? null : 'add-participant-reason'"
+                [attr.aria-describedby]="
+                  seedBlocked || humanBlocked ? 'add-participant-reason' : null
+                "
               >
                 <mat-icon>{{ editingParticipantIndex() === null ? 'add' : 'check' }}</mat-icon>
                 <span>{{
@@ -226,16 +245,12 @@
                   Cancel edit
                 </button>
               }
-              @if (!canAddParticipant()) {
+              @if (seedBlocked || humanBlocked) {
                 <span class="caption" id="add-participant-reason">
-                  @if (sourceId() && !rematchSeedAvailable()) {
+                  @if (seedBlocked) {
                     Remove the participant with the highest seed before adding a new one.
-                  } @else if (newPlayerName.trim().length === 0) {
-                    Enter a display name to add a participant.
-                  } @else if (newControlType === 'HUMAN') {
-                    Only one human player per tournament.
                   } @else {
-                    Choose a model to add this participant.
+                    Only one human player per tournament.
                   }
                 </span>
               }
@@ -715,10 +730,10 @@
       <mat-card class="panel lineup-card">
         <mat-card-header class="participants-list-head">
           <h2 mat-card-title>Tournament lineup</h2>
-          <span class="caption"
-            >{{ participants().length }}
-            {{ participants().length === 1 ? 'participant' : 'participants' }} · min. 2</span
-          >
+          <span class="caption">
+            <span class="num">{{ participants().length }}</span>
+            {{ participants().length === 1 ? 'participant' : 'participants' }}
+          </span>
         </mat-card-header>
         <mat-card-content>
           <mat-form-field
@@ -736,7 +751,7 @@
             </p>
           }
           <ul class="participant-list">
-            @for (p of participants(); track $index) {
+            @for (p of participants(); track participantRowKey(p)) {
               <li class="participant-row">
                 <span class="participant-seed" [attr.aria-label]="'Seed ' + ($index + 1)">{{
                   $index + 1
@@ -786,6 +801,7 @@
                   </button>
                 }
                 <button
+                  #removeButton
                   mat-icon-button
                   class="remove-button"
                   (click)="removeParticipant($index)"
@@ -861,14 +877,26 @@
             } @else if (modelsError()) {
               <p class="create-error" role="alert">
                 Model availability could not be checked.
-                <button mat-button type="button" (click)="loadModels()">Retry model catalog</button>
+                <button
+                  #rematchCatalogRetry
+                  mat-button
+                  type="button"
+                  (click)="reloadModels($event, true)"
+                >
+                  Retry model catalog
+                </button>
               </p>
             }
             @if (
               unavailableModels().length ||
               createError()?.startsWith('Model is not allowed by backend policy:')
             ) {
-              <button mat-button type="button" (click)="loadModels()" [disabled]="modelsLoading()">
+              <button
+                mat-button
+                type="button"
+                (click)="reloadModels($event, true)"
+                [disabled]="modelsLoading()"
+              >
                 Refresh model catalog
               </button>
             }
@@ -881,35 +909,13 @@
         }
         <div class="launch-footer">
           @let ready = readiness();
-          <ul class="launch-checklist">
-            <li [class.done]="ready.named">
-              <mat-icon aria-hidden="true">{{
-                ready.named ? 'check_circle' : 'radio_button_unchecked'
-              }}</mat-icon>
-              <span>{{ ready.named ? 'Tournament named' : 'Name the tournament' }}</span>
-            </li>
-            <li [class.done]="ready.participantsOk">
-              <mat-icon aria-hidden="true">{{
-                ready.participantsOk ? 'check_circle' : 'radio_button_unchecked'
-              }}</mat-icon>
-              <span>
-                {{ ready.count }}
-                {{ ready.count === 1 ? 'participant' : 'participants' }}
-                {{ ready.participantsOk ? 'added' : '(at least 2 needed)' }}
-              </span>
-            </li>
-            @if (ready.creating) {
-              <li class="pending">
-                <mat-spinner diameter="18" aria-hidden="true"></mat-spinner>
-                <span>Creating…</span>
-              </li>
-            }
-          </ul>
+          <p class="caption launch-hint" id="launch-hint" role="status">{{ nextLaunchInput() }}</p>
           <button
             mat-flat-button
             class="create-button"
             (click)="create()"
             [disabled]="!ready.canCreate"
+            [attr.aria-describedby]="nextLaunchInput() ? 'launch-hint' : null"
           >
             <mat-icon>emoji_events</mat-icon>
             <span>{{ ready.creating ? 'Creating…' : 'Create Tournament' }}</span>
@@ -1040,16 +1046,7 @@
               </div>
             </details>
           } @else {
-            <div class="confidence-empty">
-              <mat-icon>insights</mat-icon>
-              <div>
-                <strong>Add at least two participants</strong>
-                <p>
-                  Once the bracket is viable, this panel will estimate series count, runtime, and
-                  rough spend.
-                </p>
-              </div>
-            </div>
+            <p class="caption confidence-empty">Estimate pending.</p>
           }
         </mat-card-content>
       </mat-card>

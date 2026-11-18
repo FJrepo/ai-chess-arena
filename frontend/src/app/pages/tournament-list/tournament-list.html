@@ -1,41 +1,64 @@
 <div class="tournament-list desktop-page">
-  <section class="page-hero-surface page-hero">
-    <div class="page-title-block">
-      <span class="page-kicker">Tournament Control</span>
-      <h1 class="page-title">Tournaments</h1>
-      <p class="page-subtitle">
-        Create new brackets, revisit prior runs, and sort the arena history by status, format, and
-        activity.
-      </p>
+  <section class="page-hero-surface page-hero list-header">
+    <div class="list-title-row">
+      <div class="list-heading">
+        <h1 class="page-title">Tournaments</h1>
+        <span class="results-label" aria-live="polite">
+          @let visible = filteredTournaments().length;
+          @let total = tournaments().length;
+          <span class="num">{{ visible }}</span>
+          @if (visible !== total) {
+            of <span class="num">{{ total }}</span>
+          }
+          {{ total === 1 ? 'tournament' : 'tournaments' }}
+        </span>
+      </div>
+      <div class="list-controls">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search-field">
+          <mat-label>Search tournaments</mat-label>
+          <input
+            matInput
+            [ngModel]="searchTerm()"
+            (ngModelChange)="searchTerm.set($event)"
+            placeholder="Name or status"
+          />
+          @if (searchTerm()) {
+            <button
+              matSuffix
+              mat-icon-button
+              type="button"
+              aria-label="Clear search"
+              (click)="searchTerm.set('')"
+            >
+              <mat-icon>close</mat-icon>
+            </button>
+          } @else {
+            <mat-icon matSuffix>search</mat-icon>
+          }
+        </mat-form-field>
+        <button
+          mat-stroked-button
+          type="button"
+          aria-controls="list-filters"
+          [attr.aria-expanded]="filtersOpen()"
+          [attr.aria-label]="
+            activeFilterCount() ? 'Filters, ' + activeFilterCount() + ' active' : null
+          "
+          (click)="filtersOpen.set(!filtersOpen())"
+        >
+          <mat-icon>tune</mat-icon>
+          <span>
+            Filters
+            @if (activeFilterCount(); as count) {
+              (<span class="num">{{ count }}</span
+              >)
+            }
+          </span>
+        </button>
+      </div>
     </div>
-  </section>
-
-  @if (deleteError()) {
-    <mat-card class="error-state">
-      <mat-card-content>{{ deleteError() }}</mat-card-content>
-    </mat-card>
-  }
-
-  <mat-card class="toolbar-card">
-    <mat-card-content class="toolbar-content">
-      <mat-form-field appearance="outline" class="search-field">
-        <mat-label>Search tournaments</mat-label>
-        <input
-          matInput
-          [ngModel]="searchTerm()"
-          (ngModelChange)="searchTerm.set($event)"
-          placeholder="Name or status"
-        />
-        @if (searchTerm()) {
-          <button matSuffix mat-icon-button type="button" (click)="searchTerm.set('')">
-            <mat-icon>close</mat-icon>
-          </button>
-        } @else {
-          <mat-icon matSuffix>search</mat-icon>
-        }
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
+    <div class="list-filters" id="list-filters" [hidden]="!filtersOpen()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Status</mat-label>
         <mat-select [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
           <mat-option value="ALL">All statuses</mat-option>
@@ -46,7 +69,7 @@
         </mat-select>
       </mat-form-field>
 
-      <mat-form-field appearance="outline">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Best Of</mat-label>
         <mat-select [ngModel]="bestOfFilter()" (ngModelChange)="bestOfFilter.set($event)">
           <mat-option value="ALL">All matchups</mat-option>
@@ -57,7 +80,7 @@
         </mat-select>
       </mat-form-field>
 
-      <mat-form-field appearance="outline">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Sort By</mat-label>
         <mat-select [ngModel]="sortBy()" (ngModelChange)="sortBy.set($event)">
           <mat-option value="newest">Newest</mat-option>
@@ -78,14 +101,14 @@
         <mat-icon>restart_alt</mat-icon>
         Reset
       </button>
-    </mat-card-content>
-    <div class="toolbar-meta">
-      <span class="results-label">{{ resultCountLabel() }}</span>
-      @if (hasActiveFilters()) {
-        <span class="filter-note">Filtered view</span>
-      }
     </div>
-  </mat-card>
+  </section>
+
+  @if (deleteError()) {
+    <mat-card class="error-state">
+      <mat-card-content>{{ deleteError() }}</mat-card-content>
+    </mat-card>
+  }
 
   @if (tournaments().length === 0) {
     <section class="onboarding-shell">
@@ -292,6 +315,21 @@
             <dd>{{ tournament.games.length }}</dd>
           </div>
         </dl>
+
+        @if (tournament.status === 'IN_PROGRESS') {
+          @let activity = runningActivity(tournament);
+          <p class="card-activity">
+            @if (activity.count === 0) {
+              No games running
+            } @else {
+              @if (activity.round) {
+                {{ activity.round }} ·
+              }
+              <span class="num">{{ activity.count }}</span>
+              {{ activity.count === 1 ? 'game running' : 'games running' }}
+            }
+          </p>
+        }
 
         <div class="card-foot">
           <span class="date">Created {{ tournament.createdAt | date }}</span>

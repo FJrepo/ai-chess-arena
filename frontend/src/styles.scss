@@ -70,6 +70,10 @@ html {
   --app-text-secondary-size: 0.8125rem;
   --app-table-heading-size: 0.78125rem;
   --app-table-heading-tracking: 0.04em;
+  --app-model-price-width: 5.75rem;
+  --app-model-context-width: 4rem;
+  --app-model-option-height: 2.75rem;
+  --app-model-group-height: 2.25rem;
   --app-hero-bar-width: 6px;
   --app-rule-width: 2px;
   --app-focus-offset: 2px;
@@ -338,7 +342,22 @@ mat-chip {
 
 // Model picker suggestions (rendered in the overlay): a taller list than the 256 px default.
 .mat-mdc-autocomplete-panel.model-picker-panel {
-  max-height: min(480px, 60vh);
+  max-height: min(480px, 55vh);
+
+  .mat-mdc-optgroup-label {
+    min-height: var(--app-model-group-height);
+  }
+
+  .mat-mdc-optgroup .mat-mdc-option:not(.mat-mdc-option-multiple) {
+    min-height: var(--app-model-option-height);
+    padding-inline: var(--app-space-4);
+    border-bottom: 1px solid var(--app-divider);
+
+    .mdc-list-item__primary-text {
+      flex: 1;
+      min-width: 0;
+    }
+  }
 }
 
 // Shared typography and scoresheet rules. Component styles set size and layout only.

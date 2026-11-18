@@ -119,12 +119,15 @@ export class TournamentList implements OnInit {
     });
   });
 
-  hasActiveFilters = computed(
+  readonly filtersOpen = signal(false);
+  readonly activeFilterCount = computed(
     () =>
-      this.searchTerm().trim().length > 0 ||
-      this.statusFilter() !== 'ALL' ||
-      this.bestOfFilter() !== 'ALL' ||
-      this.sortBy() !== 'newest',
+      Number(this.statusFilter() !== 'ALL') +
+      Number(this.bestOfFilter() !== 'ALL') +
+      Number(this.sortBy() !== 'newest'),
+  );
+  readonly hasActiveFilters = computed(
+    () => this.searchTerm().trim().length > 0 || this.activeFilterCount() > 0,
   );
 
   readonly statusLabel = tournamentStatusLabel;
@@ -198,15 +201,13 @@ export class TournamentList implements OnInit {
     return `Delete "${tournament.name}" with all its games and history? This cannot be undone.`;
   }
 
-  resultCountLabel(): string {
-    const visible = this.filteredTournaments().length;
-    const total = this.tournaments().length;
-
-    if (visible === total) {
-      return `${total} tournaments`;
-    }
-
-    return `${visible} of ${total} tournaments`;
+  runningActivity(tournament: Tournament): { count: number; round: string | null } {
+    const running = tournament.games.filter((game) => game.status === 'IN_PROGRESS');
+    const round = running[0]?.bracketRound;
+    return {
+      count: running.length,
+      round: round && running.every((game) => game.bracketRound === round) ? round : null,
+    };
   }
 
   onboardingSummary(): string {

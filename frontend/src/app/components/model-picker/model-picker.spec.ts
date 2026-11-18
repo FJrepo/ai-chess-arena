@@ -133,6 +133,29 @@ describe('ModelPicker', () => {
     expect(picker.providers()[0].count).toBe(2);
   });
 
+  it('shows a less-than price when a positive price would round to zero', () => {
+    const picker = render().componentInstance;
+
+    expect(picker.priceCell(1e-11)).toBe('<0.0001');
+    expect(picker.priceCell(0.0002)).toBe('0.0002');
+    expect(picker.priceCell(0)).toBe('0');
+    expect(picker.priceCell(null)).toBe('n/a');
+  });
+
+  it('clamps suggestion names to two lines and keeps the full accessible name', async () => {
+    const name = 'Fixture Long Context Research Preview with an Extended Experimental Model Name';
+    const fixture = render([catalogModel('example/long', { name })]);
+    const search: HTMLInputElement = fixture.nativeElement.querySelector('input');
+    search.click();
+    await settle(fixture);
+
+    const option = document.querySelector('.model-picker-panel mat-option')!;
+    const title = option.querySelector<HTMLElement>('.option-title')!;
+    expect(title.title).toBe(name);
+    expect(option.getAttribute('aria-label')).toContain(name);
+    expect(getComputedStyle(title).getPropertyValue('-webkit-line-clamp')).toBe('2');
+  });
+
   it('selects a suggestion and shows its name', () => {
     const fixture = render();
     const picker = fixture.componentInstance;

@@ -9,7 +9,7 @@ import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
 import { OpenRouterKeyStatus } from '../../services/openrouter-client';
-import { OpenRouterModelOption } from '../../models/openrouter.model';
+import { OpenRouterModelOption, OpenRouterModelsResponse } from '../../models/openrouter.model';
 import { Tournament, DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
@@ -1326,7 +1326,7 @@ describe('TournamentSetup', () => {
     expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
   });
 
-  it('puts model search before participant fields and keeps the add action beside its hint', async () => {
+  it('puts model search before participant fields and the add action after them', async () => {
     const fixture = await renderSetup(createStatusApi());
     const element: HTMLElement = fixture.nativeElement;
     const card = element.querySelector('.participants-card')!;
@@ -1339,11 +1339,7 @@ describe('TournamentSetup', () => {
     expect(follows(picker, name)).toBe(true);
     expect(follows(name, toggle)).toBe(true);
     expect(follows(toggle, add)).toBe(true);
-    expect(add.nextElementSibling?.id).toBe('add-participant-reason');
     expect(add.disabled).toBe(true);
-    expect(card.querySelector('#add-participant-reason')?.textContent).toContain(
-      'Enter a display name',
-    );
     const search = picker.querySelector<HTMLInputElement>('input')!;
     search.focus();
     search.value = 'Fixture';
@@ -1364,7 +1360,534 @@ describe('TournamentSetup', () => {
     expect(element.querySelector('.participant-name')?.textContent).toBe('Fixture model');
   });
 
-  it('shows the participant count and minimum for empty, singular and populated lineups', async () => {
+  it('shows aligned model, price and context columns with readable names and markers', async () => {
+    const api = createStatusApi();
+    const longName = 'Fixture Research Preview with a Very Long Model Name';
+    vi.mocked(api.getModels).mockReturnValue(
+      of({
+        data: [
+          {
+            ...catalogModel('acme/paid', longName, 0.35, 1.7),
+            contextLength: 128000,
+            reasoningSupported: true,
+          },
+          { ...catalogModel('acme/free', 'Fixture Free', 0, 0), contextLength: 32000 },
+        ],
+      }),
+    );
+    const fixture = await renderSetup(api);
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    search.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const panel = document.querySelector('.model-picker-panel')!;
+    const columns = [
+      '.option-title',
+      '.option-input-price',
+      '.option-output-price',
+      '.option-context',
+    ];
+    const values = (row: Element) =>
+      columns.map((column) => row.querySelector(column)?.textContent?.trim());
+    expect(values(panel.querySelector('.option-headings')!)).toEqual([
+      'Model',
+      '$/M in',
+      '$/M out',
+      'Context',
+    ]);
+    const options = Array.from(panel.querySelectorAll('mat-option'));
+    const paid = options.find((option) => option.textContent?.includes(longName))!;
+    const free = options.find((option) => option.textContent?.includes('Fixture Free'))!;
+    expect(values(paid)).toEqual([longName, '0.35', '1.70', '128K']);
+    expect(values(free)).toEqual(['Fixture Free', '0', '0', '32K']);
+    expect(paid.querySelector('.option-title')?.getAttribute('title')).toBe(longName);
+    expect(paid.getAttribute('aria-label')).toContain(longName);
+    expect(paid.querySelector('.option-markers')?.textContent).toContain('Reasoning');
+    expect(free.querySelector('.option-markers')?.textContent).toContain('Free');
+    expect(paid.querySelectorAll('.num')).toHaveLength(3);
+  });
+
+  it.each([false, true])(
+    'moves focus after keyboard model choice (existing name: %s)',
+    async (named) => {
+      const fixture = await renderSetup(createStatusApi());
+      const element: HTMLElement = fixture.nativeElement;
+      const name = element.querySelector<HTMLInputElement>(
+        'input[placeholder="e.g. Claude Opus 4.6"]',
+      )!;
+      const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+      if (named) {
+        name.value = 'My Player';
+        name.dispatchEvent(new Event('input'));
+      }
+      search.focus();
+      for (const [key, keyCode] of [
+        ['ArrowDown', 40],
+        ['Enter', 13],
+      ] as const) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'keyCode', { value: keyCode });
+        search.dispatchEvent(event);
+        fixture.detectChanges();
+        await fixture.whenStable();
+      }
+      expect(name.value).toBe(named ? 'My Player' : 'Fixture model');
+      expect(document.activeElement).toBe(named ? element.querySelector('.add-button') : name);
+    },
+  );
+
+  it('keeps focus on Display Name when the user moves there after model choice', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const name = displayNameInput(element);
+    name.value = 'My Player';
+    name.dispatchEvent(new Event('input'));
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    search.focus();
+    search.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    document.querySelector<HTMLElement>('.model-picker-panel mat-option')!.click();
+    expect(document.activeElement).toBe(search);
+    name.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.newModelId).toBe('acme/model');
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('returns focus to model search after adding a participant', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    search.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    document.querySelector<HTMLElement>('.model-picker-panel mat-option')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const add = element.querySelector<HTMLButtonElement>('.add-button')!;
+    add.focus();
+    add.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.participants()).toHaveLength(1);
+    expect(document.activeElement).toBe(search);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(search.value).toBe('');
+  });
+
+  it('keeps focus on Display Name when the user moves there after Add', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const name = displayNameInput(element);
+    fixture.componentInstance.onModelChanged('acme/model');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const add = element.querySelector<HTMLButtonElement>('.add-button')!;
+
+    add.focus();
+    add.click();
+    name.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.participants()).toHaveLength(1);
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('focuses the next removal, previous removal, or model search after lineup removal', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    fixture.componentInstance.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+      pricedParticipant('Gamma', 'example/gamma', 1, 2),
+    ]);
+    fixture.detectChanges();
+
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    const remove = (name: string) =>
+      element.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`)!;
+    for (const [name, next] of [
+      ['Beta', 'Gamma'],
+      ['Gamma', 'Alpha'],
+      ['Alpha', null],
+    ] as const) {
+      const button = remove(name);
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      button.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(remove(name)).toBeNull();
+      expect(next ? remove(next) : search).not.toBeNull();
+      expect(document.activeElement).toBe(next ? remove(next) : search);
+    }
+  });
+
+  it('keeps focus on Display Name when the user moves there after Remove', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    fixture.componentInstance.participants.set([pricedParticipant('Alpha', 'example/alpha', 1, 2)]);
+    fixture.detectChanges();
+    const remove = element.querySelector<HTMLButtonElement>('button[aria-label="Remove Alpha"]')!;
+    const name = displayNameInput(element);
+
+    remove.focus();
+    remove.click();
+    name.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(remove.isConnected).toBe(false);
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('keeps the focused participant’s Remove action and row when a prior row is removed', async () => {
+    const api = createStatusApi();
+    api.getTournament = () => of(rematchSource());
+    const fixture = await renderSetup(api, 'old');
+    const element: HTMLElement = fixture.nativeElement;
+    const setup = fixture.componentInstance;
+    setup.participants.set(
+      ['Alpha', 'Beta', 'Gamma', 'Delta'].map((name) =>
+        pricedParticipant(name, 'acme/model', 1, 2),
+      ),
+    );
+    fixture.detectChanges();
+    const remove = (name: string) =>
+      element.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`)!;
+    const beta = remove('Beta');
+    const gamma = remove('Gamma');
+    const delta = remove('Delta');
+    const gammaRow = gamma.closest('li');
+    const deltaRow = delta.closest('li');
+    const deltaSeed = () => deltaRow?.querySelector('.participant-seed')?.textContent?.trim();
+    expect(deltaSeed()).toBe('4');
+
+    beta.focus();
+    beta.click();
+    gamma.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(gamma);
+    const gammaAfterRemoval = remove('Gamma');
+    const gammaRowAfterRemoval = gammaAfterRemoval.closest('li');
+    // jsdom does not synthesize the native button click from Enter.
+    (document.activeElement as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(setup.participants().map(({ playerName }) => playerName)).toEqual(['Alpha', 'Delta']);
+    expect(beta.isConnected).toBe(false);
+    expect(gammaAfterRemoval).toBe(gamma);
+    expect(gammaRowAfterRemoval).toBe(gammaRow);
+    expect(gammaRow?.isConnected).toBe(false);
+    expect(remove('Delta')).toBe(delta);
+    expect(delta.closest('li')).toBe(deltaRow);
+    expect(deltaSeed()).toBe('2');
+
+    element.querySelector<HTMLButtonElement>('button[aria-label="Edit Delta"]')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const name = displayNameInput(element);
+    name.value = 'Edited Delta';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    element.querySelector<HTMLButtonElement>('.add-button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(setup.participants().map(({ playerName }) => playerName)).toEqual([
+      'Alpha',
+      'Edited Delta',
+    ]);
+    expect(remove('Edited Delta')).toBe(delta);
+    expect(delta.closest('li')).toBe(deltaRow);
+  });
+
+  it('fills an emptied display name and enables Add when reselecting the same model', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    const name = element.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Claude Opus 4.6"]',
+    )!;
+    const add = element.querySelector<HTMLButtonElement>('.add-button')!;
+    const chooseModel = async () => {
+      search.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      document.querySelector<HTMLElement>('.model-picker-panel mat-option')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    await chooseModel();
+    expect(name.value).toBe('Fixture model');
+    name.value = '';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(add.disabled).toBe(true);
+    expect(fixture.componentInstance.newModelId).toBe('acme/model');
+
+    await chooseModel();
+    expect(name.value).toBe('Fixture model');
+    expect(add.disabled).toBe(false);
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('moves catalog Retry focus through loading to Retry on failure and Model on success', async () => {
+    const api = createStatusApi();
+    const failed = new Subject<OpenRouterModelsResponse>();
+    const succeeded = new Subject<OpenRouterModelsResponse>();
+    vi.mocked(api.getModels)
+      .mockReturnValueOnce(throwError(() => ({ status: 503 })))
+      .mockReturnValueOnce(failed)
+      .mockReturnValueOnce(succeeded);
+    const fixture = await renderSetup(api);
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    const retry = () => element.querySelector<HTMLButtonElement>('.retry-button')!;
+    const startRetry = async () => {
+      const button = retry();
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      button.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const status = element.querySelector<HTMLElement>('.openrouter-status[role="status"]')!;
+      expect(status.textContent).toContain('Loading models');
+      expect(status.getAttribute('aria-live')).toBe('polite');
+      expect(status.tabIndex).toBe(-1);
+      expect(document.activeElement).toBe(status);
+    };
+
+    await startRetry();
+    failed.error({ status: 503 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(retry());
+
+    await startRetry();
+    succeeded.next({ data: [catalogModel('acme/model', 'Fixture model')] });
+    succeeded.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(search.disabled).toBe(false);
+    expect(document.activeElement).toBe(search);
+  });
+
+  it.each(['Retry', 'Retry model catalog'] as const)(
+    'keeps focus on Display Name when the user moves there before %s renders loading',
+    async (label) => {
+      const request = new Subject<OpenRouterModelsResponse>();
+      const fixture = await renderCatalogRetry(label, request);
+      const element: HTMLElement = fixture.nativeElement;
+      const retry = catalogAction(element, label);
+      const name = displayNameInput(element);
+
+      retry.focus();
+      retry.click();
+      name.focus();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(catalogLoadingStatus(element)).not.toBeNull();
+      expect(document.activeElement).toBe(name);
+
+      finishCatalogRequest(request, 'success');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(document.activeElement).toBe(name);
+    },
+  );
+
+  it.each([
+    ['Retry', 'success'],
+    ['Retry', 'failure'],
+    ['Retry model catalog', 'success'],
+    ['Retry model catalog', 'failure'],
+  ] as const)(
+    'keeps focus on Display Name when the user moves there after the %s response (%s)',
+    async (label, result) => {
+      const request = new Subject<OpenRouterModelsResponse>();
+      const fixture = await renderCatalogRetry(label, request);
+      const element: HTMLElement = fixture.nativeElement;
+      const retry = catalogAction(element, label);
+      const name = displayNameInput(element);
+
+      retry.focus();
+      retry.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const status = catalogLoadingStatus(element)!;
+      expect(document.activeElement).toBe(status);
+
+      finishCatalogRequest(request, result);
+      expect(document.activeElement).toBe(status);
+      name.focus();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(status.isConnected).toBe(false);
+      expect(document.activeElement).toBe(name);
+    },
+  );
+
+  it.each(['success', 'failure'] as const)(
+    'moves Refresh focus through loading to the catalog result (%s)',
+    async (result) => {
+      const request = new Subject<OpenRouterModelsResponse>();
+      const fixture = await renderSetup(createRefreshApi(request), 'old');
+      const element: HTMLElement = fixture.nativeElement;
+      const refresh = catalogAction(element, 'Refresh model catalog');
+
+      refresh.focus();
+      refresh.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const status = catalogLoadingStatus(element)!;
+      expect(status).not.toBeNull();
+      expect(document.activeElement).toBe(status);
+
+      finishCatalogRequest(request, result);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const target =
+        result === 'success'
+          ? element.querySelector<HTMLInputElement>('app-model-picker input')
+          : catalogAction(element, 'Retry model catalog');
+      expect(target).not.toBeNull();
+      expect(document.activeElement).toBe(target);
+    },
+  );
+
+  it.each([
+    ['Retry', 'success'],
+    ['Retry', 'failure'],
+    ['Refresh model catalog', 'success'],
+    ['Refresh model catalog', 'failure'],
+  ] as const)(
+    'keeps focus on body when the user clicks blank space while %s is pending (%s)',
+    async (label, result) => {
+      const request = new Subject<OpenRouterModelsResponse>();
+      const fixture =
+        label === 'Retry'
+          ? await renderCatalogRetry(label, request)
+          : await renderSetup(createRefreshApi(request), 'old');
+      const element: HTMLElement = fixture.nativeElement;
+      const action = catalogAction(element, label);
+
+      action.focus();
+      action.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const status = catalogLoadingStatus(element)!;
+      expect(document.activeElement).toBe(status);
+
+      document.body.click();
+      // jsdom does not perform the native focus change on a click on blank space.
+      if (document.activeElement === status) status.blur();
+      await fixture.whenStable();
+      expect(status.isConnected).toBe(true);
+      expect(document.activeElement).toBe(document.body);
+
+      finishCatalogRequest(request, result);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(status.isConnected).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+    },
+  );
+
+  it('keeps focus on Display Name when the user moves there during either Refresh handoff', async () => {
+    const first = new Subject<OpenRouterModelsResponse>();
+    const second = new Subject<OpenRouterModelsResponse>();
+    const api = createRefreshApi(first);
+    vi.mocked(api.getModels).mockReturnValueOnce(second);
+    const fixture = await renderSetup(api, 'old');
+    const element: HTMLElement = fixture.nativeElement;
+    const name = displayNameInput(element);
+    const startRefresh = () => {
+      const refresh = catalogAction(element, 'Refresh model catalog');
+      refresh.focus();
+      refresh.click();
+    };
+
+    startRefresh();
+    name.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(catalogLoadingStatus(element)).not.toBeNull();
+    expect(document.activeElement).toBe(name);
+    first.next({ data: [catalogModel('b/two', 'Two')] });
+    first.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(name);
+
+    startRefresh();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const status = catalogLoadingStatus(element)!;
+    expect(document.activeElement).toBe(status);
+    finishCatalogRequest(second, 'success');
+    expect(document.activeElement).toBe(status);
+    name.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(status.isConnected).toBe(false);
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('shows one next-input hint beside Create as the lineup and tournament name are filled', async () => {
+    const fixture = await renderSetup();
+    const element: HTMLElement = fixture.nativeElement;
+    const setup = fixture.componentInstance;
+    const create = element.querySelector<HTMLButtonElement>('.create-button')!;
+    const name = element.querySelector<HTMLInputElement>('.lineup-card input')!;
+    const players = [
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ];
+    const expectHint = (message: string) => {
+      expect(element.querySelectorAll('.launch-hint')).toHaveLength(1);
+      expect(create.previousElementSibling?.textContent?.trim()).toBe(message);
+      expect(element.textContent?.split(message)).toHaveLength(2);
+      expect(element.textContent).not.toMatch(
+        /Enter a display name to add|at least 2 needed|Add at least two participants/,
+      );
+      expect(create.disabled).toBe(true);
+    };
+    expectHint('Add your first participant.');
+    expect(element.querySelector('.confidence-empty')?.textContent?.trim()).toBe(
+      'Estimate pending.',
+    );
+    setup.participants.set(players.slice(0, 1));
+    fixture.detectChanges();
+    expectHint('Add a second participant.');
+    setup.participants.set(players);
+    fixture.detectChanges();
+    expectHint('Enter a tournament name.');
+    name.value = 'Fixture Cup';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(element.querySelector('.launch-hint')?.textContent?.trim()).toBe('');
+    expect(create.disabled).toBe(false);
+  });
+
+  it('shows the participant count for empty, singular and populated lineups', async () => {
     const fixture = await renderSetup();
     const element: HTMLElement = fixture.nativeElement;
     const count = () =>
@@ -1372,7 +1895,7 @@ describe('TournamentSetup', () => {
         .querySelector('.participants-list-head .caption')
         ?.textContent?.replace(/\s+/g, ' ')
         .trim();
-    expect(count()).toBe('0 participants · min. 2');
+    expect(count()).toBe('0 participants');
     for (const size of [1, 4]) {
       fixture.componentInstance.participants.set(
         Array.from({ length: size }, (_, i) =>
@@ -1381,7 +1904,7 @@ describe('TournamentSetup', () => {
       );
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(count()).toBe(`${size} ${size === 1 ? 'participant' : 'participants'} · min. 2`);
+      expect(count()).toBe(`${size} ${size === 1 ? 'participant' : 'participants'}`);
     }
   });
 
@@ -1567,10 +2090,7 @@ describe('TournamentSetup', () => {
     ]);
     await refresh();
     expect(create.disabled).toBe(false);
-    expect(aside.querySelector('.launch-checklist')?.textContent).toContain('Tournament named');
-    expect(aside.querySelector('.participants-list-head')?.textContent).toContain(
-      '2 participants · min. 2',
-    );
+    expect(aside.querySelector('.participants-list-head')?.textContent).toContain('2 participants');
     expect(
       Array.from(aside.querySelectorAll('.participant-seed')).map((seed) =>
         seed.textContent?.trim(),
@@ -2337,6 +2857,58 @@ type FakeTournamentSetupApi = ApiService & {
   addedParticipants: Array<Record<string, unknown>>;
   createTournamentPayload: Record<string, unknown> | null;
 };
+
+function displayNameInput(element: HTMLElement): HTMLInputElement {
+  return element.querySelector<HTMLInputElement>('input[placeholder="e.g. Claude Opus 4.6"]')!;
+}
+
+function catalogLoadingStatus(element: HTMLElement): HTMLElement | null {
+  return element.querySelector<HTMLElement>('.openrouter-status[role="status"][tabindex="-1"]');
+}
+
+function catalogAction(element: HTMLElement, label: string): HTMLButtonElement {
+  return Array.from(element.querySelectorAll('button')).find(
+    (button) => button.textContent.trim() === label,
+  )!;
+}
+
+function finishCatalogRequest(
+  request: Subject<OpenRouterModelsResponse>,
+  result: 'success' | 'failure',
+): void {
+  if (result === 'failure') {
+    request.error({ status: 503 });
+  } else {
+    request.next({
+      data: [catalogModel('acme/model', 'Fixture model'), catalogModel('a/one', 'One')],
+    });
+    request.complete();
+  }
+}
+
+function createRefreshApi(request: Subject<OpenRouterModelsResponse>): FakeTournamentSetupApi {
+  const api = createStatusApi();
+  api.getTournament = () => of(rematchSource());
+  vi.mocked(api.getModels)
+    .mockReturnValueOnce(of({ data: [catalogModel('b/two', 'Two')] }))
+    .mockReturnValueOnce(request);
+  return api;
+}
+
+function renderCatalogRetry(
+  label: 'Retry' | 'Retry model catalog',
+  request: Subject<OpenRouterModelsResponse>,
+) {
+  const api = createStatusApi();
+  vi.mocked(api.getModels)
+    .mockReturnValueOnce(throwError(() => ({ status: 503 })))
+    .mockReturnValueOnce(request);
+  if (label === 'Retry model catalog') {
+    api.getTournament = () => of(rematchSource());
+    return renderSetup(api, 'old');
+  }
+  return renderSetup(api);
+}
 
 function createStatusApi(
   key: OpenRouterKeyStatus = {
