@@ -13,10 +13,14 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, Observable, Subject, catchError, finalize, startWith, switchMap } from 'rxjs';
 import type {
+  BenchmarkColor,
   BenchmarkGame,
+  BenchmarkModelResult,
+  BenchmarkPair,
   BenchmarkRun,
   BenchmarkRunSettings,
   BenchmarkSummary,
@@ -44,6 +48,7 @@ const pendingSubmissionsKey = 'benchmark-pending-submissions';
     MatInputModule,
     MatSelectModule,
     MatSlideToggleModule,
+    MatTooltipModule,
     RouterLink,
   ],
   templateUrl: './benchmarks.html',
@@ -286,6 +291,14 @@ export class Benchmarks {
       this.resumeBudget = report.budgetUsd;
       this.resumeConcurrency = report.maxConcurrentGames;
     }
+  }
+
+  splitScore(model: BenchmarkModelResult, target: number, color: BenchmarkColor) {
+    return model.splits.find((row) => row.targetStrength === target && row.color === color)?.score;
+  }
+
+  pairGame(pair: BenchmarkPair, color: BenchmarkColor) {
+    return pair.games.find((game) => game.color === color);
   }
 
   gameLabel(game: BenchmarkGame): string {

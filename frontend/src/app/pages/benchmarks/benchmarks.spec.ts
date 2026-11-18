@@ -300,13 +300,37 @@ describe('Benchmarks', () => {
     const page: HTMLElement = fixture.nativeElement;
     expect(page.textContent).toContain('Performance against this Stockfish setup');
     expect(page.textContent).toContain('1 / 1');
-    expect(page.querySelector('[aria-label="No scored games"]')).not.toBeNull();
+    expect(page.textContent).toContain('No scored games');
     expect(page.textContent).toContain('Incomplete');
     expect(page.textContent).toContain('$1.01');
     expect(page.querySelector('a[href="/games/white-game"]')?.textContent?.trim()).toBe('Win');
     expect(page.querySelector('a[href="/games/black-game"]')?.textContent?.trim()).toBe('Paused');
     component.refresh();
     expect(api.getBenchmark).toHaveBeenCalledTimes(2);
+  });
+
+  it('puts the score and planned sample in a named model results table', () => {
+    const { fixture } = setup(run.run.id);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const row = page.querySelector(
+      'table[aria-label="Performance against this Stockfish setup"] tbody tr',
+    );
+    expect(row?.querySelector('th[scope="row"]')?.textContent?.trim()).toBe('fixture/model');
+    const cells = [...(row?.querySelectorAll('td') ?? [])].map((cell) => cell.textContent.trim());
+    expect(cells.slice(0, 5)).toEqual(['1 / 1', '1 / 2', '1', '0', '0']);
+  });
+
+  it('names game links with the opening, model color, and Stockfish level', () => {
+    const { fixture } = setup(run.run.id);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('a[href="/games/white-game"]')?.getAttribute('aria-label')).toBe(
+      'Win, French Winawer, model as White, Stockfish level 1500',
+    );
+    expect(page.querySelector('a[href="/games/black-game"]')?.getAttribute('aria-label')).toBe(
+      'Paused, French Winawer, model as Black, Stockfish level 1500',
+    );
   });
 
   it('preserves the report during a refresh error and resumes with updated limits', () => {
