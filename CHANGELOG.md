@@ -9,6 +9,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [1.8.0] - 2026-11-18
+
+Live games recover missed updates while preserving the move you are reviewing. Set up rematches from existing tournaments, choose whether models see legal move lists, and compare model performance by reasoning effort. [Back up your database](docs/deployment.md#backups-and-rollback) before upgrading.
+
+### Upgrade notes
+
 - Flyway `V24__live_game_revision.sql` adds game revisions, nullable model-turn metadata and an optional originating status revision for attempts. Back up before upgrading and recreate backend and frontend together. Existing moves, attempts, chat, results and spend are retained.
 - Flyway `V25__tournament_legal_move_hints.sql` defaults all existing tournaments to hints on and widens the stored prompt version column. Back up the database and rebuild/recreate the backend and frontend to use the new setting.
 
