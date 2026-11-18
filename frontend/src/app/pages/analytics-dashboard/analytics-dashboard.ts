@@ -1,4 +1,13 @@
-import { Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  signal,
+  viewChildren,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -14,9 +23,18 @@ import {
   DatePipe,
   DecimalPipe,
   formatNumber,
+  Location,
   NgTemplateOutlet,
 } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import {
+  ActivatedRoute,
+  isActive,
+  NavigationEnd,
+  NavigationSkipped,
+  NavigationStart,
+  Router,
+  UrlTree,
+} from '@angular/router';
 import { finalize, Subscription, timeout } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { Tournament } from '../../models/tournament.model';
@@ -42,9 +60,18 @@ type ComparisonSortOption =
   | 'costPerWinUsd'
   | 'forfeits';
 
+const COST_SECTIONS = [
+  { id: 'spend', label: 'Spend' },
+  { id: 'prompt-caching', label: 'Prompt caching' },
+  { id: 'reliability', label: 'Reliability' },
+] as const;
+
+type CostSection = (typeof COST_SECTIONS)[number]['id'];
+
 @Component({
   selector: 'app-analytics-dashboard',
   standalone: true,
+  host: { '(document:focusin)': 'onDocumentFocusIn($event)' },
   imports: [
     FormsModule,
     MatButtonModule,
@@ -282,7 +309,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return models.reduce((sum, model) => sum + model.finalScore, 0) / models.length;
   });
 
-  reliabilityLowConfidenceCount = computed(() => {
+  reliabilityInsufficientCount = computed(() => {
     return (this.reliability()?.models ?? []).filter((m) => m.insufficientData).length;
   });
 
@@ -292,17 +319,58 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   private reports = new Subscription();
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+  // Only a pending section navigation can move focus. It is consumed once the
+  // heading is ready, or discarded when the user interacts or navigates again.
+  private readonly pendingJump = signal<CostSection | null>(null);
+  private readonly costHeadings =
+    viewChildren<ElementRef<HTMLHeadingElement>>('costSectionHeading');
+  private readonly costTabIndex = this.tabIds.indexOf('cost');
+  private readonly tabTransitioning = signal(false);
+
+  readonly costJumpLinks = computed(() => {
+    const current =
+      this.router.lastSuccessfulNavigation()?.finalUrl ?? this.router.parseUrl(this.router.url);
+    return COST_SECTIONS.map(({ id, label }) => {
+      const url = new UrlTree(current.root, { ...current.queryParams, tab: 'cost' }, id);
+      return {
+        id,
+        label,
+        url,
+        href: this.location.prepareExternalUrl(this.router.serializeUrl(url)),
+      };
+    });
+  });
+
   constructor(
     private api: ApiService,
     private route: ActivatedRoute,
     private router: Router,
-  ) {}
+    private location: Location,
+  ) {
+    // The router creates this component before NavigationEnd, which can precede ngOnInit.
+    this.subscriptions.add(
+      this.router.events.subscribe((event) => {
+        if (event instanceof NavigationStart || event instanceof NavigationSkipped) {
+          this.pendingJump.set(null);
+        } else if (event instanceof NavigationEnd) {
+          this.pendingJump.set(this.costSectionForNavigation(event));
+        }
+      }),
+    );
+    afterRenderEffect(() => this.fulfilPendingJump());
+  }
 
   ngOnInit(): void {
+    let initialTab = true;
     this.subscriptions.add(
       this.route.queryParamMap.subscribe((params) => {
-        const index = this.tabIds.findIndex((tab) => tab === params.get('tab'));
-        this.selectedTabIndex.set(index < 0 ? 0 : index);
+        const index = Math.max(
+          0,
+          this.tabIds.findIndex((tab) => tab === params.get('tab')),
+        );
+        if (!initialTab && index !== this.selectedTabIndex()) this.tabTransitioning.set(true);
+        this.selectedTabIndex.set(index);
+        initialTab = false;
       }),
     );
     this.loadTournaments();
@@ -320,7 +388,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
 
   onTabChange(index: number): void {
     if (index === this.selectedTabIndex()) return;
+    this.pendingJump.set(null);
     this.selectedTabIndex.set(index);
+    this.tabTransitioning.set(true);
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: this.tabIds[index] },
@@ -329,7 +399,77 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     });
   }
 
+  onTabAnimationDone(): void {
+    this.tabTransitioning.set(false);
+  }
+
+  followCostJumpLink(event: MouseEvent, url: UrlTree): void {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    void this.router.navigateByUrl(url, { replaceUrl: true, onSameUrlNavigation: 'reload' });
+  }
+
+  onDocumentFocusIn(event: FocusEvent): void {
+    const section = this.pendingJump();
+    if (section && !this.costHeading(section)?.contains(event.target as Node)) {
+      this.pendingJump.set(null);
+    }
+  }
+
+  private costSectionForNavigation(event: NavigationEnd): CostSection | null {
+    const url = this.router.parseUrl(event.urlAfterRedirects);
+    const section = COST_SECTIONS.find(({ id }) => id === url.fragment);
+    if (url.queryParamMap.get('tab') !== 'cost' || !section) return null;
+
+    // A query-only change carries the existing section along. An exact URL revisit is a jump.
+    const previous = this.router.lastSuccessfulNavigation()?.previousNavigation?.finalUrl;
+    if (
+      previous?.queryParamMap.get('tab') === 'cost' &&
+      this.router.serializeUrl(previous) !== event.urlAfterRedirects &&
+      isActive(previous, this.router, {
+        paths: 'exact',
+        matrixParams: 'exact',
+        fragment: 'exact',
+        queryParams: 'ignored',
+      })()
+    ) {
+      return null;
+    }
+    return section.id;
+  }
+
+  private fulfilPendingJump(): void {
+    const section = this.pendingJump();
+    if (!section || this.tabTransitioning() || this.selectedTabIndex() !== this.costTabIndex) {
+      return;
+    }
+
+    // Reports above the destination can shift the heading while they first load; a background
+    // refresh keeps the current data in place, so it does not hold a jump back.
+    if (
+      (section !== 'spend' && this.healthLoading() && !this.health()) ||
+      (section === 'reliability' && this.comparisonLoading() && !this.comparison())
+    ) {
+      return;
+    }
+
+    const heading = this.costHeading(section);
+    if (!heading?.isConnected) return;
+
+    this.pendingJump.set(null);
+    heading.scrollIntoView?.({ block: 'center' });
+    heading.focus({ preventScroll: true });
+  }
+
+  private costHeading(section: CostSection): HTMLHeadingElement | undefined {
+    return this.costHeadings().find(({ nativeElement }) => nativeElement.id === section)
+      ?.nativeElement;
+  }
+
   onCommonFiltersChanged(): void {
+    this.pendingJump.set(null);
     this.comparison.set(null);
     this.health.set(null);
     this.reliability.set(null);
@@ -338,6 +478,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   manualRefresh(): void {
+    // A refresh is a user action: it supersedes a jump that is still waiting for reports.
+    this.pendingJump.set(null);
     this.refreshAll();
   }
 
@@ -406,6 +548,12 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       return 'n/a';
     }
     return `${Math.round(value).toLocaleString('en-US')} ms`;
+  }
+
+  formatSeconds(milliseconds: number | null | undefined): string {
+    return milliseconds == null
+      ? 'n/a'
+      : `${formatNumber(milliseconds / 1000, 'en-US', '1.1-1')} s`;
   }
 
   private refreshAll(): void {
