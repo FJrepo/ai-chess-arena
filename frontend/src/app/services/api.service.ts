@@ -1,4 +1,5 @@
 import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
+import type { LiveGamesSnapshot } from '../models/live-games.model';
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, defer, tap } from 'rxjs';
@@ -164,6 +165,10 @@ export class ApiService {
   }
 
   // Games
+  getLiveGames(): Observable<LiveGamesSnapshot> {
+    return this.http.get<LiveGamesSnapshot>(`${this.baseUrl}/games/live`);
+  }
+
   getPracticeGames(): Observable<Game[]> {
     return this.http.get<Game[]>(`${this.baseUrl}/games/practice`);
   }

@@ -45,6 +45,42 @@ class GameWebSocketTest {
     }
 
     @Test
+    void headerWatchReceivesOnlyOverviewChangesAndIsRemovedOnClose() {
+        List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        WebSocketConnection viewer = recordingConnection("header", sent);
+        endpoint.onMessage(viewer, "{\"type\":\"watchLiveGames\"}");
+        String changed = "{\"type\":\"liveGamesChanged\"}";
+        assertEquals(List.of(changed), sent);
+
+        UUID game = gameRepository.addGame();
+        endpoint.broadcastRevision(game, 4, List.of(endpoint.change("committedAttempt")));
+        assertEquals(List.of(changed), sent);
+        endpoint.broadcastRevision(game, 5, List.of(endpoint.change("committedMove")));
+        endpoint.broadcastLiveGamesChanged(); // A committed deletion.
+        assertEquals(List.of(changed, changed, changed), sent);
+
+        endpoint.onClose(viewer);
+        endpoint.broadcastLiveGamesChanged();
+        assertEquals(3, sent.size());
+    }
+
+    @Test
+    void headerWatchDoesNotConsumeTheOnlyPerGameSubscriptionSlot() {
+        endpoint.maxSubscriptionsPerWindow = 1;
+        List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        WebSocketConnection viewer = recordingConnection("shared-header", sent);
+        UUID game = gameRepository.addGame();
+
+        endpoint.onMessage(viewer, "{\"type\":\"watchLiveGames\"}");
+        endpoint.onMessage(viewer, "{\"type\":\"watchLiveGames\"}");
+        endpoint.onMessage(viewer, subscribeMessage(game));
+
+        assertEquals(List.of("{\"type\":\"liveGamesChanged\"}"), sent);
+        assertEquals(game, endpoint.subscribedGameId(viewer.id()));
+        assertFalse(closedConnections.contains(viewer.id()));
+    }
+
+    @Test
     void messageCallbackActivatesRequestContextForRepositoryLookup() throws Exception {
         assertTrue(GameWebSocket.class
                 .getMethod("onMessage", WebSocketConnection.class, String.class)

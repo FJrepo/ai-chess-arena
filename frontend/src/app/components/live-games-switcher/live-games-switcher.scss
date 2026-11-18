@@ -1,0 +1,37 @@
+:host {
+  display: inline-flex;
+}
+
+.matchup,
+.game-details {
+  display: block;
+}
+
+.matchup,
+.event {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-details {
+  display: flex;
+  align-items: baseline;
+  gap: var(--app-space-2);
+  font-size: var(--app-text-secondary-size);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.game-details > :not(.event) {
+  flex-shrink: 0;
+}
+
+.attention {
+  color: var(--app-warning-text);
+}
+
+.menu-note {
+  padding: var(--app-space-2) var(--app-space-4);
+  color: var(--mat-sys-on-surface-variant);
+  font-size: var(--app-text-secondary-size);
+}

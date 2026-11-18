@@ -13,6 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 
 ### Changed

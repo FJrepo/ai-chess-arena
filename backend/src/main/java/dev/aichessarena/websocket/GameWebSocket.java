@@ -62,6 +62,7 @@ public class GameWebSocket {
     private final AtomicInteger admittedConnections = new AtomicInteger();
 
     private final Map<UUID, Set<WebSocketConnection>> gameSubscriptions = new ConcurrentHashMap<>();
+    private final Map<String, WebSocketConnection> liveGamesSubscriptions = new ConcurrentHashMap<>();
     private final Set<String> revisionConnections = ConcurrentHashMap.newKeySet();
     private final Map<String, UUID> connectionGameMap = new ConcurrentHashMap<>();
     private final Map<String, SubscriptionWindow> subscriptionWindows = new ConcurrentHashMap<>();
@@ -130,6 +131,7 @@ public class GameWebSocket {
         if (subscriptionWindows.remove(connection.id()) != null) {
             admittedConnections.decrementAndGet();
         }
+        liveGamesSubscriptions.remove(connection.id());
         revisionConnections.remove(connection.id());
         UUID gameId = connectionGameMap.remove(connection.id());
         if (gameId != null) {
@@ -149,7 +151,8 @@ public class GameWebSocket {
         }
 
         String type = node.path("type").asText("");
-        if (!"subscribe".equals(type) && !"unsubscribe".equals(type) && !"heartbeat".equals(type)) {
+        if (!"subscribe".equals(type) && !"unsubscribe".equals(type) && !"heartbeat".equals(type)
+                && !"watchLiveGames".equals(type)) {
             LOG.debugf("Ignoring unsupported WebSocket message type from %s", connection.id());
             return;
         }
@@ -159,6 +162,18 @@ public class GameWebSocket {
             LOG.debugf("Ignoring WebSocket message from connection %s that was not admitted", connection.id());
             return;
         }
+        if ("watchLiveGames".equals(type)) {
+            // A connection registers for the header once, independently of its per-game subscription budget.
+            if (liveGamesSubscriptions.putIfAbsent(connection.id(), connection) == null) {
+                if (connection.isOpen()) {
+                    outsideTransaction(() -> send(connection, liveGamesChangedMessage()));
+                } else {
+                    liveGamesSubscriptions.remove(connection.id(), connection);
+                }
+            }
+            return;
+        }
+
         if (!"unsubscribe".equals(type) && !window.tryAcquire(System.currentTimeMillis(), maxSubscriptionsPerWindow)) {
             // Close instead of silently dropping: the client reconnects and resubscribes to its current game.
             LOG.debugf("Closing WebSocket %s: too many subscriptions", connection.id());
@@ -202,6 +217,9 @@ public class GameWebSocket {
     }
 
     public void broadcastRevision(UUID gameId, long revision, List<ObjectNode> changes) {
+        if (!liveGamesSubscriptions.isEmpty() && changes.stream().anyMatch(GameWebSocket::changesLiveGames)) {
+            broadcastLiveGamesChanged();
+        }
         Set<WebSocketConnection> subscribers = gameSubscriptions.get(gameId);
         if (subscribers == null) return;
         ObjectNode message = change("gameRevision").put("gameId", gameId.toString())
@@ -213,6 +231,23 @@ public class GameWebSocket {
                 if (revisionConnections.contains(connection.id())) send(connection, encoded);
             }
         });
+    }
+
+    private static boolean changesLiveGames(ObjectNode change) {
+        return switch (change.path("type").asText()) {
+            case "gameStatus", "committedMove", "evaluationUpdate", "gameDetailsChanged" -> true;
+            default -> false;
+        };
+    }
+
+    public void broadcastLiveGamesChanged() {
+        if (liveGamesSubscriptions.isEmpty()) return;
+        String message = liveGamesChangedMessage();
+        outsideTransaction(() -> liveGamesSubscriptions.values().forEach(connection -> send(connection, message)));
+    }
+
+    private String liveGamesChangedMessage() {
+        return change("liveGamesChanged").toString();
     }
 
     private void subscribe(WebSocketConnection connection, UUID gameId) {

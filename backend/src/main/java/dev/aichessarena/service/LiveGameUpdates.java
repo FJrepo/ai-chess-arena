@@ -94,6 +94,10 @@ public class LiveGameUpdates {
                 .put("turnBanterLevel", game.turnBanterLevel == null ? null : game.turnBanterLevel.name());
     }
 
+    void gamesRemoved() {
+        AfterCommit.run(registry, socket::broadcastLiveGamesChanged);
+    }
+
     private static String asText(Instant instant) {
         return instant == null ? null : instant.toString();
     }
