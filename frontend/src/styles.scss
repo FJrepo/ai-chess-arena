@@ -100,6 +100,7 @@ html {
   --app-card-bg: var(--mat-sys-surface-container-low);
   --app-live-games-running-bg: var(--mat-sys-surface-container-lowest);
   --app-live-games-paused-bg: #f7f3e9;
+  --app-live-games-attention-border: var(--app-warning-border);
   --app-live-games-finished-bg: color-mix(
     in srgb,
     var(--mat-sys-on-surface) 6%,
@@ -196,6 +197,8 @@ body.dark-theme {
     var(--app-live-games-panel-bg)
   );
   --app-live-games-paused-bg: #4a463f;
+  // Solid, not the translucent warning border, so the pill edge holds on hovered rows.
+  --app-live-games-attention-border: var(--app-warning-text);
   --app-live-games-finished-bg: color-mix(
     in srgb,
     var(--mat-sys-surface-container-highest) 65%,
