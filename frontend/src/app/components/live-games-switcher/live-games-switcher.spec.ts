@@ -109,18 +109,14 @@ describe('LiveGamesSwitcher', () => {
   });
 
   it('keeps the lamp and attention dot visible in forced-colors mode', () => {
-    renderTrigger();
-    const rules = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules]);
-    const forced = rules.find(
-      (rule) => rule instanceof CSSMediaRule && rule.media.mediaText === '(forced-colors: active)',
-    ) as CSSMediaRule | undefined;
-    const backgroundOf = (selector: string) =>
-      [...(forced?.cssRules ?? [])]
-        .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
-        .find((rule) => rule.selectorText.includes(selector))
-        ?.style.getPropertyValue('background');
-    expect(backgroundOf('.attention-marker')?.toLowerCase()).toBe('buttontext');
-    expect(backgroundOf('.live-lamp')?.toLowerCase()).toBe('highlight');
+    const styles = (
+      (LiveGamesSwitcher as unknown as { ɵcmp: { styles: string[] } }).ɵcmp.styles ?? []
+    )
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    const forced = styles.match(/@media \(forced-colors: ?active\) ?\{(.*?\}) ?\}/)?.[1] ?? '';
+    expect(forced).toMatch(/\.attention-marker[^{]*\{ ?background: ?ButtonText;? ?\}/);
+    expect(forced).toMatch(/\.live-lamp[^{]*\{ ?background: ?Highlight;? ?\}/);
   });
 
   it('shows the decorative attention marker only while a game is paused', () => {
