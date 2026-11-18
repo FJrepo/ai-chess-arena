@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import type { BenchmarkRun, CreateBenchmarkRequest } from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
 import { Benchmarks } from './benchmarks';
@@ -103,7 +103,16 @@ function setup(id?: string) {
   return { api, fixture, component: fixture.componentInstance, navigate };
 }
 
+function fillCreateForm(component: Benchmarks, budget = '1') {
+  component.name = 'Pending ladder';
+  component.modelsText = 'fixture/model';
+  component.budget = budget;
+}
+
 describe('Benchmarks', () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => sessionStorage.clear());
+
   it('validates the create form and starts a run with exact budget and chosen models', () => {
     const { component, api, navigate } = setup();
     component.name = 'Opening comparison';
@@ -152,6 +161,97 @@ describe('Benchmarks', () => {
     expect(api.createBenchmark.mock.calls[2][0]).not.toMatchObject({
       clientRequestId: first.clientRequestId,
     });
+  });
+
+  it.each([0, 408, 503])(
+    'reuses the pending UUID after reload following HTTP status %i',
+    (status) => {
+      const { component, fixture, api, navigate } = setup();
+      api.createBenchmark.mockReturnValueOnce(throwError(() => ({ status })));
+      fillCreateForm(component);
+      component.create();
+      const first = api.createBenchmark.mock.calls[0][0];
+      fixture.destroy();
+
+      const reloaded = TestBed.createComponent(Benchmarks);
+      reloaded.detectChanges();
+      expect(reloaded.nativeElement.textContent).toContain(
+        'A benchmark creation may already be in progress',
+      );
+      fillCreateForm(reloaded.componentInstance, '1.00');
+      reloaded.componentInstance.create();
+      expect(api.createBenchmark.mock.calls[1][0]).toEqual(first);
+      expect(navigate).toHaveBeenCalledWith(['/benchmarks', run.run.id]);
+      reloaded.destroy();
+
+      const afterSuccess = TestBed.createComponent(Benchmarks);
+      afterSuccess.detectChanges();
+      expect(afterSuccess.nativeElement.textContent).not.toContain(
+        'A benchmark creation may already be in progress',
+      );
+      fillCreateForm(afterSuccess.componentInstance);
+      afterSuccess.componentInstance.create();
+      expect(api.createBenchmark.mock.calls[2][0].clientRequestId).not.toBe(first.clientRequestId);
+    },
+  );
+
+  it('retains an in-flight submission when leaving the page and clears it after a definitive rejection', () => {
+    const { component, fixture, api } = setup();
+    api.createBenchmark.mockReturnValueOnce(new Subject<BenchmarkRun>());
+    fillCreateForm(component);
+    component.create();
+    const firstId = api.createBenchmark.mock.calls[0][0].clientRequestId;
+    fixture.destroy();
+
+    const reloaded = TestBed.createComponent(Benchmarks);
+    fillCreateForm(reloaded.componentInstance);
+    api.createBenchmark.mockReturnValueOnce(throwError(() => ({ status: 409 })));
+    reloaded.componentInstance.create();
+    expect(api.createBenchmark.mock.calls[1][0].clientRequestId).toBe(firstId);
+    reloaded.destroy();
+
+    const afterRejection = TestBed.createComponent(Benchmarks);
+    afterRejection.detectChanges();
+    expect(afterRejection.nativeElement.textContent).not.toContain(
+      'A benchmark creation may already be in progress',
+    );
+    fillCreateForm(afterRejection.componentInstance);
+    afterRejection.componentInstance.create();
+    expect(api.createBenchmark.mock.calls[2][0].clientRequestId).not.toBe(firstId);
+  });
+
+  it('keeps a pending UUID when different form values are submitted successfully', () => {
+    const { component, fixture, api } = setup();
+    api.createBenchmark.mockReturnValueOnce(throwError(() => ({ status: 0 })));
+    fillCreateForm(component);
+    component.create();
+    const firstId = api.createBenchmark.mock.calls[0][0].clientRequestId;
+    fillCreateForm(component, '2');
+    component.create();
+    expect(api.createBenchmark.mock.calls[1][0].clientRequestId).not.toBe(firstId);
+    fixture.destroy();
+
+    const reloaded = TestBed.createComponent(Benchmarks);
+    fillCreateForm(reloaded.componentInstance);
+    reloaded.componentInstance.create();
+    expect(api.createBenchmark.mock.calls[2][0].clientRequestId).toBe(firstId);
+  });
+
+  it('can retry in memory with session storage blocked', () => {
+    const storage = vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Storage blocked', 'SecurityError');
+    });
+    try {
+      const { component, api, navigate } = setup();
+      api.createBenchmark.mockReturnValueOnce(throwError(() => ({ status: 0 })));
+      fillCreateForm(component);
+      component.create();
+      component.create();
+      expect(api.createBenchmark.mock.calls[1][0]).toEqual(api.createBenchmark.mock.calls[0][0]);
+      expect(navigate).toHaveBeenCalledWith(['/benchmarks', run.run.id]);
+    } finally {
+      storage.mockRestore();
+    }
   });
 
   it('confirms cancellation, renders the terminal state, and removes control actions', () => {

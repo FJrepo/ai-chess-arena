@@ -1265,7 +1265,8 @@ class GameTurnServiceTest {
                 String promptVersion,
                 String promptHash,
                 String expectedFen,
-                ChatMode chatMode
+                ChatMode chatMode,
+                ChessService.GameEndInfo endInfo
         ) {
             if (conflict != null) {
                 throw conflict;

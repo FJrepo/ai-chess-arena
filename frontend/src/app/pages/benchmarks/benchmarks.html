@@ -23,6 +23,9 @@
     <section class="panel" aria-labelledby="create-heading">
       <h2 id="create-heading">New ladder run</h2>
       <p>32 games per model across eight openings, both colors, and two Stockfish targets.</p>
+      @if (hasPendingSubmission() && !busy()) {
+        <p role="status">A benchmark creation may already be in progress</p>
+      }
       <form (ngSubmit)="create()">
         <div class="form-grid">
           <mat-form-field appearance="outline">

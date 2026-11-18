@@ -172,6 +172,54 @@ class BenchmarkRunIT {
     }
 
     @Test
+    void cancellationAtModelMateCommitKeepsTheScoredWinAndCharge() throws Exception {
+        UUID runId = create(REQUEST);
+        UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.tournament = tournaments.findByIdForUpdate(runId);
+            game.benchmarkPairId = UUID.randomUUID();
+            game.openingId = "mate-fixture";
+            game.whiteModelId = "fixture/ladder";
+            game.whitePlayerName = game.whiteModelId;
+            game.blackPlayerName = "Stockfish";
+            game.stockfishElo = 1500;
+            OpeningBookService.apply(game, List.of("e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6"));
+            games.persist(game);
+            return game.id;
+        });
+        QuarkusMock.installMockForType(new OpenRouterService() {
+            @Override public LlmResponse chat(String modelId, List<ChatMsg> history, AnswerDeadline deadline,
+                                              int maxOutputTokens, dev.aichessarena.entity.ReasoningEffort effort) {
+                return new LlmResponse("{\"move\":\"Qxf7#\"}", 10, 3, 0.12, 1, null, false, null);
+            }
+        }, OpenRouterService.class);
+        var cancellation = new CompletableFuture<io.restassured.response.Response>();
+        ClientProxy.<EvaluationProbe>unwrap(evaluationProbe).afterCommit = event -> {
+            if (event.gameId().equals(gameId)) {
+                // Cancel in a separate request after the mate commits, before the model turn can continue.
+                cancellation.complete(given().post("/api/benchmarks/{id}/cancel", runId));
+            }
+        };
+        given().contentType("application/json").body("{}").post("/api/games/{id}/start", gameId).then().statusCode(200);
+
+        cancellation.get(6, TimeUnit.SECONDS).then().statusCode(200)
+                .body("run.status", equalTo("CANCELLED"))
+                .body("models[0].overall.wins", equalTo(1))
+                .body("models[0].overall.scoredGames", equalTo(1))
+                .body("spendUsd", equalTo(0.12f));
+        long deadline = System.nanoTime() + Duration.ofSeconds(6).toNanos();
+        while (System.nanoTime() < deadline && QuarkusTransaction.requiringNew().call(
+                () -> attemptRows.findByGameId(gameId).isEmpty())) {
+            Thread.sleep(20);
+        }
+        given().get("/api/games/{id}", gameId).then().statusCode(200)
+                .body("status", equalTo("COMPLETED")).body("result", equalTo("WHITE_WINS"))
+                .body("resultReason", equalTo("CHECKMATE"))
+                .body("moves.size()", equalTo(7)).body("moves[6].san", equalTo("Qxf7#"))
+                .body("attempts[0].outcome", equalTo("ACCEPTED"));
+    }
+
+    @Test
     void storesEveryConcreteModelReportedForAMovingAlias() {
         String alias = "~fixture/ladder-latest";
         UUID id = create(REQUEST.replace("fixture/ladder", alias));

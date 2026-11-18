@@ -36,7 +36,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- Retried benchmark creation returns the original run. Terminal Stockfish moves retain their results through a budget pause, and opening positions supply a baseline for move quality.
+- Retrying an unconfirmed benchmark creation in the same tab returns the original run even after reloading. Terminal model and Stockfish moves are saved with their results, so cancellation keeps committed wins and draws. Opening positions supply a baseline for move quality.
 - Benchmark games stay out of Analytics health counts while their spend remains visible. Benchmark games show their configured chat mode between turns and give recovery guidance for cut-off answers.
 
 ## [1.9.0] - 2026-11-18

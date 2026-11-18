@@ -77,7 +77,8 @@ public class GameMoveService {
             String promptVersion,
             String promptHash,
             String expectedFen,
-            ChatMode chatMode
+            ChatMode chatMode,
+            ChessService.GameEndInfo endInfo
     ) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
@@ -109,6 +110,7 @@ public class GameMoveService {
         // The mode that applied to this move; with a message it also has a chat message (see AnalyticsService).
         move.chatMode = chatMode;
         persistMove(move, playerName, message);
+        if (endInfo != null) lifecycle.completeLockedGame(game, endInfo);
     }
 
     @Transactional

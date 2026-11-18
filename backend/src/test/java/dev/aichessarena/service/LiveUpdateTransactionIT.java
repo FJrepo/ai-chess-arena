@@ -143,7 +143,7 @@ class LiveUpdateTransactionIT {
                 gameWebSocket.broadcastRetry(gameId, "WHITE", 1, "Retry");
                 gameMoveService.recordModelMove(gameId, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", null,
                         new LlmResponse("{\"move\":\"e4\"}", 10, 5, 0.001, 1, "{}", false, null), 1, "v2", "hash",
-                        START, ChatMode.OFF);
+                        START, ChatMode.OFF, null);
             });
         } finally {
             releaseCallback.countDown();
@@ -165,7 +165,7 @@ class LiveUpdateTransactionIT {
         Runnable play = switch (source) {
             case MODEL -> () -> gameMoveService.recordModelMove(id, 1, "WHITE", "e4", AFTER_E4, "test/white",
                     "White", "Hello", new LlmResponse("e4", 10, 5, null, 1, "{}", false, null),
-                    0, "v2", "hash", START, ChatMode.OPTIONAL);
+                    0, "v2", "hash", START, ChatMode.OPTIONAL, null);
             case HUMAN -> () -> gameMoveService.recordHumanMove(id, 1, "WHITE", "e4", AFTER_E4, "White", "Hello", START);
             case OVERRIDE -> () -> gameMoveService.applyOverrideMove(id, "e4", START);
         };
@@ -214,7 +214,7 @@ class LiveUpdateTransactionIT {
         Runnable playAndPause = () -> {
             gameMoveService.recordModelMove(id, 1, "WHITE", "e4", AFTER_E4, "test/white", "White", "Hello",
                     new LlmResponse("e4", 10, 5, 0.001, 1, "{}", false, null), 0, "v2", "hash", START,
-                    ChatMode.OPTIONAL);
+                    ChatMode.OPTIONAL, null);
             lifecycle.markGamePaused(id);
             assertEquals(1, revisionEvents.size());
         };

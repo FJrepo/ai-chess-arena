@@ -63,7 +63,8 @@ class GameMoveServiceTest {
                 "v1",
                 "hash-1",
                 START_FEN,
-                ChatMode.MANDATORY
+                ChatMode.MANDATORY,
+                null
         );
 
         assertTrue(moveRepository.persistAndFlushCalled);
@@ -90,7 +91,7 @@ class GameMoveServiceTest {
         assertThrows(GameStateConflictException.class, () -> service.recordModelMove(
                 game.id, 1, "WHITE", "d4", "fen", "model-a", "Model A", null,
                 new OpenRouterService.LlmResponse("d4", 1, 1, null, 1L, "{}", false, null),
-                0, "v1", "hash-1", START_FEN, ChatMode.OPTIONAL
+                0, "v1", "hash-1", START_FEN, ChatMode.OPTIONAL, null
         ));
         assertTrue(moveRepository.persistedMoves.isEmpty());
     }
@@ -106,7 +107,7 @@ class GameMoveServiceTest {
         service.recordModelMove(
                 game.id, 1, "WHITE", "e4", AFTER_E4, "model-a", "Model A", null,
                 new OpenRouterService.LlmResponse("e4", 1, 1, null, 1L, "{}", false, null),
-                0, "v2-chat-required", "hash-1", START_FEN, ChatMode.MANDATORY
+                0, "v2-chat-required", "hash-1", START_FEN, ChatMode.MANDATORY, null
         );
 
         assertEquals(ChatMode.MANDATORY, moveRepository.persistedMoves.getFirst().chatMode);

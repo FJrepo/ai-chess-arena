@@ -28,6 +28,8 @@ import { newRequestId } from '../../utils/request-id';
 import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 
+const pendingSubmissionsKey = 'benchmark-pending-submissions';
+
 @Component({
   selector: 'app-benchmarks',
   imports: [
@@ -53,7 +55,7 @@ export class Benchmarks {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly reload = new Subject<void>();
-  private pendingSubmission: { key: string; requestId: string } | null = null;
+  private readonly pendingSubmissions = signal(this.readPendingSubmissions());
 
   readonly runId = signal<string | null>(null);
   readonly runs = signal<BenchmarkSummary[] | null>(null);
@@ -62,6 +64,7 @@ export class Benchmarks {
   readonly busy = signal(false);
   readonly loadError = signal('');
   readonly actionError = signal('');
+  readonly hasPendingSubmission = computed(() => this.pendingSubmissions().size > 0);
   readonly efforts = REASONING_EFFORTS;
   readonly effortLabel = reasoningEffortLabel;
   readonly reasonLabel = resultReasonLabel;
@@ -156,6 +159,36 @@ export class Benchmarks {
     return { budgetUsd: canonicalBudget(budget), maxConcurrentGames: slots };
   }
 
+  private readPendingSubmissions(): Map<string, string> {
+    try {
+      const stored: unknown = JSON.parse(sessionStorage.getItem(pendingSubmissionsKey) ?? '{}');
+      if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return new Map();
+      return new Map(
+        Object.entries(stored).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      );
+    } catch {
+      return new Map();
+    }
+  }
+
+  private setPendingSubmission(fingerprint: string, requestId: string | null): void {
+    const pending = new Map(this.pendingSubmissions());
+    if (requestId === null) pending.delete(fingerprint);
+    else pending.set(fingerprint, requestId);
+    this.pendingSubmissions.set(pending);
+    try {
+      if (pending.size) {
+        sessionStorage.setItem(pendingSubmissionsKey, JSON.stringify(Object.fromEntries(pending)));
+      } else {
+        sessionStorage.removeItem(pendingSubmissionsKey);
+      }
+    } catch {
+      // In-memory retries still work when storage is unavailable.
+    }
+  }
+
   create(): void {
     if (this.busy()) return;
     this.actionError.set('');
@@ -181,24 +214,29 @@ export class Benchmarks {
         chatMode: this.chatMode,
         runSettings: settings,
       };
-      const key = JSON.stringify(details);
-      if (this.pendingSubmission?.key !== key) {
-        this.pendingSubmission = { key, requestId: newRequestId() };
-      }
+      const fingerprint = JSON.stringify(details);
+      const pendingId = this.pendingSubmissions().get(fingerprint);
+      const clientRequestId = pendingId ?? newRequestId();
+      if (!pendingId) this.setPendingSubmission(fingerprint, clientRequestId);
       this.busy.set(true);
       this.api
-        .createBenchmark({ ...details, clientRequestId: this.pendingSubmission.requestId })
+        .createBenchmark({ ...details, clientRequestId })
         .pipe(
           takeUntilDestroyed(this.destroyRef),
           finalize(() => this.busy.set(false)),
         )
         .subscribe({
           next: ({ run }) => {
-            this.pendingSubmission = null;
+            this.setPendingSubmission(fingerprint, null);
             void this.router.navigate(['/benchmarks', run.id]);
           },
-          error: (error) =>
-            this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.'),
+          error: (error) => {
+            const status = error?.status;
+            if (status >= 400 && status < 500 && status !== 408) {
+              this.setPendingSubmission(fingerprint, null);
+            }
+            this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.');
+          },
         });
     }
   }

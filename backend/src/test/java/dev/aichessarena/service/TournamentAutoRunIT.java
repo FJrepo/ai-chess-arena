@@ -916,9 +916,9 @@ class TournamentAutoRunIT {
             @Override public void recordModelMove(UUID changedId, int moveNumber, String color, String san,
                     String fen, String model, String player, String message, OpenRouterService.LlmResponse response,
                     int retries, String promptVersion, String promptHash, String expectedFen,
-                    dev.aichessarena.entity.ChatMode chatMode) {
+                    dev.aichessarena.entity.ChatMode chatMode, ChessService.GameEndInfo endInfo) {
                 realMoves.recordModelMove(changedId, moveNumber, color, san, fen, model, player, message, response,
-                        retries, promptVersion, promptHash, expectedFen, chatMode);
+                        retries, promptVersion, promptHash, expectedFen, chatMode, endInfo);
                 // Model an evaluation already committed when the move returns. Never wait for the
                 // asynchronous engine future: unavailable evaluations must not delay a budget pause.
                 QuarkusTransaction.requiringNew().run(() -> moves.findByGameId(changedId).getLast().evaluationCp = 1230);
@@ -947,19 +947,18 @@ class TournamentAutoRunIT {
     }
 
     @Test
-    void cancellationAfterRecordingAMatingMoveStillPreventsCompletionAndAdvancement() {
+    void cancellationBeforeAMatingAnswerCommitsKeepsOnlyThePaidAttempt() {
         UUID id = budgetBracket(1);
         UUID gameId = starts.getFirst();
         QuarkusTransaction.requiringNew().run(() ->
                 games.findById(gameId).currentFen = "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1");
-        QuarkusMock.installMockForType(new ChessService() {
-            @Override public boolean isGameOver(Board board) {
-                boolean terminal = super.isGameOver(board);
-                if (terminal) tournamentService.cancelTournament(id);
-                return terminal;
+        QuarkusMock.installMockForType(new OpenRouterService() {
+            @Override public LlmResponse chat(String model, List<ChatMsg> history, AnswerDeadline deadline,
+                                              int tokens, dev.aichessarena.entity.ReasoningEffort effort) {
+                tournamentService.cancelTournament(id);
+                return new LlmResponse("{\"move\":\"Qg7#\"}", 1, 1, 0.01, 1, null, false, null);
             }
-        }, ChessService.class);
-        paidAnswer("{\"move\":\"Qg7#\"}");
+        }, OpenRouterService.class);
         runLoop(gameId);
         GameDto finished = snapshot(gameId);
         assertEquals("CANCELLED", finished.status());
@@ -970,7 +969,10 @@ class TournamentAutoRunIT {
                 .filter(g -> "Final".equals(g.bracketRound))
                 .allMatch(g -> g.whiteParticipant == null && g.blackParticipant == null)));
         assertEquals(AutoRunStatus.OFF, runStatus(id));
-        assertEquals(1, QuarkusTransaction.requiringNew().call(() -> moves.findByGameId(gameId).size()));
+        assertEquals(0, new BigDecimal("0.01").compareTo(finished.totalCostUsd()));
+        given().get("/api/games/{id}", gameId).then().statusCode(200)
+                .body("moves.size()", equalTo(0))
+                .body("attempts.outcome", equalTo(List.of("DISCARDED")));
     }
 
     private UUID budgetBracket(int bestOf) {
