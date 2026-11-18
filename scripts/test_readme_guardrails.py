@@ -29,8 +29,11 @@ def heading_anchors(markdown):
 
 
 def feature_links(bullet):
-    """How-it-works anchors linked from a bullet; links inside inline code spans are not links."""
-    text = re.sub(r'(`+).*?\1', '', bullet)
+    """How-it-works anchors linked from a bullet; links inside inline code spans are not links.
+
+    A code span (CommonMark) opens with a backtick run and closes with the next run of exactly the same length.
+    """
+    text = re.sub(r'(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)', '', bullet)
     return re.findall(r'\]\(docs/how-it-works\.md#([^)]+)\)', text)
 
 
@@ -77,6 +80,8 @@ class ReadmeGuardrailsTest(unittest.TestCase):
         self.assertEqual(feature_links(
             '- `code` [Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies)'),
             ['tournament-formats-and-draw-policies'])
+        self.assertEqual(feature_links(
+            '- `a ``` b [Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies) `'), [])
 
 
 if __name__ == '__main__':
