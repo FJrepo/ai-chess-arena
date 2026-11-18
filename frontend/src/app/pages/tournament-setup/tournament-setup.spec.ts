@@ -1548,6 +1548,70 @@ describe('TournamentSetup', () => {
     expect(document.activeElement).toBe(name);
   });
 
+  it('keeps the focused participant’s Remove action and row when a prior row is removed', async () => {
+    const api = createStatusApi();
+    api.getTournament = () => of(rematchSource());
+    const fixture = await renderSetup(api, 'old');
+    const element: HTMLElement = fixture.nativeElement;
+    const setup = fixture.componentInstance;
+    setup.participants.set(
+      ['Alpha', 'Beta', 'Gamma', 'Delta'].map((name) =>
+        pricedParticipant(name, 'acme/model', 1, 2),
+      ),
+    );
+    fixture.detectChanges();
+    const remove = (name: string) =>
+      element.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`)!;
+    const beta = remove('Beta');
+    const gamma = remove('Gamma');
+    const delta = remove('Delta');
+    const gammaRow = gamma.closest('li');
+    const deltaRow = delta.closest('li');
+    const deltaSeed = () => deltaRow?.querySelector('.participant-seed')?.textContent?.trim();
+    expect(deltaSeed()).toBe('4');
+
+    beta.focus();
+    beta.click();
+    gamma.focus();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(gamma);
+    const gammaAfterRemoval = remove('Gamma');
+    const gammaRowAfterRemoval = gammaAfterRemoval.closest('li');
+    // jsdom does not synthesize the native button click from Enter.
+    (document.activeElement as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(setup.participants().map(({ playerName }) => playerName)).toEqual(['Alpha', 'Delta']);
+    expect(beta.isConnected).toBe(false);
+    expect(gammaAfterRemoval).toBe(gamma);
+    expect(gammaRowAfterRemoval).toBe(gammaRow);
+    expect(gammaRow?.isConnected).toBe(false);
+    expect(remove('Delta')).toBe(delta);
+    expect(delta.closest('li')).toBe(deltaRow);
+    expect(deltaSeed()).toBe('2');
+
+    element.querySelector<HTMLButtonElement>('button[aria-label="Edit Delta"]')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const name = displayNameInput(element);
+    name.value = 'Edited Delta';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    element.querySelector<HTMLButtonElement>('.add-button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(setup.participants().map(({ playerName }) => playerName)).toEqual([
+      'Alpha',
+      'Edited Delta',
+    ]);
+    expect(remove('Edited Delta')).toBe(delta);
+    expect(delta.closest('li')).toBe(deltaRow);
+  });
+
   it('fills an emptied display name and enables Add when reselecting the same model', async () => {
     const fixture = await renderSetup(createStatusApi());
     const element: HTMLElement = fixture.nativeElement;
@@ -1703,6 +1767,45 @@ describe('TournamentSetup', () => {
           : catalogAction(element, 'Retry model catalog');
       expect(target).not.toBeNull();
       expect(document.activeElement).toBe(target);
+    },
+  );
+
+  it.each([
+    ['Retry', 'success'],
+    ['Retry', 'failure'],
+    ['Refresh model catalog', 'success'],
+    ['Refresh model catalog', 'failure'],
+  ] as const)(
+    'keeps focus on body when the user clicks blank space while %s is pending (%s)',
+    async (label, result) => {
+      const request = new Subject<OpenRouterModelsResponse>();
+      const fixture =
+        label === 'Retry'
+          ? await renderCatalogRetry(label, request)
+          : await renderSetup(createRefreshApi(request), 'old');
+      const element: HTMLElement = fixture.nativeElement;
+      const action = catalogAction(element, label);
+
+      action.focus();
+      action.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const status = catalogLoadingStatus(element)!;
+      expect(document.activeElement).toBe(status);
+
+      document.body.click();
+      // jsdom does not perform the native focus change on a click on blank space.
+      if (document.activeElement === status) status.blur();
+      await fixture.whenStable();
+      expect(status.isConnected).toBe(true);
+      expect(document.activeElement).toBe(document.body);
+
+      finishCatalogRequest(request, result);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(status.isConnected).toBe(false);
+      expect(document.activeElement).toBe(document.body);
     },
   );
 

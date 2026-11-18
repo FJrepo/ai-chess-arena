@@ -35,7 +35,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
 - The five Analytics filters fit on one row at 1280 px. Cost & reliability section links restore heading focus on navigation, including Back and Forward. A waiting jump yields to filter edits, focus changes and **Sync Data**. Background refreshes leave jump links responsive when report data is already visible.
 - Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
-- Tournament setup keeps keyboard focus after removing a participant or retrying the model catalog, and refills a cleared display name when the same model is chosen again. Prices that round to zero show as a less-than value instead of zero.
+- Tournament setup keeps keyboard focus after removing a participant and preserves the focused row when an earlier row is removed. Catalog retries and refreshes respect focus changes while loading. Reselecting the same model refills a cleared display name. Prices that round to zero show as a less-than value instead of zero.
 
 ## [1.7.1] - 2026-11-17
 

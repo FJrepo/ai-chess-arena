@@ -408,6 +408,11 @@ Your opponent is %s (%s).`;
   newReasoningEffort: ReasoningEffort | null = null;
 
   participants = signal<SetupParticipant[]>([]);
+  private readonly participantRowKeys = new WeakMap<SetupParticipant, SetupParticipant>();
+
+  participantRowKey(participant: SetupParticipant): SetupParticipant {
+    return this.participantRowKeys.get(participant) ?? participant;
+  }
   /** The whole OpenRouter catalog, loaded once; the picker filters it client-side. */
   models = signal<OpenRouterModelOption[]>([]);
   featuredProviders = signal<string[]>([]);
@@ -850,11 +855,11 @@ Your opponent is %s (%s).`;
       return;
     }
 
-    let focusOrigin: HTMLElement | undefined = origin;
+    let moveFocus = handoffFocus(origin, injector);
     afterNextRender(
       () => {
         const status = this.catalogLoading?.nativeElement;
-        if (status) focusOrigin = handoffFocus(focusOrigin, status);
+        if (status) moveFocus = handoffFocus(moveFocus(status), injector);
       },
       { injector },
     );
@@ -864,10 +869,10 @@ Your opponent is %s (%s).`;
           if (this.modelsError()) {
             const retry = fromRematch ? this.rematchCatalogRetry : this.catalogRetry;
             const target = retry ?? this.catalogRetry ?? this.rematchCatalogRetry;
-            handoffFocus(focusOrigin, target?.nativeElement);
+            moveFocus(target?.nativeElement);
           } else {
             // NgModel re-enables the search input in a microtask after the view updates.
-            queueMicrotask(() => handoffFocus(focusOrigin, this.participantEntryTarget()));
+            queueMicrotask(() => moveFocus(this.participantEntryTarget()));
           }
         },
         { injector },
@@ -896,17 +901,23 @@ Your opponent is %s (%s).`;
     const origin = this.modelPicker?.searchInput;
     const needsName = !this.newPlayerName.trim();
     this.onModelChanged(modelId);
-    if (!this.injector) return;
-    // Autocomplete returns focus to the search field before the updated form renders.
-    afterNextRender(
-      () => {
-        const add = this.addButton?.nativeElement;
-        const target =
-          needsName || !add || add.disabled ? this.participantName?.nativeElement : add;
-        handoffFocus(origin, target);
-      },
-      { injector: this.injector },
-    );
+    const injector = this.injector;
+    if (!injector || !origin) return;
+    const scheduleHandoff = () => {
+      const moveFocus = handoffFocus(origin, injector);
+      afterNextRender(
+        () => {
+          const add = this.addButton?.nativeElement;
+          const target =
+            needsName || !add || add.disabled ? this.participantName?.nativeElement : add;
+          moveFocus(target);
+        },
+        { injector },
+      );
+    };
+    // On pointer selection, Material can restore search focus after emitting the chosen option.
+    if (origin.ownerDocument.activeElement === origin) scheduleHandoff();
+    else queueMicrotask(scheduleHandoff);
   }
 
   selectedModel(): OpenRouterModelOption | null {
@@ -944,7 +955,7 @@ Your opponent is %s (%s).`;
       return;
     }
 
-    const origin = this.addButton?.nativeElement;
+    const moveFocus = handoffFocus(this.addButton?.nativeElement, this.injector);
     const editing = this.editingParticipantIndex();
     this.participants.update((list) => {
       const previous = editing === null ? undefined : list[editing];
@@ -976,6 +987,7 @@ Your opponent is %s (%s).`;
             ? this.newReasoningEffort
             : null,
       };
+      if (previous) this.participantRowKeys.set(participant, this.participantRowKey(previous));
       return editing === null
         ? [...list, participant]
         : list.map((p, i) => (i === editing ? participant : p));
@@ -984,7 +996,7 @@ Your opponent is %s (%s).`;
     this.resetParticipantForm();
     if (this.injector) {
       // A human entry switches back to the model form when the view updates.
-      afterNextRender(() => handoffFocus(origin, this.participantEntryTarget()), {
+      afterNextRender(() => moveFocus(this.participantEntryTarget()), {
         injector: this.injector,
       });
     }
@@ -1020,7 +1032,7 @@ Your opponent is %s (%s).`;
   }
 
   removeParticipant(index: number): void {
-    const origin = this.removeButtons?.get(index)?.nativeElement;
+    const moveFocus = handoffFocus(this.removeButtons?.get(index)?.nativeElement, this.injector);
     this.participants.update((list) => list.filter((_, i) => i !== index));
     const editing = this.editingParticipantIndex();
     if (editing === index) this.resetParticipantForm();
@@ -1030,7 +1042,7 @@ Your opponent is %s (%s).`;
       afterNextRender(
         () => {
           const button = this.removeButtons?.get(index) ?? this.removeButtons?.last;
-          handoffFocus(origin, button?.nativeElement ?? this.participantEntryTarget());
+          moveFocus(button?.nativeElement ?? this.participantEntryTarget());
         },
         { injector: this.injector },
       );

@@ -751,7 +751,7 @@
             </p>
           }
           <ul class="participant-list">
-            @for (p of participants(); track $index) {
+            @for (p of participants(); track participantRowKey(p)) {
               <li class="participant-row">
                 <span class="participant-seed" [attr.aria-label]="'Seed ' + ($index + 1)">{{
                   $index + 1
