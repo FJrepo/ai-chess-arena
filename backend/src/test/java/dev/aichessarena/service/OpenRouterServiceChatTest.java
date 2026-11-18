@@ -307,6 +307,43 @@ class OpenRouterServiceChatTest {
         }
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void aConnectionCountsOnlyIfItWasEstablishedBeforeTheDeadlineInstant(boolean beforeDeadline) {
+        // Fake monotonic clock; the move deadline is at 100 ms. The HTTP client starts on the body (the connection is
+        // established) 1 ns before or after it, and the waiting thread only classifies afterwards.
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+        long deadlineAt = Duration.ofMillis(100).toNanos();
+        OpenRouterService service = service("http://127.0.0.1:9");
+        service.nanoClock = clock::get;
+        service.chatSender = (request, handler) -> {
+            clock.set(beforeDeadline ? deadlineAt - 1 : deadlineAt + 1);
+            request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+                @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) { }
+
+                @Override public void onNext(java.nio.ByteBuffer item) { }
+
+                @Override public void onError(Throwable throwable) { }
+
+                @Override public void onComplete() { }
+            });
+            clock.set(deadlineAt + 2);
+            return new java.util.concurrent.CompletableFuture<>();
+        };
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                OpenRouterService.AnswerDeadline.after(Duration.ofMillis(100), 0), 100);
+
+        if (beforeDeadline) {
+            assertEquals(ProviderOutcome.TIMEOUT, response.outcome(), "connected in time: a loss on time");
+            assertFalse(response.connectionPending());
+        } else {
+            assertEquals(ProviderOutcome.RETRYABLE, response.outcome(), "still connecting at the deadline");
+            assertTrue(response.connectionPending());
+        }
+        assertTrue(response.deliveryUncertain());
+    }
+
     @Test
     void aTlsConnectionThatNeverAnswersStaysALossOnTime() throws Exception {
         try (LoopbackTls server = LoopbackTls.silentAfterHandshake()) {

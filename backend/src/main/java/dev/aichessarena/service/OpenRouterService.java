@@ -48,6 +48,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -242,9 +243,10 @@ public class OpenRouterService {
         // reach OpenRouter (an HTTP/2 client can end the stream before the body publisher completes), so only a
         // failure that provably precedes the connection (see notDelivered) leaves the request undelivered.
         AtomicBoolean handedToClient = new AtomicBoolean();
-        // Set when the HTTP client starts on the request body, which it does only once the connection (TCP and TLS)
-        // is established. Before that only connection setup can have reached OpenRouter.
-        AtomicBoolean connected = new AtomicBoolean();
+        // When (on the deadline's monotonic clock) the HTTP client started on the request body, which it does only once
+        // the connection (TCP and TLS) is established; -1 before that. A deadline is judged by the evidence at its own
+        // instant: a connection established only afterwards still missed it.
+        AtomicLong connectedAtNanos = new AtomicLong(-1);
         CompletableFuture<HttpResponse<String>> pending = null;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -289,7 +291,7 @@ public class OpenRouterService {
                     .uri(URI.create(baseUrl + "/chat/completions"))
                     .header("Authorization", "Bearer " + requestKey)
                     .header("Content-Type", "application/json")
-                    .POST(signalingConnection(HttpRequest.BodyPublishers.ofString(jsonBody), connected))
+                    .POST(signalingConnection(HttpRequest.BodyPublishers.ofString(jsonBody), connectedAtNanos))
                     .timeout(Duration.ofNanos(sendBudgetNanos))
                     .build();
 
@@ -338,13 +340,13 @@ public class OpenRouterService {
         } catch (TimeoutException e) {
             pending.cancel(true);
             return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos), cacheRejection,
-                    handedToClient.get(), connected.get());
+                    handedToClient.get(), connectedBefore(connectedAtNanos, deadline));
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
                     ? e.getCause().getCause()
                     : e.getCause();
             return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos),
-                    cacheRejection, handedToClient.get(), connected.get());
+                    cacheRejection, handedToClient.get(), connectedBefore(connectedAtNanos, deadline));
         } catch (InterruptedException e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -622,7 +624,13 @@ public class OpenRouterService {
     }
 
     /** Reports when the HTTP client subscribes to the body, i.e. once the connection is established. */
-    private static HttpRequest.BodyPublisher signalingConnection(HttpRequest.BodyPublisher body, AtomicBoolean connected) {
+    /** Whether the connection was established strictly before the deadline instant. */
+    private static boolean connectedBefore(AtomicLong connectedAtNanos, AnswerDeadline deadline) {
+        long connectedAt = connectedAtNanos.get();
+        return connectedAt >= 0 && deadline.remainingNanos(connectedAt) > 0;
+    }
+
+    private HttpRequest.BodyPublisher signalingConnection(HttpRequest.BodyPublisher body, AtomicLong connectedAtNanos) {
         return new HttpRequest.BodyPublisher() {
             @Override
             public long contentLength() {
@@ -631,7 +639,7 @@ public class OpenRouterService {
 
             @Override
             public void subscribe(Flow.Subscriber<? super ByteBuffer> subscriber) {
-                connected.set(true);
+                connectedAtNanos.compareAndSet(-1, nanoClock.getAsLong());
                 body.subscribe(subscriber);
             }
         };
