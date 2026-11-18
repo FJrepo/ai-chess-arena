@@ -159,6 +159,11 @@ export class GameView implements OnInit, OnDestroy {
    */
   modelEfforts = signal<Record<string, ReasoningEffort[] | null>>({});
   savingLimit = signal(false);
+  /**
+   * A live pause announced a spend check, and the snapshot that says which request it concerns has not arrived yet.
+   * Until it does, the ordinary Resume stays hidden (the server would refuse it).
+   */
+  readonly spendCheckPending = signal(false);
   /** Keep the pause controls hidden until current participant and tournament settings arrive. */
   private refreshingPauseSettings = signal(false);
   private pauseSettingsSub?: Subscription;
@@ -687,6 +692,8 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   private installSnapshot(game: Game): void {
+    // Snapshots older than the last status change are never installed, so this one carries its spend-check flag.
+    this.spendCheckPending.set(false);
     const previous = this.game();
     if (!previous && game.practiceKind && game.blackControlType === 'HUMAN') this.flipped.set(true);
     const selected = this.moves()[this.currentMoveIndex()];
@@ -1015,11 +1022,9 @@ export class GameView implements OnInit, OnDestroy {
           (previous.resumeRequestedAt || msg.resumeRequestedAt);
         if (status && isFinishedStatus(status)) this.pendingPromotion.set(null);
         // A spend-check pause (its reason ends with the server's fixed sentence) needs the snapshot's flag.
-        if (
-          status === 'PAUSED' &&
-          msg.detail?.endsWith(SPEND_CHECK_SENTENCE) &&
-          !this.loadInFlight
-        ) {
+        const spendCheck = status === 'PAUSED' && !!msg.detail?.endsWith(SPEND_CHECK_SENTENCE);
+        if (status) this.spendCheckPending.set(spendCheck);
+        if (spendCheck && !this.loadInFlight) {
           this.loadGame(true);
         }
         if (status === 'PAUSED' && !queueChangedWhilePaused && previous?.tournamentId) {
@@ -1377,6 +1382,16 @@ export class GameView implements OnInit, OnDestroy {
         },
       });
     });
+  }
+
+  /** The admin Resume: a paused game without a queued resume or a spend check (announced or confirmed). */
+  adminResumeAvailable(game: Game): boolean {
+    return (
+      game.status === 'PAUSED' &&
+      !game.resumeRequestedAt &&
+      !game.uncertainRequest &&
+      !this.spendCheckPending()
+    );
   }
 
   cancelResumeRequest(displayed: Game): void {

@@ -1031,6 +1031,51 @@ describe('GameView', () => {
     expect(spendCheck).toBe(ordinary + 1);
   });
 
+  it('never offers the admin Resume between a spend-check pause and its snapshot', () => {
+    const snapshot = new Subject<Game>();
+    const { component } = createComponent({ api: { getGame: () => snapshot } });
+    (component as any).gameId = 'g-1';
+    component.game.set(gameFixture({ status: 'IN_PROGRESS', statusRevision: 1 }));
+
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail:
+        'A model request (m, White, move 3) has no recorded answer. Check spend, then resume.',
+      statusRevision: 2,
+    });
+    // The snapshot with uncertainRequest has not arrived yet.
+    expect(component.game()?.status).toBe('PAUSED');
+    expect(component.adminResumeAvailable(component.game()!)).toBe(false);
+
+    snapshot.next(
+      gameFixture({
+        status: 'PAUSED',
+        statusRevision: 2,
+        uncertainRequest: true,
+        uncertainRequestSentAt: '2026-11-18T10:00:00.000001Z',
+      }),
+    );
+    expect(component.adminResumeAvailable(component.game()!)).toBe(false);
+
+    // An ordinary pause offers it at once.
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      statusRevision: 3,
+    });
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail: 'Paused by user',
+      statusRevision: 4,
+    });
+    expect(component.adminResumeAvailable(component.game()!)).toBe(true);
+  });
+
   it('names the rejected move in the live retry text', () => {
     const { component } = createComponent();
 
