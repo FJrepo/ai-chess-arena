@@ -444,7 +444,7 @@
         <button mat-raised-button [disabled]="!gameActionsAvailable()" (click)="pauseGame()">
           <mat-icon>pause</mat-icon> Pause
         </button>
-      } @else if (g.status === 'PAUSED' && !g.resumeRequestedAt && !g.uncertainRequest) {
+      } @else if (adminResumeAvailable(g)) {
         <button
           mat-raised-button
           color="primary"
