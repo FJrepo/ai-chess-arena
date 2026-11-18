@@ -16,7 +16,7 @@ Which setup answers which question. Each recipe names the page, the exact settin
 
 Choose **Recipe** on the **Benchmarks** form or **Test recipe** under *Tournament Settings* on a new tournament. The recipe fills in the settings listed under *Recipe settings* below and links back here; it never creates or starts anything. Everything else, such as the run name, models or participants, budget and concurrency, stays as you entered it, and you can still change every field. After you change a recipe setting, the form says so. The recipes are defined once in [`benchmark-recipes.json`](../frontend/src/app/utils/benchmark-recipes.json); a test checks that this guide lists the same settings.
 
-Every ladder run uses the same fixed conditions: eight openings, each played with both colours against both Stockfish levels (32 games per model), no move time limit (each request is still capped at 10 minutes, which pauses the game instead of forfeiting it), three attempts per move and 16,384 output tokens per answer.
+Every ladder run uses the same fixed conditions: eight openings, each played with both colours against both Stockfish levels (32 games per model), no move time limit (each request is still capped at 10 minutes, which pauses the game instead of forfeiting it), three attempts per move and an output limit of 16,384 tokens per answer. That limit is a ceiling: a model whose catalog maximum is lower gets its own maximum. An answer cut off at the limit is still played if it contains a legal move; only an unusable cut-off answer pauses the game.
 
 ## Read this first
 
@@ -26,6 +26,7 @@ Every ladder run uses the same fixed conditions: eight openings, each played wit
 - **Reasoning tokens are provider-reported.** Some providers do not report them; the report then shows a dash rather than zero.
 - **Pin model IDs.** A moving alias such as `~provider/model-latest` can resolve to a different model during or between runs; the report lists every concrete ID it saw.
 - **The budget is a pause point, not a billing limit.** Requests already in flight can still add cost after the run pauses.
+- **Displayed spend can be incomplete.** A game paused for a spend check has a request whose cost is not recorded yet. Check that request in your OpenRouter activity before choosing **Spend checked, resume**, and treat that game's spend as a lower bound until then.
 
 ## Raw playing strength
 
@@ -65,11 +66,18 @@ Add one to eight model IDs and a budget. A fixed effort keeps the thinking reque
 
 **Recipe settings:** Legal move hints **on** · Reasoning effort **Low** · Chat mode **Off** · Stockfish levels **1500** and **2000**
 
-**Read:** the comparison's **Score delta** per model, **Cost delta**, and **Reasoning tok/move** (reasoning tokens per move) for both runs. The changed outcomes list shows which games flipped.
+The rerun copies the source's budget and concurrency, because a rerun changes only one setting. A higher effort spends more per game, so the rerun can reach that budget and pause before it has played all the games of the source. If it pauses, enter a higher budget under **Resume run**.
 
-**Caveats:** if a model's reasoning tokens barely change, its provider ignored or mapped the level, and the delta says nothing about effort. Higher effort can hit the fixed 16,384-token output limit; a cut-off answer pauses the game. Compare the score delta with a [variance check](#variance-check) before calling it an improvement.
+**Read:** the comparison's **Score delta** per model with its **matched** count, **Cost delta**, and **Reasoning tok/move** (reasoning tokens per move) with its **reported** count for both runs. The changed outcomes list shows which games flipped.
 
-**Cost:** two full runs. The high-effort run usually costs clearly more, almost all of it in reasoning tokens.
+**Caveats:**
+
+- **Score delta** uses only matchups scored in both runs, while **Cost delta** includes spend on unfinished and cancelled games. Check that the matched count covers the games you care about before you compare them; a rerun that paused early compares few games.
+- Reasoning-token averages only cover answers that reported the counter; check the reported count. Similar averages do not prove that a provider ignored the level, and a model without effort levels gets no effort parameter at all (the game's attempt history shows the effort actually sent).
+- A higher effort uses more of the output limit; an unusable cut-off answer pauses the game.
+- Compare the score delta with a [variance check](#variance-check) before calling it an improvement.
+
+**Cost:** two runs. Do not predict the second from the effort label: watch the rerun's spend after its first scored games and compare it with the source's spend for the same matchups.
 
 ## Cost efficiency
 
@@ -81,25 +89,27 @@ Add one to eight model IDs and a budget. A fixed effort keeps the thinking reque
 
 Each model thinks as its provider ships it, which is what you pay for by default.
 
-**Read:** *Model results* → **Score** and **Spend** (points divided by spend gives points per dollar); *Opening pairs* shows spend per game. Rerun and compare adds **Reasoning tok/move** (reasoning tokens per move) and **Cost delta**. For cost per completed move across tournaments, use Analytics: *Cost & reliability* → *Per-Model Performance Metrics* → **Cost/Move**, *Overview* → **Cost / Win**, and *Play quality* → **Reasoning tokens / accepted move**. Benchmark games are kept out of those model analytics; their spend appears on its own line.
+**Read:** *Model results* → **Score**, **Games** and **Spend**; *Opening pairs* shows each game's spend. Compare models over the same completed matchups: when a model's run paused early, it has fewer scored games and its total spend covers a different set of games. Points per dollar only makes sense for matchups that both models completed with positive recorded spend; it is undefined at zero spend. Rerun and compare adds **Reasoning tok/move** (reasoning tokens per move) and **Cost delta**. For cost per completed move across tournaments, use Analytics: *Cost & reliability* → *Per-Model Performance Metrics* → **Cost/Move**, *Overview* → **Cost / Win**, and *Play quality* → **Reasoning tokens / accepted move**. Benchmark games are kept out of those model analytics; their spend appears on its own line.
 
-**Caveats:** spend is what OpenRouter reports, including rejected answers and cache discounts, so it changes with prices and provider routing over time. Some models think without end at their default effort and can hit the output limit (the game pauses).
+**Caveats:** spend is what OpenRouter reports, including rejected answers and cache discounts, so it changes with prices and provider routing over time. A game paused for a spend check is missing that request's cost until you have checked it in your OpenRouter activity; do that before choosing **Spend checked, resume** and before comparing totals. Some models think without end at their default effort and can produce unusable cut-off answers (the game pauses).
 
 **Cost:** like *Raw playing strength*, but more spread: the most expensive models dominate the total.
 
 ## Reliability and format discipline
 
-**Question:** does the model answer in the expected format with a legal move on the first try, and does it forfeit?
+**Question:** can the app play the model's first answer, and does the model forfeit?
 
 **Where:** New tournament → Tournament Settings → Test recipe → *Reliability and format discipline*. Choose *Best of 3* under *Matches* or run several tournaments, so every model plays enough games.
 
 **Recipe settings:** Legal move hints **on** · Reasoning effort **Model default** · Chat **Off** · Banter **Original** · Allow resignation **off** · Adjudicate decisive wins **off** · Limit time per move **off** · Max attempts per move **3**
 
-No time limit and no resignation mean every game is played to the end and nobody loses on time.
+The recipe switches off the ending rules that would hide the signal: no time limit (no losses on time), no resignation and no adjudication. Games still end by mate, a draw rule or an invalid-move forfeit once a model uses up its three attempts, and provider problems still pause them.
 
 **Read:** Analytics, filtered to this tournament. *Overview* → *Model Comparison Table* → **First-try legal**, **Forfeits** and **Reliability**; *Failure Profile*. *Cost & reliability* → *Reliability Ranking & Stability* → **First-try legal**, **Forfeit Rate**, **Avg Retries**. Each game's feed lists the failed attempts per move (for example "illegal Qxh7, unparseable answer").
 
-**Model or provider?** Illegal or unparseable answers and exhausted attempts are the model's. OpenRouter errors, rate limits and the 10-minute request cap are provider problems: the game pauses with the reason, and they never count as the model's timeout, invalid move or forfeit. Answers cut off at the output-token limit also pause and are listed separately. The same model can be served by different providers, so a burst of pauses says more about routing than about the model.
+**First-try legal is not strict format compliance.** It counts whether the app could parse and play the first answer. Models are asked for JSON, but the parser also takes a move from plain text, so a bare `e4` counts as a legal first try. The attempt history (game feed, `GET /api/games/{id}/attempts`) shows the proposed move, outcome, finish reason and error, not the raw text. The raw answers are stored in the database (`move_attempts.raw_response` and `moves.raw_response`, up to 20,000 characters per attempt); query them there to check the exact format.
+
+**Model or provider?** Illegal or unparseable answers and exhausted attempts are the model's. OpenRouter errors, rate limits and the 10-minute request cap are provider problems: the game pauses with the reason, and they never count as the model's timeout, invalid move or forfeit. Answers cut off at the output-token limit are listed separately and are not the model's failures; such an answer is played if it contains a legal move and otherwise pauses the game. The same model can be served by different providers, so a burst of pauses says more about routing than about the model.
 
 **Caveats:** fewer than 3 finished games mark a model *Insufficient data*, and scores from fewer than 60 moves are damped. Eliminated models play fewer games in a bracket. On the ladder, *Forfeit losses* and the comparison's **First-try legal** give the same signal for benchmark runs.
 
@@ -113,13 +123,13 @@ No time limit and no resignation mean every game is played to the end and nobody
 
 **Recipe settings:** Legal move hints **on** · Reasoning effort **Model default** · Chat **Mandatory** · Banter **Mind games** · Allow resignation **on** · Adjudicate decisive wins **off** · Limit time per move **off** · Max attempts per move **3**
 
-Resignation must be on: persuasion counts resignations. Adjudication stays off so games end by resignation or mate, not by the arbiter.
+Resignation must be on: persuasion counts resignations. The recipe switches off adjudication and the time limit, so no game is decided by the arbiter or the clock. It cannot make anyone resign: games can still end by mate, a draw or a forfeit. Mandatory chat asks for a message with every move, but a legal move without a message is still played.
 
 **Read:** Analytics → *Behaviour*. **Persuasion** → *As persuader* (split into *Mind games* and *Other levels*) and *As persuaded*; **Resignations** → *resigned while not losing*; **Talkativeness** → *Mandatory* (compliance) and average message length. To compare tones, use **Run this tournament again** with another banter level (for example Spicy); to see whether models talk by choice, run it with chat *Optional*.
 
 **Caveats:** a resignation only counts as talked out when Stockfish evaluated the position, so the evaluator must be available. Fewer than 5 evaluated resignations show **Low sample**. A low *As persuaded* count can also mean few resignations or silent opponents. Tone is prompt guidance, not moderation.
 
-**Cost:** slightly above a silent tournament: one short message per move adds output tokens.
+**Cost:** slightly above a silent tournament, depending on the messages models actually send: each short message adds output tokens.
 
 ## Variance check
 
@@ -131,6 +141,6 @@ Resignation must be on: persuasion counts resignations. Adjudication stays off s
 
 **Read:** the comparison's **Score delta** per model and the changed outcomes list. A one-setting difference (effort, hints) smaller than this run-to-run swing is not evidence.
 
-**Caveats:** one plain rerun is a single sample of the noise; repeat it for important decisions. Moving aliases can make a plain rerun a different model.
+**Caveats:** one plain rerun is a single sample of the noise; repeat it for important decisions. Check the **matched** count under each score delta: it compares only matchups scored in both runs. Moving aliases can make a plain rerun a different model.
 
-**Cost:** the same as the source run.
+**Cost:** the rerun copies the source's budget cap and concurrency, but its actual spend can differ: answers vary in length and retries, prices and routing change, and the rerun pauses at the cap if it needs more. Raise the budget under **Resume run** if it pauses.

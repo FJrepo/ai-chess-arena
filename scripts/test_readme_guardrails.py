@@ -4,7 +4,9 @@ import re
 import unittest
 from pathlib import Path
 
-README = (Path(__file__).resolve().parent.parent / 'README.md').read_text(encoding='utf-8')
+ROOT = Path(__file__).resolve().parent.parent
+README = (ROOT / 'README.md').read_text(encoding='utf-8')
+HOW_IT_WORKS = (ROOT / 'docs' / 'how-it-works.md').read_text(encoding='utf-8')
 MAX_WORDS = 1100
 MAX_FEATURES = 10
 MAX_FEATURE_WORDS = 25
@@ -12,6 +14,18 @@ MAX_FEATURE_WORDS = 25
 
 def features_section():
     return README.split('\n## Features\n', 1)[1].split('\n## ', 1)[0]
+
+
+def heading_anchors(markdown):
+    """GitHub-style anchors of all headings outside code blocks."""
+    anchors, in_code = set(), False
+    for line in markdown.splitlines():
+        if line.startswith('```'):
+            in_code = not in_code
+        elif not in_code and re.match(r'#{1,6} ', line):
+            heading = line.lstrip('#').strip().lower()
+            anchors.add(re.sub(r'[^\w\- ]', '', heading).replace(' ', '-'))
+    return anchors
 
 
 def visible_words(markdown):
@@ -39,6 +53,17 @@ class ReadmeGuardrailsTest(unittest.TestCase):
         for bullet in bullets:
             with self.subTest(bullet=bullet):
                 self.assertLessEqual(len(visible_words(bullet)), MAX_FEATURE_WORDS)
+
+
+    def test_feature_bullets_link_to_existing_how_it_works_sections(self):
+        anchors = heading_anchors(HOW_IT_WORKS)
+        bullets = [line for line in features_section().splitlines() if line.startswith('- ')]
+        for bullet in bullets:
+            with self.subTest(bullet=bullet):
+                links = re.findall(r'\]\(docs/how-it-works\.md#([^)]+)\)', bullet)
+                self.assertTrue(links, 'each feature links to its how-it-works section')
+                for anchor in links:
+                    self.assertIn(anchor, anchors)
 
 
 if __name__ == '__main__':
