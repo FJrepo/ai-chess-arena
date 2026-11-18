@@ -466,8 +466,8 @@
   border-left: 1px solid var(--app-divider);
 }
 
-.quality-table th.num,
-.conversion-table th.num {
+// Column headers are words: they keep the text font; only numeric cells use the numeric font.
+.analytics-table th.num {
   font-family: inherit;
 }
 

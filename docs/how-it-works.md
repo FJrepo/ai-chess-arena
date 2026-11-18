@@ -516,7 +516,7 @@ The *Conversion* table uses the same completion-time window, tournament and mini
 - **Thrown away:** of the games with a winning position, games that ended in a draw or a loss (including the model's own forfeit).
 - **Missed mates:** the number of judged model moves that [missed a forced mate](#missed-mates), independently of whether the game reached the winning-position threshold or was ultimately won.
 
-The table shows how many of each model's sides had evaluations. Games with no evaluations cannot prove a winning position and are left out. A model with zero evaluated sides shows **no judged games** and **n/a** for position and outcome counts. When the sample is unknown, the row shows **sample not reported** and unavailable metrics show **n/a**. Missed mates show **n/a** without any judged moves. Observed zero metrics stay zero. Coverage counts sides in games with at least one evaluation.
+The table shows how many of each model's sides had evaluations. Games with no evaluations cannot prove a winning position and are left out. A model with zero evaluated sides shows **no judged games** and **n/a** for position and outcome counts. When the sample is unknown, the row shows **sample not reported** and unavailable metrics show **n/a**. Missed mates show **n/a** without any judged moves. Observed zero metrics stay zero. Coverage counts model sides in games with at least one evaluated canonical non-book move.
 
 Comparison API rows carry `conversion` with `evaluatedGames`, `winningPositionsReached`, `converted`, `adjudicatedWins`, `thrownAway` and `missedMates`; unknown counts may be omitted. All metrics derive from stored evaluations, including historical games; there is no backfill or engine re-analysis.
 

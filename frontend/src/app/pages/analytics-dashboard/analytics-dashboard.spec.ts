@@ -256,6 +256,13 @@ describe('AnalyticsDashboard', () => {
       expect(sample?.classList.contains('table-note')).toBe(true);
       expect(sample?.textContent?.replace(/\s+/g, ' ').trim()).toBe(note);
     }
+
+    // Counters the API did not report read n/a, never an observed zero.
+    const missingRow = models.find((cell) => cell.textContent === 'model.missing')!.closest('tr')!;
+    const counters = Array.from(missingRow.querySelectorAll('td.num'))
+      .slice(-4)
+      .map((cell) => cell.textContent?.trim());
+    expect(counters).toEqual(['n/a', 'n/a', 'n/a', 'n/a']);
   });
 
   it('updates the tab query parameter with replaceUrl and keeps other parameters', async () => {

@@ -366,10 +366,10 @@
                         }
                       </td>
                       <td class="num">{{ formatPerGame(row.blundersPerGame) }}</td>
-                      <td class="num">{{ row.blunders ?? 0 }}</td>
-                      <td class="num">{{ row.mistakes ?? 0 }}</td>
-                      <td class="num">{{ row.inaccuracies ?? 0 }}</td>
-                      <td class="num">{{ row.analyzedMoves ?? 0 }}</td>
+                      <td class="num">{{ row.blunders ?? 'n/a' }}</td>
+                      <td class="num">{{ row.mistakes ?? 'n/a' }}</td>
+                      <td class="num">{{ row.inaccuracies ?? 'n/a' }}</td>
+                      <td class="num">{{ row.analyzedMoves ?? 'n/a' }}</td>
                     </tr>
                   } @empty {
                     <tr>
