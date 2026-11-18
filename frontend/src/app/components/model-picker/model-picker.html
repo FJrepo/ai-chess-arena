@@ -8,6 +8,7 @@
     >
       <mat-label>Model</mat-label>
       <input
+        #search
         matInput
         type="text"
         [ngModel]="inputValue()"
@@ -28,8 +29,15 @@
         class="model-picker-panel"
         [displayWith]="displayModel"
         [autoActiveFirstOption]="true"
+        [hideSingleSelectionIndicator]="true"
         (optionSelected)="onSelected($event.option.value)"
       >
+        <div class="option-grid option-headings" aria-hidden="true">
+          <span class="option-title">Model</span>
+          <span class="option-input-price">$/M in</span>
+          <span class="option-output-price">$/M out</span>
+          <span class="option-context">Context</span>
+        </div>
         @for (group of groups(); track group.provider) {
           <mat-optgroup>
             <span class="group-label">
@@ -38,10 +46,30 @@
               <span class="group-count">{{ group.models.length }}</span>
             </span>
             @for (option of group.models; track option.id) {
-              <mat-option [value]="option" [attr.title]="aliasNote(option)">
-                <span class="option-text">
-                  <span class="option-title">{{ option.name }}</span>
-                  <span class="option-meta">{{ metaLine(option) }}</span>
+              <mat-option
+                [value]="option"
+                [attr.aria-label]="option.name + ' · ' + metaLine(option)"
+                [attr.title]="aliasNote(option) ?? metaLine(option)"
+              >
+                @let inputPrice = priceCell(option.promptPricePerMillion);
+                @let outputPrice = priceCell(option.completionPricePerMillion);
+                @let context = formatTokenCount(option.contextLength);
+                <span class="option-grid">
+                  <span class="option-identity">
+                    <span class="option-title" [title]="option.name">{{ option.name }}</span>
+                    @if (markers(option); as labels) {
+                      <span class="option-markers">{{ labels }}</span>
+                    }
+                  </span>
+                  <span class="option-input-price" [class.num]="inputPrice !== unavailable">{{
+                    inputPrice
+                  }}</span>
+                  <span class="option-output-price" [class.num]="outputPrice !== unavailable">{{
+                    outputPrice
+                  }}</span>
+                  <span class="option-context" [class.num]="context !== unavailable">{{
+                    context
+                  }}</span>
                 </span>
               </mat-option>
             }
@@ -98,7 +126,8 @@
       >
     </mat-chip-listbox>
     <span class="match-count" aria-live="polite">
-      {{ matches().length }} of {{ models().length }}
+      <span class="num">{{ matches().length }}</span> of
+      <span class="num">{{ models().length }}</span>
       {{ models().length === 1 ? 'model' : 'models' }}
     </span>
   </div>

@@ -1,3 +1,5 @@
+@use '@angular/material' as mat;
+
 .tournament-list {
   /* Raised surfaces: white on the light page, one step up from the dark page. */
   --list-card-bg: light-dark(
@@ -120,59 +122,62 @@
   font-weight: 800;
 }
 
-.toolbar-card {
-  margin-bottom: 4px;
-  border-radius: 20px;
-  border: 1px solid var(--list-card-border);
-  background: var(--mat-sys-surface-container-low);
-  box-shadow: none;
+.list-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--app-space-3);
+  padding: var(--app-space-3) var(--app-space-4);
+
+  .page-title {
+    font-size: var(--mat-sys-headline-small-size);
+  }
+
+  mat-form-field {
+    @include mat.form-field-density(-3);
+    min-width: 0;
+  }
 }
 
-.toolbar-content {
-  display: grid;
-  grid-template-columns: minmax(220px, 2.2fr) repeat(3, minmax(150px, 1fr)) auto;
-  gap: 12px;
+.list-title-row,
+.list-heading,
+.list-controls {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding-bottom: 8px;
+  gap: var(--app-space-3);
+}
+
+.list-title-row {
+  justify-content: space-between;
 }
 
 .search-field {
-  min-width: 0;
+  width: 20rem;
+  max-width: 100%;
+}
+
+.list-filters:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: center;
+  gap: var(--app-space-3);
+  border-top: 1px solid var(--app-divider);
+  padding-top: var(--app-space-3);
 }
 
 .reset-button {
-  height: 54px;
-  align-self: stretch;
-  border-radius: 14px;
-  font-weight: 700;
-  --mat-button-outlined-outline-color: var(--mat-sys-outline);
   --mat-button-outlined-disabled-outline-color: var(--mat-sys-outline-variant);
-  --mat-button-outlined-disabled-label-text-color: color-mix(
-    in srgb,
-    var(--mat-sys-on-surface-variant) 62%,
-    transparent
-  );
+  --mat-button-outlined-disabled-label-text-color: var(--list-caption);
 }
 
-.toolbar-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 16px 14px;
-  gap: 12px;
+.results-label,
+.card-activity {
   color: var(--list-caption);
-  font-size: 0.84rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-size: var(--app-text-secondary-size);
 }
 
-.results-label {
-  font-weight: 700;
-}
-
-.filter-note {
-  color: var(--mat-sys-primary);
-  font-weight: 700;
+.card-activity {
+  margin: 0;
 }
 
 .empty-state {
@@ -422,23 +427,14 @@
     grid-template-columns: 1fr;
   }
 
-  .toolbar-content {
+  .list-filters:not([hidden]) {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
-  }
-
-  .reset-button {
-    height: 48px;
   }
 }
 
 @media (max-width: 680px) {
-  .toolbar-content {
+  .list-filters:not([hidden]) {
     grid-template-columns: 1fr;
-  }
-
-  .toolbar-meta {
-    flex-direction: column;
-    align-items: flex-start;
   }
 
   .onboarding-actions {

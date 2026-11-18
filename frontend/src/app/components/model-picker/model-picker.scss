@@ -55,21 +55,49 @@
   color: var(--mat-sys-on-surface-variant);
 }
 
-.option-text {
+.option-grid {
   display: grid;
-  gap: 1px;
-  padding: 2px 0;
-  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) repeat(2, var(--app-model-price-width)) var(
+      --app-model-context-width
+    );
+  align-items: center;
+  gap: var(--app-space-3);
 }
 
-.option-title {
-  font-weight: 600;
-}
-
-.option-meta {
-  font: var(--mat-sys-body-small);
-  font-size: var(--app-text-secondary-size);
+.option-headings {
+  padding: var(--app-space-2) var(--app-space-4);
+  border-bottom: var(--app-rule-width) solid var(--app-table-rule);
+  font: var(--mat-sys-label-large);
+  font-size: var(--app-table-heading-size);
+  letter-spacing: var(--app-table-heading-tracking);
   color: var(--mat-sys-on-surface-variant);
+}
+
+.option-identity {
+  display: grid;
+  min-width: 0;
+
+  .option-title {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.option-markers,
+.option-grid:not(.option-headings)
+  > :is(.option-input-price, .option-output-price, .option-context) {
+  font-size: var(--app-text-secondary-size);
+  line-height: var(--mat-sys-body-small-line-height);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.option-input-price,
+.option-output-price,
+.option-context {
+  text-align: end;
+  white-space: nowrap;
 }
 
 // Setup gives model search a full row and keeps its filters together below it.

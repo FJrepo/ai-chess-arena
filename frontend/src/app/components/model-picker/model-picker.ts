@@ -1,4 +1,14 @@
-import { Component, computed, input, linkedSignal, model, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  computed,
+  input,
+  linkedSignal,
+  model,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatButtonModule } from '@angular/material/button';
@@ -11,10 +21,15 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import {
   ModelSort,
   filterModels,
+  formatPrice,
+  formatTokenCount,
   groupByProvider,
+  isFreeModel,
   isLatestAlias,
+  LATEST_ALIAS_LABEL,
   LATEST_ALIAS_NOTE,
   modelMetaParts,
+  NOT_AVAILABLE,
   providerOptions,
   sortModels,
 } from '../../utils/model-catalog';
@@ -49,6 +64,11 @@ export class ModelPicker {
   readonly disabled = input(false);
   /** Id of the selected model, '' when none. */
   readonly selectedId = model('');
+  readonly optionChosen = output<void>();
+  private readonly search = viewChild.required<ElementRef<HTMLInputElement>>('search');
+
+  readonly formatTokenCount = formatTokenCount;
+  readonly unavailable = NOT_AVAILABLE;
 
   readonly providerFilter = signal('');
   readonly reasoningOnly = signal(false);
@@ -102,6 +122,24 @@ export class ModelPicker {
     return modelMetaParts(option).join(' · ');
   }
 
+  priceCell(price: number | null): string {
+    return price === 0 ? '0' : formatPrice(price).replace(/^\$/, '');
+  }
+
+  markers(option: OpenRouterModelOption): string {
+    return [
+      isLatestAlias(option) && LATEST_ALIAS_LABEL,
+      isFreeModel(option) && 'Free',
+      option.reasoningSupported && 'Reasoning',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  focusSearch(): void {
+    this.search().nativeElement.focus();
+  }
+
   /** Tooltip explaining a moving "latest" alias; null for concrete models. */
   aliasNote(option: OpenRouterModelOption): string | null {
     return isLatestAlias(option) ? LATEST_ALIAS_NOTE : null;
@@ -120,6 +158,8 @@ export class ModelPicker {
 
   onSelected(option: OpenRouterModelOption): void {
     this.inputValue.set(option);
+    // Let the setup form read its draft before the selection fills an empty name.
+    this.optionChosen.emit();
     this.selectedId.set(option.id);
   }
 

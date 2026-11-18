@@ -5,6 +5,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 ## Contents
 
 - [Connecting OpenRouter](#connecting-openrouter)
+- [Tournament list](#tournament-list)
 - [Tournament formats and draw policies](#tournament-formats-and-draw-policies)
 - [Auto-run](#auto-run)
 - [Opening variety](#opening-variety)
@@ -49,6 +50,12 @@ Connection and validation are separate: a key with source `env`, `file` or `ui` 
 Environment/explicit secret-file keys are operator-managed and cannot be replaced or deleted in the UI (HTTP 409). For LAN setups, key management first requires the setup-token link from the backend log in the claiming browser; other browsers can view status but cannot test or change credentials. See [claiming and the threat model](deployment.md#instance-claim-and-threat-model).
 
 Credential API under `/api/config/openrouter`: `GET` status; `POST /connect` returns `authUrl`; `POST /complete` takes `{code,state}`; `POST /key` takes `{key}`; `DELETE /key`; `POST /test`; `POST /claim` takes `{token}`. Mutations require a same-origin browser request and an authorized browser cookie. Unknown/missing body fields fail with HTTP 400. Failed authorization or claiming returns 403, foreign hosts 421, and upstream failures 502. Status and mutations return `{key:{source,maskedSuffix,lastValidatedAt,validation},canManage}` (unset metadata may be omitted); `validation` is `none`, `unknown`, `valid`, `invalid` or `unavailable`. All responses use `Cache-Control: no-store`.
+
+## Tournament list
+
+The header shows how many tournaments match your search and filters. Search by name or status, or open **Filters** for Status, Best Of, Sort By and Reset. The number on **Filters** counts those three controls when they differ from their defaults. Closing the controls keeps the current selections. Reset clears the search as well as the filters and sort. These controls are local to the current list view.
+
+In-progress cards show how many games are running when the list loads, plus the bracket round when all running games share one. Open a tournament to follow its games live.
 
 ## Tournament formats and draw policies
 
@@ -175,21 +182,21 @@ Use **OpenRouter chat models** as participants (text-output models; embedding, v
 
 ### Setup layout
 
-Tournament setup starts with **Add participant**, with optional custom instructions revealed on demand; collapsing the field preserves its draft when adding a participant. The **Tournament lineup** groups the tournament name, roster, visible participant reasoning-effort overrides, readiness checklist and **Create Tournament** action before the rough runtime and spend estimate. At widths of at least 1200px, the sidebar stays sticky only when its measured height fits the window with an 88px top offset and a 24px bottom gap; otherwise it uses natural page scrolling. Without ResizeObserver support, it also uses natural page scrolling. Below 1200px, the order is add participant, settings, lineup, then estimate, matching keyboard navigation. Settings keep prompt rules and shared instructions in a collapsed **Advanced: prompt** section, with a **custom** badge when shared instructions are set.
+Tournament setup starts with **Add participant**, with optional custom instructions revealed on demand; collapsing the field preserves its draft when adding a participant. The **Tournament lineup** groups the tournament name, roster, visible participant reasoning-effort overrides and **Create Tournament** action before the rough runtime and spend estimate. A hint beside **Create Tournament** asks for the first missing input in order: the first participant, the second participant, then the tournament name. At widths of at least 1200px, the sidebar stays sticky only when its measured height fits the window with an 88px top offset and a 24px bottom gap; otherwise it uses natural page scrolling. Without ResizeObserver support, it also uses natural page scrolling. Below 1200px, the order is add participant, settings, lineup, then estimate, matching keyboard navigation. Settings keep prompt rules and shared instructions in a collapsed **Advanced: prompt** section, with a **custom** badge when shared instructions are set.
 
 ### Model catalog
 
-The setup page loads every text-output model from the OpenRouter catalog once (refreshed by the backend every 5 minutes). Search appears above a compact filter row, followed by display name, control type and optional custom instructions. **Add Participant** sits directly below the draft fields beside any missing-input hint. The lineup shows the current participant count and a minimum of two.
+The setup page loads every text-output model from the OpenRouter catalog once (refreshed by the backend every 5 minutes). Search appears above a compact filter row, followed by display name, control type and optional custom instructions. **Add Participant** sits directly below the draft fields. The lineup shows the current participant count.
 
 Concurrent catalog lookups use a consistent snapshot for freshness and model data, rechecking after acquiring the refresh lock. Model validation and reasoning-effort mapping can therefore use a catalog published by another caller during a refresh.
 
 Type into *Model*: every word must appear in the model's name, id or provider, in any order, so "anthropic sonnet", "sonnet 5.5" and "gpt 6" all work ("-", "." and spaces are interchangeable).
 
-Suggestions are grouped by provider (the featured providers from `openrouter.featured-providers` first) and show release date, input/output price per 1M tokens, context window, a *Reasoning* marker and "AA" with the Intelligence Index when known.
+Suggestions are grouped by provider (the featured providers from `openrouter.featured-providers` first). Compare the model name, input/output price per 1M tokens and context window in aligned columns. *Free* and *Reasoning* markers appear beside the model name where applicable. Hover over a truncated name to see it in full.
 
 Narrow the list by provider, *Reasoning only* or *Free only* (input and output price 0) and sort by *Newest* (default), *Cheapest* (input + output price) or *Intelligence Index*; models without that value go last.
 
-Arrow keys and Enter select a model, which fills an empty display name; editing or clearing the field clears the selection.
+Arrow keys and Enter select a model. An empty **Display Name** is filled with the model name and receives focus so you can edit it. With a name already entered, focus moves to **Add Participant**. Adding returns focus to **Model** when the catalog is available. Editing or clearing the search field clears the selection.
 
 The card below shows the selected model's release date, input/output/cache-read price per 1M tokens, context window, max output tokens, reasoning (always on or optional, effort levels, default effort), Intelligence Index and description, with "n/a" for anything OpenRouter does not provide.
 

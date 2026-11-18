@@ -145,8 +145,6 @@ mat-hint,
 .caption,
 .participant-meta,
 .participant-empty,
-.confidence-empty p,
-.launch-checklist li,
 .prompt-warning,
 .create-error {
   font: var(--mat-sys-body-medium);
@@ -173,8 +171,7 @@ mat-hint,
 }
 
 .group-heading,
-.participant-name,
-.confidence-empty strong {
+.participant-name {
   margin: 0;
   font-size: var(--mat-sys-title-small-size);
   line-height: var(--mat-sys-title-small-line-height);
@@ -232,8 +229,7 @@ mat-hint,
 
 .toggle-row,
 .add-action,
-.confidence-band-row,
-.launch-checklist li {
+.confidence-band-row {
   display: flex;
   align-items: center;
 }
@@ -413,8 +409,7 @@ mat-hint,
   margin: var(--app-space-3) 0 var(--app-space-2);
 }
 
-.participant-list,
-.launch-checklist {
+.participant-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -573,49 +568,23 @@ mat-hint,
 }
 
 .confidence-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 4px 0;
-
-  mat-icon {
-    flex: none;
-    color: var(--mat-sys-primary);
-  }
-
-  p {
-    margin: 4px 0 0;
-  }
+  margin: 0;
 }
 
 .launch-footer {
   flex: none;
-  display: grid;
-  gap: 6px;
-  padding: 8px 16px;
+  padding: var(--app-space-2) var(--app-space-4);
+
+  .create-error {
+    margin-top: var(--app-space-2);
+  }
 }
 
-.launch-checklist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+.launch-hint {
+  margin: 0;
 
-  li {
-    gap: 8px;
-  }
-
-  mat-icon {
-    width: 20px;
-    height: 20px;
-    font-size: 20px;
-  }
-
-  .done {
-    color: var(--mat-sys-on-surface);
-
-    mat-icon {
-      color: var(--mat-sys-primary);
-    }
+  &:not(:empty) {
+    margin-bottom: var(--app-space-2);
   }
 }
 

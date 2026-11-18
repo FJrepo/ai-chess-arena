@@ -6,9 +6,11 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  Injector,
   OnDestroy,
   OnInit,
   ViewChild,
+  afterNextRender,
   computed,
   signal,
 } from '@angular/core';
@@ -362,6 +364,11 @@ Your opponent is %s (%s).`;
   @ViewChild('participantName', { read: ElementRef })
   private participantName?: ElementRef<HTMLInputElement>;
 
+  @ViewChild('addButton', { read: ElementRef })
+  private addButton?: ElementRef<HTMLButtonElement>;
+
+  @ViewChild(ModelPicker) private modelPicker?: ModelPicker;
+
   @ViewChild('setupAside') private setupAside!: ElementRef<HTMLElement>;
   readonly asideSticky = signal(false);
   /** Space below the sticky toolbar. Shared with the aside's CSS top offset. */
@@ -466,6 +473,7 @@ Your opponent is %s (%s).`;
     private router: Router,
     private route: ActivatedRoute,
     protected connection: OpenRouterAccess = null!,
+    private readonly injector?: Injector,
   ) {}
 
   ngOnInit(): void {
@@ -834,6 +842,23 @@ Your opponent is %s (%s).`;
     }
   }
 
+  focusAfterModelChoice(): void {
+    if (!this.injector) return;
+    const needsName = !this.newPlayerName.trim();
+    // Autocomplete returns focus to the search field before the updated form renders.
+    afterNextRender(
+      () => {
+        const add = this.addButton?.nativeElement;
+        if (needsName || !add || add.disabled) {
+          this.participantName?.nativeElement.focus();
+        } else {
+          add.focus();
+        }
+      },
+      { injector: this.injector },
+    );
+  }
+
   selectedModel(): OpenRouterModelOption | null {
     return this.models().find((model) => model.id === this.newModelId) ?? null;
   }
@@ -906,6 +931,19 @@ Your opponent is %s (%s).`;
     });
 
     this.resetParticipantForm();
+    if (this.injector) {
+      // A human entry switches back to the model form when the view updates.
+      afterNextRender(
+        () => {
+          if (this.modelPicker && !this.modelPicker.disabled()) {
+            this.modelPicker.focusSearch();
+          } else {
+            this.participantName?.nativeElement.focus();
+          }
+        },
+        { injector: this.injector },
+      );
+    }
   }
 
   editParticipant(index: number): void {
@@ -940,7 +978,7 @@ Your opponent is %s (%s).`;
   creating = signal(false);
   createError = signal<string | null>(null);
 
-  /** One model for the launch checklist and the Create button: a name, at least two participants, not already submitting. */
+  /** Readiness for creating a tournament, including the rematch and settings checks. */
   readonly readiness = computed(() => {
     const named = !!this.nameValue().trim();
     const count = this.participants().length;
@@ -959,6 +997,14 @@ Your opponent is %s (%s).`;
         this.openingValid() &&
         this.validMaxRetries() !== null,
     };
+  });
+
+  readonly nextLaunchInput = computed(() => {
+    const { count, named } = this.readiness();
+    if (count === 0) return 'Add your first participant.';
+    if (count === 1) return 'Add a second participant.';
+    if (!named) return 'Enter a tournament name.';
+    return '';
   });
   private readonly rematchReady = computed(() => {
     if (!this.sourceId()) return true;

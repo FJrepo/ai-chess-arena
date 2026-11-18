@@ -1326,7 +1326,7 @@ describe('TournamentSetup', () => {
     expect(component.readiness()).toMatchObject({ creating: true, canCreate: false });
   });
 
-  it('puts model search before participant fields and keeps the add action beside its hint', async () => {
+  it('puts model search before participant fields and the add action after them', async () => {
     const fixture = await renderSetup(createStatusApi());
     const element: HTMLElement = fixture.nativeElement;
     const card = element.querySelector('.participants-card')!;
@@ -1339,11 +1339,7 @@ describe('TournamentSetup', () => {
     expect(follows(picker, name)).toBe(true);
     expect(follows(name, toggle)).toBe(true);
     expect(follows(toggle, add)).toBe(true);
-    expect(add.nextElementSibling?.id).toBe('add-participant-reason');
     expect(add.disabled).toBe(true);
-    expect(card.querySelector('#add-participant-reason')?.textContent).toContain(
-      'Enter a display name',
-    );
     const search = picker.querySelector<HTMLInputElement>('input')!;
     search.focus();
     search.value = 'Fixture';
@@ -1364,7 +1360,143 @@ describe('TournamentSetup', () => {
     expect(element.querySelector('.participant-name')?.textContent).toBe('Fixture model');
   });
 
-  it('shows the participant count and minimum for empty, singular and populated lineups', async () => {
+  it('shows aligned model, price and context columns with readable names and markers', async () => {
+    const api = createStatusApi();
+    const longName = 'Fixture Research Preview with a Very Long Model Name';
+    vi.mocked(api.getModels).mockReturnValue(
+      of({
+        data: [
+          {
+            ...catalogModel('acme/paid', longName, 0.35, 1.7),
+            contextLength: 128000,
+            reasoningSupported: true,
+          },
+          { ...catalogModel('acme/free', 'Fixture Free', 0, 0), contextLength: 32000 },
+        ],
+      }),
+    );
+    const fixture = await renderSetup(api);
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    search.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const panel = document.querySelector('.model-picker-panel')!;
+    const columns = [
+      '.option-title',
+      '.option-input-price',
+      '.option-output-price',
+      '.option-context',
+    ];
+    const values = (row: Element) =>
+      columns.map((column) => row.querySelector(column)?.textContent?.trim());
+    expect(values(panel.querySelector('.option-headings')!)).toEqual([
+      'Model',
+      '$/M in',
+      '$/M out',
+      'Context',
+    ]);
+    const options = Array.from(panel.querySelectorAll('mat-option'));
+    const paid = options.find((option) => option.textContent?.includes(longName))!;
+    const free = options.find((option) => option.textContent?.includes('Fixture Free'))!;
+    expect(values(paid)).toEqual([longName, '0.35', '1.70', '128K']);
+    expect(values(free)).toEqual(['Fixture Free', '0', '0', '32K']);
+    expect(paid.querySelector('.option-title')?.getAttribute('title')).toBe(longName);
+    expect(paid.getAttribute('aria-label')).toContain(longName);
+    expect(paid.querySelector('.option-markers')?.textContent).toContain('Reasoning');
+    expect(free.querySelector('.option-markers')?.textContent).toContain('Free');
+    expect(paid.querySelectorAll('.num')).toHaveLength(3);
+  });
+
+  it.each([false, true])(
+    'moves focus after keyboard model choice (existing name: %s)',
+    async (named) => {
+      const fixture = await renderSetup(createStatusApi());
+      const element: HTMLElement = fixture.nativeElement;
+      const name = element.querySelector<HTMLInputElement>(
+        'input[placeholder="e.g. Claude Opus 4.6"]',
+      )!;
+      const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+      if (named) {
+        name.value = 'My Player';
+        name.dispatchEvent(new Event('input'));
+      }
+      search.focus();
+      for (const [key, keyCode] of [
+        ['ArrowDown', 40],
+        ['Enter', 13],
+      ] as const) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'keyCode', { value: keyCode });
+        search.dispatchEvent(event);
+        fixture.detectChanges();
+        await fixture.whenStable();
+      }
+      expect(name.value).toBe(named ? 'My Player' : 'Fixture model');
+      expect(document.activeElement).toBe(named ? element.querySelector('.add-button') : name);
+    },
+  );
+
+  it('returns focus to model search after adding a participant', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    search.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    document.querySelector<HTMLElement>('.model-picker-panel mat-option')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const add = element.querySelector<HTMLButtonElement>('.add-button')!;
+    add.focus();
+    add.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.participants()).toHaveLength(1);
+    expect(document.activeElement).toBe(search);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(search.value).toBe('');
+  });
+
+  it('shows one next-input hint beside Create as the lineup and tournament name are filled', async () => {
+    const fixture = await renderSetup();
+    const element: HTMLElement = fixture.nativeElement;
+    const setup = fixture.componentInstance;
+    const create = element.querySelector<HTMLButtonElement>('.create-button')!;
+    const name = element.querySelector<HTMLInputElement>('.lineup-card input')!;
+    const players = [
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+    ];
+    const expectHint = (message: string) => {
+      expect(element.querySelectorAll('.launch-hint')).toHaveLength(1);
+      expect(create.previousElementSibling?.textContent?.trim()).toBe(message);
+      expect(element.textContent?.split(message)).toHaveLength(2);
+      expect(element.textContent).not.toMatch(
+        /Enter a display name to add|at least 2 needed|Add at least two participants/,
+      );
+      expect(create.disabled).toBe(true);
+    };
+    expectHint('Add your first participant.');
+    expect(element.querySelector('.confidence-empty')?.textContent?.trim()).toBe(
+      'Estimate pending.',
+    );
+    setup.participants.set(players.slice(0, 1));
+    fixture.detectChanges();
+    expectHint('Add a second participant.');
+    setup.participants.set(players);
+    fixture.detectChanges();
+    expectHint('Enter a tournament name.');
+    name.value = 'Fixture Cup';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(element.querySelector('.launch-hint')?.textContent?.trim()).toBe('');
+    expect(create.disabled).toBe(false);
+  });
+
+  it('shows the participant count for empty, singular and populated lineups', async () => {
     const fixture = await renderSetup();
     const element: HTMLElement = fixture.nativeElement;
     const count = () =>
@@ -1372,7 +1504,7 @@ describe('TournamentSetup', () => {
         .querySelector('.participants-list-head .caption')
         ?.textContent?.replace(/\s+/g, ' ')
         .trim();
-    expect(count()).toBe('0 participants · min. 2');
+    expect(count()).toBe('0 participants');
     for (const size of [1, 4]) {
       fixture.componentInstance.participants.set(
         Array.from({ length: size }, (_, i) =>
@@ -1381,7 +1513,7 @@ describe('TournamentSetup', () => {
       );
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(count()).toBe(`${size} ${size === 1 ? 'participant' : 'participants'} · min. 2`);
+      expect(count()).toBe(`${size} ${size === 1 ? 'participant' : 'participants'}`);
     }
   });
 
@@ -1567,10 +1699,7 @@ describe('TournamentSetup', () => {
     ]);
     await refresh();
     expect(create.disabled).toBe(false);
-    expect(aside.querySelector('.launch-checklist')?.textContent).toContain('Tournament named');
-    expect(aside.querySelector('.participants-list-head')?.textContent).toContain(
-      '2 participants · min. 2',
-    );
+    expect(aside.querySelector('.participants-list-head')?.textContent).toContain('2 participants');
     expect(
       Array.from(aside.querySelectorAll('.participant-seed')).map((seed) =>
         seed.textContent?.trim(),
