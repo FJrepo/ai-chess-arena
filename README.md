@@ -73,6 +73,8 @@ Models receive the current position, legal moves and recent conversation. Answer
 
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions.
 
+Not sure what to test? The [benchmark guide](docs/benchmarks.md) maps questions to settings.
+
 Built for **one operator on localhost**, with browser claiming for key management and no user accounts, on desktop browsers. Read the [supported scope and limitations](docs/how-it-works.md#scope-and-interpretation) before changing network access.
 
 ## Development

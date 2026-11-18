@@ -264,6 +264,32 @@
           <mat-card-subtitle>Move limits and match format.</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
+          @if (!sourceId()) {
+            <section class="field-group" aria-labelledby="setup-recipe-heading">
+              <h3 class="group-heading" id="setup-recipe-heading">Recipe</h3>
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+                <mat-label>Test recipe</mat-label>
+                <mat-select [ngModel]="recipeId" (ngModelChange)="applyRecipe($event)">
+                  <mat-option value="">None (choose settings yourself)</mat-option>
+                  @for (recipe of recipes; track recipe.id) {
+                    <mat-option [value]="recipe.id">{{ recipe.label }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <p class="recipe-note" aria-live="polite">
+                @if (selectedRecipe; as recipe) {
+                  {{
+                    recipeEdited ? 'Settings changed since you chose this recipe.' : recipe.summary
+                  }}
+                } @else {
+                  Pre-fills the settings for a common test question.
+                }
+                <a [href]="recipeLink(selectedRecipe)" target="_blank" rel="noopener noreferrer"
+                  >Benchmark guide</a
+                >
+              </p>
+            </section>
+          }
           <section class="field-group" aria-labelledby="setup-moves-heading">
             <h3 class="group-heading" id="setup-moves-heading">Moves</h3>
             <div class="toggle-row">

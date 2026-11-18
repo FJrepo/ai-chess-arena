@@ -1023,6 +1023,35 @@ class DurableRunsIT {
     }
 
     @Test
+    void aConnectionSetupThatMissesTheMoveTimePausesInsteadOfForfeiting() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 1);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        try (LoopbackTls server = LoopbackTls.stallingHandshake()) {
+            OpenRouterService router = new OpenRouterService();
+            router.baseUrl = server.baseUrl();
+            router.keyStore = dev.aichessarena.config.OpenRouterKeyStoreFixture.keys("test-key",
+                    java.nio.file.Path.of("target/test-keys"));
+            router.objectMapper = new ObjectMapper();
+            router.defaultTemperature = 0.7;
+            router.defaultMaxTokens = 100;
+            QuarkusMock.installMockForType(router, OpenRouterService.class);
+
+            engine.startGame(gameId);
+
+            awaitGame(gameId, g -> g.status != GameStatus.IN_PROGRESS);
+            awaitReleased(gameId);
+        }
+        Game game = read(gameId);
+        assertEquals(GameStatus.PAUSED, game.status, "a provider problem never forfeits");
+        assertNull(game.result);
+        assertEquals("A model request (test/white, White, move 1) was still connecting to OpenRouter when its deadline "
+                + "passed and was probably not delivered. Check spend, then resume.", game.statusDetail);
+        assertNotNull(game.requestSentAt, "kept: nothing confirmed that it was not delivered");
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId));
+    }
+
+    @Test
     void theMoveTimeStartsOnlyAfterTheRequestIsAdmitted() throws Exception {
         UUID tournamentId = seedTournament(GameStatus.WAITING);
         QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 1);

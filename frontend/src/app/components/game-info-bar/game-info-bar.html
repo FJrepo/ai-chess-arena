@@ -125,35 +125,46 @@
       </div>
     </div>
   }
-  @if (game.status === 'PAUSED' && game.statusDetail) {
-    <div class="pause-panel" role="status">
-      <div class="pause-head">
+  @let pauseDetail = game.status === 'PAUSED' ? game.statusDetail : null;
+  <div
+    class="pause-panel"
+    [class.pause-warning]="pauseDetail"
+    [class.spend-pause]="pauseDetail && game.uncertainRequest"
+  >
+    <div class="pause-head">
+      @if (pauseDetail) {
         <mat-icon class="pause-icon" aria-hidden="true">pause_circle</mat-icon>
-        <div class="pause-copy">
-          <span class="pause-title">{{
-            game.uncertainRequest
-              ? 'Paused for a spend check'
-              : game.resumeRequestedAt || showRaiseLimit()
+      }
+      <div class="pause-copy">
+        @if (pauseDetail) {
+          @if (game.uncertainRequest) {
+            <h2 class="pause-title">Paused for a spend check</h2>
+          } @else {
+            <span class="pause-title">{{
+              game.resumeRequestedAt || showRaiseLimit()
                 ? 'Game paused'
                 : 'Paused. Fix the problem, then resume the game.'
-          }}</span>
-          <span class="pause-detail">{{ game.statusDetail }}</span>
-        </div>
+            }}</span>
+          }
+        }
+        <p class="pause-detail" role="status">{{ pauseDetail }}</p>
+        @if (pauseDetail && game.uncertainRequest) {
+          <p class="pause-hint">Find this request in your OpenRouter activity.</p>
+        }
       </div>
+    </div>
+    @if (pauseDetail) {
       @if (game.uncertainRequest) {
-        <div class="spend-check">
-          <button
-            mat-flat-button
-            type="button"
-            class="spend-checked"
-            [disabled]="saving"
-            (click)="spendCheckedResume.emit(game.uncertainRequestSentAt!)"
-          >
-            Spend checked, resume
-          </button>
-        </div>
-      }
-      @if (showRaiseLimit()) {
+        <button
+          mat-flat-button
+          type="button"
+          class="spend-checked"
+          [disabled]="saving"
+          (click)="spendCheckedResume.emit(game.uncertainRequestSentAt!)"
+        >
+          Spend checked, resume
+        </button>
+      } @else if (showRaiseLimit()) {
         <div class="raise-limit">
           <mat-form-field appearance="outline" class="limit-field" subscriptSizing="dynamic">
             <mat-label>Max output tokens per answer</mat-label>
@@ -195,8 +206,8 @@
           </button>
         </div>
       }
-    </div>
-  }
+    }
+  </div>
   @if (retryInfo) {
     <div class="retry-alert" role="status">
       <mat-icon aria-hidden="true">warning</mat-icon> {{ retryInfo }}

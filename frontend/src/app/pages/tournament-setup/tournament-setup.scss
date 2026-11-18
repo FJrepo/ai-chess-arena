@@ -166,6 +166,12 @@ mat-hint,
   color: var(--mat-sys-error);
 }
 
+.recipe-note {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+  font-size: var(--app-text-secondary-size);
+}
+
 .timeout-warning {
   color: var(--app-warning-text);
 }
