@@ -112,6 +112,30 @@ describe('TournamentBracket', () => {
     return { fixture, api, component: fixture.componentInstance, current };
   }
 
+  const liveGames = [0, 1].map((bracketPosition) =>
+    finalGame({
+      id: `live-${bracketPosition + 1}`,
+      seriesId: `live-${bracketPosition + 1}`,
+      bracketRound: 'Quarterfinal',
+      bracketPosition,
+      status: 'IN_PROGRESS',
+      whitePlayerName: 'Aster',
+      blackPlayerName: 'Birch',
+    }),
+  );
+
+  function keydown(element: Element, key: string, keyCode: number): void {
+    element.dispatchEvent(
+      new KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true }),
+    );
+  }
+
+  function activateButtonWithKey(button: HTMLButtonElement, key: 'Enter' | ' '): void {
+    keydown(button, key, key === 'Enter' ? 13 : 32);
+    // jsdom needs the click that the browser synthesizes for a native button.
+    button.click();
+  }
+
   it.each(['RUNNING', 'OFF'] as const)(
     'links directly to the only live game with auto-run %s',
     (runStatus) => {
@@ -135,15 +159,7 @@ describe('TournamentBracket', () => {
   it('lists each live matchup in Watch live and opens the selected game', async () => {
     const { fixture, component, current } = runPage('IN_PROGRESS', 'RUNNING');
     const games = [
-      finalGame({ status: 'IN_PROGRESS', whitePlayerName: 'Aster', blackPlayerName: 'Birch' }),
-      finalGame({
-        id: 'live-2',
-        seriesId: 'live-2',
-        bracketRound: 'Semifinal',
-        status: 'IN_PROGRESS',
-        whitePlayerName: 'Cedar',
-        blackPlayerName: 'Elm',
-      }),
+      ...liveGames,
       finalGame({
         id: 'queued-1',
         seriesId: 'queued-1',
@@ -165,15 +181,113 @@ describe('TournamentBracket', () => {
       MatMenuHarness.with({ triggerText: /^Watch live/ }),
     );
     await menu.open();
-    expect(await Promise.all((await menu.getItems()).map((item) => item.getText()))).toEqual([
-      'Aster vs Birch',
-      'Cedar vs Elm',
+    const items = await menu.getItems();
+    expect(await Promise.all(items.map((item) => item.getText()))).toEqual([
+      'Quarterfinal · Match 1: Aster vs Birch',
+      'Quarterfinal · Match 2: Aster vs Birch',
     ]);
+    expect(
+      await Promise.all(items.map(async (item) => (await item.host()).getAttribute('href'))),
+    ).toEqual(['/games/live-1', '/games/live-2']);
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
-    await menu.clickItem({ text: 'Cedar vs Elm' });
+    await menu.clickItem({ text: 'Quarterfinal · Match 2: Aster vs Birch' });
     expect(navigate.mock.calls[0][0].toString()).toBe('/games/live-2');
   });
+
+  it.each(['trigger', 'menu item', 'elsewhere'] as const)(
+    'updates Watch live as polling goes from multiple games to one to zero with focus on %s',
+    async (focus) => {
+      const { fixture, api, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+      const element = fixture.nativeElement as HTMLElement;
+      api.getTournament.mockReturnValue(of({ ...current, games: liveGames }));
+      component.loadTournament();
+      fixture.detectChanges();
+
+      const watch = element.querySelector<HTMLButtonElement>('.run-summary button')!;
+      const exportButton = element.querySelector<HTMLButtonElement>('.export-trigger')!;
+      const status = element.querySelector<HTMLElement>('.run-summary [role="status"]')!;
+      let menuId: string | null = null;
+      if (focus === 'menu item') {
+        watch.click();
+        await fixture.whenStable();
+        menuId = watch.getAttribute('aria-controls');
+        expect(menuId).toBeTruthy();
+        const menu = document.getElementById(menuId!)!;
+        expect(document.querySelectorAll(`#${menuId}`)).toHaveLength(1);
+        expect(document.activeElement).toBe(menu.querySelector('[role="menuitem"]'));
+      } else {
+        (focus === 'trigger' ? watch : exportButton).focus();
+      }
+
+      const finished = { ...liveGames[0], status: 'COMPLETED' as const };
+      api.getTournament.mockReturnValue(of({ ...current, games: [finished, liveGames[1]] }));
+      component.loadTournament();
+      fixture.detectChanges();
+
+      const link = element.querySelector<HTMLAnchorElement>('.run-summary a')!;
+      expect(watch.isConnected).toBe(false);
+      if (menuId) expect(document.getElementById(menuId)).toBeNull();
+      expect(link.getAttribute('href')).toBe('/games/live-2');
+      expect(runBanner(fixture)).toContain('1 game running');
+      expect(document.activeElement).toBe(focus === 'elsewhere' ? exportButton : link);
+
+      api.getTournament.mockReturnValue(
+        of({ ...current, games: [finished, { ...liveGames[1], status: 'COMPLETED' }] }),
+      );
+      component.loadTournament();
+      fixture.detectChanges();
+
+      expect(element.querySelector('.run-summary a, .run-summary button')).toBeNull();
+      expect(runBanner(fixture)).toContain('0 games running');
+      expect(status.tabIndex).toBe(-1);
+      expect(document.activeElement).toBe(focus === 'elsewhere' ? exportButton : status);
+    },
+  );
+
+  it('focuses the run status when polling removes the open Watch live menu', async () => {
+    const { fixture, api, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+    const element = fixture.nativeElement as HTMLElement;
+    component.tournament.set({ ...current, games: liveGames });
+    fixture.detectChanges();
+    const watch = element.querySelector<HTMLButtonElement>('.run-summary button')!;
+    watch.click();
+    await fixture.whenStable();
+    const menu = document.getElementById(watch.getAttribute('aria-controls')!)!;
+    expect(document.activeElement).toBe(menu.querySelector('[role="menuitem"]'));
+
+    api.getTournament.mockReturnValue(of(current));
+    component.loadTournament();
+    fixture.detectChanges();
+
+    expect(menu.isConnected).toBe(false);
+    expect(document.activeElement).toBe(element.querySelector('.run-summary [role="status"]'));
+  });
+
+  it.each(['.export-trigger', '.run-summary button'])(
+    'opens %s with Enter and Space and restores focus on Escape',
+    async (selector) => {
+      const { fixture, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+      component.tournament.set({ ...current, games: liveGames });
+      fixture.detectChanges();
+      const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+        selector,
+      )!;
+      trigger.focus();
+      for (const key of ['Enter', ' '] as const) {
+        activateButtonWithKey(trigger, key);
+        await fixture.whenStable();
+        const menu = document.getElementById(trigger.getAttribute('aria-controls')!)!;
+        const firstItem = menu.querySelector('[role="menuitem"]')!;
+        expect(document.activeElement).toBe(firstItem);
+
+        keydown(firstItem, 'Escape', 27);
+        await fixture.whenStable();
+        expect(trigger.getAttribute('aria-expanded')).toBe('false');
+        expect(document.activeElement).toBe(trigger);
+      }
+    },
+  );
 
   it('hides Watch live when the tournament has no running games', () => {
     const element = render(tournament('COMPLETED', 'White', finalGame()));
@@ -395,23 +509,36 @@ describe('TournamentBracket', () => {
     expect(component.exporting()).toBe(false);
   });
 
-  it('disables the Export menu during a download and enables it again after a failure', async () => {
+  it('keeps Export focused and blocks reactivation during a pending download', async () => {
     const { fixture, component, api } = runPage();
     const pending = new Subject<Blob>();
     api.getTournamentExport.mockReturnValue(pending);
     const snackbar = vi.spyOn(TestBed.inject(MatSnackBar), 'open');
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
-    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
-      MatMenuHarness.with({ triggerText: /^Export/ }),
-    );
-    await menu.open();
-    await menu.clickItem({ text: 'JSON' });
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.export-trigger',
+    )!;
+    trigger.focus();
+    activateButtonWithKey(trigger, 'Enter');
+    await fixture.whenStable();
+    const firstItem = document.activeElement as HTMLButtonElement;
+    expect(firstItem.getAttribute('aria-label')).toBe('Download tournament PGN');
+    activateButtonWithKey(firstItem, 'Enter');
+    await fixture.whenStable();
+
+    expect(trigger.getAttribute('aria-disabled')).toBe('true');
+    expect(trigger.disabled).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    activateButtonWithKey(trigger, ' ');
+    await fixture.whenStable();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
     component.exportTournament('csv');
-    expect(await menu.isDisabled()).toBe(true);
-    expect(await menu.isOpen()).toBe(false);
     expect(api.getTournamentExport).toHaveBeenCalledOnce();
     pending.error(new Error('offline'));
-    expect(await menu.isDisabled()).toBe(false);
+    await fixture.whenStable();
+    expect(trigger.getAttribute('aria-disabled')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
     expect(click).not.toHaveBeenCalled();
     expect(snackbar).toHaveBeenCalledWith(
       'Could not export tournament. Please try again.',
@@ -794,6 +921,20 @@ describe('TournamentBracket', () => {
       'Champion',
     ]);
     expect(bracket?.querySelector('.champion-card')?.textContent).toContain('White');
+  });
+
+  it('keeps a 60-character champion name intact and lets the header wrap', () => {
+    const name = 'W'.repeat(60);
+    const element = render(tournament('COMPLETED', name, finalGame()));
+    const header = element.querySelector('.header-left')!;
+    const facts = element.querySelector('.meta-row')!;
+    const champion = facts.querySelector('.champion-label')!;
+    const count = facts.querySelector('.count-tag')!;
+    expect(champion.querySelector('span')?.textContent).toBe(`Champion: ${name}`);
+    expect(getComputedStyle(header).minWidth).toBe('0px');
+    expect(getComputedStyle(facts).flexWrap).toBe('wrap');
+    expect(getComputedStyle(champion).overflowWrap).toBe('anywhere');
+    expect(getComputedStyle(count).whiteSpace).toBe('nowrap');
   });
 
   it('shows the winner of a final decided by the draw policy', () => {

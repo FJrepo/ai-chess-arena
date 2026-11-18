@@ -63,7 +63,7 @@ Choose **Bracket draw** under **Tournament Settings → Matches** on the setup p
 
 Participants are paired in seed order, lowest first. When the field is not a power of two, the lowest seed numbers receive byes; the rest are paired in seed order. For example, with five participants, seeds 0, 1 and 2 receive byes and seeds 3 and 4 play. The **Participants by seed** panel shows the stored seeds after generation. A random draw can happen to produce the original order.
 
-**Watch live** follows the run status and opens the only live game directly. When several games are running, choose a matchup from the menu. The shortcut appears while at least one game is running, including manually started games. Choose **Review** on a finished matchup to open the game.
+**Watch live** follows the run status and opens the only live game directly. When several games are running, the menu identifies each matchup by its bracket round and match number. The shortcut appears while at least one game is running, including manually started games. If a refresh removes the focused Watch live button, link or menu item, focus moves to the replacement shortcut or to the run status when no live games remain. Choose **Review** on a finished matchup to open the game.
 
 Wide brackets scroll horizontally inside the bracket panel. Focus the bracket and use the arrow keys to reach later rounds and the **Champion** column.
 
@@ -556,7 +556,7 @@ In the game view, use **Board** beside the flip and export controls to choose **
 
 ## Export
 
-Open **Export** on the tournament page and choose **PGN**, **CSV** or **JSON**. The download icon in the game view exports that game's PGN. Exports read existing records without calling a model or Stockfish, changing results or requiring a migration/backfill.
+Open **Export** on the tournament page and choose **PGN**, **CSV** or **JSON**. Focus returns to **Export** while the file is prepared. The menu can be opened again once the request finishes. The download icon in the game view exports that game's PGN. Exports read existing records without calling a model or Stockfish, changing results or requiring a migration/backfill.
 
 | Endpoint | Contents |
 |---|---|
