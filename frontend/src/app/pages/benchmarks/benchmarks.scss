@@ -391,4 +391,11 @@ td.num,
     color: var(--app-warning-text);
     background: var(--app-warning-fill);
   }
+
+  // A game not played yet still opens its board, so it stays a link, just a quiet one.
+  &[data-outcome='Waiting'] {
+    padding-inline: 0;
+    font-weight: inherit;
+    color: var(--mat-sys-on-surface-variant);
+  }
 }

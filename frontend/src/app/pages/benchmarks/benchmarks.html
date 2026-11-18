@@ -485,10 +485,10 @@
                           @let label = gameLabel(game);
                           @let unplayed = game.status === 'WAITING' && !game.result;
                           <td class="game-result">
-                            @if (game.id && !unplayed) {
+                            @if (game.id) {
                               <a
                                 class="game-outcome"
-                                [attr.data-outcome]="label"
+                                [attr.data-outcome]="unplayed ? 'Waiting' : label"
                                 [routerLink]="['/games', game.id]"
                                 [attr.aria-label]="
                                   label +

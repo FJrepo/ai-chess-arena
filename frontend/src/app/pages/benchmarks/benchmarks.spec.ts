@@ -378,7 +378,7 @@ describe('Benchmarks', () => {
     expect(cell.textContent.trim()).toMatch(/^No scored games\s*—$/);
   });
 
-  it('shows an unplayed game as plain Waiting text with a dash for spend', () => {
+  it('shows an unplayed game as a quiet Waiting link to its board with a dash for spend', () => {
     const { fixture, component } = setup(run.run.id);
     const report = structuredClone(run);
     Object.assign(report.models[0].pairs[0].games[1], {
@@ -391,7 +391,9 @@ describe('Benchmarks', () => {
     const page: HTMLElement = fixture.nativeElement;
     const result = page.querySelectorAll('.opening-table tbody .game-result')[1];
     expect(result?.textContent.trim()).toBe('Waiting');
-    expect(result?.querySelector('a')).toBeNull();
+    const link = result?.querySelector('a');
+    expect(link?.getAttribute('href')).toBe(`/games/${report.models[0].pairs[0].games[1].id}`);
+    expect(link?.getAttribute('data-outcome')).toBe('Waiting');
     expect(result?.nextElementSibling?.textContent.trim()).toBe('—');
   });
 
