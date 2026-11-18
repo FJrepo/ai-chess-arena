@@ -532,13 +532,13 @@ Both surrounding evaluations must be available. Operator overrides and forced mo
 
 ## Analytics and reliability
 
-Analysis includes a bracket overview with series scores and the champion, PGN export, and analytics on results, move quality (ACPL, blunders per game), talkativeness (how often each model talks, per chat mode), resignations (including resignations while not losing), reliability (first-try legal moves, retries, timeouts, forfeits) and reported cost.
+Analysis includes a bracket overview with series scores and the champion, PGN export, and analytics on results, move quality (ACPL, blunders per game), talkativeness (how often each model talks, per chat mode), resignations (including resignations while not losing and [persuasion](#persuasion)), reliability (first-try legal moves, retries, timeouts, forfeits) and reported cost.
 
 The analytics page shares its analysis window, tournament, legal move hints and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
 
 - **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
 - **Play quality:** Move Quality and Conversion. Move Quality sorts by average centipawn loss, lowest first. Its sample counts distinct games with at least one judged move by the model, or shows the judged move count when the game count is unavailable. Conversion counts evaluated model sides, so a self-play game can count twice for a model. Both tables show “no judged games” for a reported zero and “sample not reported” when the sample is unknown.
-- **Behaviour:** Talkativeness and Resignations.
+- **Behaviour:** Talkativeness, Resignations and [Persuasion](#persuasion).
 - **Cost & reliability:** total spend and match count for the selected engine-health scope, followed by engine-health metrics, the Trust Index, Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Average and p95 latencies use seconds with one decimal. When more than half the models have insufficient data, the Trust Index leads with how many have enough data and shows the average score below. Otherwise, any insufficient-data count appears beside the score. Each report loads independently.
 
 Link directly to a tab with `?tab=overview`, `?tab=quality`, `?tab=behaviour` or `?tab=cost`. Missing or unknown values open Overview. Switching tabs and using the Cost & reliability jump links replace the URL without adding browser-history entries. The dashboard applies the same shared filters and refresh schedule across tabs.
@@ -632,6 +632,28 @@ Resignations without that evaluation still count toward the total. The judgement
 Same scope as the other tables: finished, non-bye games; human sides are left out.
 
 Comparison API rows carry `resignations`, `resignationsEvaluated`, `resignationsWhileNotLosing` and `wonByResignation`.
+
+### Persuasion
+
+The *Persuasion* table on the Behaviour tab shows whether models talk opponents out of playable positions, for example with the [Mind games](#chat-mode) banter level, and how easily they are talked out of one themselves.
+
+A resignation counts as **talked out of the game** when both hold:
+
+- **Not lost:** Stockfish's evaluation of the position the resigning side gave up (the position after the last move played, as above) is better than **−2.00 pawns** from the resigner's view and shows no forced mate against it. Exactly −2.00 counts as lost. A forced mate for the resigner counts as not lost. A resignation without that evaluation is never counted as talked out.
+- **Pressure in chat:** the opponent sent at least one non-empty chat message on one of its **last 3 moves** before the resignation that the model played itself. Operator overrides, human and book moves take no place in this window. Messages from earlier in the game, from the resigner itself or empty messages do not count.
+
+The threshold is `PersuasionAnalysis.LOST_THRESHOLD_CP` (−200 centipawns). The message window is `MESSAGE_WINDOW_MOVES` (3) and the low-sample limit is `LOW_SAMPLE_RESIGNATIONS` (5). The position cutoff is looser than the one for "resigned while not losing" (35% winning chances, about −0.85 pawns), and persuasion adds the chat condition. A resignation at −1.50 after an opponent's message is talked out but not "while not losing"; a resignation at +1.00 without an opponent message is "while not losing" but not talked out.
+
+Per model the table shows two views:
+
+- **As persuader:** games in which the opponent resigned, as "talked out of evaluated resignations" (for example "2 of 9 resignations"). The view is split by the persuader's banter level: **Mind games** or **Other levels** (Original, Polite, Playful, Spicy). The level is the tone of the persuader's own last model-played move before the resignation, taken from that move's recorded prompt version (`-banter-mind-games`), so a live change of the banter level counts from the turn it applied to. An operator override as the persuader's final move does not change the level, but its evaluation is still the one the resigner faced.
+- **As persuaded:** games the model resigned itself and how many of them met the definition. These are observations, not a resistance score: a low count can also come from few resignations, opponents that sent no messages, or missing evaluations.
+
+Unevaluated resignations appear as a note ("1 not evaluated") and stay out of the denominator. A cell with resignations but fewer than 5 evaluated ones (including none) carries the **Low sample** badge. When no model-vs-model resignations remain, the table says "No model-vs-model resignations match the current filters." if minimum games, tournament, legal move hints or comparison effort narrow the report, and "No resignations between models in finished games yet." otherwise.
+
+Scope: finished, non-bye games with a model on both sides. Human sides, practice games, Stockfish ladder (benchmark) games, cancelled and unfinished games never count, and each ply counts once (the earliest stored row). The analysis window, tournament, legal move hints, reasoning effort and minimum-games filters apply as in the other comparison tables. Effort selects the resigning side for the persuaded view and the persuading side for the persuader view. The data comes with the comparison report and shares its 30-second cache.
+
+Comparison API rows carry `persuasion` with `asPersuaderMindGames`, `asPersuaderOtherLevels` and `asPersuaded`, each with `resignations`, `evaluated`, `talkedOut` and `lowSample`. The response carries `persuasionRules` (`lostThresholdCp`, `messageWindowMoves`, `lowSampleResignations`). The values are derived from stored evaluations, chat messages and prompt versions, without a migration or backfill.
 
 ### Provider problems and resuming games
 

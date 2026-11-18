@@ -9,6 +9,9 @@ import {
   AnalyticsComparisonModel,
   AnalyticsComparisonResponse,
   AnalyticsHealthResponse,
+  AnalyticsPersuasion,
+  AnalyticsPersuasionCount,
+  AnalyticsPersuasionRules,
   ModelReliability,
   ModelReliabilityResponse,
 } from '../../models/analytics.model';
@@ -22,7 +25,11 @@ describe('AnalyticsDashboard', () => {
       headings: ['Model Comparison Table', 'Color Split', 'Failure Profile', 'Cost Efficiency'],
     },
     { tab: 'quality', label: 'Play quality', headings: ['Move Quality', 'Conversion'] },
-    { tab: 'behaviour', label: 'Behaviour', headings: ['Talkativeness', 'Resignations'] },
+    {
+      tab: 'behaviour',
+      label: 'Behaviour',
+      headings: ['Talkativeness', 'Resignations', 'Persuasion'],
+    },
     {
       tab: 'cost',
       label: 'Cost & reliability',
@@ -1741,6 +1748,147 @@ describe('AnalyticsDashboard', () => {
     expect(component.unevaluatedResignations(winner)).toBe(0);
   });
 
+  it('lists persuasion per model with denominators, the tone split and low-sample badges', async () => {
+    const element = await renderBehaviour(
+      [
+        comparisonRow('model.quiet', { persuasion: persuasion() }),
+        comparisonRow('model.persuader', {
+          persuasion: persuasion({
+            asPersuaderMindGames: count(9, 7, 2, false),
+            asPersuaderOtherLevels: count(3, 3, 0, true),
+          }),
+        }),
+        comparisonRow('model.pushover', {
+          persuasion: persuasion({ asPersuaded: count(2, 1, 1, true) }),
+        }),
+        comparisonRow('model.legacy'),
+      ],
+      PERSUASION_RULES,
+    );
+
+    const rows = element.querySelectorAll<HTMLTableRowElement>('.persuasion-table tbody tr');
+    expect(Array.from(rows).map((row) => row.cells[0].textContent?.trim())).toEqual([
+      'model.persuader',
+      'model.pushover',
+    ]);
+    const [persuader, pushover] = rows;
+    expect(persuader.cells[1].textContent).toMatch(/^\s*2\s+of\s+7\s*resignations/);
+    expect(persuader.cells[1].textContent).toContain('2 not evaluated');
+    expect(persuader.cells[1].querySelector('.grade-chip')).toBeNull();
+    expect(persuader.cells[2].textContent).toMatch(/0\s+of\s+3\s*resignations/);
+    expect(persuader.cells[2].querySelector('.grade-chip')?.textContent?.trim()).toBe('Low sample');
+    expect(persuader.cells[3].querySelector('.cdk-visually-hidden')?.textContent).toBe(
+      'No resignations',
+    );
+    expect(pushover.cells[3].textContent).toMatch(/1\s+of\s+1\s*resignation(?!s)/);
+    expect(pushover.cells[3].textContent).toContain('1 not evaluated');
+    expect(pushover.cells[1].querySelector('[aria-hidden="true"]')?.textContent).toBe('—');
+
+    const footnote = element.querySelector('.persuasion-table-card .table-footnote')?.textContent;
+    expect(footnote).toContain('better than −2.00 pawns');
+    expect(footnote).toContain('no forced mate');
+    expect(footnote).toContain('last 3 moves');
+    expect(footnote).toContain('fewer than 5');
+  });
+
+  it('shows unevaluated persuasion samples and missing persuasion data accessibly', async () => {
+    const unevaluated = await renderBehaviour(
+      [
+        comparisonRow('model.unevaluated', {
+          persuasion: persuasion({ asPersuaded: count(2, 0, 0, true) }),
+        }),
+      ],
+      PERSUASION_RULES,
+    );
+    const cell = unevaluated.querySelector<HTMLTableCellElement>(
+      '.persuasion-table tbody tr td:nth-child(4)',
+    )!;
+    expect(cell.querySelector('.cdk-visually-hidden')?.textContent).toBe(
+      'No evaluated resignations',
+    );
+    expect(cell.textContent).toContain('2 not evaluated');
+    // A sample with resignations but none evaluated is still a low sample; an empty cell is not.
+    expect(cell.querySelector('.grade-chip')?.textContent?.trim()).toBe('Low sample');
+    expect(
+      unevaluated.querySelector('.persuasion-table tbody tr td:nth-child(2) .grade-chip'),
+    ).toBeNull();
+    TestBed.resetTestingModule();
+
+    const zero = await renderBehaviour(
+      [comparisonRow('model.quiet', { persuasion: persuasion() })],
+      PERSUASION_RULES,
+    );
+    expect(zero.querySelector('.persuasion-table .empty')?.textContent).toContain(
+      'No resignations between models in finished games yet.',
+    );
+    TestBed.resetTestingModule();
+
+    const legacy = await renderBehaviour([comparisonRow('model.legacy')]);
+    expect(legacy.querySelector('.persuasion-table .empty')?.textContent).toContain(
+      'Persuasion data not reported',
+    );
+    expect(legacy.querySelector('.persuasion-table-card .table-footnote')).toBeNull();
+  });
+
+  it('says the filters exclude every persuasion row when minimum games empties a populated report', async () => {
+    const populated = [
+      comparisonRow('model.persuader', {
+        persuasion: persuasion({ asPersuaderMindGames: count(2, 2, 1, true) }),
+      }),
+    ];
+    const { harness, api } = await renderDashboard('?tab=behaviour', {
+      comparison: of({
+        ...comparisonReport(),
+        models: populated,
+        persuasionRules: PERSUASION_RULES,
+      }),
+    });
+    const element = harness.routeNativeElement!;
+    expect(element.querySelectorAll('.persuasion-table tbody tr td.col-model')).toHaveLength(1);
+
+    api.getAnalyticsComparison.mockReturnValue(
+      of({ ...comparisonReport(6), models: [], persuasionRules: PERSUASION_RULES }),
+    );
+    const input = element.querySelector<HTMLInputElement>('.filter-min-games input')!;
+    input.value = '6';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    harness.detectChanges();
+
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minGames: 6 }),
+    );
+    expect(element.querySelector('.persuasion-table .empty')?.textContent?.trim()).toBe(
+      'No model-vs-model resignations match the current filters.',
+    );
+  });
+
+  it('sorts persuasion rows by opponents talked out, then by times talked out', () => {
+    const component = createDashboard();
+    component.comparison.set({
+      ...comparisonReport(),
+      persuasionRules: PERSUASION_RULES,
+      models: [
+        comparisonRow('model.b', { persuasion: persuasion({ asPersuaded: count(4, 4, 3, true) }) }),
+        comparisonRow('model.a', {
+          persuasion: persuasion({ asPersuaderOtherLevels: count(1, 1, 1, true) }),
+        }),
+        comparisonRow('model.c', {
+          persuasion: persuasion({ asPersuaderMindGames: count(5, 5, 3, false) }),
+        }),
+        comparisonRow('model.d', { persuasion: persuasion({ asPersuaded: count(1, 1, 0, true) }) }),
+      ],
+    });
+
+    expect(component.persuasionRows().map((row) => row.modelId)).toEqual([
+      'model.c',
+      'model.a',
+      'model.b',
+      'model.d',
+    ]);
+    expect(component.formatPawns(-200)).toBe('−2.00');
+    expect(component.formatPawns(150)).toBe('+1.50');
+  });
+
   it('explains resignations and "not losing" in one line', () => {
     const component = createDashboard();
 
@@ -1787,6 +1935,30 @@ type AnalyticsComparisonRow = {
   reliabilityBand: string;
   insufficientData: boolean;
 };
+
+const PERSUASION_RULES: AnalyticsPersuasionRules = {
+  lostThresholdCp: -200,
+  messageWindowMoves: 3,
+  lowSampleResignations: 5,
+};
+
+function count(
+  resignations: number,
+  evaluated: number,
+  talkedOut: number,
+  lowSample: boolean,
+): AnalyticsPersuasionCount {
+  return { resignations, evaluated, talkedOut, lowSample };
+}
+
+function persuasion(overrides: Partial<AnalyticsPersuasion> = {}): AnalyticsPersuasion {
+  return {
+    asPersuaderMindGames: count(0, 0, 0, true),
+    asPersuaderOtherLevels: count(0, 0, 0, true),
+    asPersuaded: count(0, 0, 0, true),
+    ...overrides,
+  };
+}
 
 function comparisonRow(modelId: string, overrides: Partial<AnalyticsComparisonModel> = {}) {
   return { ...baseRow(modelId), ...overrides };
@@ -1870,9 +2042,12 @@ function comparisonReport(minGames = 0): AnalyticsComparisonResponse {
   };
 }
 
-async function renderBehaviour(models: AnalyticsComparisonModel[]) {
+async function renderBehaviour(
+  models: AnalyticsComparisonModel[],
+  persuasionRules?: AnalyticsPersuasionRules,
+) {
   const { harness } = await renderDashboard('?tab=behaviour', {
-    comparison: of({ ...comparisonReport(), models }),
+    comparison: of({ ...comparisonReport(), models, persuasionRules }),
   });
   return harness.routeNativeElement!;
 }

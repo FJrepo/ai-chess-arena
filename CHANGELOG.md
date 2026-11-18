@@ -29,6 +29,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 - The **Live games** menu shows why a paused game needs attention.
+- See on the Analytics **Behaviour** tab which models talk opponents out of positions that were not lost (better than −2.00 pawns, after a chat message), split into Mind games and other banter levels, and which models let themselves be talked out.
 
 ### Changed
 

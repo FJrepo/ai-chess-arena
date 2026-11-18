@@ -7,7 +7,8 @@ import java.math.BigDecimal;
  * judged moves (evaluated by Stockfish, not overrides, not forced): {@code averageCentipawnLoss} over those moves
  * and {@code blundersPerGame} over the games with at least one of them ({@code analyzedGames}); both are null
  * without judged moves. Talkativeness ({@code optionalChat}, {@code mandatoryChat}) counts the model's moves per chat
- * mode that applied to them and how many of them came with a message.
+ * mode that applied to them and how many of them came with a message. {@code persuasion} follows
+ * {@link PersuasionRulesDto}.
  */
 public record AnalyticsModelComparisonRowDto(
         String modelId,
@@ -56,5 +57,7 @@ public record AnalyticsModelComparisonRowDto(
         long wonByResignation,
         PromptCachingDto promptCaching,
         ConversionDto conversion,
-        ReasoningAnalyticsDto reasoning
+        ReasoningAnalyticsDto reasoning,
+        // Resignations in model-vs-model games the model talked its opponent into, and let itself be talked into.
+        PersuasionDto persuasion
 ) {}
