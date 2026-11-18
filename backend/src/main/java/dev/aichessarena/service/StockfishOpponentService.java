@@ -26,6 +26,7 @@ public class StockfishOpponentService {
     private static final Pattern ELO_OPTION = Pattern.compile("option name UCI_Elo type spin default \\d+ min (\\d+) max (\\d+)");
     private static final Pattern BEST_MOVE = Pattern.compile("bestmove ([a-h][1-8][a-h][1-8][qrbn]?)(?:\\s.*)?");
     private static final long STOP_POLL_MS = 250L;
+    private static final int EXIT_WAIT_SECONDS = 2;
 
     private final Semaphore searchSlot = new Semaphore(1, true);
     private StockfishService.Engine active;
@@ -46,7 +47,7 @@ public class StockfishOpponentService {
         if (!acquireSlot(shouldContinue)) return null;
         try {
             if (!shouldContinue.getAsBoolean()) return null;
-            if (closed) throw new IOException("Stockfish opponent is shut down");
+            requireProcessSlot();
 
             StockfishService.Engine engine = new StockfishService.Engine(startProcess());
             try {
@@ -57,17 +58,35 @@ public class StockfishOpponentService {
                 engine.call(() -> {
                     configure(engine, elo);
                     return null;
-                }, handshakeTimeout);
+                }, handshakeTimeout, shouldContinue);
                 if (!shouldContinue.getAsBoolean()) return null;
-                return engine.call(() -> search(engine, position(board)), opponentTimeout);
+                return engine.call(() -> search(engine, position(board)), opponentTimeout, shouldContinue);
             } finally {
-                synchronized (this) {
-                    active = null;
-                }
-                engine.stop();
+                stopAndAwaitExit(engine);
             }
         } finally {
             searchSlot.release();
+        }
+    }
+
+    private synchronized void requireProcessSlot() throws IOException {
+        if (closed) throw new IOException("Stockfish opponent is shut down");
+        if (active != null && active.process.isAlive()) {
+            throw new IOException("The previous Stockfish opponent process is still stopping");
+        }
+    }
+
+    /** Wait before releasing the slot. Retain a still-live process as a guard if the exit wait expires. */
+    private void stopAndAwaitExit(StockfishService.Engine engine) {
+        engine.stop();
+        try {
+            engine.process.waitFor(EXIT_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            synchronized (this) {
+                if (active == engine && !engine.process.isAlive()) active = null;
+            }
         }
     }
 

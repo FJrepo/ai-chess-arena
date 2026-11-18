@@ -219,10 +219,6 @@ public class Game extends PanacheEntityBase {
         return practiceKind != null;
     }
 
-    public boolean hasModelPlayer() {
-        return playerType("WHITE") == PlayerType.AI || playerType("BLACK") == PlayerType.AI;
-    }
-
     public PlayerType playerType(String color) {
         boolean white = "WHITE".equals(color);
         if (isPractice()) return white ? whitePracticeControl : blackPracticeControl;

@@ -86,7 +86,7 @@ public class GameLifecycleService {
     GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
         Game game = requireLockedGame(gameId);
         requireActiveTournament(game);
-        if (keys != null && game.hasModelPlayer()) keys.requireKey();
+        if (keys != null && game.practiceKind != Game.PracticeKind.HUMAN_STOCKFISH) keys.requireKey();
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
         }

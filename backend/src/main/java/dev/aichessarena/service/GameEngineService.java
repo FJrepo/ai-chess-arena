@@ -420,7 +420,7 @@ public class GameEngineService {
             return null;
         }
         try {
-            gameMoveService.recordStockfishMove(game.id, color, moveNumber, played, fen, game.statusRevision);
+            gameMoveService.recordStockfishMove(game.id, color, moveNumber, played, fen, game.statusRevision, loop::shouldContinue);
         } catch (GameStateConflictException e) {
             LOG.debugf("Discarding stale Stockfish move in game %s", game.id);
             return null;
@@ -492,7 +492,7 @@ public class GameEngineService {
                 result.san(),
                 result.fen(),
                 playerName,
-                game.hasModelPlayer() ? message : null,
+                game.practiceKind == Game.PracticeKind.HUMAN_STOCKFISH ? null : message,
                 game.currentFen
         );
 

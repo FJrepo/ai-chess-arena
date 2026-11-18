@@ -10,9 +10,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StockfishOpponentServiceTest {
     static final String HANDSHAKE = """
@@ -74,6 +78,26 @@ class StockfishOpponentServiceTest {
         assertThrows(TimeoutException.class, () -> opponent.chooseMove(new ChessService().createBoard(), 1500, () -> true));
         assertTrue(process.destroyed.await(2, TimeUnit.SECONDS));
         assertTrue(process.streamsClosed.await(2, TimeUnit.SECONDS));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void pausingCancelsAnActiveHandshakeOrSearch(boolean stallInHandshake) throws Exception {
+        var process = new StockfishServiceTest.StalledProcess(stallInHandshake ? "" : HANDSHAKE);
+        var opponent = service(process);
+        var running = new AtomicBoolean(true);
+        var result = new FutureTask<>(() -> opponent.chooseMove(new ChessService().createBoard(), 1500, running::get));
+        Thread.startVirtualThread(result);
+        try {
+            assertTrue(process.readStarted.await(2, TimeUnit.SECONDS));
+            running.set(false);
+            assertNull(result.get(3, TimeUnit.SECONDS));
+            assertTrue(process.destroyed.await(1, TimeUnit.SECONDS));
+            assertFalse(process.isAlive());
+        } finally {
+            running.set(false);
+            opponent.close();
+        }
     }
 
     private static StockfishOpponentService service(Process process) {

@@ -283,7 +283,7 @@ Open **Practice**, choose a color and a **Target Elo** from 1320 to 3190, and se
 
 The backend runs one dedicated opponent search at a time in a fresh Stockfish process, separate from move evaluation. Each search uses one thread, 16 MB of hash, a 50,000-node limit and Stockfish's strength-limiting options. The engine receives the move history for repetition. If the binary is unavailable, rejects the configured strength, exceeds its time limit or cannot produce a legal move, the game pauses with a message. Fix the engine and resume to retry.
 
-API: `POST /api/games/practice/stockfish` accepts `side: "WHITE" | "BLACK"` and an integer `elo` in the range above. A valid request returns a waiting practice game with HTTP 201. Invalid values return 400. Responses identify the Stockfish side with control type `STOCKFISH`, the game with `practiceKind: "HUMAN_STOCKFISH"` and the setting with `stockfishElo`. No model ID is set on the engine side.
+`POST /api/games/practice/stockfish` accepts `side: "WHITE" | "BLACK"` and an integer `elo` in the range above. A valid request returns a waiting practice game with HTTP 201. Invalid values return 400. Responses identify the Stockfish side with control type `STOCKFISH`, the game with `practiceKind: "HUMAN_STOCKFISH"` and the setting with `stockfishElo`. The engine side omits `modelId`.
 
 ## Time limit per move
 

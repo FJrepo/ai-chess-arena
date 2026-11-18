@@ -142,9 +142,11 @@ public class GameMoveService {
 
     @Transactional
     public void recordStockfishMove(UUID gameId, String color, int moveNumber, ChessService.ValidMoveResult played,
-                                    String expectedFen, long expectedStatusRevision) {
+                                    String expectedFen, long expectedStatusRevision,
+                                    java.util.function.BooleanSupplier shouldContinue) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS || game.statusRevision != expectedStatusRevision
+                || !shouldContinue.getAsBoolean()
                 || game.playerType(color) != Game.PlayerType.STOCKFISH || !game.currentFen.equals(expectedFen)) {
             throw new GameStateConflictException("Position changed during the Stockfish search");
         }
