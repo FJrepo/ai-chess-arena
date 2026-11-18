@@ -189,9 +189,16 @@ public class TournamentAutoRunService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public boolean beforeRequest(UUID gameId) {
         Game game = games.findByIdForUpdate(gameId);
-        if (game == null || game.status != GameStatus.IN_PROGRESS || GameLifecycleService.isTournamentCancelled(game)) {
+        if (game == null || game.status != GameStatus.IN_PROGRESS || GameLifecycleService.isTournamentCancelled(game)
+                || GameRunOwnership.staleWorker(game)) {
             return false;
         }
+        return admitLocked(game);
+    }
+
+    /** The run's part of request admission, for a game the caller has locked; may pause the run at the budget. */
+    boolean admitLocked(Game game) {
+        if (GameLifecycleService.isTournamentCancelled(game)) return false;
         Tournament t = game.tournament;
         if (t == null || t.autoRunStatus == AutoRunStatus.OFF || t.autoRunStatus == AutoRunStatus.FINISHED) return true;
         return t.autoRunStatus == AutoRunStatus.RUNNING && !pauseIfBudgetReached(t);
@@ -299,17 +306,5 @@ public class TournamentAutoRunService {
 
     private void changed(UUID id) {
         AfterCommit.run(transactionRegistry, () -> scheduler.changed(id));
-    }
-
-    @Transactional
-    public void pauseRunsOrphanedByRestart() {
-        for (Tournament t : tournaments.list("autoRunStatus", AutoRunStatus.RUNNING)) {
-            Tournament locked = tournaments.findByIdForUpdate(t.id);
-            if (locked.autoRunStatus == AutoRunStatus.RUNNING) {
-                locked.autoRunStatus = AutoRunStatus.PAUSED;
-                locked.autoRunPauseReason = "Backend restarted";
-                locked.updatedAt = LocalDateTime.now();
-            }
-        }
     }
 }

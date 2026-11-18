@@ -113,6 +113,26 @@ public class Game extends PanacheEntityBase {
     @Column(name = "turn_banter_level", length = 16)
     public BanterLevel turnBanterLevel;
 
+    /**
+     * The token of the game loop that owns this game, or null when no loop does (not started, paused, finished or
+     * waiting for a human move). Every write a loop makes checks it under the row lock, so a stale loop (for example
+     * one from before a restart) can never commit a move or record an attempt. See GameRunOwnership.
+     */
+    @Column(name = "run_owner")
+    public UUID runOwner;
+
+    /** Until when {@link #runOwner} holds the game without renewing; set exactly when there is an owner. */
+    @Column(name = "run_lease_until")
+    public Instant runLeaseUntil;
+
+    /**
+     * When a model request was sent whose answer is not recorded yet; null otherwise. Set before the request leaves and
+     * cleared in the transaction that records its answer, so after a restart it shows a request that may already have
+     * been charged.
+     */
+    @Column(name = "request_sent_at")
+    public Instant requestSentAt;
+
     public void clearTurn() {
         turnStartedAt = null;
         turnDeadlineAt = null;

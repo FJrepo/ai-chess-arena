@@ -253,6 +253,12 @@
   white-space: nowrap;
 }
 
+.spend-check {
+  grid-area: form;
+  display: flex;
+  align-items: center;
+}
+
 // Centres the 40px button on the 56px outlined input box.
 .save-resume {
   margin-top: 8px;

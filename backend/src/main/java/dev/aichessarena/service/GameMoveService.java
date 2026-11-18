@@ -62,6 +62,9 @@ public class GameMoveService {
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
+    @Inject
+    GameRunOwnership runOwnership;
+
     @Transactional
     public void recordModelMove(
             UUID gameId,
@@ -85,9 +88,12 @@ public class GameMoveService {
             throw new GameStateConflictException("Game is no longer in progress");
         }
         GameLifecycleService.requireActiveTournament(game);
+        GameRunOwnership.requireOwner(game);
         if (!samePosition(game.currentFen, expectedFen)) {
             throw new GameStateConflictException("Position changed while the model was thinking");
         }
+        // The answer to the request in flight is recorded with this move and its cost.
+        GameRunOwnership.answerRecorded(game);
 
         Move move = new Move();
         move.game = game;
@@ -124,6 +130,17 @@ public class GameMoveService {
             String message,
             String expectedFen
     ) {
+        recordHumanMove(gameId, moveNumber, color, san, fen, playerName, message, expectedFen, null);
+    }
+
+    /**
+     * Records a human move and, in the same transaction, hands the game to the loop with token {@code nextOwner} that
+     * plays the next turn (null: none). If that loop never starts, its lease expires and the safety tick recovers the
+     * game, so a committed human move can never leave the opponent's turn without an owner.
+     */
+    @Transactional
+    public void recordHumanMove(UUID gameId, int moveNumber, String color, String san, String fen, String playerName,
+                                String message, String expectedFen, UUID nextOwner) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS) {
             throw new GameStateConflictException("Game is not awaiting a human move");
@@ -142,6 +159,9 @@ public class GameMoveService {
         move.promptVersion = "human";
         move.promptHash = null;
         move.retryCount = 0;
+        if (runOwnership != null && nextOwner != null) {
+            runOwnership.claim(game, nextOwner);
+        }
         persistMove(move, playerName, message);
     }
 
@@ -151,7 +171,7 @@ public class GameMoveService {
                                     java.util.function.BooleanSupplier shouldContinue, ChessService.GameEndInfo endInfo) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS || game.statusRevision != expectedStatusRevision
-                || !shouldContinue.getAsBoolean()
+                || !shouldContinue.getAsBoolean() || GameRunOwnership.staleWorker(game)
                 || game.playerType(color) != Game.PlayerType.STOCKFISH || !game.currentFen.equals(expectedFen)) {
             throw new GameStateConflictException("Position changed during the Stockfish search");
         }

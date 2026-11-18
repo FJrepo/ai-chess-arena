@@ -130,7 +130,9 @@ public final class DtoMapper {
                 attempts, streamId, g.startingConfiguration, configurationHistory,
                 g.practiceKind == null ? null : g.practiceKind.name(), g.practiceSourceGameId, g.practiceSourcePly,
                 g.stockfishElo, g.isBenchmark() ? g.tournament.id : null,
-                g.isBenchmark() ? g.tournament.chatMode.name() : null
+                g.isBenchmark() ? g.tournament.chatMode.name() : null,
+                g.requestSentAt != null,
+                g.requestSentAt
         );
     }
 

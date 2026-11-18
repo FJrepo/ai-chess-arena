@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -48,7 +49,7 @@ class OpenRouterPromptCachingTest {
     private final AtomicInteger catalogRequests = new AtomicInteger();
     private String catalog = explicitCatalog();
     private int rejectionStatus;
-    private String rejectionBody = "{\"error\":{\"message\":\"No endpoints found that support cache control\"}}";
+    private String rejectionBody = "{\"error\":{\"code\":404,\"message\":\"No endpoints found that support cache control\"}}";
     private boolean rejectPlain;
     private String plainMove = "e4";
     private Runnable afterRejection = () -> { };
@@ -210,7 +211,8 @@ class OpenRouterPromptCachingTest {
     void cacheRejectionRetriesTheSameAttemptPlainAndRemembersTheExactId(int status, String message) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = status;
-        rejectionBody = JSON.createObjectNode().putObject("error").put("message", message).toString();
+        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("code", status).put("message", message))
+                .toString();
         var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
         assertPlain(send(service, "google/gemini-pro", messages), messages);
         assertEquals(2, requests.size());
@@ -223,6 +225,39 @@ class OpenRouterPromptCachingTest {
         assertPlain(send(service, "google/gemini-pro", messages), messages);
         assertEquals(3, requests.size());
         assertBreakpoint(send(service, "~google/gemini-pro-latest", messages), 0, messages);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void thePlainFallbackIsSentOnlyWhenTheGameAdmitsAnotherRequest(boolean admitted) throws Exception {
+        OpenRouterService service = stub();
+        rejectionStatus = 400;
+        rejectionBody = "{\"error\":{\"code\":400,\"message\":\"cache_control is unsupported\"},"
+                + "\"usage\":{\"prompt_tokens\":900,\"cost\":0.003}}";
+        List<OpenRouterService.LlmResponse> offered = new ArrayList<>();
+        List<Integer> postsWhenAsked = new ArrayList<>();
+        var messages = List.of(new ChatMsg("system", "rules"), new ChatMsg("user", "turn", true));
+        OpenRouterService.SendGate gate = rejection -> {
+            offered.add(rejection);
+            postsWhenAsked.add(requests.size());
+            return admitted;
+        };
+
+        var response = ScopedValue.where(OpenRouterService.SEND_GATE, gate)
+                .call(() -> service.chat("google/gemini-pro", messages));
+
+        assertEquals(List.of(1), postsWhenAsked, "asked once, after the rejection and before the second POST");
+        // The gate gets the complete rejection with its usage, to record it before admitting the fallback.
+        assertEquals(400, offered.getFirst().httpStatus());
+        assertEquals(0.003, offered.getFirst().costUsd());
+        assertEquals(900, offered.getFirst().promptTokens());
+        assertEquals(admitted ? 2 : 1, requests.size());
+        assertEquals(!admitted, response.isProviderFailure());
+        if (!admitted) {
+            assertEquals(OpenRouterService.ProviderOutcome.RETRYABLE, response.outcome());
+            assertEquals(400, response.httpStatus());
+            assertFalse(response.deliveryUncertain());
+        }
     }
 
     @Test
@@ -240,7 +275,8 @@ class OpenRouterPromptCachingTest {
     void unrelatedErrorsKeepTheirClassificationAndAreNotRetried(int status, String message) throws Exception {
         OpenRouterService service = stub();
         rejectionStatus = status;
-        rejectionBody = message;
+        rejectionBody = JSON.createObjectNode().set("error", JSON.createObjectNode().put("code", status).put("message", message))
+                .toString();
         var response = service.chat("google/gemini-pro", List.of(new ChatMsg("system", "rules")));
         assertEquals(OpenRouterService.ProviderOutcome.FATAL, response.outcome());
         assertEquals(1, requests.size());
@@ -324,7 +360,7 @@ class OpenRouterPromptCachingTest {
         AtomicLong nanos = new AtomicLong();
         useSimulatedResponseTimes(router, nanos);
         rejectionStatus = status;
-        rejectionBody = "{\"error\":{\"message\":\"Provider rejected the request\"}}";
+        rejectionBody = "{\"error\":{\"code\":400,\"message\":\"Provider rejected the request\"}}";
         // The default first provider backoff is 1 s, leaving no time for another request.
         afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
         List<String> pauses = new ArrayList<>();
@@ -354,11 +390,16 @@ class OpenRouterPromptCachingTest {
 
         assertTrue(result.pausedGame());
         assertFalse(result.isTerminal());
-        assertEquals(1, pauses.size());
-        assertTrue(pauses.getFirst().contains("cache"));
-        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), attempts.stream()
+        // 2.0: the rejection is recorded before the plain fallback is sent; that fallback did not finish in time,
+        // so it may be charged.
+        assertEquals(List.of("inspect: " + GameLifecycleService.DELIVERY_UNCERTAIN), pauses);
+        assertEquals(List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_RETRYABLE), attempts.stream()
                 .map(MoveAttemptService.AttemptRecord::outcome).toList());
         assertEquals(404, attempts.getFirst().response().httpStatus());
+        assertFalse(attempts.getFirst().response().deliveryUncertain());
+        assertTrue(attempts.getLast().errorMessage().contains("cache"));
+        assertTrue(attempts.getLast().response().deliveryUncertain());
+        assertNull(attempts.getLast().response().rawResponse(), "the rejection's usage is not counted twice");
         assertEquals(2, requests.size(), "only the marked request and its plain fallback are sent");
     }
 
@@ -380,13 +421,22 @@ class OpenRouterPromptCachingTest {
 
         assertTrue(result.pausedGame());
         assertEquals(expectedRequests, requests.size());
-        assertEquals(List.of(Outcome.ILLEGAL_MOVE, Outcome.PROVIDER_RETRYABLE), attempts.stream()
-                .map(MoveAttemptService.AttemptRecord::outcome).toList());
-        assertEquals("Ke2", attempts.getFirst().proposedMove());
+        // 2.0: the rejection is recorded (attempt 1) before its plain fallback is sent.
+        List<Outcome> expected = expectedRequests == 3
+                ? List.of(Outcome.PROVIDER_RETRYABLE, Outcome.ILLEGAL_MOVE, Outcome.PROVIDER_RETRYABLE)
+                : List.of(Outcome.PROVIDER_RETRYABLE, Outcome.ILLEGAL_MOVE);
+        assertEquals(expected, attempts.stream().map(MoveAttemptService.AttemptRecord::outcome).toList());
+        assertEquals(404, attempts.getFirst().response().httpStatus());
+        assertEquals(1, attempts.getFirst().attemptNumber());
+        assertEquals("Ke2", attempts.get(1).proposedMove());
         assertEquals(expectedRequests == 3 ? 2 : 1, attempts.getLast().attemptNumber());
         assertEquals(1, pauses.size());
-        assertTrue(pauses.getFirst().contains("cache"));
-        assertEquals(pauses.getFirst(), attempts.getLast().errorMessage());
+        if (expectedRequests == 3) {
+            // The third request's answer had started when the move time ran out: a spend check, never a forfeit.
+            assertEquals("inspect: " + GameLifecycleService.DELIVERY_UNCERTAIN, pauses.getFirst());
+        } else {
+            assertTrue(pauses.getFirst().contains("cache"));
+        }
     }
 
     private GameTurnService.TurnResult playTimedTurn(OpenRouterService router, AtomicLong nanos, int timeoutSeconds,
@@ -405,6 +455,9 @@ class OpenRouterPromptCachingTest {
         turn.gameLifecycleService = new GameLifecycleService() {
             @Override
             public void pauseForProviderFailure(UUID id, String detail) { pauses.add(detail); }
+
+            @Override
+            public void pauseForInspection(UUID id, String clause) { pauses.add("inspect: " + clause); }
 
             @Override
             public void forfeitTimeout(UUID id, String color, int seconds) {

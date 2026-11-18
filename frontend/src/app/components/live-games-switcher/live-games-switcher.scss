@@ -3,12 +3,14 @@
 }
 
 .matchup,
-.game-details {
+.game-details,
+.reason {
   display: block;
 }
 
 .matchup,
-.event {
+.event,
+.reason {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -28,6 +30,11 @@
 
 .attention {
   color: var(--app-warning-text);
+}
+
+.reason {
+  font-size: var(--app-text-secondary-size);
+  color: var(--mat-sys-on-surface-variant);
 }
 
 .menu-note {

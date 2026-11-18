@@ -51,6 +51,20 @@ describe('ApiService bracket draw', () => {
     expect(received).toHaveBeenCalledWith(queued);
   });
 
+  it('resumes after a spend check by acknowledging exactly the displayed request', () => {
+    const received = vi.fn();
+    api.resumeAfterSpendCheck('game', '2026-11-18T10:00:00.123456Z').subscribe(received);
+    const request = http.expectOne(
+      (req) =>
+        req.url === '/api/games/game/start' &&
+        req.params.get('acknowledgeUncertainRequest') === '2026-11-18T10:00:00.123456Z',
+    );
+    expect(request.request.method).toBe('POST');
+    const resumed = { status: 'IN_PROGRESS', uncertainRequest: false };
+    request.flush(resumed);
+    expect(received).toHaveBeenCalledWith(resumed);
+  });
+
   it('deletes the displayed revision of a queued resume and returns the current game', () => {
     const received = vi.fn();
     api.cancelResumeRequest('game', 5).subscribe(received);

@@ -37,6 +37,7 @@ class LiveGamesIT {
             practice.blackPracticeControl = Game.PlayerType.STOCKFISH;
             practice.stockfishElo = 1500;
             Game paused = game(tournament, "Paused White", GameStatus.PAUSED, now);
+            paused.statusDetail = "A model request was in flight during a backend restart";
             Game finished = game(tournament, "Finished White", GameStatus.FORFEIT, now);
             finished.completedAt = now.plusDays(1);
             Game old = game(tournament, "Old finish", GameStatus.COMPLETED, now);
@@ -64,6 +65,8 @@ class LiveGamesIT {
                     .body(fixtureGames + "[1].tournamentName", equalTo("Live fixture"))
                     .body(fixtureGames + "[1].moveNumber", equalTo(2))
                     .body(fixtureGames + "[1].evaluationCp", nullValue())
+                    .body(fixtureGames + "[1].statusDetail", nullValue())
+                    .body(fixtureGames + "[2].statusDetail", equalTo("A model request was in flight during a backend restart"))
                     .body("lastFinished.whitePlayerName", equalTo("Finished White"));
         } finally {
             QuarkusTransaction.requiringNew().run(() -> {

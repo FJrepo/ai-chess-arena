@@ -113,4 +113,45 @@ describe('LiveGamesSwitcher', () => {
       vi.useRealTimers();
     }
   });
+
+  it('shows why a paused game needs attention', () => {
+    const reason =
+      'A model request (test/model, White, move 12) was in flight during a backend restart and may already have been charged. Check spend, then resume.';
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: ApiService,
+          useValue: {
+            getLiveGames: () =>
+              of({
+                active: [
+                  { id: 'running', status: 'IN_PROGRESS', practice: false, statusDetail: null },
+                  { id: 'inspect', status: 'PAUSED', practice: false, statusDetail: reason },
+                  { id: 'paused', status: 'PAUSED', practice: false, statusDetail: null },
+                ],
+              }),
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: { liveGamesChanges: () => new Subject<void>(), watchLiveGames: vi.fn() },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(LiveGamesSwitcher);
+    try {
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const reasonOf = (id: string) =>
+        document.querySelector<HTMLElement>(`a[data-live-game-id="${id}"] .reason`);
+      expect(reasonOf('inspect')?.textContent?.trim()).toBe(reason);
+      expect(reasonOf('inspect')?.title).toBe(reason);
+      expect(reasonOf('running')).toBeNull();
+      expect(reasonOf('paused')).toBeNull();
+    } finally {
+      fixture.destroy();
+    }
+  });
 });
