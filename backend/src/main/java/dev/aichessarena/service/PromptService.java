@@ -144,6 +144,10 @@ public class PromptService {
     return DEFAULT_SYSTEM_PROMPT_VERSION + versionSuffix(chatMode, resignationOffered, banterLevel);
   }
 
+  static String benchmarkVersionSuffix(ChatMode chatMode, boolean legalMoveHints) {
+    return versionSuffix(chatMode, false, null) + (legalMoveHints ? "" : NO_HINTS_VERSION_SUFFIX);
+  }
+
   /**
    * A rendered system prompt. {@code chatMode} is the mode that applies to the model's answers: the requested one,
    * except that a legacy custom template (used as stored) cannot ask for a message, so MANDATORY counts as OPTIONAL.

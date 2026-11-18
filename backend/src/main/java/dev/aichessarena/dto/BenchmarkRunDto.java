@@ -14,7 +14,7 @@ public record BenchmarkRunDto(
         Summary run, BenchmarkDefinition definition, boolean legalMoveHints, String reasoningEffort,
         ChatMode chatMode, String budgetUsd, int maxConcurrentGames, BigDecimal spendUsd, List<ModelResult> models
 ) {
-    public record Summary(UUID id, String name, LocalDateTime createdAt, Status status, String pauseReason) {}
+    public record Summary(UUID id, String name, LocalDateTime createdAt, Status status, String pauseReason, UUID rerunOf) {}
 
     public enum Status { RUNNING, PAUSED, FINISHED, CANCELLED }
 
