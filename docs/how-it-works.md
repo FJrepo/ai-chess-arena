@@ -462,7 +462,7 @@ Analysis includes a bracket overview with series scores and the champion, PGN ex
 The analytics page shares its analysis window, tournament, legal move hints and minimum-games filters across four tabs (the minimum-games filter applies to the comparison and reliability data; the engine-health cards and Per-Model Performance Metrics count every model regardless of it):
 
 - **Overview:** leader cards, the Model Comparison Table, Color Split, Failure Profile and Cost Efficiency.
-- **Play quality:** Move Quality and Conversion.
+- **Play quality:** Move Quality and Conversion. The average centipawn loss column marks lower values as better. Move Quality shows the number of judged games beside each model, or the judged move count when the game count is unavailable. Conversion shows how many of each model's games had an evaluation. Rows without a sample show “no judged games”.
 - **Behaviour:** Talkativeness and Resignations.
 - **Cost & reliability:** six cost, engine-health and reliability cards, followed by Per-Model Performance Metrics, Prompt caching and Reliability Ranking & Stability. Cards keep their places while each data source loads independently.
 

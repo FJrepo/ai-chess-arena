@@ -401,6 +401,23 @@
   border-left: 1px solid var(--app-divider);
 }
 
+.analytics-table .quality-acpl {
+  text-align: right;
+  text-transform: none;
+  letter-spacing: normal;
+
+  .table-note {
+    font-weight: 400;
+    white-space: nowrap;
+  }
+}
+
+.model-with-sample {
+  display: flex;
+  align-items: baseline;
+  gap: var(--app-space-1);
+}
+
 // ?! / ? / ?? markers in the move-quality header, in the game view's tones.
 .quality-glyph {
   font-weight: 800;

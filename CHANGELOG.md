@@ -21,6 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
+- Play quality spells out average centipawn loss, marks lower values as better, and shows sample sizes beside model names.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 
 ### Fixed

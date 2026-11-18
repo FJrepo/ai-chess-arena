@@ -296,7 +296,8 @@
               <div>
                 <h2>Move Quality</h2>
                 <p>
-                  Stockfish's verdict on every judged move in finished games, lowest ACPL first.
+                  Stockfish's verdict on every judged move in finished games, lowest average
+                  centipawn loss first.
                 </p>
               </div>
             </div>
@@ -305,7 +306,12 @@
                 <thead>
                   <tr>
                     <th class="col-model">Model</th>
-                    <th class="num">ACPL</th>
+                    <th class="quality-acpl" scope="col" aria-describedby="quality-acpl-direction">
+                      Avg. centipawn loss <span aria-hidden="true">↓</span>
+                      <span id="quality-acpl-direction" class="table-note" aria-hidden="true">
+                        lower is better
+                      </span>
+                    </th>
                     <th class="num">Reasoning tokens / accepted move</th>
                     <th class="num">Blunders / game</th>
                     <th class="num">
@@ -324,7 +330,24 @@
                   @for (row of qualityRows(); track row.modelId) {
                     <tr>
                       <td class="col-model">
-                        <strong class="model-id">{{ row.modelId }}</strong>
+                        <div class="model-with-sample">
+                          <strong class="model-id">{{ row.modelId }}</strong>
+                          <span class="table-note judged-sample">
+                            <span aria-hidden="true">·&nbsp;</span>
+                            @if (row.analyzedGames; as games) {
+                              <span class="num">{{ games | number }}</span>
+                              {{ games === 1 ? 'game judged' : 'games judged' }}
+                            } @else if (
+                              (row.analyzedGames === undefined || row.analyzedGames === null) &&
+                              row.analyzedMoves
+                            ) {
+                              <span class="num">{{ row.analyzedMoves | number }}</span>
+                              {{ row.analyzedMoves === 1 ? 'move judged' : 'moves judged' }}
+                            } @else {
+                              no judged games
+                            }
+                          </span>
+                        </div>
                         <span class="table-note">{{ effortLabel(row.reasoning?.effort) }}</span>
                       </td>
                       <td class="num">{{ formatAcpl(row.averageCentipawnLoss) }}</td>
@@ -338,13 +361,7 @@
                           n/a
                         }
                       </td>
-                      <td class="num">
-                        {{ formatPerGame(row.blundersPerGame) }}
-                        <span class="table-note"
-                          >{{ row.analyzedGames }}
-                          {{ row.analyzedGames === 1 ? 'game' : 'games' }}</span
-                        >
-                      </td>
+                      <td class="num">{{ formatPerGame(row.blundersPerGame) }}</td>
                       <td class="num">{{ row.blunders ?? 0 }}</td>
                       <td class="num">{{ row.mistakes ?? 0 }}</td>
                       <td class="num">{{ row.inaccuracies ?? 0 }}</td>
@@ -390,11 +407,26 @@
                   @for (row of conversionRows(); track row.modelId) {
                     <tr>
                       <td class="col-model">
-                        <strong class="model-id">{{ row.modelId }}</strong>
-                        <span class="table-note"
-                          >{{ row.conversion?.evaluatedGames ?? 0 }} of {{ row.gamesPlayed }} games
-                          evaluated</span
-                        >
+                        <div class="model-with-sample">
+                          <strong class="model-id">{{ row.modelId }}</strong>
+                          <span class="table-note judged-sample">
+                            <span aria-hidden="true">·&nbsp;</span>
+                            @if (row.conversion?.evaluatedGames; as evaluatedGames) {
+                              <span class="num">{{ evaluatedGames | number }}</span> of
+                              <span class="num">{{ row.gamesPlayed | number }}</span>
+                              {{ row.gamesPlayed === 1 ? 'game evaluated' : 'games evaluated' }}
+                            } @else {
+                              no judged games
+                            }
+                          </span>
+                        </div>
+                        @if (!row.conversion?.evaluatedGames) {
+                          <span class="table-note">
+                            <span class="num">0</span> of
+                            <span class="num">{{ row.gamesPlayed | number }}</span>
+                            {{ row.gamesPlayed === 1 ? 'game evaluated' : 'games evaluated' }}
+                          </span>
+                        }
                       </td>
                       <td class="num">
                         {{ conversionCount(row.conversion?.winningPositionsReached) }}
