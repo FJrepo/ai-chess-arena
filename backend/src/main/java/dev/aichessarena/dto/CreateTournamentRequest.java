@@ -19,8 +19,8 @@ import java.util.UUID;
  * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
  * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
  *
- * <p>{@code banterLevel} accepts POLITE, PLAYFUL, SPICY or explicit JSON null (clear to original tone). Omitted
- * retains the current tone on update; chat OFF and legacy full templates ignore it.
+ * <p>{@code banterLevel} accepts POLITE, PLAYFUL, SPICY, MIND_GAMES or explicit JSON null (clear to original tone).
+ * Omitted retains the current tone on update. Chat OFF and legacy full templates ignore it.
  *
  * <p>{@code resignationAllowed} lets models resign from their 10th move on; null keeps the default (false) on create
  * and the current value on update.

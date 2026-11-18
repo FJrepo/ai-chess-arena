@@ -4,5 +4,6 @@ package dev.aichessarena.entity;
 public enum BanterLevel {
     POLITE,
     PLAYFUL,
-    SPICY
+    SPICY,
+    MIND_GAMES
 }

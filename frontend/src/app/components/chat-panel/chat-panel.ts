@@ -37,7 +37,8 @@ export class ChatPanel {
     const mode = this._chatMode();
     if (!mode) return null;
     const level = this._banterLevel();
-    const tone = level ? level[0] + level.slice(1).toLowerCase() : null;
+    const tone =
+      level === 'MIND_GAMES' ? 'Mind games' : level && level[0] + level.slice(1).toLowerCase();
     return tone && mode !== 'OFF' ? `${CHAT_MODE_LABELS[mode]} · ${tone}` : CHAT_MODE_LABELS[mode];
   });
   readonly emptyText = computed(() => {

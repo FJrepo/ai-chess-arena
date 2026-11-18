@@ -745,7 +745,31 @@ class PromptServiceTest {
                 org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.MANDATORY, true, false,
                         "v2-chat-required-resign-banter-spicy", "cd9487e50af01974c6f46ceaf0baa900ae250613e3f19de519ac9413ccdae44e"),
                 org.junit.jupiter.params.provider.Arguments.of(BanterLevel.SPICY, ChatMode.MANDATORY, true, true,
-                        "v2+custom-instructions-chat-required-resign-banter-spicy", "19f120b2a0593de8fe1451a7b9a8700e0a318ce426229084f70e21e448b6abb3"));
+                        "v2+custom-instructions-chat-required-resign-banter-spicy", "19f120b2a0593de8fe1451a7b9a8700e0a318ce426229084f70e21e448b6abb3"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.OPTIONAL,
+                        false, false, "v2-banter-mind-games",
+                        "1e8fe9576d3c4e3e8e5175023bc6cf6571546aac6d164f48e1037e4cc2b5a056"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.OPTIONAL,
+                        false, true, "v2+custom-instructions-banter-mind-games",
+                        "7077274d16c25c86cca0ad4419bb07bc28a78d9ccdad8e0219bae187a80e4351"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.OPTIONAL,
+                        true, false, "v2-resign-banter-mind-games",
+                        "eb7152876867e41a526cb0eeb9bdfbc4ea7c1a83436d8a013b98674d61969513"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.OPTIONAL,
+                        true, true, "v2+custom-instructions-resign-banter-mind-games",
+                        "2b20aa3fd3c0b72d0300e9d782e2624c6d8a97d45ad4cb1ebc42f69df03869a4"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.MANDATORY,
+                        false, false, "v2-chat-required-banter-mind-games",
+                        "dd449f486b55e0364650bbe5b0941b2fcc142248a0a6067f54954ceef2a59b85"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.MANDATORY,
+                        false, true, "v2+custom-instructions-chat-required-banter-mind-games",
+                        "259128ac2333a0b3818039bcaa1cf4f400049853561749c70e66cceefdd9bd42"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.MANDATORY,
+                        true, false, "v2-chat-required-resign-banter-mind-games",
+                        "3cc4df2619a10dc14aace4807ca6be209ebdf718623fdfdc0bda4ec92fdb47c5"),
+                org.junit.jupiter.params.provider.Arguments.of(BanterLevel.MIND_GAMES, ChatMode.MANDATORY,
+                        true, true, "v2+custom-instructions-chat-required-resign-banter-mind-games",
+                        "b68c58b0e3f03461ff3fd8c83e78c2354f74c167bb77d59b3927766f5c8a7623"));
     }
 
     @Test

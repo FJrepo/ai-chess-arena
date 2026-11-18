@@ -211,14 +211,19 @@ Your opponent is %s (%s).`;
     { value: 'POLITE', label: 'Polite' },
     { value: 'PLAYFUL', label: 'Playful' },
     { value: 'SPICY', label: 'Spicy' },
+    { value: 'MIND_GAMES', label: 'Mind games' },
   ];
   readonly banterHints: Record<BanterLevel, string> = {
     POLITE: 'Friendly, respectful and sporting.',
     PLAYFUL: 'Light, good-natured teasing about the game.',
     SPICY: 'Bold chess trash talk; no slurs, harassment or real-world insults.',
+    MIND_GAMES: 'Chess threats, pressure and bluffs to encourage resignation.',
   };
 
   banterHint(): string {
+    if (this.banterLevel === 'MIND_GAMES' && !this.resignationAllowed) {
+      return 'Allow resignation is off. Enable it so opponents can resign.';
+    }
     return this.banterLevel
       ? this.banterHints[this.banterLevel]
       : 'Original tone; no extra guidance.';

@@ -40,6 +40,7 @@ describe('ChatPanel', () => {
       ['POLITE', 'Polite'],
       ['PLAYFUL', 'Playful'],
       ['SPICY', 'Spicy'],
+      ['MIND_GAMES', 'Mind games'],
     ]) {
       fixture.componentRef.setInput('banterLevel', level);
       fixture.detectChanges();
@@ -51,7 +52,7 @@ describe('ChatPanel', () => {
     fixture.componentRef.setInput('chatMode', 'OFF');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.chat-mode-label').textContent).not.toContain(
-      'Spicy',
+      'Mind games',
     );
     fixture.componentRef.setInput('chatMode', 'MANDATORY');
     fixture.componentRef.setInput('banterLevel', null);
