@@ -193,6 +193,19 @@ dt,
   }
 }
 
+.recipe-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--app-space-1) var(--app-space-4);
+  padding-block-end: var(--app-space-3);
+  border-block-end: var(--app-rule-width) solid var(--app-divider);
+}
+
+.recipe-note {
+  grid-column: 1 / -1;
+  font-size: var(--app-text-secondary-size);
+}
+
 .field-hint {
   display: flex;
   align-items: center;

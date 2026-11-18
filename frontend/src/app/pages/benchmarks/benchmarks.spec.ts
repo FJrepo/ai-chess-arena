@@ -1,8 +1,11 @@
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { TestBed } from '@angular/core/testing';
+import { MatSelectHarness } from '@angular/material/select/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import type { BenchmarkRun, CreateBenchmarkRequest } from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
+import { BENCHMARK_RECIPES } from '../../utils/benchmark-recipes';
 import { Benchmarks } from './benchmarks';
 
 const empty = { wins: 0, draws: 0, losses: 0, forfeits: 0, points: 0, scoredGames: 0 };
@@ -149,6 +152,80 @@ describe('Benchmarks', () => {
       runSettings: { budgetUsd: '0.5', maxConcurrentGames: 2 },
     });
     expect(navigate).toHaveBeenCalledWith(['/benchmarks', run.run.id]);
+  });
+
+  it.each(BENCHMARK_RECIPES.map((recipe) => [recipe.id, recipe] as const))(
+    'the %s recipe pre-fills exactly its documented settings and keeps the rest',
+    (_id, recipe) => {
+      const { component, api } = setup();
+      component.name = 'My run';
+      component.modelsText = 'fixture/one';
+      component.budget = '3.25';
+      component.concurrency = 4;
+      component.legalMoveHints = !recipe.settings.legalMoveHints;
+      component.reasoningEffort = 'max';
+      component.chatMode = 'OPTIONAL';
+      component.lowerStrength = 2500;
+      component.higherStrength = 3000;
+      component.applyRecipe(recipe.id);
+      expect(api.createBenchmark).not.toHaveBeenCalled();
+      expect(component.recipeEdited).toBe(false);
+      component.create();
+      expect(api.createBenchmark).toHaveBeenCalledExactlyOnceWith({
+        clientRequestId: expect.any(String),
+        name: 'My run',
+        modelIds: ['fixture/one'],
+        ...recipe.settings,
+        runSettings: { budgetUsd: '3.25', maxConcurrentGames: 4 },
+      });
+    },
+  );
+
+  it('choosing a recipe in the form fills it without submitting and links to the guide', async () => {
+    const { component, fixture, api, navigate } = setup();
+    fixture.detectChanges();
+    const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatSelectHarness.with({ selector: '[name="recipe"]' }),
+    );
+    expect(await select.getValueText()).toBe('None (choose settings yourself)');
+    await select.open();
+    await select.clickOptions({ text: 'Board understanding' });
+    fixture.detectChanges();
+    expect(api.createBenchmark).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(component.legalMoveHints).toBe(false);
+    const note: HTMLElement = fixture.nativeElement.querySelector('.recipe-note');
+    expect(note.textContent).toContain('Hints off: models must find legal moves');
+    expect(note.querySelector('a')?.getAttribute('href')).toBe(
+      'https://github.com/FJrepo/ai-chess-arena/blob/main/docs/benchmarks.md#board-understanding',
+    );
+  });
+
+  it('keeps every field editable after choosing a recipe and says the settings changed', () => {
+    const { component, fixture, api } = setup();
+    fillCreateForm(component);
+    component.applyRecipe('effort-baseline');
+    component.reasoningEffort = 'high';
+    component.higherStrength = 2200;
+    component.legalMoveHints = false;
+    component.chatMode = 'MANDATORY';
+    expect(component.recipeEdited).toBe(true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.recipe-note').textContent).toContain(
+      'Settings changed since you chose this recipe.',
+    );
+    component.applyRecipe('');
+    expect(component.recipeEdited).toBe(false);
+    expect(component.reasoningEffort).toBe('high');
+    component.create();
+    expect(api.createBenchmark).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasoningEffort: 'high',
+        targetStrengths: [1500, 2200],
+        legalMoveHints: false,
+        chatMode: 'MANDATORY',
+      }),
+    );
   });
 
   it('reuses a failed submission’s request UUID and accepts moving model aliases', () => {

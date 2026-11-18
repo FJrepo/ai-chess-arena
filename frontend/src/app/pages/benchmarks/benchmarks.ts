@@ -28,6 +28,12 @@ import type {
   CreateBenchmarkRequest,
 } from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
+import {
+  BENCHMARK_RECIPES,
+  findRecipe,
+  recipeGuideLink,
+  recipeStillApplies,
+} from '../../utils/benchmark-recipes';
 import { REASONING_EFFORTS, reasoningEffortLabel } from '../../utils/reasoning-effort';
 import { newRequestId } from '../../utils/request-id';
 import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
@@ -96,6 +102,9 @@ export class Benchmarks {
   concurrency: number | null = 2;
   resumeBudget = '';
   resumeConcurrency: number | null = null;
+  readonly recipes = BENCHMARK_RECIPES;
+  readonly recipeLink = recipeGuideLink;
+  recipeId = '';
 
   constructor() {
     this.route.paramMap
@@ -133,6 +142,35 @@ export class Benchmarks {
 
   refresh(): void {
     this.reload.next();
+  }
+
+  get selectedRecipe() {
+    return findRecipe(this.recipes, this.recipeId);
+  }
+
+  /** Pre-fills the playing settings of a recipe; name, models, budget and slots stay as entered. */
+  applyRecipe(id: string): void {
+    this.recipeId = id;
+    const recipe = this.selectedRecipe;
+    if (!recipe) return;
+    const { legalMoveHints, reasoningEffort, chatMode, targetStrengths } = recipe.settings;
+    this.legalMoveHints = legalMoveHints;
+    this.reasoningEffort = reasoningEffort;
+    this.chatMode = chatMode;
+    [this.lowerStrength, this.higherStrength] = targetStrengths;
+  }
+
+  get recipeEdited(): boolean {
+    const recipe = this.selectedRecipe;
+    return (
+      !!recipe &&
+      !recipeStillApplies(recipe, {
+        legalMoveHints: this.legalMoveHints,
+        reasoningEffort: this.reasoningEffort,
+        chatMode: this.chatMode,
+        targetStrengths: [this.lowerStrength ?? NaN, this.higherStrength ?? NaN],
+      })
+    );
   }
 
   get modelIds(): string[] {

@@ -111,6 +111,29 @@
         }
 
         <form class="create-form" (ngSubmit)="create()">
+          <div class="recipe-row">
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+              <mat-label>Recipe</mat-label>
+              <mat-select name="recipe" [ngModel]="recipeId" (ngModelChange)="applyRecipe($event)">
+                <mat-option value="">None (choose settings yourself)</mat-option>
+                @for (recipe of recipes; track recipe.id) {
+                  <mat-option [value]="recipe.id">{{ recipe.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <p class="recipe-note secondary" aria-live="polite">
+              @if (selectedRecipe; as recipe) {
+                {{
+                  recipeEdited ? 'Settings changed since you chose this recipe.' : recipe.summary
+                }}
+              } @else {
+                Pre-fills hints, effort, chat and Stockfish levels for a common question.
+              }
+              <a [href]="recipeLink(selectedRecipe)" target="_blank" rel="noopener noreferrer"
+                >Benchmark guide</a
+              >
+            </p>
+          </div>
           <div class="form-grid">
             <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
               <mat-label>Run name</mat-label>
