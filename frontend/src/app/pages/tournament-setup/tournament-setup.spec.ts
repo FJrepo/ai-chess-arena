@@ -2879,7 +2879,8 @@ describe('TournamentSetup', () => {
       component.banterLevel = 'POLITE';
       component.resignationAllowed = !recipe.settings.resignationAllowed;
       component.adjudicationEnabled = !recipe.settings.adjudicationEnabled;
-      component.limitMoveTime = !recipe.settings.limitMoveTime;
+      component.limitMoveTime = recipe.settings.moveTimeoutSeconds === null;
+      component.moveTimeout = 45;
       component.maxAttempts.set(7);
 
       component.applyRecipe(recipe.id);
@@ -2891,8 +2892,10 @@ describe('TournamentSetup', () => {
         banterLevel: component.banterLevel,
         resignationAllowed: component.resignationAllowed,
         adjudicationEnabled: component.adjudicationEnabled,
-        limitMoveTime: component.limitMoveTime,
+        moveTimeoutSeconds: component.limitMoveTime ? component.moveTimeout : null,
       }).toEqual(toggles);
+      // Without a recipe time limit, the hidden seconds field keeps its value.
+      expect(component.moveTimeout).toBe(recipe.settings.moveTimeoutSeconds ?? 45);
       expect(component.reasoningEffort).toBe(
         reasoningEffort === 'default' ? null : reasoningEffort,
       );
@@ -2953,6 +2956,49 @@ describe('TournamentSetup', () => {
       }),
     );
     expect(api.createTournamentPayload).not.toHaveProperty('reasoningEffort');
+  });
+
+  it('the speed recipe switches the move time limit on and sends an edited limit', async () => {
+    const api = createApiService();
+    const create = vi.spyOn(api, 'createTournament');
+    const fixture = await renderSetup(api);
+    const component = fixture.componentInstance;
+    component.name = 'Speed night';
+    component.participants.set([
+      pricedParticipant('Alpha', 'a/model', 0, 0),
+      { ...pricedParticipant('Beta', 'b/model', 0, 0), seed: 1 },
+    ]);
+    fixture.detectChanges();
+    const select = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatSelectHarness.with({ selector: '[aria-labelledby="setup-recipe-heading"] mat-select' }),
+    );
+    await select.open();
+    await select.clickOptions({ text: 'How fast does it answer?' });
+    await fixture.whenStable();
+    expect(create).not.toHaveBeenCalled();
+    expect(component.limitMoveTime).toBe(true);
+    expect(component.moveTimeout).toBe(120);
+    expect(component.recipeEdited).toBe(false);
+
+    const seconds: HTMLInputElement = fixture.nativeElement.querySelector(
+      '.move-timeout-field input',
+    );
+    seconds.value = '90';
+    seconds.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    expect(component.recipeEdited).toBe(true);
+    fixture.nativeElement.querySelector('.create-button').click();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(api.createTournamentPayload).toEqual(
+      expect.objectContaining({
+        moveTimeoutSeconds: 90,
+        chatMode: 'OFF',
+        resignationAllowed: false,
+        adjudicationEnabled: false,
+        legalMoveHints: true,
+        maxAttempts: 3,
+      }),
+    );
   });
 
   it('offers no recipe when rerunning a saved tournament', async () => {

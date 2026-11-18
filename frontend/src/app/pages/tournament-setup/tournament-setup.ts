@@ -1487,7 +1487,8 @@ Your opponent is %s (%s).`;
     this.banterLevel = settings.banterLevel;
     this.resignationAllowed = settings.resignationAllowed;
     this.adjudicationEnabled = settings.adjudicationEnabled;
-    this.limitMoveTime = settings.limitMoveTime;
+    this.limitMoveTime = settings.moveTimeoutSeconds !== null;
+    if (settings.moveTimeoutSeconds !== null) this.moveTimeout = settings.moveTimeoutSeconds;
     this.maxAttempts.set(settings.maxAttempts);
   }
 
@@ -1499,7 +1500,7 @@ Your opponent is %s (%s).`;
       banterLevel: this.banterLevel,
       resignationAllowed: this.resignationAllowed,
       adjudicationEnabled: this.adjudicationEnabled,
-      limitMoveTime: this.limitMoveTime,
+      moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : null,
       maxAttempts: this.maxAttempts() ?? NaN,
     };
   }

@@ -50,6 +50,10 @@ describe('benchmark recipes', () => {
       expect(chatModes).toContain(settings.chatMode);
       expect([null, 'POLITE', 'PLAYFUL', 'SPICY', 'MIND_GAMES']).toContain(settings.banterLevel);
       expect(Number.isInteger(settings.maxAttempts)).toBe(true);
+      const seconds = settings.moveTimeoutSeconds;
+      expect(
+        seconds === null || (Number.isInteger(seconds) && seconds >= 10 && seconds <= 3600),
+      ).toBe(true);
     }
   });
 

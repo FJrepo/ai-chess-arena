@@ -2,7 +2,7 @@
 
 Detailed rules, settings and API conventions for running tournaments. For setup and development commands, see the [README](../README.md); for upgrades and operations, see the [deployment guide](deployment.md).
 
-To choose settings for a specific question (playing strength, effort, cost, reliability, persuasion), see the [benchmark guide](benchmarks.md).
+To choose settings for a specific question (playing strength, effort, cost, reliability, persuasion, finishing won games, speed), see the [benchmark guide](benchmarks.md).
 
 ## Contents
 

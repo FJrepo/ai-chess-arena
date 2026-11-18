@@ -30,7 +30,8 @@ export interface TournamentRecipeSettings {
   banterLevel: BanterLevel | null;
   resignationAllowed: boolean;
   adjudicationEnabled: boolean;
-  limitMoveTime: boolean;
+  /** Seconds per move (10-3600), or null for no time limit. */
+  moveTimeoutSeconds: number | null;
   maxAttempts: number;
 }
 

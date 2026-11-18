@@ -10,6 +10,8 @@ Which setup answers which question. Each recipe names the page, the exact settin
 | What a result costs | [Cost efficiency](#cost-efficiency) | Benchmarks |
 | Whether it answers in format with legal moves | [Reliability and format discipline](#reliability-and-format-discipline) | New tournament |
 | How it talks and whether it talks opponents out of games | [Personality and persuasion](#personality-and-persuasion) | New tournament |
+| Whether it finishes a won game | [Can it finish a won game?](#can-it-finish-a-won-game) | New tournament |
+| How fast it answers | [How fast does it answer?](#how-fast-does-it-answer) | New tournament |
 | How much results move by chance | [Variance check](#variance-check) | Rerun |
 
 ## Using a recipe
@@ -130,6 +132,49 @@ Resignation must be on: persuasion counts resignations. The recipe switches off 
 **Caveats:** a resignation only counts as talked out when Stockfish evaluated the position, so the evaluator must be available. Fewer than 5 evaluated resignations show **Low sample**. A low *As persuaded* count can also mean few resignations or silent opponents. Tone is prompt guidance, not moderation.
 
 **Cost:** slightly above a silent tournament, depending on the messages models actually send: each short message adds output tokens.
+
+## Can it finish a won game?
+
+**Question:** once a model reaches a winning position, does it convert it into a win, or does it draw, lose or miss a mate?
+
+**Where:** New tournament → Tournament Settings → Test recipe → *Can it finish a won game?*. Choose *Best of 3* under *Matches* or run several tournaments; only some games reach a winning position.
+
+**Recipe settings:** Legal move hints **on** · Reasoning effort **Model default** · Chat **Off** · Banter **Original** · Allow resignation **on** · Adjudicate decisive wins **off** · Limit time per move **off** · Max attempts per move **3**
+
+Adjudication is off, so a won game has to be finished on the board instead of being awarded. Resignation is on, so the losing side may give up a hopeless position. No time limit means no game is decided by the clock. Games can still end by mate, a draw rule, resignation or a forfeit.
+
+**Read:** Analytics, filtered to this tournament. *Play quality* → **Conversion**: **Winning positions** (games where the side reached at least 90% winning chances), **Converted**, **Thrown away** and **Missed mates**; check the *sides evaluated* count beside each model. *Behaviour* → **Resignations** → **Won by resignation** shows how many of a model's wins came from the opponent giving up.
+
+**Caveats:**
+
+- Samples are small: a model needs games where it actually reached a winning position, and many brackets produce only a handful.
+- Converted counts every win from a winning position, including the opponent's resignation or forfeit, so it is not only the model's own technique.
+- Thrown away includes draws as well as losses (also the model's own forfeit).
+- Conversion needs Stockfish evaluations; games without them cannot show a winning position and are left out.
+
+**Cost:** somewhat above a tournament with adjudication, because decided games are played until mate or resignation.
+
+## How fast does it answer?
+
+**Question:** how long does a model take per move, and does it lose games on time?
+
+**Where:** New tournament → Tournament Settings → Test recipe → *How fast does it answer?*. Benchmark runs have no move time limit, so this is a tournament recipe.
+
+**Recipe settings:** Legal move hints **on** · Reasoning effort **Model default** · Chat **Off** · Banter **Original** · Allow resignation **off** · Adjudicate decisive wins **off** · Limit time per move **120 seconds** · Max attempts per move **3**
+
+120 seconds is the value the setup page fills in when you switch the limit on; *Move Pace* reads *Balanced*. The limit covers the whole turn, from the first request to the complete answer, including every retry. Below 90 seconds the setup page warns that reasoning models may forfeit on time.
+
+**Read:** Analytics, filtered to this tournament. *Overview* → *Model Comparison Table* → **Latency** and **Forfeits** (the note shows how many were timeouts). *Cost & reliability* → **Avg Latency** in engine health, **Latency** in *Per-Model Performance Metrics* and **Avg Latency** in *Reliability Ranking & Stability*. The game page shows each pause reason.
+
+**Loss on time or pause?** A model loses on time only when its deadline passes while it waits for an answer on an established connection. An unfinished connection setup, an incomplete HTTP error, or a response whose status is still being read pauses the game for a spend check instead. After an earlier provider failure in the same turn, a missed deadline also pauses: for a spend check if the request may have reached OpenRouter, otherwise for the provider problem. These pauses are not losses on time; check the spend in your OpenRouter activity before choosing **Spend checked, resume**. See [Time limit per move](how-it-works.md#time-limit-per-move).
+
+**Caveats:**
+
+- Latency depends on provider load and time of day; the same model can be fast in one run and slow in the next. Repeat at a different time before ranking close results.
+- Reasoning effort strongly affects latency. The recipe uses each model's default; for a like-for-like comparison, set one effort for every model and say so when you report it.
+- Latency is shown but not scored in the reliability score.
+
+**Cost:** about the same as a tournament without a limit; games lost on time end early, and a model that thinks less to stay within the limit spends less on those moves.
 
 ## Variance check
 
