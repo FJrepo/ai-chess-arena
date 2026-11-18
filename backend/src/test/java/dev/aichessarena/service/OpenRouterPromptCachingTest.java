@@ -24,6 +24,9 @@ import java.util.List;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -248,7 +251,7 @@ class OpenRouterPromptCachingTest {
     void plainFallbackSharesTheOriginalMoveAndSafetyDeadlines(boolean timed) throws Exception {
         OpenRouterService service = stub();
         AtomicLong nanos = new AtomicLong();
-        service.nanoClock = nanos::get;
+        useSimulatedResponseTimes(service, nanos);
         service.requestSafetyCap = Duration.ofSeconds(10);
         rejectionStatus = 404;
         afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
@@ -271,7 +274,7 @@ class OpenRouterPromptCachingTest {
     void rejectionAtTheDeadlineRemainsAProviderFailureWithoutSendingAPlainRetry() throws Exception {
         OpenRouterService service = stub();
         AtomicLong nanos = new AtomicLong();
-        service.nanoClock = nanos::get;
+        useSimulatedResponseTimes(service, nanos);
         rejectionStatus = 400;
         afterRejection = () -> nanos.set(Duration.ofSeconds(10).toNanos());
         var deadline = OpenRouterService.AnswerDeadline.after(Duration.ofSeconds(10), 0);
@@ -290,7 +293,7 @@ class OpenRouterPromptCachingTest {
     void rejectionAtTheDeadlinePausesTheTurnEvenIfAttemptRecordingFails(boolean failRecording) throws Exception {
         OpenRouterService router = stub();
         AtomicLong nanos = new AtomicLong();
-        router.nanoClock = nanos::get;
+        useSimulatedResponseTimes(router, nanos);
         rejectionStatus = 400;
         afterRejection = () -> nanos.set(Duration.ofSeconds(10).toNanos());
         List<String> pauses = new ArrayList<>();
@@ -319,7 +322,7 @@ class OpenRouterPromptCachingTest {
             throws Exception {
         OpenRouterService router = stub();
         AtomicLong nanos = new AtomicLong();
-        router.nanoClock = nanos::get;
+        useSimulatedResponseTimes(router, nanos);
         rejectionStatus = status;
         rejectionBody = "{\"error\":{\"message\":\"Provider rejected the request\"}}";
         // The default first provider backoff is 1 s, leaving no time for another request.
@@ -341,7 +344,7 @@ class OpenRouterPromptCachingTest {
     void latePlainFallbackPausesTheRealTurnWithoutRecordingAModelTimeoutOrForfeit() throws Exception {
         OpenRouterService router = stub();
         AtomicLong nanos = new AtomicLong();
-        router.nanoClock = nanos::get;
+        useSimulatedResponseTimes(router, nanos);
         rejectionStatus = 404;
         afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
         afterPlain = () -> nanos.set(Duration.ofSeconds(11).toNanos());
@@ -365,7 +368,7 @@ class OpenRouterPromptCachingTest {
             throws Exception {
         OpenRouterService router = stub();
         AtomicLong nanos = new AtomicLong();
-        router.nanoClock = nanos::get;
+        useSimulatedResponseTimes(router, nanos);
         rejectionStatus = 404;
         afterRejection = () -> nanos.set(Duration.ofSeconds(28).toNanos());
         plainMove = "Ke2";
@@ -433,6 +436,22 @@ class OpenRouterPromptCachingTest {
                 "v2", "hash", BigDecimal.ZERO, () -> true, 100, ChatMode.OPTIONAL, ChatMode.OPTIONAL);
 
         return turn.playTurn(request);
+    }
+
+    private static void useSimulatedResponseTimes(OpenRouterService router, AtomicLong nanos) {
+        router.nanoClock = nanos::get;
+        // The stub sets the clock before writing the response. Let the client receive the full body before
+        // comparing its completion timestamp with the fake deadline, regardless of HTTP thread scheduling.
+        router.sendObserver = sent -> {
+            try {
+                sent.get(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Interrupted while waiting for the loopback response", e);
+            } catch (ExecutionException | TimeoutException e) {
+                throw new AssertionError("The loopback response did not complete", e);
+            }
+        };
     }
 
     private static List<String> messageText(JsonNode messages) {
