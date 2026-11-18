@@ -227,9 +227,9 @@ class DurableRunsIT {
         asWorker(gameId, oldOwner, () -> {
             var e4 = chess.validateAndApply(new Board(), "e4");
             assertThrows(GameStateConflictException.class, () -> gameMoves.recordModelMove(gameId, 1, "WHITE", "e4",
-                    e4.fen(), "test/white", "White", "Old", paid("e4", 0.5), 0, "v", "h", start, ChatMode.OPTIONAL));
+                    e4.fen(), "test/white", "White", "Old", paid("e4", 0.5), 0, "v", "h", start, ChatMode.OPTIONAL, null));
             assertThrows(GameStateConflictException.class, () -> gameMoves.recordStockfishMove(gameId, "WHITE", 1, e4,
-                    start, read(gameId).statusRevision, () -> true));
+                    start, read(gameId).statusRevision, () -> true, null));
             attempts.record(new MoveAttemptService.AttemptRecord(gameId, 1, "WHITE", 1, "test/white",
                     Outcome.ILLEGAL_MOVE, "Ke2", "Illegal", paid("Ke2", 0.5)));
             assertNull(ownership.markRequestSent(gameId));

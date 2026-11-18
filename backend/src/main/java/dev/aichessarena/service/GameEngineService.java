@@ -427,7 +427,8 @@ public class GameEngineService {
                     game.requestedReasoningEffort(sideToMove),
                     game.tournament != null ? game.tournament.banterLevel : null,
                     game.statusRevision,
-                    configurations == null ? null : configurations.capture(game)
+                    configurations == null ? null : configurations.capture(game),
+                    game.isBenchmark()
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {
@@ -449,10 +450,15 @@ public class GameEngineService {
     private String playStockfishTurn(Game game, Board board, String fen, String color, int moveNumber, GameLoop loop) {
         String bestMove;
         try {
-            bestMove = stockfishOpponent.chooseMove(board, game.stockfishElo, loop::shouldContinue);
+            bestMove = game.isBenchmark()
+                    ? stockfishOpponent.chooseMove(board, game.stockfishElo, game.tournament.benchmarkDefinition,
+                            loop::shouldContinue)
+                    : stockfishOpponent.chooseMove(board, game.stockfishElo, loop::shouldContinue);
         } catch (IOException | TimeoutException e) {
             LOG.warnf(e, "Stockfish opponent search failed for game %s", game.id);
-            gameLifecycleService.pauseWithReason(game.id, "Stockfish could not play a move. Check Stockfish and resume.");
+            gameLifecycleService.pauseWithReason(game.id, game.isBenchmark()
+                    ? "Stockfish could not play a move. Check the benchmark's engine build and NNUE weights, then resume."
+                    : "Stockfish could not play a move. Check Stockfish and resume.");
             return null;
         }
         if (bestMove == null || !loop.shouldContinue()) return null;
@@ -464,7 +470,8 @@ public class GameEngineService {
             return null;
         }
         try {
-            gameMoveService.recordStockfishMove(game.id, color, moveNumber, played, fen, game.statusRevision, loop::shouldContinue);
+            gameMoveService.recordStockfishMove(game.id, color, moveNumber, played, fen, game.statusRevision,
+                    loop::shouldContinue, chessService.getGameEndInfo(board));
         } catch (GameStateConflictException e) {
             LOG.debugf("Discarding stale Stockfish move in game %s", game.id);
             return null;

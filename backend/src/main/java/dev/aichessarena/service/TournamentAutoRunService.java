@@ -95,9 +95,19 @@ public class TournamentAutoRunService {
 
     @Transactional
     public Tournament configure(UUID id, JsonNode body, boolean resume) {
-        Tournament t = editable(id);
+        return configure(id, body, resume, false);
+    }
+
+    @Transactional
+    public Tournament configureBenchmark(UUID id, JsonNode body) {
+        return configure(id, body, true, true);
+    }
+
+    private Tournament configure(UUID id, JsonNode body, boolean resume, boolean benchmark) {
+        Tournament t = editable(id, benchmark);
         if (resume && keys != null) keys.requireKey();
-        applyRunSettings(t, body, false);
+        applyRunSettings(t, body, benchmark);
+        if (benchmark && t.budgetUsd == null) throw new IllegalArgumentException("Benchmark budgetUsd is required");
         if (resume) {
             t.autoRunStatus = AutoRunStatus.RUNNING;
             t.autoRunPauseReason = null;
@@ -105,7 +115,7 @@ public class TournamentAutoRunService {
         t.updatedAt = LocalDateTime.now();
         if (t.autoRunStatus == AutoRunStatus.RUNNING && !pauseIfBudgetReached(t)) {
             List<Game> running = games.findByTournamentId(id).stream()
-                    .filter(g -> g.status == GameStatus.IN_PROGRESS).sorted(BRACKET_ORDER).toList();
+                    .filter(g -> g.status == GameStatus.IN_PROGRESS).sorted(runOrder(t)).toList();
             for (int i = t.maxConcurrentGames; i < running.size(); i++) {
                 pauseGame(running.get(i).id, "Concurrency limit reduced to " + t.maxConcurrentGames);
             }
@@ -116,14 +126,25 @@ public class TournamentAutoRunService {
 
     @Transactional
     public Tournament pause(UUID id) {
-        Tournament t = editable(id);
+        return pause(id, false);
+    }
+
+    @Transactional
+    public Tournament pauseBenchmark(UUID id) {
+        return pause(id, true);
+    }
+
+    private Tournament pause(UUID id, boolean benchmark) {
+        Tournament t = editable(id, benchmark);
         pauseRun(t, "Paused by user");
         return t;
     }
 
-    private Tournament editable(UUID id) {
+    private Tournament editable(UUID id, boolean benchmark) {
         Tournament t = tournaments.findByIdForUpdate(id);
-        if (t == null) throw new WebApplicationException("Tournament not found", 404);
+        if (t == null || benchmark != t.isBenchmark()) {
+            throw new WebApplicationException(benchmark ? "Benchmark run not found" : "Tournament not found", 404);
+        }
         TournamentService.requireEditableSettings(t);
         if (t.status != TournamentStatus.IN_PROGRESS || games.findByTournamentId(id).isEmpty()) {
             throw new WebApplicationException("Generate the bracket before running the tournament", 409);
@@ -146,15 +167,15 @@ public class TournamentAutoRunService {
             throw new GameStateConflictException("A resume is already queued for this game");
         }
         if (t.autoRunStatus != AutoRunStatus.RUNNING) {
-            throw new GameStateConflictException("Resume the tournament run first");
+            throw new GameStateConflictException(t.isBenchmark() ? "Resume the benchmark run first" : "Resume the tournament run first");
         }
         if (budgetReached(t, spend(t.id))) {
-            throw new GameStateConflictException("Tournament budget reached; raise the budget and resume the run");
+            throw new GameStateConflictException((t.isBenchmark() ? "Benchmark" : "Tournament") + " budget reached; raise the budget and resume the run");
         }
         long freeSlots = t.maxConcurrentGames - games.countRunning(t.id);
         if (freeSlots <= 0) {
             if (queueIfFull && game.status == GameStatus.PAUSED) return true;
-            throw new GameStateConflictException("Tournament concurrency limit reached");
+            throw new GameStateConflictException(t.isBenchmark() ? "Benchmark concurrency limit reached" : "Tournament concurrency limit reached");
         }
         if (!automatic && games.count("tournament.id = ?1 and status = ?2 and resumeRequestedAt is not null",
                 t.id, GameStatus.PAUSED) >= freeSlots) {
@@ -194,34 +215,40 @@ public class TournamentAutoRunService {
     @Transactional
     public void schedule(UUID id) {
         Tournament t = tournaments.findByIdForUpdate(id);
-        if (t == null || t.autoRunStatus != AutoRunStatus.RUNNING) return;
+        if (t == null || (t.autoRunStatus != AutoRunStatus.RUNNING
+                && !(t.isBenchmark() && t.autoRunStatus == AutoRunStatus.PAUSED))) return;
         if (t.status == TournamentStatus.CANCELLED) {
             lifecycle.clearResumeRequests(id);
             t.autoRunStatus = AutoRunStatus.OFF;
             t.autoRunPauseReason = null;
             return;
         }
-        List<Game> bracket = games.findByTournamentId(id);
+        List<Game> runGames = games.findByTournamentId(id);
         if (t.status == TournamentStatus.COMPLETED
-                || (!bracket.isEmpty() && bracket.stream().allMatch(GameLifecycleService::isTerminal))) {
+                || (!runGames.isEmpty() && runGames.stream().allMatch(GameLifecycleService::isTerminal))) {
             lifecycle.clearResumeRequests(id);
             t.autoRunStatus = AutoRunStatus.FINISHED;
             t.autoRunPauseReason = null;
+            if (t.isBenchmark()) {
+                t.status = TournamentStatus.COMPLETED;
+                t.updatedAt = LocalDateTime.now();
+            }
             return;
         }
+        if (t.autoRunStatus != AutoRunStatus.RUNNING) return;
         if (keys != null && keys.key().isBlank()) {
-            pauseRun(t, "Connect OpenRouter to continue this tournament");
+            pauseRun(t, "Connect OpenRouter to continue this " + (t.isBenchmark() ? "benchmark" : "tournament"));
             return;
         }
         if (pauseIfBudgetReached(t)) return;
         long occupiedSlots = games.countRunning(id);
-        for (Game game : bracket.stream().filter(TournamentAutoRunService::queuedResume).sorted(RESUME_ORDER).toList()) {
+        for (Game game : runGames.stream().filter(TournamentAutoRunService::queuedResume).sorted(RESUME_ORDER).toList()) {
             if (occupiedSlots >= t.maxConcurrentGames) return;
             // Each request takes one slot, reserved for the next tick if its previous loop is still stopping.
             engine.startScheduledGame(game.id);
             occupiedSlots++;
         }
-        for (Game game : bracket.stream().filter(TournamentAutoRunService::eligible).sorted(BRACKET_ORDER).toList()) {
+        for (Game game : runGames.stream().filter(TournamentAutoRunService::eligible).sorted(runOrder(t)).toList()) {
             if (occupiedSlots >= t.maxConcurrentGames) break;
             if (engine.startScheduledGame(game.id) != null) occupiedSlots++;
         }
@@ -232,9 +259,14 @@ public class TournamentAutoRunService {
     }
 
     static boolean eligible(Game game) {
-        return game.status == GameStatus.WAITING && game.whiteParticipant != null && game.blackParticipant != null
+        return game.status == GameStatus.WAITING && (game.isBenchmark()
+                || (game.whiteParticipant != null && game.blackParticipant != null
                 && game.whiteParticipant.controlType != ControlType.HUMAN
-                && game.blackParticipant.controlType != ControlType.HUMAN;
+                && game.blackParticipant.controlType != ControlType.HUMAN));
+    }
+
+    private static Comparator<Game> runOrder(Tournament t) {
+        return t.isBenchmark() ? BenchmarkRunService.pairOrder() : BRACKET_ORDER;
     }
 
     private BigDecimal spend(UUID id) {

@@ -83,13 +83,24 @@ public class TournamentService {
     /** Cancels once; terminal tournaments (including repeated cancellation) consistently return 409. */
     @Transactional
     public Tournament cancelTournament(UUID tournamentId) {
+        return cancelTournament(tournamentId, false);
+    }
+
+    @Transactional
+    public Tournament cancelBenchmark(UUID tournamentId) {
+        return cancelTournament(tournamentId, true);
+    }
+
+    private Tournament cancelTournament(UUID tournamentId, boolean benchmark) {
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
-        if (tournament == null) {
-            throw new WebApplicationException("Tournament not found", Response.Status.NOT_FOUND);
+        if (tournament == null || tournament.isBenchmark() != benchmark) {
+            throw new WebApplicationException(benchmark ? "Benchmark run not found" : "Tournament not found",
+                    Response.Status.NOT_FOUND);
         }
         if (tournament.status == Tournament.TournamentStatus.COMPLETED
                 || tournament.status == Tournament.TournamentStatus.CANCELLED) {
-            throw new WebApplicationException("Tournament has already finished", Response.Status.CONFLICT);
+            throw new WebApplicationException(benchmark ? "Benchmark has already finished" : "Tournament has already finished",
+                    Response.Status.CONFLICT);
         }
         tournament.status = Tournament.TournamentStatus.CANCELLED;
         tournament.autoRunStatus = Tournament.AutoRunStatus.OFF;
@@ -142,6 +153,7 @@ public class TournamentService {
         TournamentParticipant prepared = prepareParticipant(participant);
 
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament != null && tournament.isBenchmark()) throw new WebApplicationException("Tournament not found", 404);
         if (tournament == null) throw new IllegalArgumentException("Tournament not found");
         if (tournament.status != Tournament.TournamentStatus.CREATED) {
             throw new WebApplicationException(
@@ -224,7 +236,7 @@ public class TournamentService {
     public TournamentParticipant updateParticipantReasoningEffort(UUID tournamentId, UUID participantId,
                                                                   ReasoningEffort effort) {
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
-        if (tournament == null) {
+        if (tournament == null || tournament.isBenchmark()) {
             throw new WebApplicationException("Tournament not found", Response.Status.NOT_FOUND);
         }
         requireEditableSettings(tournament);
@@ -250,7 +262,7 @@ public class TournamentService {
     @Transactional
     public boolean removeParticipant(UUID tournamentId, UUID participantId) {
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
-        if (tournament == null) return false;
+        if (tournament == null || tournament.isBenchmark()) return false;
         TournamentParticipant p = participantRepository.findById(participantId);
         if (p == null || !p.tournament.id.equals(tournamentId)) {
             return false;
@@ -279,6 +291,7 @@ public class TournamentService {
         Objects.requireNonNull(drawMode, "drawMode");
         // The row lock makes concurrent or repeated generation requests wait, then see the bracket.
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
+        if (tournament != null && tournament.isBenchmark()) throw new WebApplicationException("Tournament not found", 404);
         if (tournament == null) throw new IllegalArgumentException("Tournament not found");
         if (tournament.status != Tournament.TournamentStatus.CREATED
                 || !gameRepository.findByTournamentId(tournamentId).isEmpty()) {
@@ -370,7 +383,7 @@ public class TournamentService {
     @Transactional
     public void advanceWinner(UUID gameId) {
         Game completedGame = gameRepository.findByIdForUpdate(gameId);
-        if (completedGame == null || completedGame.tournament == null) return;
+        if (completedGame == null || completedGame.tournament == null || completedGame.isBenchmark()) return;
         if (completedGame.tournament.status == Tournament.TournamentStatus.CANCELLED
                 || (completedGame.status != Game.GameStatus.COMPLETED
                 && completedGame.status != Game.GameStatus.FORFEIT)) return;
@@ -630,7 +643,7 @@ public class TournamentService {
         }
     }
 
-    private void persistGameWithOpening(Game game) {
+    void persistGameWithOpening(Game game) {
         gameRepository.persist(game);
         if (!game.moves.isEmpty()) {
             // Only the final book position needs an evaluation: baseline for the first model move.
@@ -740,7 +753,7 @@ public class TournamentService {
     @Transactional
     public boolean deleteTournament(UUID tournamentId) {
         Tournament tournament = tournamentRepository.findByIdForUpdate(tournamentId);
-        if (tournament == null) {
+        if (tournament == null || tournament.isBenchmark()) {
             return false;
         }
 

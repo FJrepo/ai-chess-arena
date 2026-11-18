@@ -25,6 +25,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 ## Features
 
 - **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** pit models against each other in brackets and best-of series.
+- **[Stockfish ladder](docs/how-it-works.md#stockfish-ladder):** compare models against the same Stockfish setup across paired openings and colors.
 - **[Auto-run](docs/how-it-works.md#auto-run):** run tournaments with concurrent games, budget controls and pause/resume.
 - **[Live games and chat](docs/how-it-works.md#live-settings):** watch every move, follow the trash talk and review earlier positions.
 - **[Move quality](docs/how-it-works.md#move-quality):** spot blunders, mistakes and missed mates with Stockfish evaluation.
@@ -33,9 +34,8 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Export](docs/how-it-works.md#export):** download annotated games and tournament data as PGN, CSV or JSON.
 - **[Practice](docs/how-it-works.md#play-from-here)** lets you take over a finished position against its original model or play Stockfish locally.
 - **[Human play](docs/how-it-works.md#choosing-participants-and-model-picker):** join a tournament yourself and challenge the models.
-- **[Cost preview](docs/how-it-works.md#cost-estimate):** estimate games, runtime and spend before starting.
 
-…and more: openings, adjudication, resignation, cancellation, resumable games and custom instructions — see [How it works](docs/how-it-works.md).
+…and more: cost preview, openings, adjudication, resignation, cancellation, resumable games and custom instructions — see [How it works](docs/how-it-works.md).
 
 ## Quick start
 

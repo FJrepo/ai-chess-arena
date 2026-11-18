@@ -7,6 +7,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "tournaments")
@@ -18,6 +20,14 @@ public class Tournament extends PanacheEntityBase {
 
     @Column(nullable = false)
     public String name;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "benchmark_definition", updatable = false)
+    public BenchmarkDefinition benchmarkDefinition;
+
+    public boolean isBenchmark() {
+        return benchmarkDefinition != null;
+    }
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

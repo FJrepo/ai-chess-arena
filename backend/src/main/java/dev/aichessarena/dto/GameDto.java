@@ -72,6 +72,8 @@ public record GameDto(
         UUID practiceSourceGameId,
         Integer practiceSourcePly,
         Integer stockfishElo,
+        UUID benchmarkRunId,
+        String benchmarkChatMode,
         /**
          * A model request was sent and its answer never recorded, so it may have been charged: the game resumes only
          * with {@code acknowledgeUncertainRequest=true} on the start endpoint.

@@ -213,7 +213,8 @@ class HumanConversationLifecycleTest {
             @Override
             public void recordModelMove(UUID id, int number, String color, String san, String fen,
                                         String model, String player, String message, OpenRouterService.LlmResponse response,
-                                        int retries, String version, String hash, String expectedFen, ChatMode mode) {
+                                        int retries, String version, String hash, String expectedFen, ChatMode mode,
+                                        ChessService.GameEndInfo endInfo) {
                 assertEquals(game.currentFen, expectedFen);
                 promptHashes.add(hash);
                 save(number, color, san, fen);

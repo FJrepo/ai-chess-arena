@@ -19,11 +19,16 @@
   }
 
   @if (g.openingName) {
-    <p class="opening-label">{{ g.openingEco }} · {{ g.openingName }}</p>
+    <p class="opening-label">{{ g.openingEco ? g.openingEco + ' · ' : '' }}{{ g.openingName }}</p>
   }
 
   <div class="view-actions">
-    @if (g.practiceKind) {
+    @if (g.benchmarkRunId) {
+      <a mat-stroked-button [routerLink]="['/benchmarks', g.benchmarkRunId]">
+        <mat-icon>arrow_back</mat-icon>
+        Back to Benchmark
+      </a>
+    } @else if (g.practiceKind) {
       <a mat-stroked-button routerLink="/practice">
         <mat-icon>arrow_back</mat-icon>
         Back to Practice
@@ -449,25 +454,27 @@
           <mat-icon>play_arrow</mat-icon> Resume
         </button>
       }
-      <div class="override-section">
-        <mat-form-field appearance="outline">
-          <mat-label>Override Move (SAN)</mat-label>
-          <input
-            matInput
-            [(ngModel)]="overrideMove"
-            placeholder="Pause game first, then enter SAN"
+      @if (!g.benchmarkRunId) {
+        <div class="override-section">
+          <mat-form-field appearance="outline">
+            <mat-label>Override Move (SAN)</mat-label>
+            <input
+              matInput
+              [(ngModel)]="overrideMove"
+              placeholder="Pause game first, then enter SAN"
+              [disabled]="!overrideAllowed()"
+            />
+          </mat-form-field>
+          <button
+            mat-raised-button
+            color="accent"
+            (click)="submitOverride()"
             [disabled]="!overrideAllowed()"
-          />
-        </mat-form-field>
-        <button
-          mat-raised-button
-          color="accent"
-          (click)="submitOverride()"
-          [disabled]="!overrideAllowed()"
-        >
-          Submit
-        </button>
-      </div>
+          >
+            Submit
+          </button>
+        </div>
+      }
     </div>
   </mat-expansion-panel>
   <app-game-configuration-history [game]="g" [attempts]="attempts()" />

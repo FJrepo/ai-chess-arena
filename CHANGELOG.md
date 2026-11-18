@@ -13,16 +13,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V30__v2_api_cleanup.sql` renames `tournaments.max_retries` to `max_attempts`, renames the `maxRetries` key to `maxAttempts` in stored game configuration snapshots and drops the pre-1.4 column `tournaments.trash_talk_enabled` (it only mirrored `chat_mode`). Back up the database and recreate backend and frontend together; rolling back requires restoring that backup.
 
+- Flyway `V31__stockfish_ladder.sql` adds benchmark definitions and paired games, requires a creation UUID for benchmarks, and records concrete model IDs reported for moving aliases. Back up the database and recreate backend and frontend together. Existing games need no backfill.
+
+- Flyway `V32__durable_runs.sql` records which game loop owns a game and whether a model request is in flight. The previous version kept no such record, so the upgrade pauses games it left in progress (check spend, then resume) and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. See [Durable runs migration (V32)](docs/deployment.md#durable-runs-migration-v32).
+
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
   - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
   - `generateBracket` omitted or null -> generates the bracket on `POST /api/tournaments` (was: draft). Creation still checks the OpenRouter credential first (HTTP 409 without a key); after that, fewer than two participants returns HTTP 400 unless the request sends `"generateBracket": false`.
   - `POST /api/games/{id}/start` without `queueIfFull` -> queues a paused game when the auto-run's slots are full (was: HTTP 409). Send `?queueIfFull=false` for the old behaviour. An empty, non-boolean or repeated `queueIfFull` returns HTTP 400.
 
-- Flyway `V32__durable_runs.sql` records which game loop owns a game and whether a model request is in flight. The previous version kept no such record, so the upgrade pauses games it left in progress (check spend, then resume) and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. See [Durable runs migration (V32)](docs/deployment.md#durable-runs-migration-v32).
-
 ### Added
 
+- Run the **Stockfish ladder** against a verified engine build and weights, compare color-paired results and spend, and cancel unfinished runs without losing results. Benchmark reports show concrete model IDs when OpenRouter resolves a moving alias.
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 - The **Live games** menu shows why a paused game needs attention.
@@ -38,6 +41,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A game held for a spend check resumes only through **Spend checked, resume** (`acknowledgeUncertainRequest=true` on the start endpoint); a plain resume, queued resume, the scheduler and restart recovery never clear it. Restart recovery also completes paused games whose last move already decided them. See [Restarts](docs/how-it-works.md#restarts).
 
 ### Fixed
+
+- Retrying an unconfirmed benchmark creation in the same tab returns the original run even after reloading. Terminal model and Stockfish moves are saved with their results, so cancellation keeps committed wins and draws. Opening positions supply a baseline for move quality.
+- Benchmark games stay out of Analytics health counts while their spend remains visible. Benchmark games show their configured chat mode between turns and give recovery guidance for cut-off answers.
 
 ## [1.9.0] - 2026-11-18
 

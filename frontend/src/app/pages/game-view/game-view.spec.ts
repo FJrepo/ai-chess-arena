@@ -2146,6 +2146,21 @@ describe('GameView', () => {
     component.ngOnDestroy();
   });
 
+  it.each(['OFF', 'OPTIONAL', 'MANDATORY'] as const)(
+    'shows the configured %s chat mode between benchmark turns',
+    (mode) => {
+      const { component, gameLoad } = createSpectator();
+      component.ngOnInit();
+      const benchmarkGame = {
+        ...gameWith({ status: 'PAUSED', benchmarkRunId: 'ladder-1' }),
+        benchmarkChatMode: mode,
+      };
+      gameLoad.next(benchmarkGame);
+      expect(component.displayedChatMode()).toBe(mode);
+      component.ngOnDestroy();
+    },
+  );
+
   it('shows the active turn’s captured chat mode and tone through settings edits and recovery', () => {
     const { component, gameLoad, messages, api } = createSpectator();
     const tournament = new Subject<{ chatMode: string; banterLevel: string }>();

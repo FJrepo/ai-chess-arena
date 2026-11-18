@@ -26,6 +26,10 @@ export const routes: Routes = [
     path: 'practice',
     loadComponent: () => import('./pages/practice/practice').then((m) => m.Practice),
   },
+  ...['benchmarks', 'benchmarks/:id'].map((path) => ({
+    path,
+    loadComponent: () => import('./pages/benchmarks/benchmarks').then((m) => m.Benchmarks),
+  })),
   {
     path: 'analytics',
     loadComponent: () =>

@@ -62,6 +62,9 @@ public class Game extends PanacheEntityBase {
     @Column(name = "stockfish_elo")
     public Integer stockfishElo;
 
+    @Column(name = "benchmark_pair_id", updatable = false)
+    public UUID benchmarkPairId;
+
     @Column(name = "white_player_name")
     public String whitePlayerName;
 
@@ -227,6 +230,7 @@ public class Game extends PanacheEntityBase {
      * default, a human side and a game outside a tournament. Read anew every turn, so a change applies from the next.
      */
     public ReasoningEffort requestedReasoningEffort(String color) {
+        if (isBenchmark() && playerType(color) == PlayerType.STOCKFISH) return null;
         TournamentParticipant participant = "WHITE".equals(color) ? whiteParticipant : blackParticipant;
         if (participant != null) {
             return participant.controlType == TournamentParticipant.ControlType.HUMAN
@@ -239,9 +243,26 @@ public class Game extends PanacheEntityBase {
         return practiceKind != null;
     }
 
+    public boolean isBenchmark() {
+        return benchmarkPairId != null;
+    }
+
+    public boolean isOutsideCompetition() {
+        return isPractice() || isBenchmark();
+    }
+
+    public String benchmarkModelColor() {
+        return whiteModelId == null ? "BLACK" : "WHITE";
+    }
+
+    public String benchmarkModelId() {
+        return whiteModelId == null ? blackModelId : whiteModelId;
+    }
+
     public PlayerType playerType(String color) {
         boolean white = "WHITE".equals(color);
         if (isPractice()) return white ? whitePracticeControl : blackPracticeControl;
+        if (isBenchmark()) return color.equals(benchmarkModelColor()) ? PlayerType.AI : PlayerType.STOCKFISH;
         TournamentParticipant participant = white ? whiteParticipant : blackParticipant;
         return participant != null && participant.controlType == TournamentParticipant.ControlType.HUMAN
                 ? PlayerType.HUMAN : PlayerType.AI;

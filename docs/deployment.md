@@ -51,6 +51,12 @@ Back up the database before upgrading and recreate the backend and frontend toge
 
 From then on a restart or upgrade no longer pauses everything: see [Restarts](how-it-works.md#restarts). Games whose request was never sent resume, auto-runs keep running and serve queued resumes, and only games with a request in flight pause for inspection. The backend does not wait for outstanding answers when it stops, so each game with a request out at that moment needs a spend check. This remains a single-backend deployment: run one backend against a database.
 
+## Stockfish ladder migration (V31)
+
+Back up the database and recreate the backend and frontend together. Flyway `V31__stockfish_ladder.sql` adds benchmark definitions, paired games, and storage for resolved model IDs on benchmark attempts. Benchmark requests use the existing unique tournament creation UUID. Existing games and settings are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.
+
+The [Stockfish ladder](how-it-works.md#stockfish-ladder) checks the SHA-256 of a private, read-only executable copy and of the loaded NNUE networks at creation and before each search. The [bundled Stockfish](https://github.com/official-stockfish/Stockfish/blob/sf_19/README.md) includes its networks. Native builds must be able to load their weights when launched from the private directory and export them via Stockfish's `export_net` command. An executable or weight mismatch pauses the affected game. Restore the matching build and weights before resuming, or start a fresh run. The Java temporary directory must allow executable files and have room for a copy of Stockfish and its network exports. Practice searches and move evaluations use the currently installed engine.
+
 ## Mind games banter migration (V29)
 
 Back up the database before upgrading and recreate the backend and frontend together. Flyway `V29__mind_games_banter.sql` extends the allowed tournament banter values. Existing settings and prompt records are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.

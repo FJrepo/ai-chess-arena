@@ -381,6 +381,9 @@ public class GameTurnService {
         ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
         String message = chatMode.allowsMessages() && parseResult.message() != null
                 && !parseResult.message().isBlank() ? parseResult.message() : null;
+        // The live board retains repetition history. Save a board-rule ending under the same locks as the move.
+        ChessService.GameEndInfo endInfo = chessService.isGameOver(request.board())
+                ? chessService.getGameEndInfo(request.board()) : null;
         try {
             gameMoveService.recordModelMove(
                     request.gameId(),
@@ -396,7 +399,8 @@ public class GameTurnService {
                     request.promptVersion(),
                     request.promptHash(),
                     request.fen(),
-                    chatMode
+                    chatMode,
+                    endInfo
             );
         } catch (GameStateConflictException e) {
             LOG.warnf("Game %s: discarding %s move %s: %s",
@@ -405,15 +409,8 @@ public class GameTurnService {
             recordAttempt(request, attemptContext, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
             return TurnResult.stopped();
         }
-        // Attempt recording can pause the run and stop its loop at the budget cap. Finalize the
-        // committed move first, using the live board (including repetition history). The lifecycle
-        // rechecks cancellation under the locks before completing or advancing the tournament.
-        boolean terminal = chessService.isGameOver(request.board());
-        if (terminal) {
-            gameLifecycleService.completeGame(request.gameId(), chessService.getGameEndInfo(request.board()));
-        } else {
-            terminal = gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
-        }
+        // Attempt recording can pause the run at the budget cap, so check for adjudication first.
+        boolean terminal = endInfo != null || gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
         recordAttempt(request, attemptContext, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
         return terminal ? TurnResult.terminal() : TurnResult.recorded(moveResult.san(), message);
     }
@@ -465,7 +462,10 @@ public class GameTurnService {
         boolean atModelMaximum = response.modelMaxCompletionTokens() != null
                 && effective == response.modelMaxCompletionTokens();
         String remedy;
-        if (atModelMaximum) {
+        if (request.benchmark()) {
+            remedy = "The output limit and reasoning effort are fixed for this run. "
+                    + "Start a new benchmark with lower reasoning effort or a different model.";
+        } else if (atModelMaximum) {
             remedy = "Raising the tournament limit cannot help. "
                     + (openRouterService.offersReasoningEffort(request.modelId())
                     ? "Lower the reasoning effort and resume."
@@ -669,7 +669,8 @@ public class GameTurnService {
             ReasoningEffort reasoningEffort,
             BanterLevel tournamentBanterLevel,
             Long statusRevision,
-            GameConfiguration configuration
+            GameConfiguration configuration,
+            boolean benchmark
     ) {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
@@ -681,7 +682,7 @@ public class GameTurnService {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
                     history, lastMoveSan, lastMessage, isFirstMove, maxAttempts, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
-                    resignationAllowed, reasoningEffort, banterLevel, null, null);
+                    resignationAllowed, reasoningEffort, banterLevel, null, null, false);
         }
         /** Compatibility for callers without banter metadata. */
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,

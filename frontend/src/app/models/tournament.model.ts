@@ -156,6 +156,8 @@ export interface Game {
   id: string;
   tournamentId: string | null;
   practiceKind?: PracticeKind | null;
+  benchmarkRunId?: string | null;
+  benchmarkChatMode?: ChatMode | null;
   practiceSourceGameId?: string | null;
   practiceSourcePly?: number | null;
   stockfishElo?: number | null;

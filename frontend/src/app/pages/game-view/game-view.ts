@@ -140,6 +140,9 @@ export class GameView implements OnInit, OnDestroy {
   readonly displayedChatMode = computed(() => {
     if (this.game()?.practiceKind === 'HUMAN_STOCKFISH') return 'OFF';
     const game = this.game();
+    if (game?.benchmarkRunId && (this.turnState.snapshotOnly() || !game.turnStartedAt)) {
+      return game.benchmarkChatMode ?? null;
+    }
     if (this.turnState.snapshotOnly()) return null;
     return game?.turnStartedAt ? (game.turnChatMode ?? null) : this.tournamentChatMode();
   });
@@ -333,7 +336,12 @@ export class GameView implements OnInit, OnDestroy {
   });
 
   isLive!: () => boolean;
-  overrideAllowed = computed(() => this.gameActionsAvailable() && this.game()?.status === 'PAUSED');
+  overrideAllowed = computed(
+    () =>
+      this.gameActionsAvailable() &&
+      !this.game()?.benchmarkRunId &&
+      this.game()?.status === 'PAUSED',
+  );
   activeColor!: () => 'WHITE' | 'BLACK' | null;
   moveTimerSeconds!: () => number | null;
   moveTimerDisplay!: () => string;

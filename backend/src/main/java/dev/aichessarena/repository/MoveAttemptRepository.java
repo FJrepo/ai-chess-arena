@@ -32,7 +32,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
     public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId,
                                                         Boolean legalMoveHints) {
         String condition = GameRepository.hintsJoin(legalMoveHints)
-                + " where g.status in :reasoningStatuses and g.completedAt >= :cutoff"
+                + " where g.status in :reasoningStatuses and g.completedAt >= :cutoff and g.benchmarkPairId is null"
                 + GameRepository.tournamentPredicate("g", tournamentId)
                 + GameRepository.hintsPredicate(legalMoveHints);
         var parameters = Parameters.with("cutoff", cutoff)
@@ -74,6 +74,16 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
             };
         }
     }
+
+    public List<ResolvedModel> findResolvedBenchmarkModels(UUID runId) {
+        return getEntityManager().createQuery("""
+                select distinct a.modelId, a.resolvedModelId from MoveAttempt a
+                where a.game.tournament.id = :id and a.resolvedModelId is not null
+                order by a.modelId, a.resolvedModelId
+                """, ResolvedModel.class).setParameter("id", runId).getResultList();
+    }
+
+    public record ResolvedModel(String alias, String modelId) {}
 
     /** Lightweight usage projection for every outcome, without loading raw responses. */
     public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {

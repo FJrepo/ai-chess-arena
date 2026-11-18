@@ -167,6 +167,9 @@ public class GameConversationService {
         if (type == Game.PlayerType.HUMAN) {
             return "human player";
         }
+        if (type == Game.PlayerType.STOCKFISH) {
+            return "Stockfish chess engine";
+        }
         return modelId != null && !modelId.isBlank() ? modelId : "unknown model";
     }
 
