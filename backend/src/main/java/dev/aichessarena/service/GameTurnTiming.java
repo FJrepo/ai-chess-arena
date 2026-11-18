@@ -33,6 +33,9 @@ class GameTurnTiming {
     @Inject
     GameConfigurationHistory configurations;
 
+    @Inject
+    GameRunOwnership runOwnership;
+
     record TurnTimes(Instant startedAt, Instant deadlineAt, Integer configurationRevision) {
         static TurnTimes start(Integer timeoutSeconds) {
             Instant startedAt = Instant.now();
@@ -45,9 +48,12 @@ class GameTurnTiming {
         Game game = games.findByIdForUpdate(request.gameId());
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS || !request.shouldContinue().getAsBoolean()
                 || !GameMoveService.samePosition(game.currentFen, request.fen())
-                || GameLifecycleService.isTournamentCancelled(game)
+                || GameLifecycleService.isTournamentCancelled(game) || GameRunOwnership.staleWorker(game)
                 || (request.statusRevision() != null && request.statusRevision() != game.statusRevision)) {
             return null;
+        }
+        if (runOwnership != null) {
+            runOwnership.renew(game);
         }
         var id = game.id;
         int totalMoves = Math.toIntExact(moves.count("game.id", id));

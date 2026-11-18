@@ -21,12 +21,17 @@ import dev.aichessarena.dto.ModelCostBreakdownDto;
 import dev.aichessarena.dto.ModelReliabilityDetailDto;
 import dev.aichessarena.dto.ModelReliabilityDto;
 import dev.aichessarena.dto.ModelReliabilityResponseDto;
+import dev.aichessarena.dto.PersuasionCountDto;
+import dev.aichessarena.dto.PersuasionDto;
+import dev.aichessarena.dto.PersuasionRulesDto;
 import dev.aichessarena.dto.TalkativenessDto;
 import dev.aichessarena.dto.TournamentCostSummaryDto;
+import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.MoveAttempt;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository;
@@ -1212,6 +1217,219 @@ class AnalyticsServiceTest {
         assertEquals(1L, alpha.converted());
     }
 
+    private static final PromptService PROMPTS = new PromptService();
+    private static final String MIND_GAMES =
+            PROMPTS.getSystemPromptVersion(ChatMode.OPTIONAL, true, BanterLevel.MIND_GAMES);
+    private static final String SPICY = PROMPTS.getSystemPromptVersion(ChatMode.OPTIONAL, true, BanterLevel.SPICY);
+    private static final String POLITE = PROMPTS.getSystemPromptVersion(ChatMode.MANDATORY, true, BanterLevel.POLITE);
+
+    @Test
+    void persuasionCountsResignationsWhileNotLostAfterAnOpponentMessageByThePersuadersTone() {
+        // Black resigns after White's tenth move; the last move's evaluation is White's view.
+        Resigned talkedOut = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, -150, null);
+        Resigned lostAtTheBoundary = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 200, null);
+        Resigned spicyJustAbove = resigned("model.alpha", "model.gamma", "BLACK", SPICY, 199, null);
+        Resigned noRecentMessage = resigned("model.alpha", "model.gamma", "BLACK", MIND_GAMES, 0, null);
+        Resigned facingMate = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, null, 5);
+        Resigned unevaluated = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, null, null);
+        Resigned alphaPersuaded = resigned("model.beta", "model.alpha", "BLACK", POLITE, -100, null);
+        // White resigns after Black's tenth move at +1.50 for White: not lost.
+        Resigned whiteTalkedOut = resigned("model.gamma", "model.alpha", "WHITE", MIND_GAMES, 150, null);
+
+        List<Resigned> all = List.of(talkedOut, lostAtTheBoundary, spicyJustAbove, noRecentMessage, facingMate,
+                unevaluated, alphaPersuaded, whiteTalkedOut);
+        AnalyticsService service = service(games(all), moves(all), List.of(), List.of(
+                message(talkedOut, 10, "WHITE"),
+                message(lostAtTheBoundary, 10, "WHITE"),
+                // The oldest move of the three-move window still counts.
+                message(spicyJustAbove, 8, "WHITE"),
+                // Too early, from the resigner itself, and an empty message: none counts.
+                message(noRecentMessage, 7, "WHITE"),
+                message(noRecentMessage, 9, "BLACK"),
+                new PlyMessage(noRecentMessage.game().id, 10, "WHITE", 0),
+                message(facingMate, 10, "WHITE"),
+                message(unevaluated, 10, "WHITE"),
+                message(alphaPersuaded, 9, "WHITE"),
+                message(whiteTalkedOut, 10, "BLACK")));
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        assertEquals(new PersuasionRulesDto(-200, 3, 5), response.persuasionRules());
+        PersuasionDto alpha = row(response, "model.alpha").persuasion();
+        assertEquals(new PersuasionCountDto(6, 5, 2, false), alpha.asPersuaderMindGames());
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), alpha.asPersuaderOtherLevels());
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), alpha.asPersuaded());
+        PersuasionDto beta = row(response, "model.beta").persuasion();
+        assertEquals(new PersuasionCountDto(4, 3, 1, true), beta.asPersuaded());
+        assertEquals(new PersuasionCountDto(0, 0, 0, true), beta.asPersuaderMindGames());
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), beta.asPersuaderOtherLevels());
+        PersuasionDto gamma = row(response, "model.gamma").persuasion();
+        assertEquals(new PersuasionCountDto(3, 3, 2, true), gamma.asPersuaded());
+        assertEquals(new PersuasionCountDto(0, 0, 0, true), gamma.asPersuaderMindGames());
+    }
+
+    /**
+     * Regression: an operator override as the persuader's last move made the tone "Other levels" and took a slot of
+     * the message window. The window and the tone use the persuader's canonical model moves; the evaluation is still
+     * the final board ply's.
+     */
+    @Test
+    void persuasionSkipsOperatorOverridesAndUsesTheCanonicalModelPly() {
+        Resigned game = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, null, null);
+        Move last = game.moves().getLast();
+        last.modelId = null;
+        last.promptVersion = "admin-override";
+        last.isOverride = true;
+        last.evaluationCp = -100;
+        // A later duplicate of alpha's move 9 (possible before V8) with another tone: the earliest row wins.
+        Move duplicate = chatMove(game.game(), "model.alpha", 9, "WHITE", ChatMode.OPTIONAL);
+        duplicate.promptVersion = SPICY;
+        duplicate.createdAt = last.createdAt.plusMinutes(5);
+        List<Move> moves = new ArrayList<>(game.moves());
+        moves.add(duplicate);
+        // Alpha's message on move 7: within its last three model moves (7, 8, 9), not counting the override.
+        AnalyticsService service = service(List.of(game.game()), moves, List.of(),
+                List.of(message(game, 7, "WHITE")));
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(response, "model.alpha").persuasion()
+                .asPersuaderMindGames());
+        assertEquals(new PersuasionCountDto(0, 0, 0, true), row(response, "model.alpha").persuasion()
+                .asPersuaderOtherLevels());
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(response, "model.beta").persuasion().asPersuaded());
+    }
+
+    @Test
+    void persuasionWithoutAnyOpponentMessageIsNeverCounted() {
+        Resigned silent = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, -300, null);
+        AnalyticsService service = service(List.of(silent.game()), silent.moves(), List.of(), List.of());
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        assertEquals(new PersuasionCountDto(1, 1, 0, true), row(response, "model.alpha").persuasion()
+                .asPersuaderMindGames());
+        assertEquals(new PersuasionCountDto(1, 1, 0, true), row(response, "model.beta").persuasion().asPersuaded());
+        assertEquals(1, row(response, "model.beta").resignationsWhileNotLosing(),
+                "a resignation while winning is still 'while not losing', just not persuasion");
+    }
+
+    @Test
+    void persuasionCountsOnlyFinishedNonByeModelGamesOutsidePracticeAndBenchmarks() {
+        Resigned counted = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        Resigned practice = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        practice.game().practiceKind = Game.PracticeKind.FROM_GAME;
+        Resigned benchmark = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        benchmark.game().benchmarkPairId = UUID.randomUUID();
+        Resigned cancelled = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        cancelled.game().status = Game.GameStatus.CANCELLED;
+        Resigned running = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        running.game().status = Game.GameStatus.IN_PROGRESS;
+        running.game().completedAt = null;
+        Resigned bye = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        bye.game().blackParticipant = null;
+        bye.game().blackPlayerName = "BYE";
+        Resigned humanResigned = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        humanResigned.game().blackParticipant.controlType = TournamentParticipant.ControlType.HUMAN;
+        Resigned humanPersuader = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        humanPersuader.game().whiteParticipant.controlType = TournamentParticipant.ControlType.HUMAN;
+
+        List<Resigned> all = List.of(counted, practice, benchmark, cancelled, running, bye, humanResigned,
+                humanPersuader);
+        AnalyticsService service = service(games(all), moves(all), List.of(),
+                all.stream().map(game -> message(game, 10, "WHITE")).toList());
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(response, "model.alpha").persuasion()
+                .asPersuaderMindGames());
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(response, "model.beta").persuasion().asPersuaded());
+    }
+
+    @Test
+    void persuasionFollowsTheWindowTournamentHintsAndEffortFilters() {
+        Tournament unhinted = new Tournament();
+        unhinted.id = UUID.randomUUID();
+        unhinted.legalMoveHints = false;
+        Resigned inTournament = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        inTournament.game().tournament = unhinted;
+        Resigned highEffort = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        Resigned old = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
+        old.game().completedAt = YESTERDAY.minusDays(40);
+
+        List<Resigned> all = List.of(inTournament, highEffort, old);
+        AnalyticsService service = service(games(all), moves(all), List.of(),
+                all.stream().map(game -> message(game, 10, "WHITE")).toList());
+        // Every alpha move in highEffort was answered at high effort; all other sides have no telemetry (unknown).
+        ((FakeMoveAttemptRepository) service.moveAttemptRepository).reasoningAttempts = highEffort.moves().stream()
+                .filter(move -> "model.alpha".equals(move.modelId))
+                .map(move -> new MoveAttemptRepository.ReasoningAttempt(highEffort.game().id, move.color,
+                        move.modelId, move.moveNumber, 1, MoveAttempt.Outcome.ACCEPTED, ReasoningEffort.HIGH,
+                        null, null, true))
+                .toList();
+
+        assertEquals(2, persuaded(service.getComparison(30, null, 0), "model.beta"));
+        assertEquals(3, persuaded(service.getComparison(90, null, 0), "model.beta"));
+        assertEquals(1, persuaded(service.getComparison(30, unhinted.id, 0), "model.beta"));
+        assertEquals(1, persuaded(service.getComparison(30, null, 0, false), "model.beta"));
+        assertEquals(1, persuaded(service.getComparison(30, null, 0, true), "model.beta"));
+
+        AnalyticsModelComparisonDto high = service.getComparison(30, null, 0, null, "high");
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(high, "model.alpha").persuasion()
+                .asPersuaderMindGames());
+        assertTrue(high.models().stream().noneMatch(model -> model.modelId().equals("model.beta")),
+                "beta's sides have no known effort");
+        AnalyticsModelComparisonDto unknown = service.getComparison(30, null, 0, null, "unknown");
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(unknown, "model.alpha").persuasion()
+                .asPersuaderMindGames());
+        assertEquals(2, persuaded(unknown, "model.beta"));
+    }
+
+    private record Resigned(Game game, List<Move> moves) {
+    }
+
+    /**
+     * A finished model-vs-model game that {@code resigner} resigned: White plays ten moves, Black nine (when Black
+     * resigns) or ten (when White resigns at move 11). Every move of the resigner's opponent uses
+     * {@code persuaderVersion} as its prompt version; the last move carries the evaluation (White's view).
+     */
+    private Resigned resigned(String white, String black, String resigner, String persuaderVersion, Integer cp,
+                              Integer mate) {
+        boolean whiteResigns = "WHITE".equals(resigner);
+        Game game = finishedGame(white, black, whiteResigns ? Game.GameResult.BLACK_WINS : Game.GameResult.WHITE_WINS,
+                Game.ResultReason.RESIGNATION, YESTERDAY);
+        List<Move> moves = new ArrayList<>();
+        for (int number = 1; number <= 10; number++) {
+            Move whiteMove = chatMove(game, white, number, "WHITE", ChatMode.OPTIONAL);
+            whiteMove.promptVersion = whiteResigns ? POLITE : persuaderVersion;
+            moves.add(whiteMove);
+            if (number < 10 || whiteResigns) {
+                Move blackMove = chatMove(game, black, number, "BLACK", ChatMode.OPTIONAL);
+                blackMove.promptVersion = whiteResigns ? persuaderVersion : POLITE;
+                moves.add(blackMove);
+            }
+        }
+        moves.getLast().evaluationCp = cp;
+        moves.getLast().evaluationMate = mate;
+        return new Resigned(game, moves);
+    }
+
+    private static PlyMessage message(Resigned resigned, int moveNumber, String color) {
+        return new PlyMessage(resigned.game().id, moveNumber, color, 42);
+    }
+
+    private static List<Game> games(List<Resigned> resigned) {
+        return resigned.stream().map(Resigned::game).toList();
+    }
+
+    private static List<Move> moves(List<Resigned> resigned) {
+        return resigned.stream().flatMap(game -> game.moves().stream()).toList();
+    }
+
+    private long persuaded(AnalyticsModelComparisonDto response, String modelId) {
+        return row(response, modelId).persuasion().asPersuaded().talkedOut();
+    }
+
     private MoveAttemptRepository.AttemptUsage usage(Game game, String model, Integer prompt,
                                                     Integer cached, Integer writes) {
         return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes, null);
@@ -1350,6 +1568,8 @@ class AnalyticsServiceTest {
         @Override
         public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
             return games.stream()
+                    .filter(game -> tournamentId == null
+                            || game.tournament != null && tournamentId.equals(game.tournament.id))
                     .filter(game -> legalMoveHints == null || game.hasLegalMoveHints() == legalMoveHints)
                     .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status)
                             ? game.completedAt != null && !game.completedAt.isBefore(cutoff)
@@ -1385,6 +1605,7 @@ class AnalyticsServiceTest {
     private static final class FakeMoveAttemptRepository extends MoveAttemptRepository {
         private final List<RejectedAttemptCost> costs;
         private LocalDateTime reasoningCutoff;
+        private List<ReasoningAttempt> reasoningAttempts = List.of();
         private LocalDateTime costCutoff;
 
         private FakeMoveAttemptRepository(List<RejectedAttemptCost> costs) {
@@ -1394,7 +1615,7 @@ class AnalyticsServiceTest {
         @Override
         public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
             reasoningCutoff = cutoff;
-            return List.of();
+            return reasoningAttempts;
         }
 
         @Override

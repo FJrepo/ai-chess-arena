@@ -1,5 +1,6 @@
 package dev.aichessarena.service;
 
+import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.dto.GameDto;
 import dev.aichessarena.dto.GameDto.RunCapacity;
@@ -23,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import org.jboss.logging.Logger;
@@ -71,6 +73,15 @@ public class GameLifecycleService {
     @Inject
     GameConfigurationHistory configurations;
 
+    @Inject
+    GameRunOwnership runOwnership;
+
+    @Inject
+    GameConversationService conversations;
+
+    @Inject
+    ChessService chessService;
+
     /**
      * Starts a WAITING or PAUSED game under the tournament and game row locks, or records a queued resume.
      *
@@ -84,11 +95,43 @@ public class GameLifecycleService {
 
     @Transactional
     GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
+        return markGameStarted(gameId, automatic, queueIfFull, claimLoop, null, null);
+    }
+
+    /**
+     * Like {@link #markGameStarted(UUID, boolean, boolean, BooleanSupplier)}; a started game belongs to the loop with
+     * token {@code runOwner} (null: no loop).
+     *
+     * <p>A game with an unresolved request (sent, its answer never recorded) never starts or queues without
+     * {@code acknowledgedRequest}, the operator's statement that spend was checked for exactly that request (its
+     * {@link GameDto#uncertainRequestSentAt()}): it is held in the inspection pause instead (committed) and returned
+     * with {@link GameDto#uncertainRequest()} still set. Compared under the game lock, an acknowledgement clears the
+     * record; it is rejected when there is nothing to acknowledge or it names another (e.g. newer) request.
+     */
+    @Transactional
+    GameDto markGameStarted(UUID gameId, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop,
+                            UUID runOwner, Instant acknowledgedRequest) {
         Game game = requireLockedGame(gameId);
         requireActiveTournament(game);
         if (keys != null && game.practiceKind != Game.PracticeKind.HUMAN_STOCKFISH) keys.requireKey();
         if (game.status != GameStatus.WAITING && game.status != GameStatus.PAUSED) {
             throw new WebApplicationException(startConflictMessage(game.status), Response.Status.CONFLICT);
+        }
+        if (game.requestSentAt == null && acknowledgedRequest != null) {
+            throw new GameStateConflictException("This game has no unconfirmed model request; refresh and resume it");
+        }
+        if (acknowledgedRequest != null && !acknowledgedRequest.equals(game.requestSentAt)) {
+            throw new GameStateConflictException(
+                    "The unconfirmed model request has changed; refresh and check spend for the current one");
+        }
+        if (game.requestSentAt != null) {
+            if (acknowledgedRequest == null) {
+                holdForInspection(game, UNRESOLVED_REQUEST);
+                return DtoMapper.toDto(game, false);
+            }
+            LOG.infof("Game %s: spend for the request sent at %s was checked by the operator", gameId,
+                    game.requestSentAt);
+            game.requestSentAt = null;
         }
         if (autoRuns != null && autoRuns.shouldQueueResume(game, automatic, queueIfFull)) {
             RunCapacity capacity;
@@ -114,6 +157,9 @@ public class GameLifecycleService {
         game.startedAt = game.startedAt != null ? game.startedAt : LocalDateTime.now();
         game.statusDetail = null;
         game.statusRevision++;
+        if (runOwnership != null) {
+            runOwnership.claim(game, runOwner);
+        }
         gameRepository.persist(game);
         announceStatus(game, null, null);
         if (capturedStart && liveUpdates != null) {
@@ -187,26 +233,248 @@ public class GameLifecycleService {
     }
 
     /**
-     * No game loop survives a restart, so games left IN_PROGRESS would be stuck (start returns 409).
-     * Pause them with a visible reason so they can be resumed. Called once at startup by {@link GameRecovery}.
+     * Games a restart may have interrupted: every game in progress, and every paused game (a pause, e.g. by the budget,
+     * can land between a deciding move and its completion, or while a request is unanswered). Waiting games have made
+     * no move since they were created. Called once at startup by {@link GameRecovery}.
      */
     @Transactional
-    public void pauseGamesOrphanedByRestart() {
-        int paused = gameRepository.update(
-                "status = ?1, statusDetail = ?2, statusRevision = statusRevision + 1, " +
-                        "liveRevision = liveRevision + 1, turnStartedAt = null, turnDeadlineAt = null, " +
-                        "turnChatMode = null, turnBanterLevel = null where status = ?3",
-                GameStatus.PAUSED, RESTART_DETAIL, GameStatus.IN_PROGRESS
-        );
-        if (paused > 0) {
-            LOG.infof("Paused %d game(s) that were in progress before the restart", paused);
+    public List<UUID> gamesInterruptedByRestart() {
+        return gameRepository.getEntityManager().createQuery("""
+                select g.id from Game g
+                where g.status = :inProgress or g.status = :paused
+                order by g.id
+                """, UUID.class)
+                .setParameter("inProgress", GameStatus.IN_PROGRESS)
+                .setParameter("paused", GameStatus.PAUSED)
+                .getResultList();
+    }
+
+    /**
+     * Games in progress or paused whose loop stopped renewing its lease, e.g. after it ended without being able to
+     * commit its final state (or, after a human move that ended the game, its completion).
+     */
+    @Transactional
+    public List<UUID> gamesWithExpiredLease() {
+        return gameRepository.getEntityManager().createQuery("""
+                select g.id from Game g
+                where g.status in :open and g.runOwner is not null and g.runLeaseUntil <= :now
+                order by g.id
+                """, UUID.class)
+                .setParameter("open", List.of(GameStatus.IN_PROGRESS, GameStatus.PAUSED))
+                .setParameter("now", Instant.now())
+                .getResultList();
+    }
+
+    /** Why a game's loop ended without finishing its turn, and what that means for its request in flight. */
+    enum Interruption {
+        RESTART("was in flight during a backend restart and may already have been charged"),
+        EXPIRED_LEASE("was in flight when its game loop stopped and may already have been charged");
+
+        private final String inFlight;
+
+        Interruption(String inFlight) {
+            this.inFlight = inFlight;
+        }
+    }
+
+    // Why a model request needs the operator's spend check (see inspectionDetail).
+    static final String UNRESOLVED_REQUEST = "has no recorded answer and may already have been charged";
+    static final String DELIVERY_UNCERTAIN = "lost its connection after it was sent and may already have been charged";
+    static final String UNRECORDED_ANSWER = "was answered, but the answer could not be saved, so its cost may be missing";
+    static final String INSPECTION_SUFFIX = ". Check spend, then resume.";
+
+    /**
+     * Decides, under the tournament and game locks, how a game whose loop did not survive continues
+     * ({@link TurnPolicy#afterInterruption}). For {@link TurnPolicy.Action#RESUME} the game now belongs to the loop with
+     * {@code token}, which the caller starts after this transaction commits; any earlier owner is fenced out.
+     *
+     * @return the action taken, or null when the game needed no decision (no longer interrupted, or legacy rows of a
+     *         cancelled tournament, which are paused)
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public TurnPolicy.Action recoverInterruptedGame(UUID gameId, UUID token, Interruption cause) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null) {
+            return null;
+        }
+        boolean inProgress = game.status == GameStatus.IN_PROGRESS;
+        boolean open = inProgress || game.status == GameStatus.PAUSED;
+        boolean candidate = open
+                && (cause == Interruption.RESTART || GameRunOwnership.leaseExpired(game, Instant.now()));
+        if (!candidate) {
+            return null;
+        }
+        if (!inProgress) {
+            // A paused game only needs finishing when decided, or holding while a request is unresolved.
+            TurnPolicy.Action held = null;
+            if (!isTournamentCancelled(game) && !completeIfDecided(game) && game.requestSentAt != null) {
+                holdForInspection(game, cause.inFlight);
+                held = TurnPolicy.Action.PAUSE_IN_FLIGHT;
+            }
+            if (runOwnership != null && GameRunOwnership.leaseExpired(game, Instant.now())) {
+                runOwnership.claim(game, null);
+            }
+            return held;
+        }
+        if (isTournamentCancelled(game)) {
+            // Legacy inconsistent row: nothing can run in a cancelled tournament.
+            pauseLockedGame(game, RESTART_DETAIL);
+            return null;
+        }
+        if (completeIfDecided(game)) {
+            // The deciding move was committed, but the loop stopped before it could finish the game.
+            if (runOwnership != null) {
+                runOwnership.claim(game, null);
+            }
+            LOG.infof("Game %s was already decided when its loop was interrupted %s; completed it", gameId, cause);
+            return null;
+        }
+        String side = sideToMove(game.currentFen);
+        Game.PlayerType player = game.playerType(side);
+        boolean providerConnected = keys == null || !keys.key().isBlank();
+        TurnPolicy.Action action = TurnPolicy.afterInterruption(
+                game.requestSentAt != null, player == null ? Game.PlayerType.HUMAN : player, providerConnected);
+        switch (action) {
+            case RESUME -> {
+                if (runOwnership != null) {
+                    runOwnership.claim(game, token);
+                }
+                // The new loop starts a new turn clock; the interrupted turn's clock is void.
+                game.clearTurn();
+                if (liveUpdates != null) {
+                    liveUpdates.changed(game);
+                }
+                LOG.infof("Game %s resumes after its loop was interrupted (%s)", gameId, cause);
+            }
+            case AWAIT_HUMAN -> {
+                if (runOwnership != null) {
+                    runOwnership.claim(game, null);
+                }
+            }
+            case PAUSE_IN_FLIGHT -> pauseLockedForInspection(game, cause.inFlight);
+            case PAUSE_DISCONNECTED -> pauseLockedGame(game, DISCONNECTED_DETAIL);
+            default -> throw new IllegalStateException("Unexpected recovery action " + action);
+        }
+        return action;
+    }
+
+    static final String DISCONNECTED_DETAIL =
+            "The backend restarted without an OpenRouter connection. Connect OpenRouter, then resume.";
+
+    /**
+     * Completes a game whose committed position is already decided (mate, stalemate, draw rules or an eligible
+     * adjudication), as the loop would have done. The caller holds the locks.
+     */
+    private boolean completeIfDecided(Game game) {
+        if (isTerminal(game) || conversations == null || chessService == null) {
+            return false;
+        }
+        Board board = conversations.initializeBoard(game.id, game);
+        if (chessService.isGameOver(board)) {
+            completeLockedGame(game, chessService.getGameEndInfo(board));
+            return true;
+        }
+        return WinAdjudication.enabledFor(game) && adjudicateLocked(game);
+    }
+
+    /** "A model request (model, side, move n) {clause}. Check spend, then resume." for the side to move. */
+    static String inspectionDetail(Game game, String clause) {
+        String side = sideToMove(game.currentFen);
+        String model = "WHITE".equals(side) ? game.whiteModelId : game.blackModelId;
+        String player = "WHITE".equals(side) ? "White" : "Black";
+        return ("A model request (%s, %s, move %d) %s" + INSPECTION_SUFFIX)
+                .formatted(model == null ? "unknown model" : model, player, fullMoveNumber(game.currentFen), clause);
+    }
+
+    /**
+     * Pauses a game the operator must inspect before another request is sent, for a request that {@code clause}
+     * describes ({@link #UNRESOLVED_REQUEST}, {@link #DELIVERY_UNCERTAIN}, {@link #UNRECORDED_ANSWER}). Also applies to
+     * a game already paused meanwhile, whose reason it replaces.
+     */
+    @Transactional
+    public void pauseForInspection(UUID gameId, String clause) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || GameRunOwnership.staleWorker(game)
+                || (game.status != GameStatus.IN_PROGRESS && game.status != GameStatus.PAUSED)) {
+            return;
+        }
+        pauseLockedForInspection(game, clause);
+    }
+
+    void pauseLockedForInspection(Game game, String clause) {
+        pauseLockedGame(game, inspectionDetail(game, clause));
+    }
+
+    /**
+     * Keeps a game with an unresolved request in the inspection pause: pauses it with {@code clause} unless it already
+     * is (paused with an inspection reason and no queued resume). The request record stays until the operator
+     * acknowledges it.
+     */
+    void holdForInspection(Game game, String clause) {
+        boolean held = game.status == GameStatus.PAUSED && game.resumeRequestedAt == null
+                && game.statusDetail != null && game.statusDetail.endsWith(INSPECTION_SUFFIX);
+        if (!held) {
+            pauseLockedForInspection(game, clause);
+        }
+    }
+
+    /**
+     * A loop is ending: if its game still has an unresolved request, nothing will record the answer any more, so the
+     * game is held in the inspection pause; otherwise an in-progress game pauses with {@code detail} (null: none).
+     */
+    @Transactional
+    public void pauseEndingLoop(UUID gameId, String detail) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || GameRunOwnership.staleWorker(game)) {
+            return;
+        }
+        if (game.requestSentAt != null && (game.status == GameStatus.IN_PROGRESS || game.status == GameStatus.PAUSED)) {
+            holdForInspection(game, UNRESOLVED_REQUEST);
+        } else if (detail != null && game.status == GameStatus.IN_PROGRESS) {
+            pauseLockedGame(game, detail);
+        }
+    }
+
+    /**
+     * Pauses a game for the operator with {@code detail}. A queued resume is withdrawn, so the game is not started
+     * without inspection. An unresolved request record stays (see {@link #markGameStarted}).
+     */
+    private void pauseLockedGame(Game game, String detail) {
+        game.status = GameStatus.PAUSED;
+        game.statusDetail = boundDetail(detail);
+        game.resumeRequestedAt = null;
+        game.statusRevision++;
+        if (runOwnership != null) {
+            runOwnership.claim(game, null);
+        }
+        gameRepository.persist(game);
+        LOG.warnf("Game %s paused: %s", game.id, game.statusDetail);
+        announceStatus(game, null, null);
+    }
+
+    static String sideToMove(String fen) {
+        String[] fields = fen == null ? new String[0] : fen.trim().split("\\s+");
+        return fields.length > 1 && "b".equals(fields[1]) ? "BLACK" : "WHITE";
+    }
+
+    private static int fullMoveNumber(String fen) {
+        String[] fields = fen == null ? new String[0] : fen.trim().split("\\s+");
+        try {
+            return fields.length > 5 ? Integer.parseInt(fields[5]) : 1;
+        } catch (NumberFormatException e) {
+            return 1;
         }
     }
 
     @Transactional
     public void markGamePaused(UUID gameId) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (game == null || game.status != GameStatus.IN_PROGRESS) {
+        if (game == null || game.status != GameStatus.IN_PROGRESS || GameRunOwnership.staleWorker(game)) {
+            return;
+        }
+        if (game.requestSentAt != null) {
+            // Called once no loop works on the game: an answer still missing will not be recorded any more.
+            holdForInspection(game, UNRESOLVED_REQUEST);
             return;
         }
         game.status = GameStatus.PAUSED;
@@ -229,7 +497,7 @@ public class GameLifecycleService {
     @Transactional
     public void pauseWithReason(UUID gameId, String detail) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (game == null || game.status != GameStatus.IN_PROGRESS) {
+        if (game == null || game.status != GameStatus.IN_PROGRESS || GameRunOwnership.staleWorker(game)) {
             return;
         }
         String boundedDetail = boundDetail(detail);
@@ -244,7 +512,7 @@ public class GameLifecycleService {
     @Transactional
     public void completeGame(UUID gameId, ChessService.GameEndInfo endInfo) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (game == null || isTerminal(game) || isTournamentCancelled(game)) {
+        if (game == null || isTerminal(game) || isTournamentCancelled(game) || GameRunOwnership.staleWorker(game)) {
             return;
         }
         completeLockedGame(game, endInfo);
@@ -276,17 +544,22 @@ public class GameLifecycleService {
             return false;
         }
         gameRepository.refreshForUpdate(game);
-        if (game.status != GameStatus.IN_PROGRESS || isTournamentCancelled(game)
+        if (game.status != GameStatus.IN_PROGRESS || isTournamentCancelled(game) || GameRunOwnership.staleWorker(game)
                 || !GameMoveService.samePosition(game.currentFen, expectedFen)
                 || !WinAdjudication.enabledFor(game)) {
             return false;
         }
-        String winner = WinAdjudication.winner(moveRepository.findByGameId(gameId));
+        return adjudicateLocked(game);
+    }
+
+    /** Completes the locked game by adjudication when its stored evaluations decide it. */
+    private boolean adjudicateLocked(Game game) {
+        String winner = WinAdjudication.winner(moveRepository.findByGameId(game.id));
         if (winner == null) {
             return false;
         }
         if (configurations != null) {
-            game.adjudicationConfigurationRevision = configurations.recordRevision(gameId, configurations.capture(game)).number();
+            game.adjudicationConfigurationRevision = configurations.recordRevision(game.id, configurations.capture(game)).number();
         }
         completeLockedGame(game, new ChessService.GameEndInfo(winner + "_WINS", "ADJUDICATION"));
         return true;
@@ -308,9 +581,11 @@ public class GameLifecycleService {
             throw new GameStateConflictException("Game is no longer in progress");
         }
         requireActiveTournament(game);
+        GameRunOwnership.requireOwner(game);
         if (!GameMoveService.samePosition(game.currentFen, resignation.expectedFen())) {
             throw new GameStateConflictException("Position changed while the model was thinking");
         }
+        GameRunOwnership.answerRecorded(game);
         if (resignation.costUsd() != null) {
             game.totalCostUsd = game.totalCostUsd.add(resignation.costUsd());
         }
@@ -433,12 +708,15 @@ public class GameLifecycleService {
 
     private Game markForfeit(UUID gameId, String forfeitColor, ResultReason reason) {
         Game game = gameRepository.findByIdForUpdate(gameId);
-        if (game == null || game.status != GameStatus.IN_PROGRESS || isTournamentCancelled(game)) {
+        if (game == null || game.status != GameStatus.IN_PROGRESS || isTournamentCancelled(game)
+                || GameRunOwnership.staleWorker(game)) {
             // Only a game that is actually being played can be forfeited (never a paused or finished one).
             return null;
         }
         game.status = GameStatus.FORFEIT;
         game.resumeRequestedAt = null;
+        // The game is over: no request will follow, so an unresolved one is settled with the forfeit.
+        GameRunOwnership.answerRecorded(game);
         game.result = "WHITE".equals(forfeitColor) ? GameResult.WHITE_FORFEIT : GameResult.BLACK_FORFEIT;
         game.resultReason = reason;
         game.statusDetail = null;

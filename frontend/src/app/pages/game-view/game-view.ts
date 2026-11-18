@@ -94,6 +94,9 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
 
+/** The last sentence of every reason the server gives for a spend-check pause. */
+const SPEND_CHECK_SENTENCE = 'Check spend, then resume.';
+
 @Component({
   selector: 'app-game-view',
   standalone: true,
@@ -1011,6 +1014,14 @@ export class GameView implements OnInit, OnDestroy {
           previous?.status === 'PAUSED' &&
           (previous.resumeRequestedAt || msg.resumeRequestedAt);
         if (status && isFinishedStatus(status)) this.pendingPromotion.set(null);
+        // A spend-check pause (its reason ends with the server's fixed sentence) needs the snapshot's flag.
+        if (
+          status === 'PAUSED' &&
+          msg.detail?.endsWith(SPEND_CHECK_SENTENCE) &&
+          !this.loadInFlight
+        ) {
+          this.loadGame(true);
+        }
         if (status === 'PAUSED' && !queueChangedWhilePaused && previous?.tournamentId) {
           ++this.settingsGeneration;
           this.pauseSettingsSub?.unsubscribe();
@@ -1031,6 +1042,10 @@ export class GameView implements OnInit, OnDestroy {
                 totalCostUsd: msg.totalCostUsd ?? g.totalCostUsd,
                 resumeRequestedAt: msg.resumeRequestedAt ?? null,
                 runCapacity: msg.runCapacity ?? null,
+                // Only a pause can hold a spend check; the snapshot read on a pause sets it.
+                uncertainRequest: status && status !== 'PAUSED' ? false : g.uncertainRequest,
+                uncertainRequestSentAt:
+                  status && status !== 'PAUSED' ? null : g.uncertainRequestSentAt,
                 statusRevision: msg.statusRevision ?? g.statusRevision,
                 startedAt:
                   status === 'IN_PROGRESS'
@@ -1341,6 +1356,26 @@ export class GameView implements OnInit, OnDestroy {
             : 'Failed to resume the game.',
         );
       },
+    });
+  }
+
+  /** Resumes a game paused for a spend check once the operator has checked the spend of its unconfirmed request. */
+  /**
+   * `requestSentAt` is the request the operator saw when clicking. It is captured before the asynchronous key check,
+   * so a live update meanwhile cannot make this acknowledge a newer request.
+   */
+  resumeAfterSpendCheck(requestSentAt: string) {
+    if (!requestSentAt) return;
+    this.withCurrentGameKey(() => {
+      if (this.savingLimit()) return;
+      this.runGameAction(this.api.resumeAfterSpendCheck(this.gameId, requestSentAt), {
+        next: (game) => this.applyResumeSnapshot(game),
+        error: (err) => {
+          this.showServerError(err, 'Failed to resume the game.');
+          // Another tab may have resumed it, or a newer request needs its own spend check: show the current state.
+          if (err?.status === 409) this.loadGame();
+        },
+      });
     });
   }
 

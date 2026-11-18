@@ -31,7 +31,8 @@ public class LiveGamesRepository {
                 )
                 select g.id, g.status, t.name, g.white_player_name, g.black_player_name,
                        g.practice_kind is not null, g.current_fen,
-                       latest.id, latest.evaluation_cp, latest.evaluation_mate
+                       latest.id, latest.evaluation_cp, latest.evaluation_mate,
+                       case when g.status = 'PAUSED' then g.status_detail end
                 from selected s
                 join games g on g.id = s.id
                 left join tournaments t on t.id = g.tournament_id
@@ -49,7 +50,7 @@ public class LiveGamesRepository {
         for (Object[] row : rows) {
             GameSummary summary = new GameSummary((UUID) row[0], (String) row[1], (String) row[2],
                     (String) row[3], (String) row[4], (boolean) row[5], fullMoveNumber((String) row[6]),
-                    (Integer) row[8], (Integer) row[9]);
+                    (Integer) row[8], (Integer) row[9], (String) row[10]);
             var scored = new ScoredGame(summary, (UUID) row[7]);
             if ("IN_PROGRESS".equals(summary.status()) || "PAUSED".equals(summary.status())) {
                 active.merge(summary.id(), scored, LiveGamesRepository::earliestId);

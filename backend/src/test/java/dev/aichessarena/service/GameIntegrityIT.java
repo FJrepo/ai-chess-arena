@@ -133,21 +133,6 @@ class GameIntegrityIT {
     }
 
     @Test
-    void gamesLeftInProgressByARestartArePausedWithAReason() {
-        UUID running = newGame(GameStatus.IN_PROGRESS);
-        UUID finished = newGame(GameStatus.COMPLETED);
-
-        lifecycle.pauseGamesOrphanedByRestart();
-
-        Game paused = QuarkusTransaction.requiringNew().call(() -> games.findById(running));
-        assertEquals(GameStatus.PAUSED, paused.status);
-        assertEquals(GameLifecycleService.RESTART_DETAIL, paused.statusDetail);
-        assertEquals(GameStatus.COMPLETED, statusOf(finished));
-        lifecycle.markGameStarted(running);
-        assertEquals(GameStatus.IN_PROGRESS, statusOf(running));
-    }
-
-    @Test
     void databaseRejectsADuplicatePly() {
         UUID id = newGame(GameStatus.IN_PROGRESS);
         insertMove(id, "e4", AFTER_E4);

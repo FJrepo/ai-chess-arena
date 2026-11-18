@@ -23,6 +23,8 @@ public class TournamentRunScheduler {
     GameEngineService engine;
     @Inject
     Event<RunChanged> changes;
+    @Inject
+    GameRecovery recovery;
     private volatile boolean recovered;
 
     public record RunChanged(UUID tournamentId) {}
@@ -48,6 +50,11 @@ public class TournamentRunScheduler {
             engine.sweepRetainedConversations();
         } catch (RuntimeException e) {
             LOG.warn("Retained conversation cleanup failed; the safety tick will retry", e);
+        }
+        try {
+            recovery.recoverExpiredLeases();
+        } catch (RuntimeException e) {
+            LOG.warn("Recovering games with an expired lease failed; the safety tick will retry", e);
         }
         for (var t : tournaments.list("autoRunStatus", AutoRunStatus.RUNNING)) schedule(t.id);
     }

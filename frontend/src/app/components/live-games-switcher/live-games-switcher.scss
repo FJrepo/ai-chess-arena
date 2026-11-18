@@ -105,3 +105,14 @@
 .practice {
   background: var(--mat-sys-surface-container-highest);
 }
+
+// The pause reason of a paused game: up to two quiet lines under its details, so its closing
+// instruction (such as "Check spend, then resume.") stays visible; full text on hover.
+.reason {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--app-text-secondary-size);
+  color: var(--mat-sys-on-surface-variant);
+}

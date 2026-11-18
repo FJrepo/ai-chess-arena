@@ -8,6 +8,8 @@ export interface LiveGameSummary {
   moveNumber?: number;
   evaluationCp?: number;
   evaluationMate?: number;
+  /** Why a paused game needs attention, e.g. a model request that was in flight during a restart. */
+  statusDetail?: string | null;
 }
 
 export interface LiveGamesSnapshot {

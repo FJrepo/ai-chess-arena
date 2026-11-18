@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.aichessarena.entity.Game.PlayerType;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.service.TurnPolicy.Action;
 import java.util.List;
@@ -63,5 +64,55 @@ class TurnPolicyTest {
                 assertEquals(timedTurn && !providerProblem ? Action.FORFEIT_TIMEOUT : Action.PAUSE_PROVIDER, timeout);
             }
         }
+    }
+
+    @Test
+    void anInterruptedRequestPausesForInspectionAndNeverSentWorkResumes() {
+        for (PlayerType side : PlayerType.values()) {
+            for (boolean connected : List.of(false, true)) {
+                assertEquals(Action.PAUSE_IN_FLIGHT, TurnPolicy.afterInterruption(true, side, connected));
+            }
+        }
+        assertEquals(Action.RESUME, TurnPolicy.afterInterruption(false, PlayerType.AI, true));
+        assertEquals(Action.PAUSE_DISCONNECTED, TurnPolicy.afterInterruption(false, PlayerType.AI, false));
+        // Engine turns cost nothing and need no OpenRouter connection.
+        assertEquals(Action.RESUME, TurnPolicy.afterInterruption(false, PlayerType.STOCKFISH, false));
+        assertEquals(Action.RESUME, TurnPolicy.afterInterruption(false, PlayerType.STOCKFISH, true));
+        assertEquals(Action.AWAIT_HUMAN, TurnPolicy.afterInterruption(false, PlayerType.HUMAN, false));
+        assertEquals(Action.AWAIT_HUMAN, TurnPolicy.afterInterruption(false, PlayerType.HUMAN, true));
+    }
+
+    @Test
+    void aRequestThatMayHaveBeenDeliveredIsNeverRetried() {
+        for (Outcome outcome : List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_FATAL)) {
+            for (Long remaining : java.util.Arrays.asList(null, 0L, 10L)) {
+                assertEquals(Action.PAUSE_DELIVERY_UNCERTAIN,
+                        TurnPolicy.afterProviderFailure(outcome, remaining, 1L, true));
+            }
+        }
+        assertEquals(Action.RETRY_PROVIDER, TurnPolicy.afterProviderFailure(Outcome.PROVIDER_RETRYABLE, null, 1L, false));
+    }
+
+    @Test
+    void noRetryFollowsAnAnswerThatWasNotSaved() {
+        for (Action retry : List.of(Action.RETRY_MODEL, Action.RETRY_PROVIDER)) {
+            assertEquals(Action.PAUSE_UNRECORDED, TurnPolicy.beforeRetry(retry, false));
+            assertEquals(retry, TurnPolicy.beforeRetry(retry, true));
+        }
+        for (Action other : List.of(Action.FORFEIT_INVALID_MOVES, Action.PAUSE_PROVIDER, Action.ACCEPT)) {
+            assertEquals(other, TurnPolicy.beforeRetry(other, false));
+        }
+    }
+
+    @Test
+    void theMoveTimeRunningOutIsALossOnTimeEvenForAStartedAnswer() {
+        for (boolean charged : List.of(false, true)) {
+            assertEquals(Action.FORFEIT_TIMEOUT, TurnPolicy.afterTimeout(true, false, charged));
+        }
+        // Not the model's fault: earlier provider problems, or no move time limit at all.
+        assertEquals(Action.PAUSE_PROVIDER, TurnPolicy.afterTimeout(true, true, false));
+        assertEquals(Action.PAUSE_DELIVERY_UNCERTAIN, TurnPolicy.afterTimeout(true, true, true));
+        assertEquals(Action.PAUSE_PROVIDER, TurnPolicy.afterTimeout(false, false, false));
+        assertEquals(Action.PAUSE_DELIVERY_UNCERTAIN, TurnPolicy.afterTimeout(false, false, true));
     }
 }

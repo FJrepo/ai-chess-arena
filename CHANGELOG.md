@@ -15,6 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V31__stockfish_ladder.sql` adds benchmark definitions and paired games, requires a creation UUID for benchmarks, and records concrete model IDs reported for moving aliases. Back up the database and recreate backend and frontend together. Existing games need no backfill.
 
+- Flyway `V32__durable_runs.sql` records which game loop owns a game and whether a model request is in flight. The previous version kept no such record, so the upgrade pauses games it left in progress (check spend, then resume) and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. See [Durable runs migration (V32)](docs/deployment.md#durable-runs-migration-v32).
+
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
   - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
@@ -26,6 +28,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Run the **Stockfish ladder** against a verified engine build and weights, compare color-paired results and spend, and cancel unfinished runs without losing results. Benchmark reports show concrete model IDs when OpenRouter resolves a moving alias.
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
+- The **Live games** menu shows why a paused game needs attention.
+- See on the Analytics **Behaviour** tab which models talk opponents out of positions that were not lost (better than −2.00 pawns, after a chat message), split into Mind games and other banter levels, and which models let themselves be talked out.
 
 ### Changed
 
@@ -34,6 +38,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
 - Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.
 - Removed the `trashTalkEnabled` flag, replaced by chat modes since 1.4, from the API and the database.
+- Runs survive a backend restart: games whose model request was never sent resume on their own, auto-runs keep running and queued resumes keep their places. A game with a request in flight pauses with a reason to check spend, so a possibly charged request is never sent twice. Practice and Stockfish games follow the same rules.
+- A request that may have reached OpenRouter is never retried automatically: a connection that breaks or times out after sending, a broken successful answer, or an answer that could not be saved pauses the game for a spend check. Connection failures before sending are still retried; after sending, only OpenRouter's complete error document (one JSON object with `error.code` and `error.message`) with a status that shows nothing was run (400, 401, 402, 403, 404, 413, 422, 429, 500, 502, 503, 504) is an ordinary failure. A choice that reports an error, and (without a move time limit) a started answer that reaches the safety cap, pause for a spend check instead of being retried. Running out of move time stays a loss on time, also once the answer has started; that attempt is recorded as a timeout with an unknown cost, and the move time starts only after the first request is admitted. A cache-control rejection is recorded before its plain retry is checked like any request.
+- A game held for a spend check resumes only through **Spend checked, resume** (`acknowledgeUncertainRequest` names the request, so a stale tab cannot confirm a newer one); a plain resume, queued resume, the scheduler and restart recovery never clear it. Restart recovery also completes paused games whose last move already decided them. See [Restarts](docs/how-it-works.md#restarts).
 
 ### Fixed
 

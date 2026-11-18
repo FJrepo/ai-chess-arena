@@ -17,7 +17,6 @@ import jakarta.transaction.TransactionSynchronizationRegistry;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.UUID;
-import org.jboss.logging.Logger;
 
 /**
  * Persists every model attempt. Failed attempts also add their cost to the game total (accepted moves are
@@ -26,7 +25,6 @@ import org.jboss.logging.Logger;
 @ApplicationScoped
 public class MoveAttemptService {
 
-    private static final Logger LOG = Logger.getLogger(MoveAttemptService.class);
     static final int MAX_RAW_RESPONSE_CHARS = 20_000;
     static final int MAX_ERROR_CHARS = 500;
     static final int MAX_PROPOSED_MOVE_CHARS = 64;
@@ -91,61 +89,66 @@ public class MoveAttemptService {
         }
     }
 
-    /** Records the attempt in its own transaction; failures to record never interrupt the game. */
+    /**
+     * Records the attempt and its cost in its own transaction. A failure propagates once the transaction has rolled
+     * back: the caller decides whether the game can go on without it (never with another request; see
+     * {@link TurnPolicy#beforeRetry}).
+     */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void record(AttemptRecord attempt) {
-        try {
-            Game game = gameRepository.findByIdForUpdate(attempt.gameId());
-            if (game == null) {
-                return;
-            }
-            MoveAttempt row = new MoveAttempt();
-            row.game = game;
-            row.moveNumber = attempt.moveNumber();
-            row.color = attempt.color();
-            row.attemptNumber = attempt.attemptNumber();
-            row.modelId = attempt.modelId();
-            row.outcome = attempt.outcome();
-            row.proposedMove = truncate(attempt.proposedMove(), MAX_PROPOSED_MOVE_CHARS);
-            row.errorMessage = truncate(attempt.errorMessage(), MAX_ERROR_CHARS);
-            row.reasoningEffort = attempt.reasoningEffort();
-            row.turnStatusRevision = attempt.turnStatusRevision();
-            row.configurationRevision = attempt.configurationRevision();
-            OpenRouterService.LlmResponse response = attempt.response();
-            if (response != null) {
-                row.promptTokens = response.promptTokensReported() ? response.promptTokens() : null;
-                row.cachedPromptTokens = response.cachedPromptTokens();
-                row.cacheWriteTokens = response.cacheWriteTokens();
-                row.completionTokens = response.completionTokens() > 0 ? response.completionTokens() : null;
-                row.reasoningTokens = response.reasoningTokens();
-                row.effectiveMaxOutputTokens = response.effectiveMaxOutputTokens();
-                row.modelMaxCompletionTokens = response.modelMaxCompletionTokens();
-                row.costUsd = response.costUsd() != null ? BigDecimal.valueOf(response.costUsd()) : null;
-                row.responseTimeMs = response.responseTimeMs() > 0 ? response.responseTimeMs() : null;
-                row.finishReason = truncate(response.finishReason(), MAX_FINISH_REASON_CHARS);
-                if (game.isBenchmark() && row.modelId != null && row.modelId.startsWith("~")) {
-                    row.resolvedModelId = resolvedModelId(response.rawResponse());
-                }
-                row.rawResponse = truncate(response.rawResponse(), MAX_RAW_RESPONSE_CHARS);
-            }
-            moveAttemptRepository.persist(row);
-
-            // Accepted moves are costed by GameMoveService.recordModelMove and resignations by
-            // GameLifecycleService.resign; count only the other answers here.
-            if (!attempt.outcome().isCostedElsewhere() && row.costUsd != null) {
-                game.totalCostUsd = game.totalCostUsd.add(row.costUsd);
-            }
-            if (autoRuns != null) autoRuns.afterAttempt(game);
-            // A paid answer can arrive after cancellation's status update. Invalidate only after the
-            // attempt and its cost are visible, without inventing another status change/revision.
-            if (liveUpdates != null) {
-                liveUpdates.changed(game, liveUpdates.entityChange("committedAttempt", game.id, "attempt",
-                        DtoMapper.toDto(row)));
-            }
-            AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));
-        } catch (RuntimeException e) {
-            LOG.warnf(e, "Could not record %s attempt for game %s", attempt.outcome(), attempt.gameId());
+        Game game = gameRepository.findByIdForUpdate(attempt.gameId());
+        if (game == null || GameRunOwnership.staleWorker(game)) {
+            return;
         }
+        MoveAttempt row = new MoveAttempt();
+        row.game = game;
+        row.moveNumber = attempt.moveNumber();
+        row.color = attempt.color();
+        row.attemptNumber = attempt.attemptNumber();
+        row.modelId = attempt.modelId();
+        row.outcome = attempt.outcome();
+        row.proposedMove = truncate(attempt.proposedMove(), MAX_PROPOSED_MOVE_CHARS);
+        row.errorMessage = truncate(attempt.errorMessage(), MAX_ERROR_CHARS);
+        row.reasoningEffort = attempt.reasoningEffort();
+        row.turnStatusRevision = attempt.turnStatusRevision();
+        row.configurationRevision = attempt.configurationRevision();
+        OpenRouterService.LlmResponse response = attempt.response();
+        if (response != null) {
+            row.promptTokens = response.promptTokensReported() ? response.promptTokens() : null;
+            row.cachedPromptTokens = response.cachedPromptTokens();
+            row.cacheWriteTokens = response.cacheWriteTokens();
+            row.completionTokens = response.completionTokens() > 0 ? response.completionTokens() : null;
+            row.reasoningTokens = response.reasoningTokens();
+            row.effectiveMaxOutputTokens = response.effectiveMaxOutputTokens();
+            row.modelMaxCompletionTokens = response.modelMaxCompletionTokens();
+            row.costUsd = response.costUsd() != null ? BigDecimal.valueOf(response.costUsd()) : null;
+            row.responseTimeMs = response.responseTimeMs() > 0 ? response.responseTimeMs() : null;
+            row.finishReason = truncate(response.finishReason(), MAX_FINISH_REASON_CHARS);
+            if (game.isBenchmark() && row.modelId != null && row.modelId.startsWith("~")) {
+                row.resolvedModelId = resolvedModelId(response.rawResponse());
+            }
+            row.rawResponse = truncate(response.rawResponse(), MAX_RAW_RESPONSE_CHARS);
+        }
+        moveAttemptRepository.persist(row);
+        // The answer to the request in flight is recorded with its cost, in this transaction. A request whose
+        // delivery is uncertain stays unresolved until the game is paused for inspection.
+        if (response == null || !response.deliveryUncertain()) {
+            GameRunOwnership.answerRecorded(game);
+        }
+
+        // Accepted moves are costed by GameMoveService.recordModelMove and resignations by
+        // GameLifecycleService.resign; count only the other answers here.
+        if (!attempt.outcome().isCostedElsewhere() && row.costUsd != null) {
+            game.totalCostUsd = game.totalCostUsd.add(row.costUsd);
+        }
+        if (autoRuns != null) autoRuns.afterAttempt(game);
+        // A paid answer can arrive after cancellation's status update. Invalidate only after the
+        // attempt and its cost are visible, without inventing another status change/revision.
+        if (liveUpdates != null) {
+            liveUpdates.changed(game, liveUpdates.entityChange("committedAttempt", game.id, "attempt",
+                    DtoMapper.toDto(row)));
+        }
+        AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));
     }
 
     private String resolvedModelId(String rawResponse) {
