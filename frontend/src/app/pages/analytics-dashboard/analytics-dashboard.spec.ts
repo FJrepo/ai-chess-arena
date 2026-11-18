@@ -217,6 +217,9 @@ describe('AnalyticsDashboard', () => {
         overrides: {
           analyzedGames: 0,
           analyzedMoves: 0,
+          blunders: 0,
+          mistakes: 0,
+          inaccuracies: 0,
           reasoning: { effort: 'xhigh', reportedMoves: 0, modelMoves: 1 },
         } satisfies Partial<AnalyticsComparisonModel>,
         note: 'no judged games · Extra high',
@@ -263,6 +266,13 @@ describe('AnalyticsDashboard', () => {
       .slice(-4)
       .map((cell) => cell.textContent?.trim());
     expect(counters).toEqual(['n/a', 'n/a', 'n/a', 'n/a']);
+    // Reported zeros stay zeros.
+    const zeroRow = models.find((cell) => cell.textContent === 'model.zero')!.closest('tr')!;
+    expect(
+      Array.from(zeroRow.querySelectorAll('td.num'))
+        .slice(-4)
+        .map((cell) => cell.textContent?.trim()),
+    ).toEqual(['0', '0', '0', '0']);
   });
 
   it('updates the tab query parameter with replaceUrl and keeps other parameters', async () => {

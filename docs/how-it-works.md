@@ -510,7 +510,7 @@ Per-model cost is the cost of accepted moves plus the cost of rejected answers w
 
 The *Conversion* table uses the same completion-time window, tournament and minimum-games filters as other comparison tables: **finished, non-bye games, model sides only**. Each model side in a game counts once:
 
-- **Winning positions:** games where that side had **at least 90% winning chances** at any stored evaluated position, using the [move-quality probability model](#move-quality). Every evaluated point counts, including an opponent's move, a forced move or an override; the side need not have made a move yet. Repeated winning positions in one game add no extra count.
+- **Winning positions:** games where that side had **at least 90% winning chances** at any stored evaluated position, using the [move-quality probability model](#move-quality). Every evaluated canonical non-book point counts, including an opponent's move, a forced move or an override; the side need not have made a move yet. Repeated winning positions in one game add no extra count.
 - **Converted:** of those games, games the model won, including checkmate, resignation, opponent forfeits and adjudication.
 - **Adjudicated wins:** the converted games won by adjudication, also included in Converted.
 - **Thrown away:** of the games with a winning position, games that ended in a draw or a loss (including the model's own forfeit).
