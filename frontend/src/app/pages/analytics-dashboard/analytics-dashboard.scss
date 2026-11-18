@@ -466,6 +466,50 @@
   border-left: 1px solid var(--app-divider);
 }
 
+.behaviour-content {
+  .behaviour-takeaway {
+    color: var(--mat-sys-on-surface);
+  }
+
+  .behaviour-minimum {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--app-space-1);
+    margin-inline-start: var(--app-space-1);
+    font-size: var(--app-text-secondary-size);
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  .behaviour-help {
+    inline-size: calc(var(--app-space-4) + var(--app-space-2));
+    block-size: calc(var(--app-space-4) + var(--app-space-2));
+    padding: 0;
+    border: 1px solid var(--app-divider);
+    border-radius: var(--app-surface-radius-md);
+    background: transparent;
+    color: var(--app-accent-info);
+    font: inherit;
+    cursor: help;
+
+    &:focus-visible {
+      outline: var(--app-rule-width) solid var(--app-accent-info);
+      outline-offset: var(--app-focus-offset);
+    }
+  }
+
+  .behaviour-metric {
+    text-align: right;
+  }
+
+  .behaviour-dash {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  .behaviour-legend {
+    margin-top: var(--app-space-1);
+  }
+}
+
 // Column headers are words: they keep the text font; only numeric cells use the numeric font.
 .analytics-table th.num {
   font-family: inherit;

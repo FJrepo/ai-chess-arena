@@ -535,9 +535,11 @@ Comparison API rows carry `conversion` with `evaluatedGames`, `winningPositionsR
 
 Tone grouping/filtering is deferred to the banter bench. The current tournament setting cannot accurately label historical moves after live changes; this feature adds no per-move tone backfill.
 
-The analytics page's *Talkativeness* table shows, per model and for chat *Optional* and *Mandatory* separately, the share of its moves that came with a non-empty message (*Talk rate*; with *Mandatory* this is a compliance rate, with *Optional* the model's own choice) and the average message length in characters.
+The **Behaviour** takeaway uses only models that reported *Optional* chat in the current filters. Reported zero-move samples count toward coverage. If any model omitted Optional chat, the takeaway gives the number of reporting models and limits its figures to that group. If none reported it, the takeaway says “Optional-chat data not reported.” If every reporting model had zero Optional-chat moves, it gives the reporting model count.
 
-Like the other tables it covers model moves in finished games (byes, human moves and overrides excluded); moves made with chat *Off* are left out, and a mode without moves shows "n/a".
+Each model needs at least **20 Optional-chat moves** to qualify for the comparison. With fewer than two qualifying models, the takeaway gives the reported move count and how many reporting models reached the minimum. Otherwise it compares the highest and lowest rates using message and move counts, or gives the shared rate and combined counts when all qualifying rates are exactly equal.
+
+The *Talkativeness* table shows the share of each model's moves with a non-empty message and the average message length in characters for both chat modes. *Optional* measures the model's choice to talk. *Mandatory* measures compliance and is displayed independently of Optional-chat coverage. The table sorts by exact message-to-move ratios, Optional first and then Mandatory, with unreported data last for each mode. Like the other tables, it covers model moves in finished games (byes, human moves and overrides excluded) and leaves out moves made with chat *Off*. A dash is read as “Not reported” when the mode is omitted, or “No moves in this mode” when the mode explicitly reports zero moves. Average length is also unavailable when there are no messages to measure. Chat rates between zero and 0.1% display as <0.1%, and rates between 99.9% and 100% display as >99.9%. The exact endpoints require zero messages or a message on every move.
 
 A move counts as talking when a chat message was stored for the same game, move number and colour; a ply stored twice (possible in databases from before V8) counts once.
 
@@ -561,7 +563,7 @@ The *Resignations* table lists per model how often it resigned (and the share of
 
 Not losing means the resigning side still had at least 35% winning chances (on the move-quality win-probability model) in the position it gave up, which is the position after the last move played, as evaluated by Stockfish: roughly level or better.
 
-Resignations without that evaluation are counted but not judged ("n/a", "1 not evaluated").
+Resignations without that evaluation still count toward the total. The judgement column shows a dash if there are no evaluated resignations. The note counting resignations without an evaluation requires both the total and the evaluated count. An omitted count is unknown and the dash is read as “Not reported” when the metric requires it. An empty table with missing counts shows “Resignation data not reported.”
 
 Same scope as the other tables: finished, non-bye games; human sides are left out.
 

@@ -452,8 +452,87 @@
         <mat-icon class="tab-icon">forum</mat-icon>
         Behaviour
       </ng-template>
-      <section class="tab-content">
-        <p class="tab-intro">How models communicate and when they choose to give up.</p>
+      <section class="tab-content behaviour-content">
+        @if (comparison()) {
+          @let summary = optionalChatSummary();
+          <p class="tab-intro behaviour-takeaway">
+            @switch (summary.kind) {
+              @case ('unreported') {
+                Optional-chat data not reported.
+              }
+              @case ('zero') {
+                No Optional-chat moves
+              }
+              @case ('contrast') {
+                With Optional chat, <strong>{{ summary.most.modelId }}</strong> sent messages on
+                <span class="num">{{ summary.most.messages }}</span> of
+                <span class="num">{{ summary.most.moves }}</span> moves vs
+                <strong>{{ summary.least.modelId }}</strong> on
+                <span class="num">{{ summary.least.messages }}</span> of
+                <span class="num">{{ summary.least.moves }}</span> moves.
+              }
+              @case ('equal') {
+                All <span class="num">{{ summary.qualifyingCount }}</span> qualifying models talked
+                @if (summary.messages === 0) {
+                  on no move
+                } @else if (summary.messages === summary.moves) {
+                  on every move
+                } @else {
+                  on the same share of moves (<span class="num">{{
+                    formatChatRate(summary.messages, summary.moves)
+                  }}</span
+                  >)
+                }
+                with Optional chat (<span class="num">{{ summary.messages }}</span> of
+                <span class="num">{{ summary.moves }}</span> moves
+                {{ summary.partial ? 'combined' : 'total' }}).
+              }
+              @case ('sparse') {
+                Fewer than two {{ summary.partial ? 'reporting models' : 'models' }} have at least
+                <span class="num">{{ minOptionalChatMoves }}</span> Optional-chat moves.
+                <span class="num">{{ summary.moves }}</span> reported Optional-chat
+                {{ summary.moves === 1 ? 'move' : 'moves' }}.
+                <span class="num">{{ summary.qualifyingCount }}</span> of
+                <span class="num">{{ summary.reportingCount }}</span>
+                {{ summary.reportingCount === 1 ? 'model' : 'models' }} reached
+                <span class="num">{{ minOptionalChatMoves }}</span> moves.
+              }
+            }
+            @if (summary.kind !== 'unreported') {
+              @if (summary.partial || summary.kind === 'zero') {
+                @let modelLabel = summary.reportingCount === 1 ? 'model' : 'models';
+                {{ summary.kind === 'zero' ? 'among' : 'Results among' }}
+                <span class="num">{{ summary.reportingCount }}</span>
+                {{
+                  summary.partial
+                    ? modelLabel + ' that reported Optional chat'
+                    : 'reporting ' + modelLabel
+                }}.
+              }
+              @if (summary.kind !== 'zero') {
+                <span class="behaviour-minimum">
+                  @if (summary.kind !== 'sparse') {
+                    At least <span class="num">{{ minOptionalChatMoves }}</span> moves per model
+                  }
+                  <button
+                    type="button"
+                    class="behaviour-help"
+                    aria-label="About the Optional chat comparison"
+                    [matTooltip]="
+                      'The comparison uses the current filters and requires at least ' +
+                      minOptionalChatMoves +
+                      ' Optional-chat moves per model. Mandatory chat measures compliance separately.'
+                    "
+                  >
+                    ?
+                  </button>
+                </span>
+              }
+            }
+          </p>
+        } @else {
+          <p class="tab-intro">How models communicate and when they choose to give up.</p>
+        }
         <ng-container [ngTemplateOutlet]="comparisonStatus"></ng-container>
         @if (comparison()) {
           <div class="table-card talk-table-card">
@@ -465,53 +544,53 @@
                 </p>
               </div>
             </div>
-            <div class="table-wrap">
-              <table class="analytics-table talk-table">
-                <thead>
-                  <tr>
-                    <th class="col-model" rowspan="2">Model</th>
-                    <th class="group-head" colspan="2" scope="colgroup">Chat optional</th>
-                    <th class="group-head" colspan="2" scope="colgroup">Chat mandatory</th>
-                  </tr>
-                  <tr>
-                    <th class="num">Talk rate</th>
-                    <th class="num">Avg. length</th>
-                    <th class="num">Compliance</th>
-                    <th class="num">Avg. length</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of talkRows(); track row.modelId) {
+            @if (talkRows().length) {
+              <div class="table-wrap">
+                <table class="analytics-table talk-table">
+                  <thead>
                     <tr>
-                      <td class="col-model">
-                        <strong class="model-id">{{ row.modelId }}</strong>
-                      </td>
-                      <td class="num">
-                        {{ formatTalkRate(row.optionalChat) }}
-                        @if (talkSample(row.optionalChat); as sample) {
-                          <span class="table-note">{{ sample }}</span>
-                        }
-                      </td>
-                      <td class="num">{{ formatMessageLength(row.optionalChat) }}</td>
-                      <td class="num">
-                        {{ formatTalkRate(row.mandatoryChat) }}
-                        @if (talkSample(row.mandatoryChat); as sample) {
-                          <span class="table-note">{{ sample }}</span>
-                        }
-                      </td>
-                      <td class="num">{{ formatMessageLength(row.mandatoryChat) }}</td>
+                      <th class="col-model" rowspan="2" scope="col">Model</th>
+                      <th class="group-head" colspan="2" scope="colgroup">Chat optional</th>
+                      <th class="group-head" colspan="2" scope="colgroup">Chat mandatory</th>
                     </tr>
-                  } @empty {
                     <tr>
-                      <td colspan="5" class="empty">
-                        No model moves with chat Optional or Mandatory in finished games yet.
-                      </td>
+                      <th class="behaviour-metric" scope="col">Talk rate</th>
+                      <th class="behaviour-metric" scope="col">Avg. length</th>
+                      <th class="behaviour-metric" scope="col">Compliance</th>
+                      <th class="behaviour-metric" scope="col">Avg. length</th>
                     </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    @for (row of talkRows(); track row.modelId) {
+                      <tr>
+                        <td class="col-model">
+                          <strong class="model-id">{{ row.modelId }}</strong>
+                        </td>
+                        <ng-container
+                          *ngTemplateOutlet="
+                            behaviourChatCells;
+                            context: { $implicit: row.optionalChat }
+                          "
+                        ></ng-container>
+                        <ng-container
+                          *ngTemplateOutlet="
+                            behaviourChatCells;
+                            context: { $implicit: row.mandatoryChat }
+                          "
+                        ></ng-container>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
             <p class="table-footnote">{{ talkExplanation }}</p>
+            @if (talkRows().length || resignationRows().length) {
+              <p class="table-footnote behaviour-legend">
+                — metric not reported or unavailable when there are no moves, messages or evaluated
+                resignations.
+              </p>
+            }
           </div>
           <div class="table-card resign-table-card">
             <div class="section-header">
@@ -524,10 +603,10 @@
               <table class="analytics-table resign-table">
                 <thead>
                   <tr>
-                    <th class="col-model">Model</th>
-                    <th class="num">Resigned</th>
-                    <th class="num">Resigned while not losing</th>
-                    <th class="num">Won by resignation</th>
+                    <th class="col-model" scope="col">Model</th>
+                    <th class="behaviour-metric" scope="col">Resigned</th>
+                    <th class="behaviour-metric" scope="col">Resigned while not losing</th>
+                    <th class="behaviour-metric" scope="col">Won by resignation</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -536,24 +615,73 @@
                       <td class="col-model">
                         <strong class="model-id">{{ row.modelId }}</strong>
                       </td>
-                      <td class="num">
-                        {{ formatResignations(row) }}
-                        <span class="table-note"
-                          >of {{ row.gamesPlayed }}
-                          {{ row.gamesPlayed === 1 ? 'game' : 'games' }}</span
-                        >
-                      </td>
-                      <td class="num">
-                        {{ formatNotLosing(row) }}
-                        @if (notEvaluatedNote(row); as note) {
-                          <span class="table-note">{{ note }}</span>
+                      <td class="behaviour-metric">
+                        @if (formatResignations(row); as resigned) {
+                          <span class="num">{{ resigned }}</span>
+                          <span class="table-note">
+                            of <span class="num">{{ row.gamesPlayed }}</span>
+                            {{ row.gamesPlayed === 1 ? 'game' : 'games' }}
+                          </span>
+                        } @else {
+                          <ng-container
+                            *ngTemplateOutlet="
+                              behaviourMissing;
+                              context: { $implicit: 'Not reported' }
+                            "
+                          ></ng-container>
                         }
                       </td>
-                      <td class="num">{{ row.wonByResignation ?? 0 }}</td>
+                      <td class="behaviour-metric">
+                        @if (
+                          row.resignationsEvaluated &&
+                          (row.resignationsWhileNotLosing ?? null) !== null
+                        ) {
+                          <span class="num">{{ row.resignationsWhileNotLosing }}</span> of
+                          <span class="num">{{ row.resignationsEvaluated }}</span>
+                        } @else {
+                          <ng-container
+                            *ngTemplateOutlet="
+                              behaviourMissing;
+                              context: {
+                                $implicit:
+                                  row.resignations === 0
+                                    ? 'No resignations'
+                                    : row.resignationsEvaluated === 0
+                                      ? 'No evaluated resignations'
+                                      : 'Not reported',
+                              }
+                            "
+                          ></ng-container>
+                        }
+                        @let count = unevaluatedResignations(row);
+                        @if (count !== null && count > 0) {
+                          <span class="table-note"
+                            ><span class="num">{{ count }}</span> not evaluated</span
+                          >
+                        }
+                      </td>
+                      <td class="behaviour-metric">
+                        @if ((row.wonByResignation ?? null) !== null) {
+                          <span class="num">{{ row.wonByResignation }}</span>
+                        } @else {
+                          <ng-container
+                            *ngTemplateOutlet="
+                              behaviourMissing;
+                              context: { $implicit: 'Not reported' }
+                            "
+                          ></ng-container>
+                        }
+                      </td>
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="4" class="empty">No resignations in finished games yet.</td>
+                      <td colspan="4" class="empty">
+                        {{
+                          resignationsExplicitlyZero()
+                            ? 'No resignations in finished games yet.'
+                            : 'Resignation data not reported'
+                        }}
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -562,6 +690,46 @@
             <p class="table-footnote">{{ resignationExplanation }}</p>
           </div>
         }
+        <ng-template #behaviourMissing let-reason>
+          <span class="behaviour-dash" aria-hidden="true">—</span>
+          <span class="cdk-visually-hidden">{{ reason }}</span>
+        </ng-template>
+        <ng-template #behaviourChatCells let-chat>
+          @let missingMode = chat ? 'No moves in this mode' : 'Not reported';
+          <td class="behaviour-metric">
+            @if (formatTalkRate(chat); as rate) {
+              <span class="num">{{ rate }}</span>
+            } @else {
+              <ng-container
+                *ngTemplateOutlet="behaviourMissing; context: { $implicit: missingMode }"
+              ></ng-container>
+            }
+            @if (chat?.moves) {
+              <span class="table-note">
+                <span class="num">{{ chat.messages }}</span> of
+                <span class="num">{{ chat.moves }}</span> {{ chat.moves === 1 ? 'move' : 'moves' }}
+              </span>
+            }
+          </td>
+          <td class="behaviour-metric">
+            @if ((chat?.averageMessageLength ?? null) !== null) {
+              <span class="num">{{ chat.averageMessageLength | number: '1.0-0' }}</span> chars
+            } @else {
+              <ng-container
+                *ngTemplateOutlet="
+                  behaviourMissing;
+                  context: {
+                    $implicit: !chat?.moves
+                      ? missingMode
+                      : chat.messages === 0
+                        ? 'No messages in this chat mode'
+                        : 'Average message length unavailable',
+                  }
+                "
+              ></ng-container>
+            }
+          </td>
+        </ng-template>
       </section>
     </mat-tab>
 
