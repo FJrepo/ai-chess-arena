@@ -27,5 +27,6 @@ public record MoveDto(
         /** The chat mode that applied to a model move (OFF, OPTIONAL, MANDATORY); omitted for human moves and overrides. */
         String chatMode,
         boolean isBook,
-        boolean isInherited
+        boolean isInherited,
+        boolean isCanonical
 ) {}

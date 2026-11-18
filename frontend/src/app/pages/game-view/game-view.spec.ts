@@ -210,6 +210,24 @@ describe('GameView', () => {
     expect(createPractice).toHaveBeenCalledWith('g-1', 1, 'BLACK', expect.any(String), 'm-1-WHITE');
   });
 
+  it('trusts canonical row identity even when legacy duplicates come first or last in the display', () => {
+    const { component } = createComponent();
+    component.game.set(gameWith({ status: 'COMPLETED', resultReason: 'REPETITION' }));
+    component.moves.set([
+      { ...storedMove(1, 'WHITE', 'd4', AFTER_E4), id: 'extra-white', isCanonical: false },
+      { ...storedMove(1, 'WHITE', 'e4', AFTER_E4), isCanonical: true },
+      { ...storedMove(1, 'BLACK', 'e5', AFTER_E5), isCanonical: true },
+      { ...storedMove(1, 'BLACK', 'd5', AFTER_E5), id: 'extra-black', isCanonical: false },
+    ]);
+
+    component.currentMoveIndex.set(0);
+    expect(component.practicePly()).toBeNull();
+    component.currentMoveIndex.set(1);
+    expect(component.practicePly()).toBe(1);
+    component.currentMoveIndex.set(2);
+    expect(component.practicePly()).toBeNull();
+  });
+
   it('reuses the same fork request id when a failed response is retried for the same position', () => {
     const createPractice = vi.fn(() => throwError(() => ({ status: 502 })));
     const { component } = createComponent({ api: { createPractice } });

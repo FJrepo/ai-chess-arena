@@ -15,6 +15,7 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -37,20 +38,18 @@ public class PracticeGameService {
 
     @Transactional
     public GameDto fork(UUID sourceId, int ply, String humanSide, UUID requestId, UUID moveId) {
+        Game previous = retry(sourceId, requestId, ply, humanSide, moveId);
+        if (previous != null) return DtoMapper.toDto(previous, false);
+
         Game source = games.findByIdForUpdate(sourceId);
+        // The source lock serializes creates, so check again after a concurrent create or deletion.
+        previous = retry(sourceId, requestId, ply, humanSide, moveId);
+        if (previous != null) return DtoMapper.toDto(previous, false);
         if (source == null) throw new NotFoundException("Source game not found");
         if (!AnalyticsGameOutcomeClassifier.isTerminal(source.status)
                 || AnalyticsGameOutcomeClassifier.isBye(source)) {
             throw new GameStateConflictException("Practice requires a finished game with two players");
         }
-        if (requestId != null) {
-            Game previous = games.find("practiceSourceGameId = ?1 and practiceRequestId = ?2", sourceId, requestId)
-                    .firstResult();
-            if (previous != null) {
-                return DtoMapper.toDto(previous, false);
-            }
-        }
-
         boolean humanWhite = "WHITE".equals(humanSide);
         String opponentSide = humanWhite ? "BLACK" : "WHITE";
         String modelId = humanWhite ? source.blackModelId : source.whiteModelId;
@@ -69,7 +68,9 @@ public class PracticeGameService {
         practice.practiceKind = Game.PracticeKind.FROM_GAME;
         practice.practiceSourceGameId = sourceId;
         practice.practiceSourcePly = ply;
+        practice.practiceOriginGameId = sourceId;
         practice.practiceRequestId = requestId;
+        practice.practiceRequestMoveId = moveId;
         practice.whitePracticeControl = humanWhite ? PlayerType.HUMAN : PlayerType.AI;
         practice.blackPracticeControl = humanWhite ? PlayerType.AI : PlayerType.HUMAN;
         practice.whitePlayerName = humanWhite ? "You" : modelName;
@@ -106,5 +107,17 @@ public class PracticeGameService {
         games.persist(practice);
         moves.persist(inherited);
         return DtoMapper.toDto(practice, false);
+    }
+
+    private Game retry(UUID sourceId, UUID requestId, int ply, String humanSide, UUID moveId) {
+        if (requestId == null) return null;
+        Game previous = games.find("practiceOriginGameId = ?1 and practiceRequestId = ?2", sourceId, requestId)
+                .firstResult();
+        if (previous != null && (previous.practiceSourcePly != ply
+                || previous.playerType(humanSide) != PlayerType.HUMAN
+                || !Objects.equals(previous.practiceRequestMoveId, moveId))) {
+            throw new GameStateConflictException("This request ID was already used for a different practice position or side");
+        }
+        return previous;
     }
 }

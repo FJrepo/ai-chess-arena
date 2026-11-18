@@ -169,7 +169,7 @@ public class GameResource {
     @Path("/{id}/moves")
     public Response getMoves(@PathParam("id") UUID id) {
         return Response.ok(
-                moveRepository.findByGameId(id).stream().map(DtoMapper::toDto).toList()
+                DtoMapper.toMoveDtos(moveRepository.findByGameId(id))
         ).build();
     }
 

@@ -312,15 +312,11 @@ export class GameView implements OnInit, OnDestroy {
     if (!this.practiceModelSides().length) return null;
     const moves = this.moves();
     const selected = moves[this.currentMoveIndex()];
-    if (
-      selected &&
-      moves.find((move) => move.moveNumber === selected.moveNumber && move.color === selected.color)
-        ?.id !== selected.id
-    )
-      return null;
+    if (selected?.isCanonical === false) return null;
 
+    const lastCanonical = moves.filter((move) => move.isCanonical !== false).at(-1);
     if (
-      this.currentMoveIndex() === moves.length - 1 &&
+      selected?.id === lastCanonical?.id &&
       ['CHECKMATE', 'STALEMATE', 'REPETITION', 'INSUFFICIENT_MATERIAL', 'FIFTY_MOVE'].includes(
         this.game()?.resultReason ?? '',
       )

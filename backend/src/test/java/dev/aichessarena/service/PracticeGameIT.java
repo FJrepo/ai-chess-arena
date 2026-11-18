@@ -4,9 +4,11 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
@@ -33,11 +35,22 @@ class PracticeGameIT {
     @Inject TournamentRepository tournaments;
     @Inject MoveAttemptService attempts;
     @Inject GameEngineService engine;
+    @Inject GameLifecycleService lifecycle;
     @Inject PracticeGameService practice;
 
     @Test
     void forkBeforeThirdRepetitionCompletesWithNoProviderCallAndNoCopiedSpend() throws InterruptedException {
         Source source = finishedSource();
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game game = games.findByIdForUpdate(source.gameId());
+            TournamentParticipant model = new TournamentParticipant();
+            model.tournament = game.tournament;
+            model.playerName = "BYE";
+            model.modelId = game.whiteModelId;
+            model.persist();
+            game.whiteParticipant = model;
+            game.whitePlayerName = model.playerName;
+        });
         UUID nonce = UUID.randomUUID();
         String id = fork(source.gameId(), 7, "BLACK", nonce);
         assertEquals(id, fork(source.gameId(), 7, "BLACK", nonce));
@@ -49,6 +62,7 @@ class PracticeGameIT {
                 .body("tournamentId", nullValue())
                 .body("blackControlType", equalTo("HUMAN"))
                 .body("whiteModelId", equalTo("practice/white"))
+                .body("whitePlayerName", equalTo("BYE"))
                 .body("moves.size()", equalTo(7))
                 .body("moves[6].isInherited", equalTo(true))
                 .body("moves[6].costUsd", nullValue())
@@ -79,6 +93,14 @@ class PracticeGameIT {
                 .body("practiceCostUsd", equalTo(0.12f));
         given().get("/api/analytics/health?days=79&tournamentId=" + source.tournamentId()).then().statusCode(200)
                 .body("practiceCostUsd", equalTo(0.0f));
+
+        UUID cancelled = UUID.fromString(fork(source.gameId(), 0, "BLACK", UUID.randomUUID()));
+        lifecycle.cancelGame(cancelled);
+        attempts.record(new MoveAttemptService.AttemptRecord(cancelled, 1, "WHITE", 1, "practice/white",
+                Outcome.DISCARDED, "d4", null,
+                new OpenRouterService.LlmResponse("d4", 10, 3, 0.04, 1, null, false, null)));
+        given().get("/api/analytics/health?days=78").then().statusCode(200)
+                .body("practiceCostUsd", equalTo(0.16f));
     }
 
     @Test
@@ -107,8 +129,16 @@ class PracticeGameIT {
 
         given().contentType("application/json").body("{\"ply\":1,\"side\":\"WHITE\"}")
                 .post("/api/games/{id}/practice", source.gameId()).then().statusCode(409);
-        String id = fork(source.gameId(), 1, "BLACK", UUID.randomUUID());
+        UUID nonce = UUID.randomUUID();
+        String id = fork(source.gameId(), 1, "BLACK", nonce);
+        given().contentType("application/json")
+                .body("{\"ply\":1,\"side\":\"WHITE\",\"clientRequestId\":\"%s\"}".formatted(nonce))
+                .post("/api/games/{id}/practice", source.gameId()).then().statusCode(409);
         QuarkusTransaction.requiringNew().run(() -> games.deleteById(source.gameId()));
+        assertEquals(id, fork(source.gameId(), 1, "BLACK", nonce));
+        given().contentType("application/json")
+                .body("{\"ply\":999,\"side\":\"BLACK\",\"clientRequestId\":\"%s\"}".formatted(nonce))
+                .post("/api/games/{id}/practice", source.gameId()).then().statusCode(409);
         given().get("/api/games/{id}", id).then().statusCode(200)
                 .body("practiceSourceGameId", nullValue())
                 .body("practiceSourcePly", equalTo(1))
@@ -130,6 +160,10 @@ class PracticeGameIT {
                     duplicate.fen = chess.validateAndApply(chess.createBoard(), "e4").fen();
                     duplicate.createdAt = java.time.LocalDateTime.now().plusSeconds(1);
                     moves.persistAndFlush(duplicate);
+                    var snapshot = DtoMapper.toMoveDtos(moves.findByGameId(game.id));
+                    assertTrue(snapshot.getFirst().isCanonical());
+                    assertEquals("Nf3", snapshot.getFirst().san());
+                    assertFalse(snapshot.get(1).isCanonical());
                     var copied = practice.fork(game.id, 1, "WHITE", null, null);
                     assertEquals("Nf3", moves.findByGameId(copied.id()).getFirst().san);
                     assertThrows(GameStateConflictException.class, () ->

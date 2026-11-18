@@ -301,6 +301,7 @@ export interface Move {
   /** Authored opening move, excluded from model metrics. */
   isBook?: boolean;
   isInherited?: boolean;
+  isCanonical?: boolean;
   evaluationCp?: number | null;
   evaluationMate?: number | null;
   createdAt: string;

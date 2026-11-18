@@ -49,8 +49,15 @@ public class Game extends PanacheEntityBase {
     @Column(name = "practice_source_ply")
     public Integer practiceSourcePly;
 
-    @Column(name = "practice_request_id")
+    /** Immutable creation identity retained when deletion clears the source navigation link. */
+    @Column(name = "practice_origin_game_id", updatable = false)
+    public UUID practiceOriginGameId;
+
+    @Column(name = "practice_request_id", updatable = false)
     public UUID practiceRequestId;
+
+    @Column(name = "practice_request_move_id", updatable = false)
+    public UUID practiceRequestMoveId;
 
     @Column(name = "white_player_name")
     public String whitePlayerName;
