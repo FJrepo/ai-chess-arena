@@ -394,7 +394,9 @@ class TournamentAutoRunIT {
         given().urlEncodingEnabled(false).contentType("application/json").body("{}")
                 .post("/api/games/" + paused + "/start?QueueIfFull=false").then().statusCode(409)
                 .body("error", equalTo("Tournament concurrency limit reached"));
-        for (String query : List.of("QueueIfFull=true&queueIfFull=false", "queueiffull=false&QUEUEIFFULL=false")) {
+        // %C4%B1 is a dotless i: it must count as a second value, not collapse into one name.
+        for (String query : List.of("QueueIfFull=true&queueIfFull=false", "queueiffull=false&QUEUEIFFULL=false",
+                "queue%C4%B1fFull=true&queueIfFull=false")) {
             given().urlEncodingEnabled(false).contentType("application/json").body("{}")
                     .post("/api/games/" + paused + "/start?" + query).then().statusCode(400)
                     .body("error", equalTo("queueIfFull must be given at most once"));

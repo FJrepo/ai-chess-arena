@@ -24,6 +24,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -163,14 +165,19 @@ public class GameResource {
 
     /**
      * Every value of a query parameter whose name matches regardless of case (as with the former {@code @QueryParam}),
-     * or null when none is present.
+     * or null when none is present. Parsed from the raw query: the case-insensitive parameter map can merge names
+     * that differ only in special characters (such as a dotless i) and drop values.
      */
     static List<String> queryValuesIgnoringCase(UriInfo uriInfo, String name) {
+        String query = uriInfo.getRequestUri().getRawQuery();
+        if (query == null || query.isEmpty()) return null;
         List<String> values = null;
-        for (var parameter : uriInfo.getQueryParameters().entrySet()) {
-            if (parameter.getKey().equalsIgnoreCase(name)) {
+        for (String pair : query.split("&", -1)) {
+            int separator = pair.indexOf('=');
+            String key = URLDecoder.decode(separator < 0 ? pair : pair.substring(0, separator), StandardCharsets.UTF_8);
+            if (key.equalsIgnoreCase(name)) {
                 if (values == null) values = new ArrayList<>();
-                values.addAll(parameter.getValue());
+                values.add(separator < 0 ? "" : URLDecoder.decode(pair.substring(separator + 1), StandardCharsets.UTF_8));
             }
         }
         return values;
