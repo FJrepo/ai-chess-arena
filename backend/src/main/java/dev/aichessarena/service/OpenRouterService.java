@@ -47,7 +47,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -236,18 +235,13 @@ public class OpenRouterService {
         if (deadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
             return deadlineExceeded(modelId, limitedByMoveTime, 0, elapsedMs(startNanos), cacheRejection, false, false);
         }
-        // Known as soon as the status line and headers arrive, long before an error body may be complete.
-        AtomicInteger responseStatus = new AtomicInteger();
         // Set once the request is handed to the HTTP client. From then on any byte, up to the complete request, may
         // reach OpenRouter (an HTTP/2 client can end the stream before the body publisher completes), so only a
         // failure that provably precedes the connection (see notDelivered) leaves the request undelivered.
         AtomicBoolean handedToClient = new AtomicBoolean();
-        // When (on the deadline's monotonic clock) the HTTP client started on the request body, which it does only once
-        // the connection (TCP and TLS) is established; -1 before that. A deadline is judged by the evidence at its own
-        // instant: a connection established only afterwards still missed it.
-        AtomicReference<Long> connectedAtNanos = new AtomicReference<>();
-        // When the response headers arrived, on the same clock; null before. Also proof of an established connection.
-        AtomicReference<Long> headersAtNanos = new AtomicReference<>();
+        // What is known about the connection and the response, published as one immutable record so that a timeout
+        // decision reads one consistent state (see ConnectionEvidence).
+        AtomicReference<ConnectionEvidence> evidence = new AtomicReference<>(ConnectionEvidence.NONE);
         CompletableFuture<HttpResponse<String>> pending = null;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -292,7 +286,7 @@ public class OpenRouterService {
                     .uri(URI.create(baseUrl + "/chat/completions"))
                     .header("Authorization", "Bearer " + requestKey)
                     .header("Content-Type", "application/json")
-                    .POST(signalingConnection(HttpRequest.BodyPublishers.ofString(jsonBody), connectedAtNanos))
+                    .POST(signalingConnection(HttpRequest.BodyPublishers.ofString(jsonBody), evidence))
                     .timeout(Duration.ofNanos(sendBudgetNanos))
                     .build();
 
@@ -301,8 +295,10 @@ public class OpenRouterService {
             AtomicReference<Long> completedAtNanos = new AtomicReference<>();
             handedToClient.set(true);
             pending = chatSender.send(request, info -> {
-                headersAtNanos.compareAndSet(null, nanoClock.getAsLong());
-                responseStatus.set(info.statusCode());
+                // Known as soon as the status line and headers arrive, long before an error body may be complete.
+                int status = info.statusCode();
+                long at = nanoClock.getAsLong();
+                evidence.updateAndGet(known -> known.withHeaders(at, status));
                 return HttpResponse.BodySubscribers.mapping(HttpResponse.BodyHandlers.ofString().apply(info),
                         responseBody -> {
                             completedAtNanos.set(nanoClock.getAsLong());
@@ -341,14 +337,16 @@ public class OpenRouterService {
             return parseCompletion(modelId, response.body(), elapsed);
         } catch (TimeoutException e) {
             pending.cancel(true);
-            return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos), cacheRejection,
-                    handedToClient.get(), readyBefore(deadline, connectedAtNanos, headersAtNanos));
+            ConnectionEvidence known = evidence.get();
+            return deadlineExceeded(modelId, limitedByMoveTime, known.status(), elapsedMs(startNanos), cacheRejection,
+                    handedToClient.get(), known.readyBefore(deadline));
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
                     ? e.getCause().getCause()
                     : e.getCause();
-            return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos),
-                    cacheRejection, handedToClient.get(), readyBefore(deadline, connectedAtNanos, headersAtNanos));
+            ConnectionEvidence known = evidence.get();
+            return transportFailure(modelId, cause, limitedByMoveTime, known.status(), elapsedMs(startNanos),
+                    cacheRejection, handedToClient.get(), known.readyBefore(deadline));
         } catch (InterruptedException e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -627,23 +625,35 @@ public class OpenRouterService {
     }
 
     /**
-     * Whether the connection was ready strictly before the deadline instant: the body subscription or the response
-     * headers, whichever was recorded (absent: null; monotonic timestamps may be negative), happened before it.
+     * One consistent view of a request's progress, on the deadline's monotonic clock (timestamps may be negative;
+     * null means not recorded): when the HTTP client started on the body, which it does only once the connection (TCP
+     * and TLS) is established, when the response headers arrived, and their status (0 before). Status and header time
+     * are published together, so no reader sees one without the other.
      */
-    @SafeVarargs
-    private static boolean readyBefore(AnswerDeadline deadline, AtomicReference<Long>... evidence) {
-        for (AtomicReference<Long> recorded : evidence) {
-            Long at = recorded.get();
-            if (at != null && deadline.remainingNanos(at) > 0) {
-                return true;
-            }
+    private record ConnectionEvidence(Long connectedAtNanos, Long headersAtNanos, int status) {
+        static final ConnectionEvidence NONE = new ConnectionEvidence(null, null, 0);
+
+        ConnectionEvidence withConnection(long at) {
+            return connectedAtNanos != null ? this : new ConnectionEvidence(at, headersAtNanos, status);
         }
-        return false;
+
+        ConnectionEvidence withHeaders(long at, int headerStatus) {
+            return headersAtNanos != null ? this : new ConnectionEvidence(connectedAtNanos, at, headerStatus);
+        }
+
+        /** Whether the connection was ready strictly before the deadline instant. */
+        boolean readyBefore(AnswerDeadline deadline) {
+            return before(connectedAtNanos, deadline) || before(headersAtNanos, deadline);
+        }
+
+        private static boolean before(Long at, AnswerDeadline deadline) {
+            return at != null && deadline.remainingNanos(at) > 0;
+        }
     }
 
     /** Records when the HTTP client subscribes to the body, i.e. once the connection is established. */
     private HttpRequest.BodyPublisher signalingConnection(HttpRequest.BodyPublisher body,
-                                                          AtomicReference<Long> connectedAtNanos) {
+                                                          AtomicReference<ConnectionEvidence> evidence) {
         return new HttpRequest.BodyPublisher() {
             @Override
             public long contentLength() {
@@ -652,7 +662,8 @@ public class OpenRouterService {
 
             @Override
             public void subscribe(Flow.Subscriber<? super ByteBuffer> subscriber) {
-                connectedAtNanos.compareAndSet(null, nanoClock.getAsLong());
+                long at = nanoClock.getAsLong();
+                evidence.updateAndGet(known -> known.withConnection(at));
                 body.subscribe(subscriber);
             }
         };

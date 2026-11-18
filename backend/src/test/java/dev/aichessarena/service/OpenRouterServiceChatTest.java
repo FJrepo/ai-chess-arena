@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -364,6 +365,59 @@ class OpenRouterServiceChatTest {
 
         assertEquals(beforeDeadline ? ProviderOutcome.TIMEOUT : ProviderOutcome.RETRYABLE, response.outcome());
         assertEquals(!beforeDeadline, response.connectionPending());
+    }
+
+    @Test
+    void aTimeoutNeverSeesTheHeaderTimeWithoutItsStatus() throws Exception {
+        // A 429 arrives before the 100 ms deadline. Its callback is held while reading the status code, i.e. after the
+        // header time was recorded but before the status was (the order of the former two separate publications),
+        // and the deadline passes meanwhile. A provider error must never become the model's timeout.
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+        long deadlineAt = Duration.ofMillis(100).toNanos();
+        java.util.concurrent.CountDownLatch reading = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.net.http.HttpResponse.ResponseInfo heldStatus = new java.net.http.HttpResponse.ResponseInfo() {
+            @Override public int statusCode() {
+                reading.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return 429;
+            }
+
+            @Override public java.net.http.HttpHeaders headers() {
+                return java.net.http.HttpHeaders.of(java.util.Map.of(), (name, value) -> true);
+            }
+
+            @Override public java.net.http.HttpClient.Version version() {
+                return java.net.http.HttpClient.Version.HTTP_1_1;
+            }
+        };
+        OpenRouterService service = service("http://127.0.0.1:9");
+        service.nanoClock = clock::get;
+        service.chatSender = (request, handler) -> {
+            clock.set(deadlineAt - 10);
+            Thread.startVirtualThread(() -> handler.apply(heldStatus));
+            try {
+                assertTrue(reading.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+            clock.set(deadlineAt + 2);
+            return new java.util.concurrent.CompletableFuture<>();
+        };
+        try {
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    OpenRouterService.AnswerDeadline.after(Duration.ofMillis(100), 0), 100);
+
+            assertTrue(response.isProviderFailure(), "a provider problem, never the model's timeout");
+            assertFalse(response.timedOut());
+            assertNotEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        } finally {
+            release.countDown();
+        }
     }
 
     @Test
