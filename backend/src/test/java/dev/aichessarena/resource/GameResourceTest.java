@@ -1,6 +1,7 @@
 package dev.aichessarena.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.aichessarena.dto.HumanMoveRequest;
@@ -68,6 +69,15 @@ class GameResourceTest {
         IllegalArgumentException repeated = assertThrows(IllegalArgumentException.class,
                 () -> GameResource.parseQueueIfFull(List.of("true", "true")));
         assertEquals("queueIfFull must be given at most once", repeated.getMessage());
+    }
+
+    @Test
+    void queryValuesFollowTheConfiguredSemicolonDelimiter() {
+        String query = "foo=bar;QueueIfFull=false&queue%C4%B1fFull=true&queueIfFull";
+        assertEquals(List.of("false", "true", ""), GameResource.queryValuesIgnoringCase(query, "queueIfFull", true));
+        assertEquals(List.of("true", ""), GameResource.queryValuesIgnoringCase(query, "queueIfFull", false));
+        assertNull(GameResource.queryValuesIgnoringCase("foo=bar;baz", "queueIfFull", true));
+        assertNull(GameResource.queryValuesIgnoringCase(null, "queueIfFull", true));
     }
 
     @Test

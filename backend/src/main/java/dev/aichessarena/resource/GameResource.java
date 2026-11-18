@@ -23,6 +23,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +35,10 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class GameResource {
+
+    /** Quarkus' own setting (default true), so this parser splits the query exactly like the framework does. */
+    @ConfigProperty(name = "quarkus.http.use-semicolon-as-query-param-delimiter", defaultValue = "true")
+    boolean semicolonIsQueryDelimiter = true;
 
     @Inject
     GameRepository gameRepository;
@@ -146,7 +151,8 @@ public class GameResource {
     @POST
     @Path("/{id}/start")
     public Response startGame(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
-        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(uriInfo, "queueIfFull")));
+        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(
+                uriInfo.getRequestUri().getRawQuery(), "queueIfFull", semicolonIsQueryDelimiter)));
     }
 
     Response startGame(UUID id, boolean queueIfFull) {
@@ -166,13 +172,13 @@ public class GameResource {
     /**
      * Every value of a query parameter whose name matches regardless of case (as with the former {@code @QueryParam}),
      * or null when none is present. Parsed from the raw query: the case-insensitive parameter map can merge names
-     * that differ only in special characters (such as a dotless i) and drop values.
+     * that differ only in special characters (such as a dotless i) and drop values. Pairs are separated by
+     * {@code &} and, like Quarkus' own query parsing by default, also by {@code ;}.
      */
-    static List<String> queryValuesIgnoringCase(UriInfo uriInfo, String name) {
-        String query = uriInfo.getRequestUri().getRawQuery();
+    static List<String> queryValuesIgnoringCase(String query, String name, boolean semicolonIsDelimiter) {
         if (query == null || query.isEmpty()) return null;
         List<String> values = null;
-        for (String pair : query.split("&", -1)) {
+        for (String pair : query.split(semicolonIsDelimiter ? "[&;]" : "&", -1)) {
             int separator = pair.indexOf('=');
             String key = URLDecoder.decode(separator < 0 ? pair : pair.substring(0, separator), StandardCharsets.UTF_8);
             if (key.equalsIgnoreCase(name)) {
