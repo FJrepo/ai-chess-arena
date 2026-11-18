@@ -7,6 +7,7 @@ import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.repository.MoveRepository;
+import dev.aichessarena.service.TurnPolicy.Action;
 import dev.aichessarena.websocket.GameWebSocket;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -18,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -132,9 +134,9 @@ public class GameTurnService {
             LOG.warnf("Game %s: clamped stored maxRetries from %d to %d", request.gameId(), request.maxRetries(), maxAttempts);
         }
         int providerFailures = 0;
-        String lastProviderFailure = null;
-        int unrecordedCacheRejectionAttempt = 0;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        ProviderProblem providerProblem = null;
+        int attempt = 1;
+        while (true) {
             if (!request.shouldContinue().getAsBoolean()) {
                 return TurnResult.stopped();
             }
@@ -147,17 +149,20 @@ public class GameTurnService {
                 // Database timing and admission work must finish before the model's first answer budget starts.
                 turnDeadline = OpenRouterService.AnswerDeadline.after(
                         Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
-            } else if (turnDeadline != null && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= 0) {
-                if (lastProviderFailure != null) {
-                    // No next request was sent. Attribute an unrecorded marker rejection to its actual attempt.
-                    if (unrecordedCacheRejectionAttempt != 0) {
-                        recordAttempt(request, effort, unrecordedCacheRejectionAttempt, Outcome.PROVIDER_RETRYABLE,
-                                null, lastProviderFailure, null);
+            } else {
+                Action action = TurnPolicy.beforeRequest(remainingNanos(turnDeadline), providerProblem != null);
+                if (action == Action.PAUSE_PROVIDER) {
+                    // Attribute an unrecorded marker rejection to the request that actually triggered it.
+                    if (providerProblem.cacheRejectionAttempt() != 0) {
+                        recordAttempt(request, effort, providerProblem.cacheRejectionAttempt(), Outcome.PROVIDER_RETRYABLE,
+                                null, providerProblem.detail(), null);
                     }
-                    return pauseForProvider(request, lastProviderFailure);
+                    return pauseForProvider(request, providerProblem.detail());
                 }
-                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
-                return TurnResult.terminal();
+                if (action == Action.FORFEIT_TIMEOUT) {
+                    gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
+                    return TurnResult.terminal();
+                }
             }
 
             LOG.infof("Game %s: %s move %d, attempt %d",
@@ -175,213 +180,213 @@ public class GameTurnService {
                 String detail = withReasoningEffortHint(llmResponse, effort, request);
                 LOG.warnf("Game %s: OpenRouter failure for %s (%s): %s",
                         request.gameId(), request.modelId(), llmResponse.outcome(), detail);
-                recordAttempt(request, effort, attempt,
-                        llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
-                                ? Outcome.PROVIDER_FATAL : Outcome.PROVIDER_RETRYABLE,
-                        null, detail, llmResponse);
-                if (llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
-                        || providerFailures >= providerRetryBackoffMs.length) {
+                Outcome outcome = llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
+                        ? Outcome.PROVIDER_FATAL : Outcome.PROVIDER_RETRYABLE;
+                recordAttempt(request, effort, attempt, outcome, null, detail, llmResponse);
+                Long delayMs = outcome == Outcome.PROVIDER_RETRYABLE && providerFailures < providerRetryBackoffMs.length
+                        ? providerRetryBackoffMs[providerFailures] : null;
+                Action action = TurnPolicy.afterProviderFailure(outcome,
+                        delayMs == null ? null : remainingNanos(turnDeadline),
+                        delayMs == null ? null : TimeUnit.MILLISECONDS.toNanos(delayMs));
+                if (action == Action.PAUSE_PROVIDER) {
                     return pauseForProvider(request, detail);
                 }
-                long delayMs = providerRetryBackoffMs[providerFailures];
                 providerFailures++;
-                lastProviderFailure = detail;
-                unrecordedCacheRejectionAttempt = 0;
-                if (turnDeadline != null
-                        && turnDeadline.remainingNanos(nanoClock.getAsLong()) <= TimeUnit.MILLISECONDS.toNanos(delayMs)) {
-                    return pauseForProvider(request, detail);
-                }
+                providerProblem = new ProviderProblem(detail, 0);
                 broadcastRetry(request.gameId(), request.sideToMove(), attempt,
                         "%s; retrying in %ds (provider retry %d of %d)".formatted(
                                 detail, Math.max(1, delayMs / 1000), providerFailures, providerRetryBackoffMs.length));
                 if (!waitUnlessStopped(delayMs, request.shouldContinue())) {
                     return TurnResult.stopped();
                 }
-                attempt--; // provider failures do not use up the model's attempts
                 continue;
             }
 
             if (llmResponse.cacheRejectionStatus() != null) {
-                lastProviderFailure = "OpenRouter rejected cache control (HTTP " + llmResponse.cacheRejectionStatus() + ")";
-                unrecordedCacheRejectionAttempt = attempt;
+                providerProblem = new ProviderProblem(
+                        "OpenRouter rejected cache control (HTTP " + llmResponse.cacheRejectionStatus() + ")", attempt);
             }
             if (llmResponse.timedOut()) {
-                if (lastProviderFailure != null || moveTimeoutSeconds == null) {
-                    String detail = lastProviderFailure != null
-                            ? "Move time ran out after OpenRouter problems earlier in this turn (" + lastProviderFailure + ")"
-                            : "The OpenRouter request timed out although the tournament has no move time limit";
-                    recordAttempt(request, effort, attempt, Outcome.PROVIDER_RETRYABLE, null, detail, llmResponse);
-                    return pauseForProvider(request, detail);
-                }
-                recordAttempt(request, effort, attempt, Outcome.TIMEOUT, null, "No answer within the move time", llmResponse);
-                LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
-                gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), moveTimeoutSeconds);
-                return TurnResult.terminal();
+                return handleResponseTimeout(request, effort, attempt, llmResponse, providerProblem);
             }
 
-            if (llmResponse.content() == null) {
-                if (llmResponse.truncated()) {
-                    return pauseForTruncation(request, effort, attempt, null, llmResponse);
-                }
-                LOG.errorf("Game %s: null response from %s", request.gameId(), request.modelId());
-                recordAttempt(request, effort, attempt, Outcome.EMPTY_RESPONSE, null, "Model returned an empty response", llmResponse);
-                broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Model returned an empty response",
-                        Outcome.EMPTY_RESPONSE, null);
-                if (attempt < maxAttempts) {
-                    request.history().add(new OpenRouterService.ChatMsg(
-                            "user",
-                            promptService.buildRetryPrompt(
-                                    promptService.getJsonParseError(),
-                                    request.fen(),
-                                    request.legalMoves(),
-                                    attempt + 1,
-                                    maxAttempts
-                            )
-                    ));
-                }
-                continue;
-            }
-
-            ResponseParserService.ParseResult parseResult = responseParserService.parse(llmResponse.content());
-            if (parseResult.isFailure()) {
-                if (llmResponse.truncated()) {
-                    return pauseForTruncation(request, effort, attempt, null, llmResponse);
-                }
-                LOG.warnf("Game %s: parse failure from %s: %s",
-                        request.gameId(), request.modelId(), parseResult.message());
-                recordAttempt(request, effort, attempt, Outcome.PARSE_FAILURE, null, parseResult.message(), llmResponse);
-                broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Failed to parse response as JSON",
-                        Outcome.PARSE_FAILURE, null);
-                if (attempt < maxAttempts) {
-                    request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-                    request.history().add(new OpenRouterService.ChatMsg(
-                            "user",
-                            promptService.buildRetryPrompt(
-                                    promptService.getJsonParseError(),
-                                    request.fen(),
-                                    request.legalMoves(),
-                                    attempt + 1,
-                                    maxAttempts
-                            )
-                    ));
-                }
-                continue;
-            }
-
-            if (parseResult.resign()) {
-                if (mayResign) {
-                    // Resign wins: a move sent along is ignored.
-                    return resign(request, effort, attempt, parseResult, llmResponse);
-                }
-                if (parseResult.move() == null) {
-                    if (llmResponse.truncated()) {
-                        return pauseForTruncation(request, effort, attempt, null, llmResponse);
+            ModelAnswer answer = assessModelAnswer(request, llmResponse, mayResign);
+            Action action = TurnPolicy.afterModelResponse(answer.outcome(), maxAttempts - attempt,
+                    providerProblem != null, moveTimeoutSeconds != null);
+            switch (action) {
+                case ACCEPT -> {
+                    if (answer.outcome() == Outcome.RESIGNED) {
+                        return resign(request, effort, attempt, answer.parsed(), llmResponse);
                     }
-                    // Not allowed and nothing else to play: an invalid answer like an illegal move.
-                    String error = promptService.getResignationNotAllowedError(request.resignationAllowed());
-                    LOG.warnf("Game %s: %s tried to resign at move %d: %s",
-                            request.gameId(), request.modelId(), request.moveNumber(), error);
-                    recordAttempt(request, effort, attempt, Outcome.RESIGN_NOT_ALLOWED, null, error, llmResponse);
-                    broadcastRetry(request.gameId(), request.sideToMove(), attempt, "Tried to resign: " + error,
-                            Outcome.RESIGN_NOT_ALLOWED, null);
-                    if (attempt < maxAttempts) {
-                        request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-                        request.history().add(new OpenRouterService.ChatMsg(
-                                "user",
-                                promptService.buildRetryPrompt(
-                                        error,
-                                        request.fen(),
-                                        request.legalMoves(),
-                                        attempt + 1,
-                                        maxAttempts
-                                )
-                        ));
-                    }
-                    continue;
+                    return recordAcceptedMove(request, effort, attempt, answer.parsed(), answer.move(), llmResponse);
                 }
-                // Not allowed, but a move came along: the flag is ignored and the move is played (or rejected) as
-                // usual.
-            }
-
-            ChessService.ValidMoveResult moveResult = chessService.validateAndApply(request.board(), parseResult.move());
-            if (!moveResult.valid()) {
-                if (llmResponse.truncated()) {
-                    return pauseForTruncation(request, effort, attempt, parseResult.move(), llmResponse);
+                case PAUSE_TRUNCATED -> {
+                    return pauseForTruncation(request, effort, attempt, answer.proposedMove(), llmResponse);
                 }
-                LOG.warnf("Game %s: illegal move '%s' from %s: %s",
-                        request.gameId(), parseResult.move(), request.modelId(), moveResult.error());
-                recordAttempt(request, effort, attempt, Outcome.ILLEGAL_MOVE, parseResult.move(), moveResult.error(), llmResponse);
-                broadcastRetry(
-                        request.gameId(),
-                        request.sideToMove(),
-                        attempt,
-                        "Illegal move attempted: " + parseResult.move(),
-                        Outcome.ILLEGAL_MOVE,
-                        parseResult.move()
-                );
-                if (attempt < maxAttempts) {
-                    request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-                    request.history().add(new OpenRouterService.ChatMsg(
-                            "user",
-                            promptService.buildRetryPrompt(
-                                    promptService.getIllegalMoveError(parseResult.move()),
-                                    request.fen(),
-                                    request.legalMoves(),
-                                    attempt + 1,
-                                    maxAttempts
-                            )
-                    ));
-                }
-                continue;
+                case RETRY_MODEL, FORFEIT_INVALID_MOVES -> recordRejectedAnswer(
+                        request, effort, attempt, maxAttempts, answer, llmResponse, action == Action.RETRY_MODEL);
+                default -> throw new IllegalStateException("Unexpected action after assessing a model answer: " + action);
             }
-
-            request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
-            // With chat OFF, messages are neither stored, broadcast nor relayed to the opponent. A missing message never
-            // rejects a legal move, not even with chat MANDATORY: the move is recorded with its chat mode and without a
-            // chat message, which the talkativeness metric counts as a silent move.
-            ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
-            String message = chatMode.allowsMessages() && parseResult.message() != null
-                    && !parseResult.message().isBlank() ? parseResult.message() : null;
-            try {
-                gameMoveService.recordModelMove(
-                        request.gameId(),
-                        request.moveNumber(),
-                        request.sideToMove(),
-                        moveResult.san(),
-                        moveResult.fen(),
-                        request.modelId(),
-                        request.playerName(),
-                        message,
-                        llmResponse,
-                        attempt - 1,
-                        request.promptVersion(),
-                        request.promptHash(),
-                        request.fen(),
-                        chatMode
-                );
-            } catch (GameStateConflictException e) {
-                LOG.warnf("Game %s: discarding %s move %s: %s",
-                        request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
-                // The move transaction has rolled back; keep the paid answer and its cost (added once, here).
-                recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
-                return TurnResult.stopped();
+            if (action == Action.FORFEIT_INVALID_MOVES) {
+                break;
             }
-            // Attempt recording can pause the run and stop its loop at the budget cap. Finalize the
-            // committed move first, using the live board (including repetition history). The lifecycle
-            // rechecks cancellation under the locks before completing or advancing the tournament.
-            boolean terminal = chessService.isGameOver(request.board());
-            if (terminal) {
-                gameLifecycleService.completeGame(request.gameId(), chessService.getGameEndInfo(request.board()));
-            } else {
-                terminal = gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
-            }
-            recordAttempt(request, effort, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
-            return terminal ? TurnResult.terminal() : TurnResult.recorded(moveResult.san(), message);
+            attempt++;
         }
 
         if (autoRuns != null && !autoRuns.beforeRequest(request.gameId())) return TurnResult.paused();
         gameLifecycleService.forfeitInvalidMoves(request.gameId(), request.sideToMove(), maxAttempts);
         return TurnResult.terminal();
+    }
+
+    private Long remainingNanos(OpenRouterService.AnswerDeadline deadline) {
+        return deadline == null ? null : deadline.remainingNanos(nanoClock.getAsLong());
+    }
+
+    private record ProviderProblem(String detail, int cacheRejectionAttempt) {}
+
+    private TurnResult handleResponseTimeout(TurnRequest request, ReasoningEffort effort, int attempt,
+                                             OpenRouterService.LlmResponse response, ProviderProblem providerProblem) {
+        Integer timeoutSeconds = request.moveTimeoutSeconds();
+        Action action = TurnPolicy.afterModelResponse(Outcome.TIMEOUT, 0, providerProblem != null, timeoutSeconds != null);
+        if (action == Action.PAUSE_PROVIDER) {
+            String detail = providerProblem != null
+                    ? "Move time ran out after OpenRouter problems earlier in this turn (" + providerProblem.detail() + ")"
+                    : "The OpenRouter request timed out although the tournament has no move time limit";
+            recordAttempt(request, effort, attempt, Outcome.PROVIDER_RETRYABLE, null, detail, response);
+            return pauseForProvider(request, detail);
+        }
+        recordAttempt(request, effort, attempt, Outcome.TIMEOUT, null, "No answer within the move time", response);
+        LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
+        gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), timeoutSeconds);
+        return TurnResult.terminal();
+    }
+
+    private ModelAnswer assessModelAnswer(TurnRequest request, OpenRouterService.LlmResponse response, boolean mayResign) {
+        if (response.content() == null) {
+            return ModelAnswer.rejected(response, Outcome.EMPTY_RESPONSE, null, null);
+        }
+        ResponseParserService.ParseResult parsed = responseParserService.parse(response.content());
+        if (parsed.isFailure()) {
+            return ModelAnswer.rejected(response, Outcome.PARSE_FAILURE, parsed, null);
+        }
+        if (parsed.resign()) {
+            if (mayResign) {
+                // An allowed resignation wins even when the model includes a move.
+                return new ModelAnswer(Outcome.RESIGNED, parsed, null);
+            }
+            if (parsed.move() == null) {
+                return ModelAnswer.rejected(response, Outcome.RESIGN_NOT_ALLOWED, parsed, null);
+            }
+        }
+
+        ChessService.ValidMoveResult move = chessService.validateAndApply(request.board(), parsed.move());
+        return move.valid() ? new ModelAnswer(Outcome.ACCEPTED, parsed, move)
+                : ModelAnswer.rejected(response, Outcome.ILLEGAL_MOVE, parsed, move);
+    }
+
+    private record ModelAnswer(Outcome outcome, ResponseParserService.ParseResult parsed, ChessService.ValidMoveResult move) {
+        static ModelAnswer rejected(OpenRouterService.LlmResponse response, Outcome outcome,
+                                    ResponseParserService.ParseResult parsed, ChessService.ValidMoveResult move) {
+            return new ModelAnswer(response.truncated() ? Outcome.TRUNCATED : outcome, parsed, move);
+        }
+
+        String proposedMove() {
+            return move == null ? null : parsed.move();
+        }
+    }
+
+    private void recordRejectedAnswer(TurnRequest request, ReasoningEffort effort, int attempt, int maxAttempts,
+                                      ModelAnswer answer, OpenRouterService.LlmResponse response, boolean retry) {
+        String proposedMove = answer.proposedMove();
+        String detail;
+        String retryReason;
+        Supplier<String> retryError;
+        switch (answer.outcome()) {
+            case EMPTY_RESPONSE -> {
+                LOG.errorf("Game %s: null response from %s", request.gameId(), request.modelId());
+                detail = "Model returned an empty response";
+                retryReason = detail;
+                retryError = promptService::getJsonParseError;
+            }
+            case PARSE_FAILURE -> {
+                detail = answer.parsed().message();
+                LOG.warnf("Game %s: parse failure from %s: %s", request.gameId(), request.modelId(), detail);
+                retryReason = "Failed to parse response as JSON";
+                retryError = promptService::getJsonParseError;
+            }
+            case RESIGN_NOT_ALLOWED -> {
+                detail = promptService.getResignationNotAllowedError(request.resignationAllowed());
+                LOG.warnf("Game %s: %s tried to resign at move %d: %s",
+                        request.gameId(), request.modelId(), request.moveNumber(), detail);
+                retryReason = "Tried to resign: " + detail;
+                retryError = () -> detail;
+            }
+            case ILLEGAL_MOVE -> {
+                detail = answer.move().error();
+                LOG.warnf("Game %s: illegal move '%s' from %s: %s",
+                        request.gameId(), proposedMove, request.modelId(), detail);
+                retryReason = "Illegal move attempted: " + proposedMove;
+                retryError = () -> promptService.getIllegalMoveError(proposedMove);
+            }
+            default -> throw new IllegalArgumentException("Expected an invalid model answer, got " + answer.outcome());
+        }
+
+        recordAttempt(request, effort, attempt, answer.outcome(), proposedMove, detail, response);
+        broadcastRetry(request.gameId(), request.sideToMove(), attempt, retryReason, answer.outcome(), proposedMove);
+        if (retry) {
+            if (response.content() != null) {
+                request.history().add(new OpenRouterService.ChatMsg("assistant", response.content()));
+            }
+            request.history().add(new OpenRouterService.ChatMsg("user", promptService.buildRetryPrompt(
+                    retryError.get(), request.fen(), request.legalMoves(), attempt + 1, maxAttempts)));
+        }
+    }
+
+    private TurnResult recordAcceptedMove(TurnRequest request, ReasoningEffort effort, int attempt,
+                                          ResponseParserService.ParseResult parseResult, ChessService.ValidMoveResult moveResult,
+                                          OpenRouterService.LlmResponse llmResponse) {
+        request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
+        // With chat OFF, messages are neither stored, broadcast nor relayed to the opponent. A missing message never
+        // rejects a legal move, not even with chat MANDATORY: the move is recorded with its chat mode and without a
+        // chat message, which the talkativeness metric counts as a silent move.
+        ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
+        String message = chatMode.allowsMessages() && parseResult.message() != null
+                && !parseResult.message().isBlank() ? parseResult.message() : null;
+        try {
+            gameMoveService.recordModelMove(
+                    request.gameId(),
+                    request.moveNumber(),
+                    request.sideToMove(),
+                    moveResult.san(),
+                    moveResult.fen(),
+                    request.modelId(),
+                    request.playerName(),
+                    message,
+                    llmResponse,
+                    attempt - 1,
+                    request.promptVersion(),
+                    request.promptHash(),
+                    request.fen(),
+                    chatMode
+            );
+        } catch (GameStateConflictException e) {
+            LOG.warnf("Game %s: discarding %s move %s: %s",
+                    request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
+            // The move transaction has rolled back; keep the paid answer and its cost (added once, here).
+            recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
+            return TurnResult.stopped();
+        }
+        // Attempt recording can pause the run and stop its loop at the budget cap. Finalize the
+        // committed move first, using the live board (including repetition history). The lifecycle
+        // rechecks cancellation under the locks before completing or advancing the tournament.
+        boolean terminal = chessService.isGameOver(request.board());
+        if (terminal) {
+            gameLifecycleService.completeGame(request.gameId(), chessService.getGameEndInfo(request.board()));
+        } else {
+            terminal = gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
+        }
+        recordAttempt(request, effort, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
+        return terminal ? TurnResult.terminal() : TurnResult.recorded(moveResult.san(), message);
     }
 
     /** Whether resignation is offered and the current move is at least this side's tenth non-book move. */

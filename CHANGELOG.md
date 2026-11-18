@@ -13,6 +13,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Centralize turn decisions for model answers, provider retries, and time limits.
+
 ### Fixed
 
 ## [1.8.0] - 2026-11-18

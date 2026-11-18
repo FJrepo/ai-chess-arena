@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -284,6 +285,58 @@ class OpenRouterPromptCachingTest {
         assertEquals(1, requests.size());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void rejectionAtTheDeadlinePausesTheTurnEvenIfAttemptRecordingFails(boolean failRecording) throws Exception {
+        OpenRouterService router = stub();
+        AtomicLong nanos = new AtomicLong();
+        router.nanoClock = nanos::get;
+        rejectionStatus = 400;
+        afterRejection = () -> nanos.set(Duration.ofSeconds(10).toNanos());
+        List<String> pauses = new ArrayList<>();
+        List<MoveAttemptService.AttemptRecord> writes = new ArrayList<>();
+
+        var result = playTimedTurn(router, nanos, 10, pauses, record -> {
+            writes.add(record);
+            if (failRecording) {
+                throw new IllegalStateException("Attempt transaction failed");
+            }
+        });
+
+        assertTrue(result.pausedGame());
+        assertEquals(1, requests.size(), "the plain fallback was never sent");
+        assertEquals(1, pauses.size());
+        assertTrue(pauses.getFirst().contains("cache"));
+        assertEquals(1, writes.size());
+        assertEquals(Outcome.PROVIDER_RETRYABLE, writes.getFirst().outcome());
+        assertEquals(1, writes.getFirst().attemptNumber());
+        assertEquals(400, writes.getFirst().response().httpStatus());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"401,PROVIDER_FATAL", "429,PROVIDER_RETRYABLE", "503,PROVIDER_RETRYABLE"})
+    void httpErrorsPauseWithProviderAttributionWhenThereIsNoTimeForAProviderRetry(int status, Outcome expected)
+            throws Exception {
+        OpenRouterService router = stub();
+        AtomicLong nanos = new AtomicLong();
+        router.nanoClock = nanos::get;
+        rejectionStatus = status;
+        rejectionBody = "{\"error\":{\"message\":\"Provider rejected the request\"}}";
+        // The default first provider backoff is 1 s, leaving no time for another request.
+        afterRejection = () -> nanos.set(Duration.ofSeconds(9).toNanos());
+        List<String> pauses = new ArrayList<>();
+        List<MoveAttemptService.AttemptRecord> attempts = new ArrayList<>();
+
+        var result = playTimedTurn(router, nanos, 10, pauses, attempts::add);
+
+        assertTrue(result.pausedGame());
+        assertEquals(1, requests.size());
+        assertEquals(1, pauses.size());
+        assertTrue(pauses.getFirst().contains("HTTP " + status), pauses.getFirst());
+        assertEquals(1, attempts.size());
+        assertEquals(expected, attempts.getFirst().outcome());
+    }
+
     @Test
     void latePlainFallbackPausesTheRealTurnWithoutRecordingAModelTimeoutOrForfeit() throws Exception {
         OpenRouterService router = stub();
@@ -294,7 +347,7 @@ class OpenRouterPromptCachingTest {
         afterPlain = () -> nanos.set(Duration.ofSeconds(11).toNanos());
         List<String> pauses = new ArrayList<>();
         List<MoveAttemptService.AttemptRecord> attempts = new ArrayList<>();
-        var result = playTimedTurn(router, nanos, 10, pauses, attempts);
+        var result = playTimedTurn(router, nanos, 10, pauses, attempts::add);
 
         assertTrue(result.pausedGame());
         assertFalse(result.isTerminal());
@@ -320,7 +373,7 @@ class OpenRouterPromptCachingTest {
         List<String> pauses = new ArrayList<>();
         List<MoveAttemptService.AttemptRecord> attempts = new ArrayList<>();
 
-        var result = playTimedTurn(router, nanos, 30, pauses, attempts);
+        var result = playTimedTurn(router, nanos, 30, pauses, attempts::add);
 
         assertTrue(result.pausedGame());
         assertEquals(expectedRequests, requests.size());
@@ -334,7 +387,7 @@ class OpenRouterPromptCachingTest {
     }
 
     private GameTurnService.TurnResult playTimedTurn(OpenRouterService router, AtomicLong nanos, int timeoutSeconds,
-                                                      List<String> pauses, List<MoveAttemptService.AttemptRecord> attempts) {
+                                                      List<String> pauses, Consumer<MoveAttemptService.AttemptRecord> recordAttempt) {
         GameTurnService turn = new GameTurnService();
         turn.nanoClock = nanos::get;
         turn.openRouterService = router;
@@ -352,12 +405,17 @@ class OpenRouterPromptCachingTest {
 
             @Override
             public void forfeitTimeout(UUID id, String color, int seconds) {
-                throw new AssertionError("Cache rejection must not cause a timeout loss");
+                throw new AssertionError("A provider error must not cause a timeout loss");
+            }
+
+            @Override
+            public void forfeitInvalidMoves(UUID id, String color, int attempts) {
+                throw new AssertionError("A provider error must not consume the model's attempts");
             }
         };
         turn.moveAttemptService = new MoveAttemptService() {
             @Override
-            public void record(AttemptRecord record) { attempts.add(record); }
+            public void record(AttemptRecord record) { recordAttempt.accept(record); }
         };
         turn.gameWebSocket = new GameWebSocket() {
             @Override
