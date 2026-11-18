@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -288,6 +289,210 @@ class OpenRouterServiceChatTest {
                     @Override public void onComplete() { }
                 }));
         return new java.util.concurrent.CompletableFuture<>();
+    }
+
+    @Test
+    void aTlsHandshakeStillPendingAtTheMoveDeadlineIsAProviderProblemNotATimeout() throws Exception {
+        try (LoopbackTls server = LoopbackTls.stallingHandshake()) {
+            OpenRouterService service = service(server.baseUrl());
+
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    in(Duration.ofMillis(500)), 100);
+
+            assertEquals(1, server.connections.get());
+            assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+            assertTrue(response.isProviderFailure(), "never the model's timeout");
+            assertFalse(response.timedOut());
+            assertTrue(response.connectionPending());
+            assertTrue(response.deliveryUncertain(), "no connect failure confirms that nothing was delivered");
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void aConnectionCountsOnlyIfItWasEstablishedBeforeTheDeadlineInstant(boolean beforeDeadline) {
+        // Fake monotonic clock; the move deadline is at 100 ms. The HTTP client starts on the body (the connection is
+        // established) 1 ns before or after it, and the waiting thread only classifies afterwards.
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+        long deadlineAt = Duration.ofMillis(100).toNanos();
+        OpenRouterService service = service("http://127.0.0.1:9");
+        service.nanoClock = clock::get;
+        service.chatSender = (request, handler) -> {
+            clock.set(beforeDeadline ? deadlineAt - 1 : deadlineAt + 1);
+            request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+                @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) { }
+
+                @Override public void onNext(java.nio.ByteBuffer item) { }
+
+                @Override public void onError(Throwable throwable) { }
+
+                @Override public void onComplete() { }
+            });
+            clock.set(deadlineAt + 2);
+            return new java.util.concurrent.CompletableFuture<>();
+        };
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                OpenRouterService.AnswerDeadline.after(Duration.ofMillis(100), 0), 100);
+
+        if (beforeDeadline) {
+            assertEquals(ProviderOutcome.TIMEOUT, response.outcome(), "connected in time: a loss on time");
+            assertFalse(response.connectionPending());
+        } else {
+            assertEquals(ProviderOutcome.RETRYABLE, response.outcome(), "still connecting at the deadline");
+            assertTrue(response.connectionPending());
+        }
+        assertTrue(response.deliveryUncertain());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void responseHeadersCountAsAReadyConnectionOnlyBeforeTheDeadlineInstant(boolean beforeDeadline) {
+        // No body subscription is recorded; only the 200 headers, 1 ns before or after the 100 ms deadline.
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+        long deadlineAt = Duration.ofMillis(100).toNanos();
+        OpenRouterService service = service("http://127.0.0.1:9");
+        service.nanoClock = clock::get;
+        service.chatSender = (request, handler) -> {
+            clock.set(beforeDeadline ? deadlineAt - 1 : deadlineAt + 1);
+            handler.apply(responseInfo(200));
+            clock.set(deadlineAt + 2);
+            return new java.util.concurrent.CompletableFuture<>();
+        };
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                OpenRouterService.AnswerDeadline.after(Duration.ofMillis(100), 0), 100);
+
+        assertEquals(beforeDeadline ? ProviderOutcome.TIMEOUT : ProviderOutcome.RETRYABLE, response.outcome());
+        assertEquals(!beforeDeadline, response.connectionPending());
+    }
+
+    @Test
+    void aTimeoutNeverSeesTheHeaderTimeWithoutItsStatus() throws Exception {
+        // The body subscribes (the connection is ready) and a 429 arrives before the 100 ms deadline. Its callback is held
+        // while reading the status code, before any header evidence of the former versions was published, and the
+        // deadline passes meanwhile. A provider error must never become the model's timeout.
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+        long deadlineAt = Duration.ofMillis(100).toNanos();
+        java.util.concurrent.CountDownLatch reading = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.net.http.HttpResponse.ResponseInfo heldStatus = new java.net.http.HttpResponse.ResponseInfo() {
+            @Override public int statusCode() {
+                reading.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return 429;
+            }
+
+            @Override public java.net.http.HttpHeaders headers() {
+                return java.net.http.HttpHeaders.of(java.util.Map.of(), (name, value) -> true);
+            }
+
+            @Override public java.net.http.HttpClient.Version version() {
+                return java.net.http.HttpClient.Version.HTTP_1_1;
+            }
+        };
+        OpenRouterService service = service("http://127.0.0.1:9");
+        service.nanoClock = clock::get;
+        service.chatSender = (request, handler) -> {
+            clock.set(deadlineAt - 20);
+            request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+                @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) { }
+
+                @Override public void onNext(java.nio.ByteBuffer item) { }
+
+                @Override public void onError(Throwable throwable) { }
+
+                @Override public void onComplete() { }
+            });
+            clock.set(deadlineAt - 10);
+            Thread.startVirtualThread(() -> handler.apply(heldStatus));
+            try {
+                assertTrue(reading.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+            clock.set(deadlineAt + 2);
+            return new java.util.concurrent.CompletableFuture<>();
+        };
+        try {
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    OpenRouterService.AnswerDeadline.after(Duration.ofMillis(100), 0), 100);
+
+            assertTrue(response.isProviderFailure(), "a provider problem, never the model's timeout");
+            assertFalse(response.timedOut());
+            assertNotEquals(ProviderOutcome.TIMEOUT, response.outcome());
+            assertTrue(response.deliveryUncertain(), "the response may be an answer: possibly charged");
+            assertFalse(response.connectionPending(), "the connection was ready");
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void aNegativeMonotonicTimestampBeforeTheDeadlineIsValidEvidence() {
+        // System.nanoTime() may be negative: a subscription at -10 s + 50 ms precedes a deadline at -10 s + 100 ms.
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(-10_000_000_000L);
+        long start = clock.get();
+        OpenRouterService service = service("http://127.0.0.1:9");
+        service.nanoClock = clock::get;
+        service.chatSender = (request, handler) -> {
+            clock.set(start + Duration.ofMillis(50).toNanos());
+            request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+                @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) { }
+
+                @Override public void onNext(java.nio.ByteBuffer item) { }
+
+                @Override public void onError(Throwable throwable) { }
+
+                @Override public void onComplete() { }
+            });
+            clock.set(start + Duration.ofMillis(200).toNanos());
+            return new java.util.concurrent.CompletableFuture<>();
+        };
+
+        LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                OpenRouterService.AnswerDeadline.after(Duration.ofMillis(100), start), 100);
+
+        assertEquals(ProviderOutcome.TIMEOUT, response.outcome(), "connected before the deadline: a loss on time");
+        assertFalse(response.connectionPending());
+    }
+
+    private static java.net.http.HttpResponse.ResponseInfo responseInfo(int status) {
+        return new java.net.http.HttpResponse.ResponseInfo() {
+            @Override public int statusCode() {
+                return status;
+            }
+
+            @Override public java.net.http.HttpHeaders headers() {
+                return java.net.http.HttpHeaders.of(java.util.Map.of(), (name, value) -> true);
+            }
+
+            @Override public java.net.http.HttpClient.Version version() {
+                return java.net.http.HttpClient.Version.HTTP_1_1;
+            }
+        };
+    }
+
+    @Test
+    void aTlsConnectionThatNeverAnswersStaysALossOnTime() throws Exception {
+        try (LoopbackTls server = LoopbackTls.silentAfterHandshake()) {
+            OpenRouterService service = service(server.baseUrl());
+            var client = server.trustingClient();
+            service.chatSender = (request, handler) -> client.sendAsync(request, handler);
+
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    in(Duration.ofMillis(1_500)), 100);
+
+            assertEquals(1, server.requests.get(), "the request reached the server");
+            assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+            assertTrue(response.timedOut());
+            assertFalse(response.connectionPending());
+            assertTrue(response.deliveryUncertain());
+        }
     }
 
     /** Reads one HTTP/1.1 request with a Content-Length body. */

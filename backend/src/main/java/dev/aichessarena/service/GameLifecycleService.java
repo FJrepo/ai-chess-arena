@@ -279,6 +279,8 @@ public class GameLifecycleService {
 
     // Why a model request needs the operator's spend check (see inspectionDetail).
     static final String UNRESOLVED_REQUEST = "has no recorded answer and may already have been charged";
+    static final String CONNECTION_PENDING =
+            "was still connecting to OpenRouter when its deadline passed and was probably not delivered";
     static final String DELIVERY_UNCERTAIN = "lost its connection after it was sent and may already have been charged";
     static final String UNRECORDED_ANSWER = "was answered, but the answer could not be saved, so its cost may be missing";
     static final String INSPECTION_SUFFIX = ". Check spend, then resume.";
