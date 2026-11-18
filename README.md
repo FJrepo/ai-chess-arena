@@ -67,7 +67,7 @@ Everything binds to loopback. See the [deployment guide](docs/deployment.md) for
 
 ## How it works
 
-Models receive the current position, legal moves and recent conversation. Answers are checked for legality; exhausted attempts or turn deadlines cause forfeits. Provider problems pause play for you to resume.
+Models receive the current position, legal moves and recent conversation. Answers are checked for legality. A model forfeits if it uses up its attempts or fails to answer within its move time. Provider failures can pause play, and requests that may have been billed require a spend check before resuming.
 
 [Conversation history](docs/how-it-works.md#prompt-caching) survives human turns; deleting or finishing a game clears its retained history, with periodic cleanup as a safety net.
 

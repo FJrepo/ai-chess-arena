@@ -26,7 +26,7 @@ Every ladder run uses the same fixed conditions: eight openings, each played wit
 - **Reasoning tokens are provider-reported.** Some providers do not report them; the report then shows a dash rather than zero.
 - **Pin model IDs.** A moving alias such as `~provider/model-latest` can resolve to a different model during or between runs; the report lists every concrete ID it saw.
 - **The budget is a pause point, not a billing limit.** Requests already in flight can still add cost after the run pauses.
-- **Displayed spend can be incomplete.** A game paused for a spend check has a request whose cost is not recorded yet. Check that request in your OpenRouter activity before choosing **Spend checked, resume**, and treat that game's spend as a lower bound until then.
+- **Displayed spend can be incomplete.** A game paused for a spend check has a request whose cost may not be recorded. Check the request in your OpenRouter activity before choosing **Spend checked, resume**. Arena's displayed total still omits any charge it failed to record. Account for the missing charge from OpenRouter activity, or exclude the matchup from points-per-dollar comparisons.
 
 ## Raw playing strength
 
@@ -66,15 +66,15 @@ Add one to eight model IDs and a budget. A fixed effort keeps the thinking reque
 
 **Recipe settings:** Legal move hints **on** · Reasoning effort **Low** · Chat mode **Off** · Stockfish levels **1500** and **2000**
 
-The rerun copies the source's budget and concurrency, because a rerun changes only one setting. A higher effort spends more per game, so the rerun can reach that budget and pause before it has played all the games of the source. If it pauses, enter a higher budget under **Resume run**.
+The rerun copies the source's budget and concurrency, because a rerun changes only one setting. A higher requested effort can increase spend per game and make the rerun pause before it completes all the source matchups. Check observed spend on the same matchups. If it pauses, enter a higher budget under **Resume run**.
 
 **Read:** the comparison's **Score delta** per model with its **matched** count, **Cost delta**, and **Reasoning tok/move** (reasoning tokens per move) with its **reported** count for both runs. The changed outcomes list shows which games flipped.
 
 **Caveats:**
 
 - **Score delta** uses only matchups scored in both runs, while **Cost delta** includes spend on unfinished and cancelled games. Check that the matched count covers the games you care about before you compare them; a rerun that paused early compares few games.
-- Reasoning-token averages only cover answers that reported the counter; check the reported count. Similar averages do not prove that a provider ignored the level, and a model without effort levels gets no effort parameter at all (the game's attempt history shows the effort actually sent).
-- A higher effort uses more of the output limit; an unusable cut-off answer pauses the game.
+- **Reasoning tok/move** averages accepted model moves with a reported reasoning-token count. The **reported** count is the number of those moves, including moves reported with zero reasoning tokens. Similar averages do not prove that a provider ignored the level, and a model without effort levels gets no effort parameter at all (the game's attempt history shows the effort actually sent).
+- A higher requested effort can consume more of the output allowance. Two requested levels can map to the same supported level. An unusable cut-off answer pauses the game.
 - Compare the score delta with a [variance check](#variance-check) before calling it an improvement.
 
 **Cost:** two runs. Do not predict the second from the effort label: watch the rerun's spend after its first scored games and compare it with the source's spend for the same matchups.
@@ -91,7 +91,7 @@ Each model thinks as its provider ships it, which is what you pay for by default
 
 **Read:** *Model results* → **Score**, **Games** and **Spend**; *Opening pairs* shows each game's spend. Compare models over the same completed matchups: when a model's run paused early, it has fewer scored games and its total spend covers a different set of games. Points per dollar only makes sense for matchups that both models completed with positive recorded spend; it is undefined at zero spend. Rerun and compare adds **Reasoning tok/move** (reasoning tokens per move) and **Cost delta**. For cost per completed move across tournaments, use Analytics: *Cost & reliability* → *Per-Model Performance Metrics* → **Cost/Move**, *Overview* → **Cost / Win**, and *Play quality* → **Reasoning tokens / accepted move**. Benchmark games are kept out of those model analytics; their spend appears on its own line.
 
-**Caveats:** spend is what OpenRouter reports, including rejected answers and cache discounts, so it changes with prices and provider routing over time. A game paused for a spend check is missing that request's cost until you have checked it in your OpenRouter activity; do that before choosing **Spend checked, resume** and before comparing totals. Some models think without end at their default effort and can produce unusable cut-off answers (the game pauses).
+**Caveats:** spend is what OpenRouter reports, including rejected answers and cache discounts, so it changes with prices and provider routing over time. A game paused for a spend check may be missing that request's cost. Check the request in your OpenRouter activity before choosing **Spend checked, resume**. Arena's displayed total still omits any charge it failed to record. Account for the missing charge from OpenRouter activity, or exclude the matchup from points-per-dollar comparisons. Some models think without end at their default effort and can produce unusable cut-off answers (the game pauses).
 
 **Cost:** like *Raw playing strength*, but more spread: the most expensive models dominate the total.
 
@@ -107,11 +107,11 @@ The recipe switches off the ending rules that would hide the signal: no time lim
 
 **Read:** Analytics, filtered to this tournament. *Overview* → *Model Comparison Table* → **First-try legal**, **Forfeits** and **Reliability**; *Failure Profile*. *Cost & reliability* → *Reliability Ranking & Stability* → **First-try legal**, **Forfeit Rate**, **Avg Retries**. Each game's feed lists the failed attempts per move (for example "illegal Qxh7, unparseable answer").
 
-**First-try legal is not strict format compliance.** It counts whether the app could parse and play the first answer. Models are asked for JSON, but the parser also takes a move from plain text, so a bare `e4` counts as a legal first try. The attempt history (game feed, `GET /api/games/{id}/attempts`) shows the proposed move, outcome, finish reason and error, not the raw text. The raw answers are stored in the database (`move_attempts.raw_response` and `moves.raw_response`, up to 20,000 characters per attempt); query them there to check the exact format.
+**First-try legal is not strict format compliance.** Tournament Analytics counts an accepted move as first-try legal when its stored retry count is zero. Resuming starts the turn again at attempt 1, so a move accepted on that attempt can count as first-try legal even if an earlier answer for the same ply was cut off and unusable. Benchmark comparisons check earlier model answers at that ply across pauses. Models are asked for JSON, but the parser also takes a move from plain text, so a bare `e4` counts as a legal first try. The attempt history (game feed, `GET /api/games/{id}/attempts`) shows the proposed move, outcome, finish reason and error, not the raw text. The raw answers are stored in the database (`move_attempts.raw_response` and `moves.raw_response`, up to 20,000 characters per attempt); query them there to check the exact format.
 
 **Model or provider?** Illegal or unparseable answers and exhausted attempts are the model's. OpenRouter errors, rate limits and the 10-minute request cap are provider problems: the game pauses with the reason, and they never count as the model's timeout, invalid move or forfeit. Answers cut off at the output-token limit are listed separately and are not the model's failures; such an answer is played if it contains a legal move and otherwise pauses the game. The same model can be served by different providers, so a burst of pauses says more about routing than about the model.
 
-**Caveats:** fewer than 3 finished games mark a model *Insufficient data*, and scores from fewer than 60 moves are damped. Eliminated models play fewer games in a bracket. On the ladder, *Forfeit losses* and the comparison's **First-try legal** give the same signal for benchmark runs.
+**Caveats:** fewer than 3 finished games mark a model *Insufficient data*, and scores from fewer than 60 moves are damped. Eliminated models play fewer games in a bracket. On the ladder, **Forfeit losses** counts games decided by a model forfeit. **First-try legal** measures how often sampled model turns produced a legal move on the first try, including turns in games the model finished without forfeiting.
 
 **Cost:** set by the bracket size and series length; the setup page's *Tournament Estimate* gives a range before you create.
 

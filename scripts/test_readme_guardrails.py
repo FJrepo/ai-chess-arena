@@ -28,6 +28,12 @@ def heading_anchors(markdown):
     return anchors
 
 
+def feature_links(bullet):
+    """How-it-works anchors linked from a bullet; links inside inline code spans are not links."""
+    text = re.sub(r'(`+).*?\1', '', bullet)
+    return re.findall(r'\]\(docs/how-it-works\.md#([^)]+)\)', text)
+
+
 def visible_words(markdown):
     text = re.sub(r'\]\([^)]*\)', ']', markdown)
     return [word for word in re.sub(r'[*\[\]]', ' ', text).split() if word != '-']
@@ -60,10 +66,17 @@ class ReadmeGuardrailsTest(unittest.TestCase):
         bullets = [line for line in features_section().splitlines() if line.startswith('- ')]
         for bullet in bullets:
             with self.subTest(bullet=bullet):
-                links = re.findall(r'\]\(docs/how-it-works\.md#([^)]+)\)', bullet)
+                links = feature_links(bullet)
                 self.assertTrue(links, 'each feature links to its how-it-works section')
                 for anchor in links:
                     self.assertIn(anchor, anchors)
+
+    def test_a_link_inside_an_inline_code_span_does_not_count(self):
+        self.assertEqual(feature_links(
+            '- ` [Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies) `'), [])
+        self.assertEqual(feature_links(
+            '- `code` [Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies)'),
+            ['tournament-formats-and-draw-policies'])
 
 
 if __name__ == '__main__':

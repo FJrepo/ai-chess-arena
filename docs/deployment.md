@@ -73,7 +73,7 @@ Back up the database before upgrading and recreate both application services tog
 
 ## Configuration history migration (V26)
 
-Back up the database before upgrading and recreate both application services together. Flyway `V26__game_configuration_history.sql` adds a nullable game-start snapshot, an ordered configuration history per game and an optional reference from each model attempt. No backfill runs. Older starting settings and attempt revisions are unknown, and earlier standings, game history and costs are retained. The usual restart recovery pauses interrupted games. Restore the pre-upgrade backup if rolling back the schema. See [Configuration history](how-it-works.md#configuration-history).
+Back up the database before upgrading and recreate both application services together. Flyway `V26__game_configuration_history.sql` adds a nullable game-start snapshot, an ordered configuration history per game and an optional reference from each model attempt. No backfill runs. Older starting settings and attempt revisions are unknown, and earlier standings, game history and costs are retained. Before 2.0, startup recovery paused interrupted games. See [Restarts](how-it-works.md#restarts) for 2.0 behavior. Restore the pre-upgrade backup if rolling back the schema. See [Configuration history](how-it-works.md#configuration-history).
 
 ## Legal move hints migration (V25)
 
@@ -81,13 +81,13 @@ Flyway adds a required tournament hint flag with a default of true and expands t
 
 ## Live game revisions migration (V24)
 
-Back up the database before upgrading. Rebuild or pull and recreate both application services. Flyway `V24__live_game_revision.sql` initializes existing games at revision zero and adds nullable turn timestamps, chat mode and tone. Older attempts have no originating status revision. Stored moves, chat, attempts, results and spend are retained. The usual startup recovery pauses games interrupted by the restart. Resuming a game starts a new turn clock. Restore the pre-upgrade backup when rolling back.
+Back up the database before upgrading. Rebuild or pull and recreate both application services. Flyway `V24__live_game_revision.sql` initializes existing games at revision zero and adds nullable turn timestamps, chat mode and tone. Older attempts have no originating status revision. Stored moves, chat, attempts, results and spend are retained. Before 2.0, startup recovery paused interrupted games. See [Restarts](how-it-works.md#restarts) for 2.0 behavior. Resuming a game starts a new turn clock. Restore the pre-upgrade backup when rolling back.
 
 A frontend temporarily connected to an older backend falls back to periodic reads. Older clients can still subscribe for legacy WebSocket messages. Run one backend instance for this deployment. See [Live game synchronization](how-it-works.md#live-game-synchronization) for the protocol.
 
 ## Creation-time brackets migration (V22)
 
-Back up before upgrading. Rebuild and recreate backend and frontend together. Flyway `V22__creation_bracket_intent.sql` adds nullable `tournaments.creation_draw_mode`, preserving the original create intent so a retry with the same `clientRequestId` can finish generation after an interrupted request. Existing tournaments receive null and keep their current draft/bracket state; no generation backfill runs. Games, seeds, results and spend remain unchanged. Restore the pre-upgrade database backup to roll back. See [Bracket](how-it-works.md#bracket) for explicit generation opt-in, draft defaults and recovery.
+Back up before upgrading. Rebuild and recreate backend and frontend together. Flyway `V22__creation_bracket_intent.sql` adds nullable `tournaments.creation_draw_mode`, preserving the original create intent so a retry with the same `clientRequestId` can finish generation after an interrupted request. Existing tournaments receive null and keep their current draft/bracket state; no generation backfill runs. Games, seeds, results and spend remain unchanged. Restore the pre-upgrade database backup to roll back. See [Bracket](how-it-works.md#bracket) for the current generation default, explicit drafts and creation recovery.
 
 ## Banter level migration (V21)
 
@@ -101,7 +101,7 @@ Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend 
 
 Rebuild/recreate both backend and frontend to deploy the scheduler, API and bracket controls. Until 2.0, running auto-runs paused on every backend restart with **Backend restarted** and interrupted games were paused by GameRecovery; since 2.0 (V32) they continue, see [Restarts](how-it-works.md#restarts). A 10-second safety tick recovers missed scheduling notifications. This remains the single-backend deployment model: row locks serialize starts, but game-loop ownership and startup recovery belong to that backend JVM.
 
-Budget checks use reported tournament spend before each model request and after each recorded attempt. Terminal answers complete and advance before their attempt pauses unfinished games at the cap, including resignation and eligible stored-evaluation adjudication; cancellation remains final. Deploy this fix by rebuilding/recreating both application services. No additional migration or backfill is needed; existing persisted games remain unchanged, including any terminal positions paused by an older version, which still need manual resume after raising/removing the cap. In-flight answers can still add spend after the cap pauses a run. See [Auto-run](how-it-works.md#auto-run) for manual-play boundaries, human games, concurrency reductions and the API contract. Restore the pre-upgrade database backup when rolling back; older versions do not enforce run controls.
+Budget checks use reported tournament spend before each model request and after each recorded attempt. Terminal answers complete and advance before their attempt pauses unfinished games at the cap, including resignation and eligible stored-evaluation adjudication; cancellation remains final. Deploy this fix by rebuilding/recreating both application services. No additional migration or backfill is needed; existing persisted games remain unchanged. On 2.0 startup, recovery completes already-decided paused games. In-flight answers can still add spend after the cap pauses a run. See [Auto-run](how-it-works.md#auto-run) for manual-play boundaries, human games, concurrency reductions and the API contract. Restore the pre-upgrade database backup when rolling back; older versions do not enforce run controls.
 
 ## Opening variety migration (V19)
 
@@ -299,6 +299,12 @@ docker compose -f docker-compose.prod.yml exec db \
 If the backend is already failing to connect, start only the database with the temporary compatibility value, perform the rotation above, and immediately replace that value before recreating the stack. Never use the former fallback for a new deployment.
 
 ## Upgrading To A New Release
+For a downloaded release asset, set `compose_file=docker-compose.yml`. For a source checkout using released images, set `compose_file=docker-compose.prod.yml`. Run the upgrade, backup and rollback commands from the existing Compose project directory.
+
+```bash
+compose_file=docker-compose.yml   # or docker-compose.prod.yml in a source checkout
+```
+
 0. Back up the database (see [Backups and rollback](#backups-and-rollback)).
 1. Update `IMAGE_TAG` in `.env`
    - recommended: move from one pinned tag to another pinned tag
@@ -307,22 +313,26 @@ If the backend is already failing to connect, start only the database with the t
 2. Pull the new images:
 
 ```bash
-docker compose -f docker-compose.prod.yml pull
+docker compose -f "$compose_file" pull
 ```
 
 3. Recreate the services:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f "$compose_file" up -d
 ```
 
 4. Confirm startup and migration success:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs --tail=120 backend
+docker compose -f "$compose_file" logs --tail=120 backend
 ```
 
 Flyway migrations run automatically on backend startup.
+
+### Upgrading from 1.9 to 2.0
+
+When upgrading from 1.9, Flyway applies V29 ([Mind games banter](#mind-games-banter-migration-v29)), V30 ([API field and snapshot cleanup](#backups-and-rollback)), V31 ([Stockfish ladder](#stockfish-ladder-migration-v31)), V32 ([durable runs](#durable-runs-migration-v32)) and V33 (saved benchmark prompt versions), in that order. Back up before upgrading, keep the existing `.env`, project name and volumes, and recreate backend and frontend together. Update API clients using the [2.0 breaking changes](../CHANGELOG.md#upgrade-notes). Rolling back requires the pre-upgrade database backup.
 
 ## Backups and rollback
 Migrations only run forward: there are no down-migrations, and an older backend is not guaranteed to keep a migrated database consistent. To roll back to an older release, restore the database backup taken before the upgrade; the data written since then is lost. Since 1.4 (migration V12, chat modes) this is required: an older backend still starts, but it only writes `trash_talk_enabled` and stores moves without a chat mode, which leaves the data inconsistent when you upgrade again. Since 2.0 (migration V30) an older backend cannot work with the migrated database at all, because `tournaments.max_retries` was renamed and `trash_talk_enabled` dropped.
@@ -335,19 +345,19 @@ The prompt caching metrics upgrade adds nullable `move_attempts.cached_prompt_to
 
 Analytics comparisons read one cached catalog price snapshot without waiting for OpenRouter. Empty or expired catalogs trigger a single background refresh; failed catalog refreshes back off for 60 seconds, retaining stale prices when available. After a restart, savings may show n/a until prices are cached and the 15-second comparison cache expires. This catalog handling fix adds no migration or backfill and leaves persisted usage and costs unchanged; rebuild and recreate the backend to apply it.
 
-Back up before every upgrade (the stack keeps running):
+Back up before every upgrade (the stack keeps running; set `compose_file` as described in [Upgrading To A New Release](#upgrading-to-a-new-release)):
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > chess-backup-$(date +%F).dump
+docker compose -f "$compose_file" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > chess-backup-$(date +%F).dump
 ```
 
 Roll back: set `IMAGE_TAG` in `.env` back to the previous release, then restore the backup with the backend stopped and start everything again:
 
 ```bash
-docker compose -f docker-compose.prod.yml stop backend
-docker compose -f docker-compose.prod.yml exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < chess-backup-YYYY-MM-DD.dump
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f "$compose_file" stop backend
+docker compose -f "$compose_file" exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < chess-backup-YYYY-MM-DD.dump
+docker compose -f "$compose_file" pull
+docker compose -f "$compose_file" up -d
 ```
 
 ## Persistence
@@ -457,8 +467,10 @@ FROM moves GROUP BY game_id, move_number, color HAVING COUNT(*) > 1;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_moves_game_ply ON moves (game_id, move_number, color);
 ```
 
-### Games show "A model request … was in flight during a backend restart"
-Game loops do not survive a backend restart. A game whose model request was out when the backend stopped is paused with this reason, because the provider may already have charged it. Check the spend for that model on OpenRouter, then choose **Spend checked, resume** in the game view's pause banner (API: `POST /api/games/{id}/start?acknowledgeUncertainRequest=<uncertainRequestSentAt>`); a plain resume is refused with HTTP 409 until then. Games without a request in flight resume on their own (see [Restarts](how-it-works.md#restarts)). Games paused by an older version show "Paused because the server restarted"; resume them as before.
+### Game is paused for a spend check
+If the game shows **Paused for a spend check**, find the request in OpenRouter activity and choose **Spend checked, resume**. This hold follows a backend restart with a request in flight, a response whose delivery or cost is uncertain, a connection still being set up at the deadline, or an answer that could not be saved. API clients send `POST /api/games/{id}/start?acknowledgeUncertainRequest=<uncertainRequestSentAt>` using the timestamp from the game read. A plain resume returns HTTP 409. Acknowledgement clears the hold and leaves Arena's saved spend as recorded. Games without a request in flight resume on their own after a restart (see [Restarts](how-it-works.md#restarts)).
+
+If the game says **Paused by the upgrade to durable runs**, check OpenRouter activity, resume the auto-run if it was paused, then use ordinary **Resume** for the game. V32 has no request timestamp to acknowledge. Games paused by an older version show "Paused because the server restarted"; resume them as before.
 
 
 ### GHCR pull fails

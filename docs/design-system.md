@@ -76,8 +76,9 @@ Use a ruled table with a stronger header rule and a quiet alternate-row fill. Th
 rules apply to native table headers and Material header cells. Keep ordinary row dividers quiet.
 Row headers receive zebra fill too, so a model identity stays visually attached to its metrics.
 
-Right-align numeric headers and cells, apply `.num`, and retain tabular numerals. Identity and
-explanatory columns stay left-aligned. A header may wrap before the table forces page overflow.
+Right-align numeric values and their leaf headers. Centre a group header over the columns it
+labels. Apply `.num` to numeric values and retain tabular numerals. Identity and explanatory
+columns stay left-aligned. A header may wrap before the table forces page overflow.
 Keep footnotes outside the scrolling wrapper when possible.
 
 ```html
@@ -99,6 +100,11 @@ connection uses warning roles; an unrecoverable error uses error roles. Keep the
 its recovery action together. `.openrouter-status.info` and `.openrouter-status.warn` share the
 same pattern across setup, onboarding, System settings and connection dialogs. Existing
 conditions, actions and connection state handling determine which banner appears.
+A spend-check notice keeps the **Paused for a spend check** heading, full reason, OpenRouter
+activity hint and single primary **Spend checked, resume** action together.
+
+**Live games lamp.** While games run, show the live lamp with the **Live games** label and
+running count. Animate the glow only when reduced motion is disabled. Use a steady warning marker for paused games.
 
 **Connection fallback.** The callback card uses a neutral surface and info rule. Its progress
 message is informational; failure text uses the error role. Retry and navigation remain the
