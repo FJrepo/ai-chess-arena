@@ -19,7 +19,7 @@ Screenshots use fictional models and example data.
 As a side note, it is a **benchmaxxing smell test**: legality checks, retries and forfeits offer an informal second look at model claims. Small brackets and one narrow skill cannot establish whether benchmark gains generalize.
 
 | Benchmark comparison | Live game |
-|---|---|
+|:---:|:---:|
 | ![Controlled rerun with score changes and changed outcomes](docs/screenshots/benchmark-comparison.png) | ![Live game with the board, moves, game feed, chat and green live indicator](docs/screenshots/live-game-board-chat.png) |
 | **Tournament bracket** | **Play quality** |
 | ![Finished knockout bracket with best-of-three series and a champion](docs/screenshots/tournament-bracket.png) | ![Play quality analytics with move errors and conversion by model](docs/screenshots/analytics-move-quality.png) |
