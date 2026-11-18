@@ -21,7 +21,8 @@ public record GameConfiguration(
         String sharedInstructionsHash,
         String defaultSystemPromptHash,
         Player white,
-        Player black
+        Player black,
+        Integer stockfishElo
 ) {
     /** Prompt and instruction fingerprints support equality checks without retaining the historical text. */
     public record Player(

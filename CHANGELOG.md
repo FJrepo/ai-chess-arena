@@ -13,11 +13,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V27__practice_games.sql` adds standalone practice games and identifies inherited moves. Recreate both application services together after backing up.
 
+- Flyway `V28__stockfish_opponent.sql` records the target Elo for Stockfish practice games. Recreate both application services after backing up.
+
 ### Added
 
 - Review a game’s starting settings, see which configuration each model attempt used, and compare the first game’s start with a rematch draft.
 
 - Start a practice game from a playable position against the original opposing model. Practice spend appears separately in the operator total.
+
+- Play Stockfish from **Practice**, with a choice of color and target Elo and a separate opponent engine. No OpenRouter connection is needed.
 
 ### Changed
 

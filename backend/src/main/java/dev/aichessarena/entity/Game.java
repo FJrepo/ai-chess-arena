@@ -59,6 +59,9 @@ public class Game extends PanacheEntityBase {
     @Column(name = "practice_request_move_id", updatable = false)
     public UUID practiceRequestMoveId;
 
+    @Column(name = "stockfish_elo")
+    public Integer stockfishElo;
+
     @Column(name = "white_player_name")
     public String whitePlayerName;
 
@@ -225,11 +228,11 @@ public class Game extends PanacheEntityBase {
     }
 
     public enum PlayerType {
-        AI, HUMAN
+        AI, HUMAN, STOCKFISH
     }
 
     public enum PracticeKind {
-        FROM_GAME
+        FROM_GAME, HUMAN_STOCKFISH
     }
 
     public enum GameStatus {

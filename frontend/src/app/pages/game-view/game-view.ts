@@ -133,6 +133,7 @@ export class GameView implements OnInit, OnDestroy {
   tournamentChatMode = signal<ChatMode | null>(null);
   tournamentBanterLevel = signal<BanterLevel | null>(null);
   readonly displayedChatMode = computed(() => {
+    if (this.game()?.practiceKind === 'HUMAN_STOCKFISH') return 'OFF';
     const game = this.game();
     if (this.turnState.snapshotOnly()) return null;
     return game?.turnStartedAt ? (game.turnChatMode ?? null) : this.tournamentChatMode();
@@ -1221,8 +1222,11 @@ export class GameView implements OnInit, OnDestroy {
     const owner = this.gameActions;
     if (!this.gameActionsAvailable()) return;
     const isCurrent = () => !owner.closed && this.gameActionsAvailable();
-    if (this.connection) this.connection.withKey(action, isCurrent);
-    else action();
+    if (this.connection && this.game()?.practiceKind !== 'HUMAN_STOCKFISH') {
+      this.connection.withKey(action, isCurrent);
+    } else {
+      action();
+    }
   }
 
   /** The pause banner's "Save and resume": a changed limit and the cut-off side's effort when offered. */

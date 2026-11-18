@@ -6,12 +6,16 @@
         @if (game.whiteModelId) {
           <app-provider-logo [modelId]="game.whiteModelId" [size]="24" />
         } @else {
-          <mat-icon>person</mat-icon>
+          <mat-icon>{{ game.whiteControlType === 'STOCKFISH' ? 'smart_toy' : 'person' }}</mat-icon>
         }
         <div class="player-meta">
           <span class="name">{{ game.whitePlayerName }}</span>
           <span class="model"
-            >{{ game.whiteModelId || 'Human player' }}
+            >{{
+              game.whiteControlType === 'STOCKFISH'
+                ? 'Target Elo ' + game.stockfishElo
+                : game.whiteModelId || 'Human player'
+            }}
             @if (sideEffort('WHITE'); as effort) {
               <span
                 class="effort-tag"
@@ -42,12 +46,16 @@
         @if (game.blackModelId) {
           <app-provider-logo [modelId]="game.blackModelId" [size]="24" />
         } @else {
-          <mat-icon>person</mat-icon>
+          <mat-icon>{{ game.blackControlType === 'STOCKFISH' ? 'smart_toy' : 'person' }}</mat-icon>
         }
         <div class="player-meta">
           <span class="name">{{ game.blackPlayerName }}</span>
           <span class="model"
-            >{{ game.blackModelId || 'Human player' }}
+            >{{
+              game.blackControlType === 'STOCKFISH'
+                ? 'Target Elo ' + game.stockfishElo
+                : game.blackModelId || 'Human player'
+            }}
             @if (sideEffort('BLACK'); as effort) {
               <span
                 class="effort-tag"

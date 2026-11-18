@@ -183,6 +183,10 @@ export class ApiService {
     });
   }
 
+  createStockfishPractice(side: 'WHITE' | 'BLACK', elo: number): Observable<Game> {
+    return this.http.post<Game>(`${this.baseUrl}/games/practice/stockfish`, { side, elo });
+  }
+
   getGame(id: string): Observable<Game> {
     return this.http.get<Game>(`${this.baseUrl}/games/${id}`);
   }

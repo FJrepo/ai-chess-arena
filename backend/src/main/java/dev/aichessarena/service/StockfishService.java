@@ -10,6 +10,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.io.*;
 import java.time.Duration;
 import java.util.concurrent.*;
+import java.util.function.BooleanSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -198,7 +199,7 @@ public class StockfishService {
     }
 
     /** Isolates blocking protocol I/O so deadlines and shutdown can cancel the waiting worker. */
-    private static final class Engine {
+    static final class Engine {
         final Process process;
         final BufferedReader reader;
         final BufferedWriter writer;
@@ -214,6 +215,12 @@ public class StockfishService {
         }
 
         <T> T call(Callable<T> operation, Duration timeout) throws IOException, TimeoutException {
+            return call(operation, timeout, null);
+        }
+
+        /** A stopped game can leave a blocking UCI operation; its owner then closes the process. */
+        <T> T call(Callable<T> operation, Duration timeout, BooleanSupplier shouldContinue)
+                throws IOException, TimeoutException {
             Future<T> task;
             synchronized (this) {
                 if (stopped) throw new IOException("Stockfish stopped");
@@ -221,13 +228,31 @@ public class StockfishService {
                 active = task;
             }
             try {
-                return task.get(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
+                long timeoutMs = Math.max(1, timeout.toMillis());
+                return shouldContinue == null ? task.get(timeoutMs, TimeUnit.MILLISECONDS)
+                        : awaitWhileRunning(task, timeoutMs, shouldContinue);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Stockfish operation interrupted", e);
             } catch (ExecutionException | CancellationException e) {
                 throw new IOException("Stockfish operation failed or cancelled", e);
             }
+        }
+
+        private static <T> T awaitWhileRunning(Future<T> task, long timeoutMs, BooleanSupplier shouldContinue)
+                throws InterruptedException, ExecutionException, TimeoutException {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+            while (shouldContinue.getAsBoolean()) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) throw new TimeoutException("Stockfish opponent operation timed out");
+                try {
+                    return task.get(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(100)), TimeUnit.NANOSECONDS);
+                } catch (TimeoutException ignored) {
+                    // Poll the owning game again before waiting for the next slice.
+                }
+            }
+            task.cancel(true);
+            return null;
         }
 
         void sendCommand(String command) throws IOException {

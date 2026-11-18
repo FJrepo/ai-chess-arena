@@ -72,6 +72,7 @@ public class GameConversationService {
 
     /** The tournament's chat mode; games outside a tournament allow optional chat. */
     static ChatMode configuredChatMode(Game game) {
+        if (game.practiceKind == Game.PracticeKind.HUMAN_STOCKFISH) return ChatMode.OFF;
         return game.tournament != null && game.tournament.chatMode != null
                 ? game.tournament.chatMode
                 : ChatMode.OPTIONAL;

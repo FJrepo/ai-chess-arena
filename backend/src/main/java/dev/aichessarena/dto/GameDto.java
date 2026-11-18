@@ -70,7 +70,8 @@ public record GameDto(
         List<GameConfigurationRevisionDto> configurationHistory,
         String practiceKind,
         UUID practiceSourceGameId,
-        Integer practiceSourcePly
+        Integer practiceSourcePly,
+        Integer stockfishElo
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

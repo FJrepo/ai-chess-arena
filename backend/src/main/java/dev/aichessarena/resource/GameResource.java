@@ -12,6 +12,7 @@ import dev.aichessarena.service.GameConfigurationHistory;
 import dev.aichessarena.service.GameEngineService;
 import dev.aichessarena.service.GameLifecycleService;
 import dev.aichessarena.service.PracticeGameService;
+import dev.aichessarena.service.StockfishOpponentService;
 import dev.aichessarena.service.ExportService;
 import dev.aichessarena.websocket.GameStream;
 import jakarta.inject.Inject;
@@ -61,21 +62,27 @@ public class GameResource {
     }
 
     @POST
+    @Path("/practice/stockfish")
+    public Response createStockfishPractice(JsonNode body) {
+        requireFields(body, java.util.Set.of("side", "elo"));
+        String side = practiceSide(body);
+        JsonNode elo = body.path("elo");
+        if (!elo.isIntegralNumber() || !elo.canConvertToInt() || elo.intValue() < StockfishOpponentService.MIN_ELO
+                || elo.intValue() > StockfishOpponentService.MAX_ELO) {
+            throw new IllegalArgumentException("Stockfish target Elo must be an integer from 1320 to 3190");
+        }
+        return Response.status(201).entity(practice.createStockfish(side, elo.intValue())).build();
+    }
+
+    @POST
     @Path("/{id}/practice")
     public Response createPractice(@PathParam("id") UUID id, JsonNode body) {
-        if (body == null || !body.isObject() || body.propertyStream()
-                .anyMatch(field -> !java.util.Set.of("ply", "side", "clientRequestId", "moveId").contains(field.getKey()))) {
-            throw new IllegalArgumentException("Provide ply, side and an optional clientRequestId");
-        }
+        requireFields(body, java.util.Set.of("ply", "side", "clientRequestId", "moveId"));
         JsonNode ply = body.path("ply");
         if (!ply.isIntegralNumber() || !ply.canConvertToInt() || ply.intValue() < 0) {
             throw new IllegalArgumentException("Ply must be a non-negative integer");
         }
-        String side = body.path("side").textValue();
-        if (!"WHITE".equals(side) && !"BLACK".equals(side)) {
-            throw new IllegalArgumentException("Side must be WHITE or BLACK");
-        }
-        return Response.status(201).entity(practice.fork(id, ply.intValue(), side,
+        return Response.status(201).entity(practice.fork(id, ply.intValue(), practiceSide(body),
                 optionalUuid(body, "clientRequestId"), optionalUuid(body, "moveId"))).build();
     }
 
@@ -84,6 +91,21 @@ public class GameResource {
         String value = body.get(field).textValue();
         if (value == null) throw new IllegalArgumentException(field + " must be a UUID");
         return UUID.fromString(value);
+    }
+
+    private static void requireFields(JsonNode body, java.util.Set<String> fields) {
+        if (body == null || !body.isObject() || body.propertyStream()
+                .anyMatch(field -> !fields.contains(field.getKey()))) {
+            throw new IllegalArgumentException("Unsupported practice settings");
+        }
+    }
+
+    private static String practiceSide(JsonNode body) {
+        String side = body.path("side").textValue();
+        if (!"WHITE".equals(side) && !"BLACK".equals(side)) {
+            throw new IllegalArgumentException("Side must be WHITE or BLACK");
+        }
+        return side;
     }
 
     @GET
@@ -197,12 +219,12 @@ public class GameResource {
 
     private boolean hasConfiguredPlayer(Game game, boolean white) {
         TournamentParticipant participant = white ? game.whiteParticipant : game.blackParticipant;
-        boolean human = game.playerType(white ? "WHITE" : "BLACK") == Game.PlayerType.HUMAN;
+        Game.PlayerType type = game.playerType(white ? "WHITE" : "BLACK");
         if (participant != null) {
-            return human ? present(participant.playerName) : present(participant.modelId);
+            return type == Game.PlayerType.HUMAN ? present(participant.playerName) : present(participant.modelId);
         }
         return present(white ? game.whitePlayerName : game.blackPlayerName)
-                && (human || present(white ? game.whiteModelId : game.blackModelId));
+                && (type != Game.PlayerType.AI || present(white ? game.whiteModelId : game.blackModelId));
     }
 
     private static boolean present(String value) {

@@ -14,6 +14,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Model turns and prompts](#model-turns-and-prompts)
 - [Legal move hints](#legal-move-hints)
 - [Play from here](#play-from-here)
+- [Play Stockfish](#play-stockfish)
 - [Prompt caching](#prompt-caching)
 - [Time limit per move](#time-limit-per-move)
 - [Output-token limit](#output-token-limit) and [fixing a cut-off game](#fixing-a-cut-off-game)
@@ -275,6 +276,14 @@ The new game opens at the selected position. Choose **Start practice** to play, 
 Open **Practice** in the toolbar to find your practice games. Each practice game can link back to its source. If the source is deleted, the fork keeps its board and history. Practice contributes to the operator’s Spend total under **Cost & reliability** as a separate amount, including reported charges on unfinished and cancelled practice games. Tournament views, model analytics and Elo exclude practice games.
 
 `POST /api/games/{id}/practice` accepts a non-negative integer `ply` (0 for the starting position), `side` of `WHITE` or `BLACK`, an optional UUID `clientRequestId`, and an optional `moveId` to confirm the exact canonical row of the selected position. A retry with the same request ID, source, ply, side and optional move ID returns the existing game with HTTP 201, even after the source is deleted. Reusing the ID for another position or side on the same source returns 409. The server checks that the position can be reconstructed from canonical plies, using the earliest row for any historical duplicate. Invalid input returns 400, a missing source 404, and ineligible games or positions 409. `GET /api/games/practice` lists the forks. Game responses include `practiceKind`, `practiceSourceGameId` when present and `practiceSourcePly`. Inherited moves have `isInherited: true`. Game and move snapshots mark the exact canonical row for each ply with `isCanonical`. The normal start, pause, resume and human move routes apply.
+
+## Play Stockfish
+
+Open **Practice**, choose a color and a **Target Elo** from 1320 to 3190, and select **Create practice game**. Open the board with **Start practice**. Stockfish plays from the standard starting position, works without an OpenRouter connection and incurs no model charges. Its target Elo is an approximate playing-strength setting. Stockfish practice stays in the Practice view and uses the same board rules, pause and resume as other games.
+
+The backend runs one dedicated opponent search at a time in a fresh Stockfish process, separate from move evaluation. Each search uses one thread, 16 MB of hash, a 50,000-node limit and Stockfish's strength-limiting options. The engine receives the move history for repetition. If the binary is unavailable, rejects the configured strength, exceeds its time limit or cannot produce a legal move, the game pauses with a message. Fix the engine and resume to retry.
+
+`POST /api/games/practice/stockfish` accepts `side: "WHITE" | "BLACK"` and an integer `elo` in the range above. A valid request returns a waiting practice game with HTTP 201. Invalid values return 400. Responses identify the Stockfish side with control type `STOCKFISH`, the game with `practiceKind: "HUMAN_STOCKFISH"` and the setting with `stockfishElo`. The engine side omits `modelId`.
 
 ## Time limit per move
 
