@@ -574,16 +574,21 @@ public class OpenRouterService {
                     describeHttpFailure(responseStatus, null) + "; the error response was incomplete", elapsed, null)
                     .withDeliveryUncertain();
         }
-        if (responseStatus == 200 && sent) {
+        boolean started = responseStatus == 200 && sent;
+        if (limitedByMoveTime) {
+            // The model's timeout. If the answer had started it may be generated and billed: its cost is unknown.
+            LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, elapsed);
+            LlmResponse timeout = new LlmResponse(null, 0, 0, null, elapsed, null, true,
+                    started ? "No complete answer within the move time; the started answer may have been charged"
+                            : "No complete answer within the move time");
+            return started ? timeout.withDeliveryUncertain() : timeout;
+        }
+        if (started) {
             // The answer had started: it may be generated and billed even though it did not arrive in time.
             LOG.warnf("OpenRouter started the answer for model %s, but it did not complete in time", modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 200,
                     "OpenRouter started the answer, but it did not complete in time", elapsed, null)
                     .withDeliveryUncertain();
-        }
-        if (limitedByMoveTime) {
-            LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, elapsed);
-            return new LlmResponse(null, 0, 0, null, elapsed, null, true, "No complete answer within the move time");
         }
         LOG.warnf("OpenRouter request for model %s exceeded the safety cap of %s", modelId, describe(requestSafetyCap));
         LlmResponse failure = LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,

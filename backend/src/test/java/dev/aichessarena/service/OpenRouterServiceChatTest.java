@@ -286,9 +286,8 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
-    void aStartedAnswerMissingTheDeadlineEndsThereAndIsDeliveryUncertainNotAModelTimeout() throws IOException {
+    void slowlyStreamedBodyTimesOutAtTheDeadlineNotWhenTheBodyEnds() throws IOException {
         // Headers arrive at once, the body trickles in over about 3 s: the old request timeout never fired.
-        // 2.0: once the 200 answer has started it may be generated and billed, so it never forfeits the game.
         OpenRouterService service = serviceStreamingSlowly(10, 300);
 
         long start = System.nanoTime();
@@ -296,9 +295,13 @@ class OpenRouterServiceChatTest {
                 in(Duration.ofMillis(700)), 100);
         long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
-        assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
-        assertFalse(response.timedOut());
+        // The model's timeout; the answer had started, so its cost is unknown (possibly charged).
+        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        assertTrue(response.timedOut());
+        assertFalse(response.isProviderFailure());
         assertTrue(response.deliveryUncertain());
+        assertEquals("No complete answer within the move time; the started answer may have been charged",
+                response.errorMessage());
         assertTrue(elapsedMs >= 650 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
     }
 
@@ -394,6 +397,7 @@ class OpenRouterServiceChatTest {
                 in(Duration.ofMillis(600)), 100);
         long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
+        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
         assertTrue(response.deliveryUncertain(), "the answer had started");
         assertTrue(elapsedMs >= 550 && elapsedMs < 1_000, "elapsed " + elapsedMs + " ms");
     }
@@ -434,12 +438,12 @@ class OpenRouterServiceChatTest {
     }
 
     @Test
-    void anAnswerCompleteOnlyAfterTheDeadlineIsLateEvenIfItIsThereWhenTheCallerLooks() throws IOException {
+    void anAnswerCompleteOnlyAfterTheDeadlineIsATimeoutEvenIfItIsThereWhenTheCallerLooks() throws IOException {
         LlmResponse response = chatWithDelayedCaller(1_200, 1_517, 1_000);
 
-        // Late, not used: the started answer may be billed, so it is delivery-uncertain rather than a timeout.
-        assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
-        assertTrue(response.deliveryUncertain());
+        assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        assertTrue(response.timedOut());
+        assertTrue(response.deliveryUncertain(), "late, not used, possibly charged");
         assertNull(response.content());
     }
 

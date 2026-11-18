@@ -715,6 +715,8 @@ public class GameLifecycleService {
         }
         game.status = GameStatus.FORFEIT;
         game.resumeRequestedAt = null;
+        // The game is over: no request will follow, so an unresolved one is settled with the forfeit.
+        GameRunOwnership.answerRecorded(game);
         game.result = "WHITE".equals(forfeitColor) ? GameResult.WHITE_FORFEIT : GameResult.BLACK_FORFEIT;
         game.resultReason = reason;
         game.statusDetail = null;

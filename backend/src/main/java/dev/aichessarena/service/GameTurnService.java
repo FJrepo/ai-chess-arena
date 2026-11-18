@@ -274,7 +274,15 @@ public class GameTurnService {
     private TurnResult handleResponseTimeout(TurnRequest request, AttemptContext attemptContext, int attempt,
                                              OpenRouterService.LlmResponse response, ProviderProblem providerProblem) {
         Integer timeoutSeconds = request.moveTimeoutSeconds();
-        Action action = TurnPolicy.afterModelResponse(Outcome.TIMEOUT, 0, providerProblem != null, timeoutSeconds != null);
+        Action action = TurnPolicy.afterTimeout(timeoutSeconds != null, providerProblem != null,
+                response.deliveryUncertain());
+        if (action == Action.PAUSE_DELIVERY_UNCERTAIN) {
+            recordAttempt(request, attemptContext, attempt, Outcome.PROVIDER_RETRYABLE, null,
+                    providerProblem != null ? "Move time ran out after OpenRouter problems earlier in this turn ("
+                            + providerProblem.detail() + "); the started answer may have been charged"
+                            : response.errorMessage(), response);
+            return pauseForInspection(request, GameLifecycleService.DELIVERY_UNCERTAIN);
+        }
         if (action == Action.PAUSE_PROVIDER) {
             String detail = providerProblem != null
                     ? "Move time ran out after OpenRouter problems earlier in this turn (" + providerProblem.detail() + ")"
@@ -282,7 +290,11 @@ public class GameTurnService {
             recordAttempt(request, attemptContext, attempt, Outcome.PROVIDER_RETRYABLE, null, detail, response);
             return pauseForProvider(request, detail);
         }
-        recordAttempt(request, attemptContext, attempt, Outcome.TIMEOUT, null, "No answer within the move time", response);
+        // Loss on time. A started answer's cost is unknown (possibly charged); the forfeit sends nothing more and
+        // resolves the request record in its own commit.
+        recordAttempt(request, attemptContext, attempt, Outcome.TIMEOUT, null, response.deliveryUncertain()
+                ? "No answer within the move time; the started answer may have been charged"
+                : "No answer within the move time", response);
         LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
         gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), timeoutSeconds);
         return TurnResult.terminal();

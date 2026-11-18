@@ -103,4 +103,16 @@ class TurnPolicyTest {
             assertEquals(other, TurnPolicy.beforeRetry(other, false));
         }
     }
+
+    @Test
+    void theMoveTimeRunningOutIsALossOnTimeEvenForAStartedAnswer() {
+        for (boolean charged : List.of(false, true)) {
+            assertEquals(Action.FORFEIT_TIMEOUT, TurnPolicy.afterTimeout(true, false, charged));
+        }
+        // Not the model's fault: earlier provider problems, or no move time limit at all.
+        assertEquals(Action.PAUSE_PROVIDER, TurnPolicy.afterTimeout(true, true, false));
+        assertEquals(Action.PAUSE_DELIVERY_UNCERTAIN, TurnPolicy.afterTimeout(true, true, true));
+        assertEquals(Action.PAUSE_PROVIDER, TurnPolicy.afterTimeout(false, false, false));
+        assertEquals(Action.PAUSE_DELIVERY_UNCERTAIN, TurnPolicy.afterTimeout(false, false, true));
+    }
 }

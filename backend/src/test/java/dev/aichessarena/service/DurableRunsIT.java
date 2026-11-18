@@ -901,7 +901,7 @@ class DurableRunsIT {
     }
 
     @Test
-    void aStartedAnswerThatMissesTheMoveTimeNeverForfeits() throws Exception {
+    void aStartedAnswerThatMissesTheMoveTimeLosesOnTimeWithoutAnotherRequest() throws Exception {
         UUID tournamentId = seedTournament(GameStatus.WAITING);
         QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 2);
         UUID gameId = gameIds(tournamentId).getFirst();
@@ -916,10 +916,38 @@ class DurableRunsIT {
             awaitReleased(gameId);
         }
         Game game = read(gameId);
-        assertEquals(GameStatus.PAUSED, game.status, "never a timeout forfeit once the answer had started");
+        assertEquals(GameStatus.FORFEIT, game.status, "a loss on time, as before 2.0");
+        assertEquals(Game.GameResult.WHITE_FORFEIT, game.result);
+        assertEquals(Game.ResultReason.TIMEOUT, game.resultReason);
+        assertNull(game.requestSentAt, "settled by the forfeit: no further request is sent");
+        assertEquals(1, posts.get());
+        var attempt = QuarkusTransaction.requiringNew().call(() -> attemptRows.list("game.id", gameId).getFirst());
+        assertEquals(Outcome.TIMEOUT, attempt.outcome);
+        assertNull(attempt.costUsd, "cost unknown");
+        assertEquals("No answer within the move time; the started answer may have been charged", attempt.errorMessage);
+    }
+
+    @Test
+    void withoutAMoveTimeLimitAStalledStartedAnswerPausesForASpendCheckAtTheSafetyCap() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = null);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        AtomicInteger posts = new AtomicInteger();
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
+            Thread.startVirtualThread(() -> serveRaw(socket, posts, "200 headers then stall"));
+            installRouter(socket).requestSafetyCap = Duration.ofSeconds(2);
+
+            engine.startGame(gameId);
+
+            awaitGame(gameId, g -> g.status != GameStatus.IN_PROGRESS);
+            awaitReleased(gameId);
+        }
+        Game game = read(gameId);
+        assertEquals(GameStatus.PAUSED, game.status);
         assertNull(game.result);
         assertEquals("A model request (test/white, White, move 1) lost its connection after it was sent and may "
                 + "already have been charged. Check spend, then resume.", game.statusDetail);
+        assertNotNull(game.requestSentAt);
         assertEquals(1, posts.get());
     }
 
@@ -1072,7 +1100,7 @@ class DurableRunsIT {
         assertEquals(List.of(Outcome.PROVIDER_RETRYABLE), outcomes(gameId));
     }
 
-    private void installRouter(java.net.ServerSocket socket) {
+    private OpenRouterService installRouter(java.net.ServerSocket socket) {
         OpenRouterService router = new OpenRouterService();
         router.baseUrl = "http://127.0.0.1:" + socket.getLocalPort();
         router.keyStore = dev.aichessarena.config.OpenRouterKeyStoreFixture.keys("test-key",
@@ -1081,6 +1109,7 @@ class DurableRunsIT {
         router.defaultTemperature = 0.7;
         router.defaultMaxTokens = 100;
         QuarkusMock.installMockForType(router, OpenRouterService.class);
+        return router;
     }
 
     private static void serveRaw(java.net.ServerSocket socket, AtomicInteger posts, String answer) {

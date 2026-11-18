@@ -70,6 +70,19 @@ final class TurnPolicy {
         };
     }
 
+    /**
+     * The move time ran out before the whole answer arrived. In a timed turn without earlier provider problems this
+     * is the model's loss on time, also when the answer had started ({@code possiblyCharged}): a forfeit sends
+     * nothing more, so nothing is paid twice. Otherwise it is not the model's fault: a started answer pauses for a
+     * spend check, any other one for the provider problem.
+     */
+    static Action afterTimeout(boolean timedTurn, boolean providerProblem, boolean possiblyCharged) {
+        if (timedTurn && !providerProblem) {
+            return Action.FORFEIT_TIMEOUT;
+        }
+        return possiblyCharged ? Action.PAUSE_DELIVERY_UNCERTAIN : Action.PAUSE_PROVIDER;
+    }
+
     /** A retry needs the previous answer, and with it its cost, to be committed first. */
     static Action beforeRetry(Action planned, boolean answerRecorded) {
         boolean retry = planned == Action.RETRY_MODEL || planned == Action.RETRY_PROVIDER;
