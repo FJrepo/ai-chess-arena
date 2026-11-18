@@ -8,6 +8,7 @@ Detailed rules, settings and API conventions for running tournaments. For setup 
 - [Tournament list](#tournament-list)
 - [Tournament formats and draw policies](#tournament-formats-and-draw-policies)
 - [Auto-run](#auto-run)
+- [Stockfish ladder](#stockfish-ladder)
 - [Opening variety](#opening-variety)
 - [Cancelling a tournament](#cancelling-a-tournament)
 - [Choosing participants and model picker](#choosing-participants-and-model-picker)
@@ -138,6 +139,46 @@ API (all changes take the tournament row lock):
 Omitted fields retain saved values (initially 2 and no budget); explicit `budgetUsd: null` removes the cap. Concurrency must be an integer 1–8, budget a positive JSON number with at most two decimal places; invalid bodies/unknown fields return 400. Missing tournaments return 404; tournaments without a generated bracket, completed tournaments and cancelled tournaments return 409. Responses and tournament reads include `autoRunStatus` (`OFF`, `RUNNING`, `PAUSED`, `FINISHED`), `maxConcurrentGames`, `budgetUsd` (always present, nullable) and `autoRunPauseReason` when paused. For example, start with `{"maxConcurrentGames": 2, "budgetUsd": 5.00}`.
 
 Game DTOs and revisioned WebSocket game status messages expose `resumeRequestedAt` while queued. Individual game reads and queue status messages also carry `runCapacity` with `runningGames` and `maxConcurrentGames`.
+
+## Stockfish ladder
+
+Open **Benchmarks** to test one to eight OpenRouter models against two Stockfish strength settings. The pilot uses eight authored standard-chess openings, including four lines that start play on move 14 or later. Each model plays both colors at each opening and level, for 16 pairs and 32 games per model. The two games in a pair start from the same position and retain the same opening history for repetition and the fifty-move rule. The SAN moves are stored with the run and appear in each game as book moves. The evaluator scores the last book position to give the first played move a baseline.
+
+Choose two distinct target strengths from 1320 through 3190, legal move hints, requested reasoning effort, chat mode, a positive USD budget and a concurrency limit. The targets are passed to Stockfish's `UCI_Elo` setting with `UCI_LimitStrength` enabled. The run records SHA-256 fingerprints for the opponent executable and each loaded NNUE network, plus a search limit of 50,000 nodes, one thread and 16 MiB of hash. The opponent checks those fingerprints in a fresh process per search and uses the full game history. A terminal model or Stockfish move is saved with its result in one transaction. If cancellation comes after that commit, the result still counts in the benchmark score. The evaluator uses its own engine. A fixed setup controls the conditions of play. Engine weakening and model responses can still vary from game to game.
+
+Creating the run queues all its games and enables [auto-run](#auto-run). If creation goes unconfirmed, the form shows **A benchmark creation may already be in progress**. Resubmit the same settings in the same tab to recover the original run if it was created. With session storage available, this also works after leaving the page or reloading.
+
+Pairs enter the waiting order together and use whatever slots are available. **Pause run** stops new starts and pauses active games. **Resume run** applies the budget and concurrency fields and restarts scheduling, including queued resumes. Open other paused games and choose **Resume** to play or queue them. Select **Refresh** to update the run report. **Cancel run** ends unfinished games and clears queued resumes. Finished results, moves, and paid attempts are retained, including charges reported after cancellation. A search failure or an engine or network mismatch pauses the game. A cut-off model answer also pauses the game. The output limit and requested reasoning effort are fixed, so changing the effort or model requires a new run. A restart pauses active runs and games. The [budget rules](#auto-run) include already in-flight charges, so final spend can exceed the cap.
+
+**Performance against this Stockfish setup** is reported for each model overall and for each target and model color. The score is wins plus half a point per draw, divided by scored games. W/D/L includes forfeits, with model forfeits also shown separately. Results count as games finish, and a pair remains incomplete until both games have a scored result. Every game has a link and its spend appears in the game, model and run totals. Benchmark games stay out of tournament brackets, leaderboard ratings, regular model analytics and health game counts. Moving aliases such as `~anthropic/claude-sonnet-latest` are accepted. The report retains the requested alias and lists the concrete model IDs reported by OpenRouter, including when the alias resolves to more than one model during the run. The Analytics spend total includes benchmark spend and shows it on its own line, including paid attempts from unfinished or cancelled games.
+
+### Benchmark API
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /api/benchmarks` | Creates a new run with all its games and enables auto-run. Returns HTTP 201. Reusing the same `clientRequestId` returns the original report with HTTP 200 without scheduling another run. |
+| `GET /api/benchmarks` | Lists run IDs, names, creation times and run statuses. |
+| `GET /api/benchmarks/{id}` | Returns setup, model aggregates, pair progress, game IDs and spend from one database snapshot. |
+| `POST /api/benchmarks/{id}/pause` | Pauses the run and active games. |
+| `POST /api/benchmarks/{id}/resume` | Resumes with a JSON object. Omitted `budgetUsd` and `maxConcurrentGames` retain their values. The budget must stay positive. |
+| `POST /api/benchmarks/{id}/cancel` | Cancels an active or paused run and returns its report with status `CANCELLED`. A finished or already cancelled run returns HTTP 409. |
+
+For example, create a run with this request.
+
+```json
+{
+  "clientRequestId": "21f01754-f761-443a-8df2-e9ed32790c4c",
+  "name": "Standard ladder",
+  "modelIds": ["provider/model-a", "provider/model-b"],
+  "targetStrengths": [1500, 2000],
+  "legalMoveHints": true,
+  "reasoningEffort": "default",
+  "chatMode": "OFF",
+  "runSettings": { "budgetUsd": "5.00", "maxConcurrentGames": 2 }
+}
+```
+
+All create fields are required. Generate a UUID for each new run and reuse it when retrying a submission. The report includes any progress the original run has made. Provide distinct model IDs, integer targets, a JSON boolean for hints, a supported [reasoning effort](#reasoning-effort) value or `default`, and `OFF`, `OPTIONAL` or `MANDATORY` for chat. Budget accepts an exact decimal string or a JSON number, with at most two decimal places. Concurrency accepts integers from 1 through 8. Unknown fields and invalid values return HTTP 400. A missing OpenRouter connection or unverifiable opponent build or weights returns HTTP 409. Game details identify the owning run with `benchmarkRunId` and include `benchmarkChatMode` for periods between turns. Benchmark moves cannot be overridden.
 
 ## Opening variety
 

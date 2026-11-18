@@ -92,7 +92,7 @@ export function configurationFields(
     ...side('Black', settings.black),
     ...(settings.stockfishElo == null
       ? []
-      : [{ setting: 'Stockfish target Elo', value: String(settings.stockfishElo) }]),
+      : [{ setting: 'Stockfish target strength', value: String(settings.stockfishElo) }]),
   ];
 }
 

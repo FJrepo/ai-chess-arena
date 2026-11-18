@@ -71,7 +71,9 @@ public record GameDto(
         String practiceKind,
         UUID practiceSourceGameId,
         Integer practiceSourcePly,
-        Integer stockfishElo
+        Integer stockfishElo,
+        UUID benchmarkRunId,
+        String benchmarkChatMode
 ) {
     /** Present on individual game reads and status changes while a resume is queued. */
     public record RunCapacity(long runningGames, int maxConcurrentGames) {}

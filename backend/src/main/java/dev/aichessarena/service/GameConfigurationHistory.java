@@ -25,12 +25,12 @@ public class GameConfigurationHistory {
     GameConfiguration capture(Game game) {
         Tournament tournament = game.tournament;
         return new GameConfiguration(
-                tournament == null ? null : tournament.format.name(),
-                tournament == null ? null : tournament.drawPolicy.name(),
-                tournament == null ? null : tournament.matchupBestOf,
-                tournament == null ? null : tournament.finalsBestOf,
-                tournament == null ? null : tournament.openingMode.name(),
-                tournament == null ? null : tournament.openingId,
+                tournament == null || game.isBenchmark() ? null : tournament.format.name(),
+                tournament == null || game.isBenchmark() ? null : tournament.drawPolicy.name(),
+                tournament == null || game.isBenchmark() ? null : tournament.matchupBestOf,
+                tournament == null || game.isBenchmark() ? null : tournament.finalsBestOf,
+                game.isBenchmark() ? "FIXED" : tournament == null ? null : tournament.openingMode.name(),
+                game.isBenchmark() ? game.openingId : tournament == null ? null : tournament.openingId,
                 game.openingId,
                 GameEngineService.moveTimeoutSecondsFor(game),
                 tournament == null ? 3 : tournament.maxAttempts,

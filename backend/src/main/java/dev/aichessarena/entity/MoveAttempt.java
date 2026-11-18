@@ -42,6 +42,9 @@ public class MoveAttempt extends PanacheEntityBase {
     @Column(name = "model_id")
     public String modelId;
 
+    @Column(name = "resolved_model_id", length = 255)
+    public String resolvedModelId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     public Outcome outcome;

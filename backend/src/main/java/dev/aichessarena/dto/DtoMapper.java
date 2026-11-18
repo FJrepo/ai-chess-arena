@@ -95,7 +95,7 @@ public final class DtoMapper {
         }
         return new GameDto(
                 g.id,
-                g.tournament != null ? g.tournament.id : null,
+                g.tournament != null && !g.isBenchmark() ? g.tournament.id : null,
                 g.whitePlayerName,
                 g.playerType("WHITE").name(),
                 g.whiteModelId,
@@ -129,7 +129,8 @@ public final class DtoMapper {
                 g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
                 attempts, streamId, g.startingConfiguration, configurationHistory,
                 g.practiceKind == null ? null : g.practiceKind.name(), g.practiceSourceGameId, g.practiceSourcePly,
-                g.stockfishElo
+                g.stockfishElo, g.isBenchmark() ? g.tournament.id : null,
+                g.isBenchmark() ? g.tournament.chatMode.name() : null
         );
     }
 

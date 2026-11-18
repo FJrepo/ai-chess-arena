@@ -86,7 +86,7 @@ public class OpeningBookService {
         apply(game, CanonicalPlies.of(partner.moves).stream().filter(move -> move.isBook).map(move -> move.san).toList());
     }
 
-    private static void apply(Game game, List<String> sans) {
+    static Board apply(Game game, List<String> sans) {
         if (!game.moves.isEmpty()) {
             throw new IllegalStateException("Opening can only be applied to a new game");
         }
@@ -118,6 +118,7 @@ public class OpeningBookService {
             game.pgn = pgn.toString();
             game.currentFen = board.getFen();
         }
+        return board;
     }
 
     private static List<Opening> load() {

@@ -250,7 +250,7 @@ public class GameLifecycleService {
         completeLockedGame(game, endInfo);
     }
 
-    private void completeLockedGame(Game game, ChessService.GameEndInfo endInfo) {
+    void completeLockedGame(Game game, ChessService.GameEndInfo endInfo) {
         game.status = GameStatus.COMPLETED;
         game.resumeRequestedAt = null;
         game.result = GameResult.valueOf(endInfo.result());
@@ -471,7 +471,7 @@ public class GameLifecycleService {
     }
 
     private void advanceTournamentWinnerIfNeeded(Game game) {
-        if (game.tournament != null) {
+        if (game.tournament != null && !game.isBenchmark()) {
             tournamentService.advanceWinner(game.id);
         }
     }

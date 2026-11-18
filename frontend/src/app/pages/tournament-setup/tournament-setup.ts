@@ -18,6 +18,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { newRequestId } from '../../utils/request-id';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -1462,14 +1463,4 @@ Your opponent is %s (%s).`;
         participant.controlType === 'HUMAN' && index !== this.editingParticipantIndex(),
     );
   }
-}
-
-function newRequestId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
 }
