@@ -69,6 +69,8 @@ const COST_SECTIONS = [
 
 type CostSection = (typeof COST_SECTIONS)[number]['id'];
 
+type ChatCounts = Pick<AnalyticsTalkativeness, 'moves' | 'messages'>;
+
 @Component({
   selector: 'app-analytics-dashboard',
   standalone: true,
@@ -239,52 +241,53 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   talkRows = computed(() =>
     (this.comparison()?.models ?? [])
       .filter((row) => (row.optionalChat?.moves ?? 0) > 0 || (row.mandatoryChat?.moves ?? 0) > 0)
-      .slice()
       .sort(
         (a, b) =>
-          talkRateOrder(b.optionalChat) - talkRateOrder(a.optionalChat) ||
-          talkRateOrder(b.mandatoryChat) - talkRateOrder(a.mandatoryChat) ||
+          compareChatRates(a.optionalChat, b.optionalChat) ||
+          compareChatRates(a.mandatoryChat, b.mandatoryChat) ||
           a.modelId.localeCompare(b.modelId),
       ),
   );
 
-  chatMovesExplicitlyZero = computed(() =>
-    this.comparison()?.models.every(
-      ({ optionalChat, mandatoryChat }) => optionalChat?.moves === 0 && mandatoryChat?.moves === 0,
-    ),
-  );
-
   readonly minOptionalChatMoves = 20;
   optionalChatSummary = computed(() => {
-    const samples = (this.comparison()?.models ?? []).flatMap(({ modelId, optionalChat }) =>
-      optionalChat ? [{ modelId, ...optionalChat }] : [],
+    // Every takeaway figure uses reported Optional-chat counts. A reported zero counts
+    // toward coverage, and every partial result carries the reporting model count for display.
+    const entries = (this.comparison()?.models ?? []).map(({ modelId, optionalChat }) => ({
+      modelId,
+      counts: optionalChat
+        ? { moves: optionalChat.moves, messages: optionalChat.messages }
+        : ('unknown' as const),
+    }));
+    const reported = entries.flatMap(({ modelId, counts }) =>
+      counts === 'unknown' ? [] : [{ modelId, ...counts }],
     );
-    const qualified = samples
+    if (reported.length === 0) return { kind: 'unreported' as const };
+
+    const coverage = { reportingCount: reported.length, partial: reported.length < entries.length };
+    const moves = reported.reduce((total, sample) => total + sample.moves, 0);
+    if (moves === 0) return { kind: 'zero' as const, ...coverage };
+
+    const qualified = reported
       .filter(({ moves }) => moves >= this.minOptionalChatMoves)
-      .sort(
-        (a, b) => b.messages * a.moves - a.messages * b.moves || a.modelId.localeCompare(b.modelId),
-      );
+      .sort((a, b) => compareChatRates(a, b) || a.modelId.localeCompare(b.modelId));
     const qualifyingCount = qualified.length;
     if (qualifyingCount < 2) {
-      return {
-        kind: 'sparse' as const,
-        qualifyingCount,
-        modelCount: samples.length,
-        moves: samples.reduce((total, sample) => total + sample.moves, 0),
-      };
+      return { kind: 'sparse' as const, ...coverage, qualifyingCount, moves };
     }
 
     const most = qualified[0];
     const least = qualified[qualifyingCount - 1];
-    if (most.messages * least.moves === least.messages * most.moves) {
+    if (compareChatRates(most, least) === 0) {
       return {
         kind: 'equal' as const,
+        ...coverage,
         qualifyingCount,
         moves: qualified.reduce((total, sample) => total + sample.moves, 0),
         messages: qualified.reduce((total, sample) => total + sample.messages, 0),
       };
     }
-    return { kind: 'contrast' as const, most, least };
+    return { kind: 'contrast' as const, ...coverage, most, least };
   });
 
   readonly cacheExplanation =
@@ -561,10 +564,8 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       : `${resignations} (${this.percent(resignations / row.gamesPlayed)})`;
   }
 
-  formatTalkRate(talk: AnalyticsTalkativeness | undefined): string | null {
-    return !talk?.moves || talk.talkRate == null
-      ? null
-      : this.formatChatRate(talk.messages, talk.moves);
+  formatTalkRate(talk: ChatCounts | undefined): string | null {
+    return talk?.moves ? this.formatChatRate(talk.messages, talk.moves) : null;
   }
 
   formatChatRate(messages: number, moves: number): string {
@@ -779,7 +780,9 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 }
 
-/** Sort key for a talk rate: models without moves in that mode go last. */
-function talkRateOrder(talk: AnalyticsTalkativeness | null | undefined): number {
-  return talk && talk.moves > 0 && talk.talkRate != null ? talk.talkRate : -1;
+/** Highest exact rate first, followed by reported zero-move samples and then omitted data. */
+function compareChatRates(a: ChatCounts | undefined, b: ChatCounts | undefined): number {
+  if (!a || !b) return Number(!!b) - Number(!!a);
+  if (a.moves === 0 || b.moves === 0) return Number(b.moves > 0) - Number(a.moves > 0);
+  return Number(BigInt(b.messages) * BigInt(a.moves) - BigInt(a.messages) * BigInt(b.moves));
 }

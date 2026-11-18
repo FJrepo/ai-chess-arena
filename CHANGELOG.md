@@ -23,7 +23,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 - The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
-- The Behaviour tab compares Optional-chat talk rates with message and move counts, and distinguishes unreported data from reported zeros.
+- The Behaviour tab compares Optional-chat talk rates among reporting models, distinguishes missing data from reported zeros, and sorts by exact rates.
 
 ### Fixed
 
