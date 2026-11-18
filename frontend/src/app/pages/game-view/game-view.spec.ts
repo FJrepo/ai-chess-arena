@@ -214,7 +214,7 @@ describe('GameView', () => {
     }
   });
 
-  it('shows a historical move badge in the feed while leaving snapshot and replay quiet', () => {
+  it('shows a historical badge past a duplicate ply while leaving snapshot and replay quiet', () => {
     const { component, gameLoad, snackbar } = createSpectator();
     const walked = storedMove(
       2,
@@ -231,6 +231,16 @@ describe('GameView', () => {
           moves: [
             storedMove(1, 'WHITE', 'e4', AFTER_E4),
             storedMove(1, 'BLACK', 'e5', AFTER_E5),
+            {
+              ...storedMove(
+                1,
+                'BLACK',
+                'Nc6',
+                'r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2',
+              ),
+              id: 'legacy-duplicate',
+              isCanonical: false,
+            },
             walked,
           ],
           attempts: [],
@@ -240,7 +250,7 @@ describe('GameView', () => {
         component.feedEvents().find((item) => item.label === 'White played Ke2')?.bongcloud,
       ).toBe(true);
       component.goToMove(0);
-      component.goToMove(2);
+      component.goToMove(3);
       expect(snackbar.open).not.toHaveBeenCalled();
     } finally {
       component.ngOnDestroy();

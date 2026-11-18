@@ -401,6 +401,7 @@ export class GameView implements OnInit, OnDestroy {
       });
     }
 
+    let previousCanonicalFen = START_FEN;
     moves.forEach((move, index) => {
       const attemptsSummary = summarizeAttempts(
         attemptsByPly.get(plyKey(move.moveNumber, move.color)) ?? [],
@@ -430,8 +431,9 @@ export class GameView implements OnInit, OnDestroy {
         createdAtMs: Date.parse(move.createdAt),
         createdAtLabel: move.createdAt,
         moveIndex: index,
-        bongcloud: isBongcloudMove(moves[index - 1]?.fen ?? START_FEN, move),
+        bongcloud: isBongcloudMove(previousCanonicalFen, move),
       });
+      if (move.isCanonical !== false) previousCanonicalFen = move.fen;
     });
 
     // Plies whose attempts did not end in a move (forfeit, or a pause after a cut-off answer).
