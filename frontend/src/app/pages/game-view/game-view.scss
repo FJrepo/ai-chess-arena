@@ -258,6 +258,14 @@
   color: var(--mat-sys-on-surface);
 }
 
+.move-detail-badge {
+  font-size: var(--app-text-secondary-size);
+  width: 1em;
+  height: 1em;
+  flex: none;
+  color: var(--app-accent-info);
+}
+
 .timeline-detail,
 .feed-attempts {
   font-size: 0.8125rem;

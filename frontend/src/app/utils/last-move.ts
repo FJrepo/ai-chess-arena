@@ -95,6 +95,17 @@ interface SideDiff {
   arrived: number[];
 }
 
+/** A validated pawn move that captures on an empty destination square. */
+export function isEnPassantCapture(previousFen: string, currentFen: string): boolean {
+  const move = lastMoveSquares(previousFen, currentFen);
+  if (!move || move.from[0] === move.to[0]) return false;
+  const before = parseFen(previousFen);
+  if (!before || before.enPassant !== move.to) return false;
+  const from = indexOf(FILES.indexOf(move.from[0]), Number(move.from[1]));
+  const to = indexOf(FILES.indexOf(move.to[0]), Number(move.to[1]));
+  return isPawn(before.squares[from]) && before.squares[to] === null;
+}
+
 function diffForSide(before: Placement, after: Placement, side: Side): SideDiff {
   const left: number[] = [];
   const arrived: number[] = [];
