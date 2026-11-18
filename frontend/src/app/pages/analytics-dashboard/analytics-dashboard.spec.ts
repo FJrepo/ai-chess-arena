@@ -1757,14 +1757,86 @@ describe('AnalyticsDashboard', () => {
     const heading = element.querySelector('.persuasion-table-card h2');
     expect(heading?.id).toBeTruthy();
     expect(table.getAttribute('aria-labelledby')).toBe(heading?.id);
-    expect(Array.from(table.querySelectorAll('colgroup'), (group) => group.span)).toEqual([
-      1, 2, 1,
-    ]);
+    expect(
+      Array.from(table.querySelectorAll('colgroup'), (group) => group.children.length),
+    ).toEqual([1, 2, 1]);
     expect(
       Array.from(table.querySelectorAll('th[scope="colgroup"]'), (header) =>
         header.textContent.trim(),
       ),
     ).toEqual(['As persuader', 'As persuaded']);
+  });
+
+  it('uses the same persuasion column classes with and without rows', async () => {
+    const report = {
+      ...comparisonReport(),
+      models: [
+        comparisonRow('model.persuader', {
+          persuasion: persuasion({ asPersuaderMindGames: count(2, 2, 1, true) }),
+        }),
+      ],
+      persuasionRules: PERSUASION_RULES,
+    };
+    const { harness, component } = await renderDashboard('?tab=behaviour', {
+      comparison: of(report),
+    });
+    const element = harness.routeNativeElement!;
+    const columnClasses = () =>
+      Array.from(element.querySelectorAll('.persuasion-table col'), (column) => column.className);
+    expect(element.querySelector('.persuasion-table tbody .empty')).toBeNull();
+    const populatedClasses = columnClasses();
+
+    component.comparison.set({ ...report, models: [] });
+    harness.detectChanges();
+
+    expect(element.querySelector('.persuasion-table tbody .empty')).not.toBeNull();
+    expect(columnClasses()).toEqual(populatedClasses);
+    expect(populatedClasses).toEqual([
+      'persuasion-model-column',
+      'persuasion-metric-column',
+      'persuasion-metric-column',
+      'persuasion-metric-column',
+    ]);
+  });
+
+  it('uses model names as persuasion row headers', async () => {
+    const element = await renderBehaviour(
+      [
+        comparisonRow('model.persuader', {
+          persuasion: persuasion({ asPersuaderMindGames: count(2, 2, 1, true) }),
+        }),
+      ],
+      PERSUASION_RULES,
+    );
+    expect(
+      element
+        .querySelector('.persuasion-table tbody th[scope="row"].col-model')
+        ?.textContent.trim(),
+    ).toBe('model.persuader');
+  });
+
+  it('separates the two persuasion notes in the rendered text', async () => {
+    const element = await renderBehaviour(
+      [
+        comparisonRow('model.unevaluated', {
+          persuasion: persuasion({ asPersuaded: count(2, 0, 0, true) }),
+        }),
+      ],
+      PERSUASION_RULES,
+    );
+    const notes = element.querySelector('.persuasion-table tbody .table-note');
+    expect(notes?.textContent.trim()).toBe('Low sample · 2 not evaluated');
+  });
+
+  it('explains that operator overrides are excluded from the persuasion message window', async () => {
+    const element = await renderBehaviour(
+      [comparisonRow('model.quiet', { persuasion: persuasion() })],
+      PERSUASION_RULES,
+    );
+    const footnote = element.querySelector('.persuasion-table-card .table-footnote');
+    expect(footnote?.textContent).toContain(
+      "Operator overrides do not count as the opponent's moves",
+    );
   });
 
   it('lists persuasion per model with denominators, the tone split and low-sample badges', async () => {
@@ -1865,7 +1937,7 @@ describe('AnalyticsDashboard', () => {
       }),
     });
     const element = harness.routeNativeElement!;
-    expect(element.querySelectorAll('.persuasion-table tbody tr td.col-model')).toHaveLength(1);
+    expect(element.querySelectorAll('.persuasion-table tbody tr th.col-model')).toHaveLength(1);
 
     api.getAnalyticsComparison.mockReturnValue(
       of({ ...comparisonReport(6), models: [], persuasionRules: PERSUASION_RULES }),

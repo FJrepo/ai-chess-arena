@@ -701,9 +701,16 @@
             </div>
             <div class="table-wrap">
               <table class="analytics-table persuasion-table" aria-labelledby="persuasion-heading">
-                <colgroup span="1"></colgroup>
-                <colgroup span="2"></colgroup>
-                <colgroup span="1"></colgroup>
+                <colgroup>
+                  <col class="persuasion-model-column" />
+                </colgroup>
+                <colgroup>
+                  <col class="persuasion-metric-column" />
+                  <col class="persuasion-metric-column" />
+                </colgroup>
+                <colgroup>
+                  <col class="persuasion-metric-column" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th class="col-model" rowspan="2" scope="col">Model</th>
@@ -719,9 +726,9 @@
                 <tbody>
                   @for (row of persuasionRows(); track row.modelId) {
                     <tr>
-                      <td class="col-model">
+                      <th class="col-model" scope="row">
                         <strong class="model-id">{{ row.modelId }}</strong>
-                      </td>
+                      </th>
                       <ng-container
                         *ngTemplateOutlet="
                           persuasionCell;
@@ -754,18 +761,8 @@
                 </tbody>
               </table>
             </div>
-            @if (comparison()?.persuasionRules; as rules) {
-              <p class="table-footnote">
-                In a finished model-vs-model game, a resignation counts as talked out if Stockfish
-                rated the resigner's position better than
-                <span class="num">{{ formatPawns(rules.lostThresholdCp) }}</span> pawns with no
-                forced mate against it, and the opponent sent a message on one of the last
-                <span class="num">{{ rules.messageWindowMoves }}</span>
-                {{ rules.messageWindowMoves === 1 ? 'move it played' : 'moves it played' }}. Banter
-                level follows the opponent's last model-played move. Counts use evaluated
-                resignations, with fewer than
-                <span class="num">{{ rules.lowSampleResignations }}</span> marked Low sample.
-              </p>
+            @if (persuasionExplanation(); as explanation) {
+              <p class="table-footnote">{{ explanation }}</p>
             }
           </div>
         }
@@ -773,29 +770,34 @@
           @let lowSample = count.resignations > 0 && count.lowSample;
           @let notEvaluated = count.resignations - count.evaluated;
           <td class="behaviour-metric">
-            @if (count.evaluated > 0) {
-              <strong class="num">{{ count.talkedOut }}</strong>
-              <span class="table-note persuasion-denominator">
-                of <span class="num">{{ count.evaluated }}</span>
-                {{ count.evaluated === 1 ? 'resignation' : 'resignations' }}
-              </span>
-            } @else {
-              <ng-container
-                *ngTemplateOutlet="
-                  behaviourMissing;
-                  context: {
-                    $implicit:
-                      count.resignations === 0 ? 'No resignations' : 'No evaluated resignations',
-                  }
-                "
-              ></ng-container>
-            }
+            <div>
+              @if (count.evaluated > 0) {
+                <strong class="num">{{ count.talkedOut }}</strong>
+                <span class="table-note persuasion-denominator">
+                  of <span class="num">{{ count.evaluated }}</span>
+                  {{ count.evaluated === 1 ? 'resignation' : 'resignations' }}
+                </span>
+              } @else {
+                <ng-container
+                  *ngTemplateOutlet="
+                    behaviourMissing;
+                    context: {
+                      $implicit:
+                        count.resignations === 0 ? 'No resignations' : 'No evaluated resignations',
+                    }
+                  "
+                ></ng-container>
+              }
+            </div>
             @if (lowSample || notEvaluated > 0) {
               <span class="table-note">
                 @if (lowSample) {
                   <span class="persuasion-sample">Low sample</span>
                 }
                 @if (notEvaluated > 0) {
+                  @if (lowSample) {
+                    <span> · </span>
+                  }
                   <span
                     ><span class="num">{{ notEvaluated }}</span> not evaluated</span
                   >

@@ -385,14 +385,15 @@
     padding: 12px 14px;
   }
 
-  td {
+  td,
+  th[scope='row'] {
     border-bottom: 1px solid var(--app-divider);
     white-space: nowrap;
     vertical-align: middle;
   }
 
   // Headers may wrap so the 11-column comparison fits a 1280 px window.
-  th {
+  thead th {
     vertical-align: bottom;
     background: color-mix(in srgb, var(--mat-sys-on-surface) 4%, transparent);
     font-weight: 700;
@@ -444,11 +445,11 @@
     color: var(--mat-sys-on-surface-variant);
   }
 
-  tr:last-child td {
+  tr:last-child :is(td, th[scope='row']) {
     border-bottom: none;
   }
 
-  tbody tr:hover td {
+  tbody tr:hover :is(td, th[scope='row']) {
     background: var(--app-row-hover);
   }
 
@@ -468,8 +469,22 @@
 }
 
 .persuasion-table {
+  table-layout: fixed;
+
+  .persuasion-model-column {
+    width: 22%;
+  }
+
+  .persuasion-metric-column {
+    width: 26%;
+  }
+
+  th[scope='row'] {
+    font-weight: inherit;
+  }
+
   td.behaviour-metric {
-    vertical-align: baseline;
+    vertical-align: top;
   }
 
   .persuasion-denominator {
@@ -479,12 +494,8 @@
 
   .persuasion-sample {
     padding-inline: var(--app-space-1);
-    border: 1px dashed var(--mat-sys-outline);
+    border: var(--app-rule-width) solid var(--mat-sys-outline);
     border-radius: var(--app-surface-radius-md);
-
-    &:not(:last-child) {
-      margin-inline-end: var(--app-space-2);
-    }
   }
 }
 
