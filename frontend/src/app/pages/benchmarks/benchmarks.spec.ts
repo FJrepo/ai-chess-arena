@@ -341,7 +341,39 @@ describe('Benchmarks', () => {
     expect(fixture.nativeElement.textContent).toContain('anthropic/claude-sonnet-5');
   });
 
+  it('folds unchanged rerun settings into a labeled disclosure', () => {
+    const { fixture } = setup(run.run.id);
+    const page: HTMLElement = fixture.nativeElement;
+    fixture.detectChanges();
+    clickButton(page, 'Rerun');
+    fixture.detectChanges();
+
+    const disclosure = page.querySelector('details:has([id="rerun-unchanged-summary"])');
+    expect(disclosure?.querySelector('summary')?.textContent.trim()).toBe('Unchanged settings');
+    expect(disclosure?.hasAttribute('open')).toBe(false);
+    expect(disclosure?.querySelector('table')?.getAttribute('aria-labelledby')).toBe(
+      'rerun-unchanged-summary',
+    );
+  });
+
+  it('describes the rerun submit button with the planned games and budget cap', () => {
+    const { fixture } = setup(run.run.id);
+    const page: HTMLElement = fixture.nativeElement;
+    fixture.detectChanges();
+    clickButton(page, 'Rerun');
+    fixture.detectChanges();
+
+    const submit = page.querySelector('button[form="rerun-form"]');
+    const description = submit?.getAttribute('aria-describedby');
+    expect(description).toBeTruthy();
+    expect(page.querySelector(`#${description}`)?.textContent.replace(/\s+/g, ' ').trim()).toBe(
+      '4 games · $1.00 budget cap',
+    );
+  });
+
   it('asks before posting or reposting after a reload when storage rejects writes', () => {
+    const rerunWarning =
+      'Browser storage is blocked. Reloading before the rerun appears could start a second paid run.';
     const { fixture, api, component } = setup(run.run.id);
     const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage blocked', 'QuotaExceededError');
@@ -356,13 +388,13 @@ describe('Benchmarks', () => {
       clickButton(page, 'Create and start rerun');
       expect(api.rerunBenchmark).not.toHaveBeenCalled();
       fixture.detectChanges();
-      expect(page.textContent).toContain(reloadWarning);
+      expect(page.textContent).toContain(rerunWarning);
 
       clickButton(page, 'Go back');
       fixture.detectChanges();
       expect(api.rerunBenchmark).not.toHaveBeenCalled();
       expect(page.textContent).not.toContain('A rerun may already have been created');
-      expect(page.textContent).not.toContain(reloadWarning);
+      expect(page.textContent).not.toContain(rerunWarning);
       clickButton(page, 'Create and start rerun');
       fixture.detectChanges();
       const pendingId = uuid.mock.results.at(-1)?.value;
@@ -388,7 +420,7 @@ describe('Benchmarks', () => {
       clickButton(nextPage, 'Create and start rerun');
       reloaded.detectChanges();
       expect(api.rerunBenchmark).toHaveBeenCalledTimes(2);
-      expect(nextPage.textContent).toContain(reloadWarning);
+      expect(nextPage.textContent).toContain(rerunWarning);
     } finally {
       uuid.mockRestore();
       storage.mockRestore();
