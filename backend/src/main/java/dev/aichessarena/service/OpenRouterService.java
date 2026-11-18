@@ -576,12 +576,13 @@ public class OpenRouterService {
         }
         boolean started = responseStatus == 200 && sent;
         if (limitedByMoveTime) {
-            // The model's timeout. If the answer had started it may be generated and billed: its cost is unknown.
+            // The model's timeout. Once the request may have reached OpenRouter it may be generated and billed: its
+            // cost is unknown, and its record stays unresolved until the forfeit commits.
             LOG.warnf("Model %s did not finish its answer within the move time (%d ms)", modelId, elapsed);
             LlmResponse timeout = new LlmResponse(null, 0, 0, null, elapsed, null, true,
-                    started ? "No complete answer within the move time; the started answer may have been charged"
+                    sent ? "No complete answer within the move time; the request may have been charged"
                             : "No complete answer within the move time");
-            return started ? timeout.withDeliveryUncertain() : timeout;
+            return sent ? timeout.withDeliveryUncertain() : timeout;
         }
         if (started) {
             // The answer had started: it may be generated and billed even though it did not arrive in time.

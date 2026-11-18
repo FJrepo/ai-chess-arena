@@ -924,7 +924,87 @@ class DurableRunsIT {
         var attempt = QuarkusTransaction.requiringNew().call(() -> attemptRows.list("game.id", gameId).getFirst());
         assertEquals(Outcome.TIMEOUT, attempt.outcome);
         assertNull(attempt.costUsd, "cost unknown");
-        assertEquals("No answer within the move time; the started answer may have been charged", attempt.errorMessage);
+        assertEquals("No answer within the move time; the request may have been charged", attempt.errorMessage);
+    }
+
+    @Test
+    void aTimeoutAfterSendingKeepsTheRequestUnresolvedUntilTheForfeitCommits() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 2);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        AtomicInteger posts = new AtomicInteger();
+        GameLifecycleService real = ClientProxy.unwrap(lifecycle);
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
+            // OpenRouter received the request but sends nothing back before the move time runs out.
+            Thread.startVirtualThread(() -> serveRaw(socket, posts, "no headers stall"));
+            installRouter(socket);
+            engine.startGame(gameId);
+            // The backend dies before the forfeit can commit: the forfeit and every later write fail.
+            QuarkusMock.installMockForType(new GameLifecycleService() {
+                @Override public void forfeitTimeout(UUID id, String color, int seconds) {
+                    throw new IllegalStateException("Backend stopped");
+                }
+
+                @Override public void pauseEndingLoop(UUID id, String detail) {
+                    throw new IllegalStateException("Backend stopped");
+                }
+
+                @Override public void markGamePaused(UUID id) {
+                    throw new IllegalStateException("Backend stopped");
+                }
+            }, GameLifecycleService.class);
+            awaitGame(gameId, g -> outcomes(gameId).contains(Outcome.TIMEOUT));
+            awaitReleased(gameId);
+        } finally {
+            QuarkusMock.installMockForType(real, GameLifecycleService.class);
+        }
+        Game interrupted = read(gameId);
+        assertEquals(GameStatus.IN_PROGRESS, interrupted.status);
+        assertNotNull(interrupted.requestSentAt, "recording the timeout attempt does not settle the request");
+
+        recovery.recover(List.of(gameId), Interruption.RESTART);
+
+        Game game = read(gameId);
+        assertEquals(GameStatus.PAUSED, game.status, "never resent after the restart");
+        assertTrue(game.statusDetail.contains("was in flight during a backend restart"), game.statusDetail);
+        assertEquals(1, posts.get());
+    }
+
+    @Test
+    void theMoveTimeStartsOnlyAfterTheRequestIsAdmitted() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 1);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        AtomicInteger posts = new AtomicInteger();
+        GameRunOwnership realOwnership = ClientProxy.unwrap(ownership);
+        // Admission waits for the tournament and game locks longer than the whole move time.
+        QuarkusMock.installMockForType(new GameRunOwnership() {
+            @Override public Instant markRequestSent(UUID id) {
+                sleep(1_500);
+                return realOwnership.markRequestSent(id);
+            }
+
+            @Override public void release(UUID id, UUID token) {
+                realOwnership.release(id, token);
+            }
+        }, GameRunOwnership.class);
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
+            Thread.startVirtualThread(() -> serveRaw(socket, posts, "valid answers"));
+            installRouter(socket);
+
+            engine.startGame(gameId);
+
+            awaitGame(gameId, g -> moveCountOf(g) >= 1 || g.status != GameStatus.IN_PROGRESS);
+            engine.pauseGame(gameId);
+            awaitGame(gameId, g -> g.status != GameStatus.IN_PROGRESS);
+            awaitReleased(gameId);
+        } finally {
+            QuarkusMock.installMockForType(realOwnership, GameRunOwnership.class);
+        }
+        Game game = read(gameId);
+        assertNull(game.result, "no loss on time for a lock wait");
+        assertTrue(moveCount(gameId) >= 1);
+        assertEquals("e4", QuarkusTransaction.requiringNew().call(() -> moves.findByGameId(gameId).getFirst().san));
     }
 
     @Test
@@ -1158,6 +1238,9 @@ class DurableRunsIT {
                             + "\r\nContent-Length: 200\r\n\r\n{\"error\":";
                     case "200 headers then stall" -> "HTTP/1.1 200 OK\r\nContent-Type: application/json"
                             + "\r\nContent-Length: 500\r\n\r\n{\"choices\":";
+                    case "no headers stall" -> "";
+                    case "valid answers" -> response(200, "{\"choices\":[{\"message\":{\"content\":"
+                            + "\"{\\\"move\\\":\\\"" + (posts.get() == 1 ? "e4" : "e5") + "\\\"}\"}}]}");
                     default -> "";
                 };
                 out.write(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));

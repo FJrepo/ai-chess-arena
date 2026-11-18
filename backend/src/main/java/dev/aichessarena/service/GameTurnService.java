@@ -150,11 +150,7 @@ public class GameTurnService {
                 return TurnResult.paused();
             }
 
-            if (turnDeadline == null && moveTimeoutSeconds != null) {
-                // Database timing and admission work must finish before the model's first answer budget starts.
-                turnDeadline = OpenRouterService.AnswerDeadline.after(
-                        Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
-            } else {
+            if (turnDeadline != null || moveTimeoutSeconds == null) {
                 Action action = TurnPolicy.beforeRequest(remainingNanos(turnDeadline), providerProblem != null);
                 if (action == Action.PAUSE_PROVIDER) {
                     // Attribute an unrecorded marker rejection to the request that actually triggered it.
@@ -177,6 +173,12 @@ public class GameTurnService {
             // already be charged. The same admission runs before any further POST of this call (the plain fallback).
             if (runOwnership != null && runOwnership.markRequestSent(request.gameId()) == null) {
                 return TurnResult.stopped();
+            }
+            if (turnDeadline == null && moveTimeoutSeconds != null) {
+                // The move time starts once the first request is admitted and recorded (lock waits and database work
+                // are not the model's time) and covers every request of this turn.
+                turnDeadline = OpenRouterService.AnswerDeadline.after(
+                        Duration.ofSeconds(moveTimeoutSeconds), nanoClock.getAsLong());
             }
             FallbackGate gate = new FallbackGate(request, attemptContext, attempt);
             List<OpenRouterService.ChatMsg> messages = List.copyOf(request.history());
@@ -279,7 +281,7 @@ public class GameTurnService {
         if (action == Action.PAUSE_DELIVERY_UNCERTAIN) {
             recordAttempt(request, attemptContext, attempt, Outcome.PROVIDER_RETRYABLE, null,
                     providerProblem != null ? "Move time ran out after OpenRouter problems earlier in this turn ("
-                            + providerProblem.detail() + "); the started answer may have been charged"
+                            + providerProblem.detail() + "); the request may have been charged"
                             : response.errorMessage(), response);
             return pauseForInspection(request, GameLifecycleService.DELIVERY_UNCERTAIN);
         }
@@ -293,7 +295,7 @@ public class GameTurnService {
         // Loss on time. A started answer's cost is unknown (possibly charged); the forfeit sends nothing more and
         // resolves the request record in its own commit.
         recordAttempt(request, attemptContext, attempt, Outcome.TIMEOUT, null, response.deliveryUncertain()
-                ? "No answer within the move time; the started answer may have been charged"
+                ? "No answer within the move time; the request may have been charged"
                 : "No answer within the move time", response);
         LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
         gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), timeoutSeconds);

@@ -655,7 +655,7 @@ describe('GameView', () => {
     );
     const reads = getGame.mock.calls.length;
 
-    component.resumeAfterSpendCheck();
+    component.resumeAfterSpendCheck('2026-11-18T10:00:00.123456Z');
 
     expect(resumeAfterSpendCheck).toHaveBeenCalledWith('g-1', '2026-11-18T10:00:00.123456Z');
     expect(snackbar.open).toHaveBeenCalledWith(
@@ -1942,6 +1942,43 @@ describe('GameView', () => {
     retired.next(gameWith({ statusRevision: 8, status: 'IN_PROGRESS' }));
     expect(component.game()?.status).toBe('PAUSED');
     expect(component.game()?.statusRevision).toBe(0);
+    component.ngOnDestroy();
+  });
+
+  it('acknowledges the request shown at the click even if a newer one arrives during the key check', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const callbacks: Array<() => void> = [];
+    const resumeAfterSpendCheck = vi.fn(() => EMPTY);
+    Object.assign(api, { resumeAfterSpendCheck });
+    Object.assign(component, {
+      connection: {
+        withKey: (action: () => void, isCurrent: () => boolean) =>
+          callbacks.push(() => {
+            if (isCurrent()) action();
+          }),
+      },
+    });
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(
+      gameWith({
+        liveRevision: 25,
+        status: 'PAUSED',
+        streamId: 'first',
+        uncertainRequest: true,
+        uncertainRequestSentAt: '2026-11-18T10:00:00.000001Z',
+      }),
+    );
+    const shown = component.game()!.uncertainRequestSentAt!;
+
+    component.resumeAfterSpendCheck(shown);
+    // A live update swaps in a newer unconfirmed request while the key check is still running.
+    component.game.update((game) =>
+      game ? { ...game, uncertainRequestSentAt: '2026-11-18T10:05:00.000002Z' } : game,
+    );
+    callbacks[0]();
+
+    expect(resumeAfterSpendCheck).toHaveBeenCalledWith('g-1', '2026-11-18T10:00:00.000001Z');
     component.ngOnDestroy();
   });
 

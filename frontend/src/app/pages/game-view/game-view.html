@@ -7,7 +7,7 @@
     [truncationEffort]="truncationEffort()"
     [saving]="savingLimit() || !gameActionsAvailable()"
     (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
-    (spendCheckedResume)="resumeAfterSpendCheck()"
+    (spendCheckedResume)="resumeAfterSpendCheck($event)"
   />
 
   @if (g.status === 'PAUSED' && g.resumeRequestedAt) {

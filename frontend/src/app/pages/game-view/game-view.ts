@@ -1360,10 +1360,14 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   /** Resumes a game paused for a spend check once the operator has checked the spend of its unconfirmed request. */
-  resumeAfterSpendCheck() {
+  /**
+   * `requestSentAt` is the request the operator saw when clicking. It is captured before the asynchronous key check,
+   * so a live update meanwhile cannot make this acknowledge a newer request.
+   */
+  resumeAfterSpendCheck(requestSentAt: string) {
+    if (!requestSentAt) return;
     this.withCurrentGameKey(() => {
-      const requestSentAt = this.game()?.uncertainRequestSentAt;
-      if (this.savingLimit() || !requestSentAt) return;
+      if (this.savingLimit()) return;
       this.runGameAction(this.api.resumeAfterSpendCheck(this.gameId, requestSentAt), {
         next: (game) => this.applyResumeSnapshot(game),
         error: (err) => {

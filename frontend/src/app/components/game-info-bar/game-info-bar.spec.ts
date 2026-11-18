@@ -507,13 +507,14 @@ describe('GameInfoBar cancellation', () => {
 describe('GameInfoBar spend check', () => {
   it('offers "Spend checked, resume" only for a game with an unconfirmed request', () => {
     const fixture = TestBed.createComponent(GameInfoBar);
-    const emitted: number[] = [];
-    fixture.componentInstance.spendCheckedResume.subscribe(() => emitted.push(1));
+    const emitted: string[] = [];
+    fixture.componentInstance.spendCheckedResume.subscribe((sentAt) => emitted.push(sentAt));
     fixture.componentInstance.game = {
       ...pausedGame(
         'A model request (model-a, White, move 3) was in flight. Check spend, then resume.',
       ),
       uncertainRequest: true,
+      uncertainRequestSentAt: '2026-11-18T10:00:00.123456Z',
     };
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
@@ -523,7 +524,7 @@ describe('GameInfoBar spend check', () => {
     const button = element.querySelector<HTMLButtonElement>('button.spend-checked');
     expect(button?.textContent?.trim()).toBe('Spend checked, resume');
     button!.click();
-    expect(emitted).toEqual([1]);
+    expect(emitted).toEqual(['2026-11-18T10:00:00.123456Z']);
 
     fixture.componentInstance.game = { ...pausedGame('Paused by user'), uncertainRequest: false };
     fixture.detectChanges();

@@ -147,7 +147,7 @@
             type="button"
             class="spend-checked"
             [disabled]="saving"
-            (click)="spendCheckedResume.emit()"
+            (click)="spendCheckedResume.emit(game.uncertainRequestSentAt!)"
           >
             Spend checked, resume
           </button>

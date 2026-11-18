@@ -283,6 +283,8 @@ class OpenRouterServiceChatTest {
         assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
         assertTrue(response.timedOut());
         assertFalse(response.isProviderFailure());
+        // No headers yet, but the request had reached the server: it may be charged.
+        assertTrue(response.deliveryUncertain());
     }
 
     @Test
@@ -300,7 +302,7 @@ class OpenRouterServiceChatTest {
         assertTrue(response.timedOut());
         assertFalse(response.isProviderFailure());
         assertTrue(response.deliveryUncertain());
-        assertEquals("No complete answer within the move time; the started answer may have been charged",
+        assertEquals("No complete answer within the move time; the request may have been charged",
                 response.errorMessage());
         assertTrue(elapsedMs >= 650 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
     }

@@ -84,8 +84,11 @@ export class GameInfoBar {
   @Input() saving = false;
   /** Emits the new output-token limit (and reasoning effort); the parent saves them and resumes the game. */
   @Output() raiseLimitAndResume = new EventEmitter<RaiseLimitRequest>();
-  /** The operator has checked spend for the game's unconfirmed request; the parent resumes it. */
-  @Output() spendCheckedResume = new EventEmitter<void>();
+  /**
+   * The operator has checked spend for the unconfirmed request shown here; emits that request's
+   * `uncertainRequestSentAt`, read when clicked, and the parent resumes the game acknowledging exactly it.
+   */
+  @Output() spendCheckedResume = new EventEmitter<string>();
 
   /** Reader-facing status label for the chip. */
   readonly statusLabel = gameStatusLabel;
