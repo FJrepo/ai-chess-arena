@@ -37,6 +37,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Benchmark comparisons lead with score changes in points, flag small samples, and keep changed outcomes visible with other matchups expandable.
 - Benchmark reruns highlight changed settings before starting, show planned games and the budget cap beside the start button, and make recovery the primary action.
 - Centre the Live games switcher in the header, show running and paused status with green and amber indicators, and group matchups into bright Running, warm Paused and muted Last finished cards.
 - The Analytics **Behaviour** tab makes persuasion counts easier to compare, with clearer role headers, quieter sample notes and columns that stay put when the table is empty.

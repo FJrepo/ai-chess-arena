@@ -24,6 +24,7 @@
   --app-live-games-row-divider: color-mix(in srgb, var(--app-divider) 70%, var(--mat-sys-outline));
   --app-info-fill: color-mix(in srgb, var(--app-accent-info) 7%, var(--app-card-bg));
   --app-info-border: color-mix(in srgb, var(--app-accent-info) 45%, var(--app-divider));
+  --app-error-fill: color-mix(in srgb, var(--mat-sys-error) 8%, var(--app-card-bg));
   --app-quality-inaccuracy: var(--mat-sys-tertiary);
   --app-quality-blunder: var(--mat-sys-error);
   --mat-sys-background: var(--mat-sys-surface);
