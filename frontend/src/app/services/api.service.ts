@@ -1,3 +1,4 @@
+import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, defer, tap } from 'rxjs';
@@ -308,6 +309,7 @@ export class ApiService {
     tournamentId?: string | null;
     legalMoveHints?: boolean;
     minGames?: number;
+    reasoningEffort?: ObservedReasoningEffort;
   }): Observable<AnalyticsComparisonResponse> {
     let httpParams = new HttpParams();
     if (params?.days !== undefined) {
@@ -321,6 +323,9 @@ export class ApiService {
     }
     if (params?.minGames !== undefined) {
       httpParams = httpParams.set('minGames', String(params.minGames));
+    }
+    if (params?.reasoningEffort) {
+      httpParams = httpParams.set('reasoningEffort', params.reasoningEffort);
     }
     return this.http.get<AnalyticsComparisonResponse>(`${this.baseUrl}/analytics/comparison`, {
       params: httpParams,

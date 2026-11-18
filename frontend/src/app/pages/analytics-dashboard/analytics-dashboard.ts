@@ -28,6 +28,12 @@ import {
   ModelReliabilityResponse,
 } from '../../models/analytics.model';
 
+import {
+  observedReasoningEffortLabel,
+  ObservedReasoningEffort,
+  REASONING_EFFORTS,
+} from '../../utils/reasoning-effort';
+
 type ComparisonSortOption =
   | 'winRate'
   | 'reliabilityScore'
@@ -61,6 +67,15 @@ type ComparisonSortOption =
 export class AnalyticsDashboard implements OnInit, OnDestroy {
   readonly tabIds = ['overview', 'quality', 'behaviour', 'cost'] as const;
   selectedTabIndex = signal(0);
+  readonly effortOptions: readonly ObservedReasoningEffort[] = [
+    ...REASONING_EFFORTS,
+    'default',
+    'mixed',
+    'unknown',
+  ];
+  readonly effortLabel = observedReasoningEffortLabel;
+  selectedReasoningEffort: ObservedReasoningEffort | '' = '';
+
   readonly dayOptions = [7, 30, 90];
   readonly scoreExplanation =
     'Score, based on finished games: 50% first-try legal moves, 30% no forfeits, 20% few retries; low samples pulled toward 60. Latency is shown but not scored.';
@@ -178,11 +193,15 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   /** Models with judged moves, lowest average centipawn loss first. */
   qualityRows = computed(() =>
     (this.comparison()?.models ?? [])
-      .filter((row) => (row.analyzedMoves ?? 0) > 0 && row.averageCentipawnLoss != null)
+      .filter(
+        (row) =>
+          ((row.analyzedMoves ?? 0) > 0 && row.averageCentipawnLoss != null) ||
+          (row.reasoning?.modelMoves ?? 0) > 0,
+      )
       .slice()
       .sort(
         (a, b) =>
-          (a.averageCentipawnLoss ?? 0) - (b.averageCentipawnLoss ?? 0) ||
+          (a.averageCentipawnLoss ?? Infinity) - (b.averageCentipawnLoss ?? Infinity) ||
           (b.analyzedMoves ?? 0) - (a.analyzedMoves ?? 0),
       ),
   );
@@ -459,6 +478,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
           ? {}
           : { legalMoveHints: this.selectedLegalMoveHints }),
         minGames: Math.max(0, this.minGames),
+        ...(this.selectedReasoningEffort && { reasoningEffort: this.selectedReasoningEffort }),
       })
       .pipe(
         timeout(AnalyticsDashboard.REPORT_TIMEOUT_MS),

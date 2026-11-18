@@ -63,6 +63,15 @@
       />
       <mat-icon matPrefix>leaderboard</mat-icon>
     </mat-form-field>
+    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+      <mat-label>Comparison effort</mat-label>
+      <mat-select [(ngModel)]="selectedReasoningEffort" (ngModelChange)="onCommonFiltersChanged()">
+        <mat-option value="">All efforts</mat-option>
+        @for (effort of effortOptions; track effort) {
+          <mat-option [value]="effort">{{ effortLabel(effort) }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
   </div>
 
   <ng-template #comparisonStatus>
@@ -180,6 +189,7 @@
                     <tr>
                       <td class="col-model">
                         <strong class="model-id">{{ row.modelId }}</strong>
+                        <span class="table-note">{{ effortLabel(row.reasoning?.effort) }}</span>
                       </td>
                       <td class="num">{{ row.wins }}-{{ row.draws }}-{{ row.losses }}</td>
                       <td class="num">{{ percent(row.winRate) }}</td>
@@ -296,6 +306,7 @@
                   <tr>
                     <th class="col-model">Model</th>
                     <th class="num">ACPL</th>
+                    <th class="num">Reasoning tokens / accepted move</th>
                     <th class="num">Blunders / game</th>
                     <th class="num">
                       <span class="quality-glyph quality-blunder">??</span> Blunders
@@ -314,8 +325,19 @@
                     <tr>
                       <td class="col-model">
                         <strong class="model-id">{{ row.modelId }}</strong>
+                        <span class="table-note">{{ effortLabel(row.reasoning?.effort) }}</span>
                       </td>
                       <td class="num">{{ formatAcpl(row.averageCentipawnLoss) }}</td>
+                      <td class="num">
+                        @if (row.reasoning; as reasoning) {
+                          {{ (reasoning.averageTokens | number: '1.0-1') ?? 'n/a' }}
+                          <span class="table-note"
+                            >{{ reasoning.reportedMoves }}/{{ reasoning.modelMoves }} reported</span
+                          >
+                        } @else {
+                          n/a
+                        }
+                      </td>
                       <td class="num">
                         {{ formatPerGame(row.blundersPerGame) }}
                         <span class="table-note"
@@ -330,8 +352,8 @@
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="7" class="empty">
-                        No moves judged by Stockfish in finished games yet.
+                      <td colspan="8" class="empty">
+                        No move quality or reasoning token data for this selection.
                       </td>
                     </tr>
                   }

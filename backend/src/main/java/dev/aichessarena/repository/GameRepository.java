@@ -92,9 +92,21 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
         if (legalMoveHints == null) {
             return list("from Game g where " + where, parameters);
         }
-        return list("select g from Game g left join g.tournament t where " + where
-                + " and coalesce(t.legalMoveHints, true) = :legalMoveHints",
-                parameters.and("legalMoveHints", legalMoveHints));
+        return list("select g from Game g" + hintsJoin(legalMoveHints) + " where " + where
+                + hintsPredicate(legalMoveHints), hintsParameters(parameters, legalMoveHints));
+    }
+
+    // Analytics queries alias the game as g, including those that start from a move or attempt.
+    static String hintsJoin(Boolean legalMoveHints) {
+        return legalMoveHints == null ? "" : " left join g.tournament hintsTournament";
+    }
+
+    static String hintsPredicate(Boolean legalMoveHints) {
+        return legalMoveHints == null ? "" : " and coalesce(hintsTournament.legalMoveHints, true) = :legalMoveHints";
+    }
+
+    static Parameters hintsParameters(Parameters parameters, Boolean legalMoveHints) {
+        return legalMoveHints == null ? parameters : parameters.and("legalMoveHints", legalMoveHints);
     }
 
     /**

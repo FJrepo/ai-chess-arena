@@ -55,5 +55,6 @@ public record AnalyticsModelComparisonRowDto(
         // Games the model won because its opponent (a model) resigned.
         long wonByResignation,
         PromptCachingDto promptCaching,
-        ConversionDto conversion
+        ConversionDto conversion,
+        ReasoningAnalyticsDto reasoning
 ) {}

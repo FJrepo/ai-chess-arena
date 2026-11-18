@@ -187,6 +187,15 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    void comparisonSharesTheExactWindowBoundaryWithReasoningTelemetry() {
+        AnalyticsService service = service(List.of(), List.of(), List.of());
+        service.getComparison(30, UUID.randomUUID(), 0);
+        FakeMoveAttemptRepository repository = (FakeMoveAttemptRepository) service.moveAttemptRepository;
+        assertNotNull(repository.costCutoff);
+        assertSame(repository.costCutoff, repository.reasoningCutoff);
+    }
+
+    @Test
     void healthSkipsQueriesUsedOnlyByModelAnalytics() {
         AnalyticsService service = service(List.of(), List.of(), List.of());
         service.windowLoader.chatMessageRepository = new ChatMessageRepository() {
@@ -1205,7 +1214,7 @@ class AnalyticsServiceTest {
 
     private MoveAttemptRepository.AttemptUsage usage(Game game, String model, Integer prompt,
                                                     Integer cached, Integer writes) {
-        return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes);
+        return new MoveAttemptRepository.AttemptUsage(game.id, model, prompt, cached, writes, null);
     }
 
     private Move chatMove(Game game, String modelId, int number, String color, ChatMode chatMode) {
@@ -1375,13 +1384,22 @@ class AnalyticsServiceTest {
 
     private static final class FakeMoveAttemptRepository extends MoveAttemptRepository {
         private final List<RejectedAttemptCost> costs;
+        private LocalDateTime reasoningCutoff;
+        private LocalDateTime costCutoff;
 
         private FakeMoveAttemptRepository(List<RejectedAttemptCost> costs) {
             this.costs = costs;
         }
 
         @Override
+        public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+            reasoningCutoff = cutoff;
+            return List.of();
+        }
+
+        @Override
         public List<RejectedAttemptCost> findRejectedCostsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            costCutoff = cutoff;
             return costs;
         }
 

@@ -19,7 +19,8 @@ public record LeaderboardDto(boolean includeForfeits, long gamesCount, List<Mode
             LocalDateTime lastPlayed,
             boolean provisional,
             boolean alias,
-            List<HistoryPoint> ratingHistory
+            List<HistoryPoint> ratingHistory,
+            String reasoningEffort
     ) {}
 
     public record HistoryPoint(UUID gameId, LocalDateTime completedAt, int rating) {}

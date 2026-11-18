@@ -13,6 +13,7 @@ import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.MoveAttempt;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.ChatMessageRepository;
@@ -67,10 +68,15 @@ class AnalyticsIT {
      */
     @BeforeEach
     void seed() {
-        tournamentId = QuarkusTransaction.requiringNew().call(() -> {
+        tournamentId = seed(true);
+    }
+
+    private UUID seed(boolean legalMoveHints) {
+        return QuarkusTransaction.requiringNew().call(() -> {
             Tournament tournament = new Tournament();
             tournament.name = "Analytics " + UUID.randomUUID();
             tournament.status = Tournament.TournamentStatus.IN_PROGRESS;
+            tournament.legalMoveHints = legalMoveHints;
             tournamentRepository.persist(tournament);
             TournamentParticipant alpha = participant(tournament, "Alpha", 0);
             TournamentParticipant beta = participant(tournament, "Beta", 1);
@@ -87,10 +93,15 @@ class AnalyticsIT {
             // A duplicate message for the same ply (possible in databases from before V8): only the first counts.
             chat(recent, 1, "WHITE", "model-alpha", "A much longer duplicate message").createdAt =
                     LocalDateTime.now().plusMinutes(1);
-            attempt(recent, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0.003");
-            attempt(recent, 1, "WHITE", 2, "model-alpha", Outcome.ACCEPTED, "0.01");
+            MoveAttempt rejected = attempt(recent, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0.003");
+            rejected.reasoningTokens = 300;
+            rejected.reasoningEffort = ReasoningEffort.MEDIUM;
+            MoveAttempt accepted = attempt(recent, 1, "WHITE", 2, "model-alpha", Outcome.ACCEPTED, "0.01");
+            accepted.reasoningEffort = ReasoningEffort.MEDIUM;
+            accepted.reasoningTokens = 0;
             attempt(recent, 1, "BLACK", 1, "model-beta", Outcome.ACCEPTED, "0.02");
-            attempt(recent, 2, "WHITE", 1, "model-alpha", Outcome.TRUNCATED, "0.001");
+            attempt(recent, 2, "WHITE", 1, "model-alpha", Outcome.TRUNCATED, "0.001")
+                    .reasoningEffort = ReasoningEffort.MEDIUM;
 
             Game old = game(tournament, beta, alpha, 1, GameStatus.COMPLETED, now.minusDays(50), now.minusDays(35));
             old.result = Game.GameResult.WHITE_WINS;
@@ -110,6 +121,126 @@ class AnalyticsIT {
             attempt(waiting, 1, "WHITE", 1, "model-alpha", Outcome.DISCARDED, "0");
             return tournament.id;
         });
+    }
+
+    @Test
+    void filtersOutUnknownSidesAndKeepsReportedZeroSeparateFromRetries() {
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "medium")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("gamesCount", equalTo(1))
+                .body("models", hasSize(1))
+                .body("models[0].modelId", equalTo("model-alpha"))
+                .body("models[0].gamesPlayed", equalTo(1))
+                .body("models[0].reasoning.effort", equalTo("medium"))
+                .body("models[0].reasoning.averageTokens", equalTo(0.0f))
+                .body("models[0].reasoning.reportedMoves", equalTo(1))
+                .body("models[0].reasoning.modelMoves", equalTo(1));
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "nonsense")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(400);
+    }
+
+    @Test
+    void ambiguousDifferentEffortsKeepEachSideInTheUnknownBucket() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game recent = gameRepository.find("tournament.id = ?1 and bracketPosition = 0", tournamentId).firstResult();
+            bodylessTimeout(recent, ReasoningEffort.HIGH);
+            Game second = game(tournamentRepository.findById(tournamentId), recent.whiteParticipant,
+                    recent.blackParticipant, 4, GameStatus.COMPLETED, LocalDateTime.now(), LocalDateTime.now());
+            second.result = Game.GameResult.WHITE_WINS;
+            gameRepository.persist(second);
+            move(second, 1, "WHITE", "model-alpha", "0", 0);
+            attempt(second, 1, "WHITE", 1, "model-alpha", Outcome.ACCEPTED, "0")
+                    .reasoningEffort = ReasoningEffort.HIGH;
+            bodylessTimeout(second, ReasoningEffort.MEDIUM);
+        });
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "medium")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models", hasSize(0));
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "unknown")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models.find { it.modelId == 'model-alpha' }.gamesPlayed", equalTo(2))
+                .body("models.find { it.modelId == 'model-alpha' }.reasoning.effort", equalTo("unknown"));
+    }
+
+    private void bodylessTimeout(Game game, ReasoningEffort effort) {
+        MoveAttempt timedOut = attempt(game, 2, "WHITE", 3, "model-alpha", Outcome.TIMEOUT, "0");
+        timedOut.reasoningEffort = effort;
+        timedOut.promptTokens = null;
+        timedOut.cachedPromptTokens = null;
+        timedOut.cacheWriteTokens = null;
+    }
+
+    @Test
+    void mixedDefaultAndFailedOnlySamplesUseObservedRequests() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game recent = gameRepository.find("tournament.id = ?1 and bracketPosition = 0", tournamentId).firstResult();
+            MoveAttempt retry = attempt(recent, 2, "WHITE", 2, "model-alpha", Outcome.ILLEGAL_MOVE, "0");
+            retry.reasoningEffort = ReasoningEffort.HIGH;
+            MoveAttempt beta = attemptRepository.find("game.id = ?1 and modelId = 'model-beta'", recent.id)
+                    .firstResult();
+            beta.effectiveMaxOutputTokens = 4096;
+            beta.reasoningTokens = null;
+
+            Game forfeit = game(tournamentRepository.findById(tournamentId), recent.whiteParticipant,
+                    recent.blackParticipant, 4, GameStatus.FORFEIT, LocalDateTime.now(), LocalDateTime.now());
+            forfeit.result = Game.GameResult.WHITE_FORFEIT;
+            gameRepository.persist(forfeit);
+            attempt(forfeit, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0")
+                    .reasoningEffort = ReasoningEffort.HIGH;
+        });
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "mixed")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models", hasSize(1))
+                .body("models[0].modelId", equalTo("model-alpha"))
+                .body("models[0].gamesPlayed", equalTo(1))
+                .body("models[0].reasoning.effort", equalTo("mixed"))
+                .body("models[0].reasoning.reportedMoves", equalTo(1));
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "high")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models", hasSize(1))
+                .body("models[0].forfeits", equalTo(1))
+                .body("models[0].reasoning.effort", equalTo("high"))
+                .body("models[0].reasoning.modelMoves", equalTo(0));
+
+        given().queryParam("tournamentId", tournamentId).queryParam("reasoningEffort", "default")
+                .when().get("/api/analytics/comparison")
+                .then().statusCode(200)
+                .body("models", hasSize(1))
+                .body("models[0].modelId", equalTo("model-beta"))
+                .body("models[0].reasoning.effort", equalTo("default"))
+                .body("models[0].reasoning.reportedMoves", equalTo(0));
+    }
+
+    @Test
+    void effortAndHintFiltersAreIndependentCacheDimensions() {
+        UUID unhintedTournament = seed(false);
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", false)
+                .queryParam("reasoningEffort", "medium").get("/api/analytics/comparison")
+                .then().statusCode(200).body("models", hasSize(1)).body("models[0].modelId", equalTo("model-alpha"));
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", true)
+                .queryParam("reasoningEffort", "medium").get("/api/analytics/comparison")
+                .then().statusCode(200).body("gamesCount", equalTo(0));
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", false)
+                .queryParam("reasoningEffort", "unknown").get("/api/analytics/comparison")
+                .then().statusCode(200).body("models", hasSize(1)).body("models[0].modelId", equalTo("model-beta"));
+
+        given().queryParam("tournamentId", unhintedTournament).queryParam("legalMoveHints", false)
+                .queryParam("reasoningEffort", "medium", "nonsense").get("/api/analytics/comparison")
+                .then().statusCode(400);
     }
 
     @Test
@@ -269,7 +400,7 @@ class AnalyticsIT {
         return move;
     }
 
-    private void attempt(Game game, int moveNumber, String color, int number, String modelId, Outcome outcome,
+    private MoveAttempt attempt(Game game, int moveNumber, String color, int number, String modelId, Outcome outcome,
             String cost) {
         MoveAttempt attempt = new MoveAttempt();
         attempt.game = game;
@@ -286,5 +417,6 @@ class AnalyticsIT {
         }
         attempt.createdAt = game.createdAt;
         attemptRepository.persist(attempt);
+        return attempt;
     }
 }

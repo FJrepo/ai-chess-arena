@@ -1,3 +1,5 @@
+import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
+
 export interface RatingHistoryPoint {
   gameId: string;
   completedAt: string;
@@ -17,6 +19,7 @@ export interface LeaderboardModel {
   provisional: boolean;
   alias: boolean;
   ratingHistory: RatingHistoryPoint[];
+  reasoningEffort?: ObservedReasoningEffort;
 }
 
 export interface LeaderboardResponse {

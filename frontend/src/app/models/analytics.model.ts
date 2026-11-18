@@ -1,3 +1,5 @@
+import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
+
 export interface ModelCostBreakdown {
   modelId: string;
   totalCostUsd: number;
@@ -52,7 +54,15 @@ export interface AnalyticsConversion {
   missedMates?: number | null;
 }
 
+export interface AnalyticsReasoning {
+  effort: ObservedReasoningEffort;
+  averageTokens?: number | null;
+  reportedMoves: number;
+  modelMoves: number;
+}
+
 export interface AnalyticsComparisonModel {
+  reasoning?: AnalyticsReasoning;
   conversion?: AnalyticsConversion;
   promptCaching?: AnalyticsPromptCaching;
 

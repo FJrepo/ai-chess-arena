@@ -12,6 +12,7 @@ import { Subscription } from 'rxjs';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { LeaderboardResponse, RatingHistoryPoint } from '../../models/leaderboard.model';
 import { ApiService } from '../../services/api.service';
+import { observedReasoningEffortLabel } from '../../utils/reasoning-effort';
 
 @Component({
   selector: 'app-leaderboard',
@@ -31,6 +32,7 @@ import { ApiService } from '../../services/api.service';
   styleUrl: './leaderboard.scss',
 })
 export class Leaderboard implements OnInit, OnDestroy {
+  readonly effortLabel = observedReasoningEffortLabel;
   readonly includeForfeits = signal(true);
   readonly legalMoveHints = signal<boolean | 'all'>('all');
   readonly response = signal<LeaderboardResponse | null>(null);

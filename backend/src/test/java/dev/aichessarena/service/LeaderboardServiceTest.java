@@ -3,9 +3,13 @@ package dev.aichessarena.service;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.MoveAttempt.Outcome;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.LeaderboardRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
+import dev.aichessarena.repository.MoveRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -67,18 +71,37 @@ class LeaderboardServiceTest {
         waiting.status = GameStatus.WAITING;
         var service = new LeaderboardService();
         service.ratings = new EloRatingService();
+        service.moveRepository = new MoveRepository() {
+            @Override
+            public List<ReasoningPly> findRatedReasoningPlies(boolean includeForfeits, Boolean legalMoveHints) {
+                return List.of();
+            }
+        };
+        service.moveAttemptRepository = new MoveAttemptRepository() {
+            @Override
+            public List<ReasoningAttempt> findRatedReasoningAttempts(boolean includeForfeits, Boolean legalMoveHints) {
+                return List.of(
+                        new ReasoningAttempt(finished.id, "WHITE", "a", 1, 1, Outcome.ACCEPTED,
+                                ReasoningEffort.MEDIUM, 4096, 100, true),
+                        new ReasoningAttempt(waiting.id, "WHITE", "a", 1, 1, Outcome.ACCEPTED,
+                                ReasoningEffort.HIGH, 4096, 200, true));
+            }
+        };
         service.repository = new LeaderboardRepository() {
             @Override
-            public List<Game> findFinishedModelGames(Boolean legalMoveHints) {
+            public List<Game> findFinishedModelGames(boolean includeForfeits, Boolean legalMoveHints) {
                 return List.of(finished, waiting);
             }
         };
         assertEquals(1, service.getLeaderboard(true).gamesCount());
         assertEquals(1516, EloRatingServiceTest.model(service.getLeaderboard(true), "a").rating());
+        assertEquals("medium", EloRatingServiceTest.model(service.getLeaderboard(true), "a").reasoningEffort());
         waiting.status = GameStatus.COMPLETED;
         assertEquals(2, service.getLeaderboard(true).gamesCount());
+        assertEquals("mixed", EloRatingServiceTest.model(service.getLeaderboard(true), "a").reasoningEffort());
         finished.result = Game.GameResult.WHITE_FORFEIT;
         assertEquals(1, service.getLeaderboard(false).gamesCount());
+        assertEquals("high", EloRatingServiceTest.model(service.getLeaderboard(false), "a").reasoningEffort());
     }
 
     private static Game game() {

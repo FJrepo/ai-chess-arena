@@ -16,6 +16,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Tournament setup can hide legal move lists from models on every attempt. Games show the hint mode, and Analytics and Leaderboard can show either mode on its own.
 - Open an editable rematch setup from an existing tournament, with its lineup, rules and run limits prefilled and a preview of changes before creation.
+- Filter comparison and play quality by observed reasoning effort, see token-reporting coverage alongside ACPL, and identify effort in Elo rows.
 
 ### Changed
 

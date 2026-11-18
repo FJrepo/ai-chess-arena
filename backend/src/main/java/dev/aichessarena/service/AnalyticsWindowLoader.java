@@ -52,6 +52,7 @@ public class AnalyticsWindowLoader {
                 .filter(game -> game.status != Game.GameStatus.CANCELLED)
                 .toList();
         return scopeFor(
+                cutoff,
                 games,
                 moveRepository.findInWindow(cutoff, tournamentId),
                 moveAttemptRepository.findRejectedCostsInWindow(cutoff, tournamentId),
@@ -71,12 +72,12 @@ public class AnalyticsWindowLoader {
         List<Game> terminalGames = scope.games().stream()
                 .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status))
                 .toList();
-        return scopeFor(terminalGames, scope.moves(), scope.rejectedAttemptCosts(), scope.messages(),
+        return scopeFor(scope.cutoff(), terminalGames, scope.moves(), scope.rejectedAttemptCosts(), scope.messages(),
                 scope.resignationAttempts(), scope.attemptUsage());
     }
 
     /** Keeps only the moves, attempt costs, messages and resignation attempts that belong to {@code games}. */
-    static AnalyticsScope scopeFor(List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
+    static AnalyticsScope scopeFor(LocalDateTime cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
                                    List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
                                    List<AttemptUsage> attemptUsage) {
         Set<UUID> gameIds = games.stream().map(game -> game.id).collect(Collectors.toSet());
@@ -95,10 +96,10 @@ public class AnalyticsWindowLoader {
         List<AttemptUsage> gameUsage = attemptUsage.stream()
                 .filter(usage -> gameIds.contains(usage.gameId()))
                 .toList();
-        return new AnalyticsScope(games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts, gameUsage);
+        return new AnalyticsScope(cutoff, games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts, gameUsage);
     }
 
-    record AnalyticsScope(List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
+    record AnalyticsScope(LocalDateTime cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
                           List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
                           List<AttemptUsage> attemptUsage) {
     }

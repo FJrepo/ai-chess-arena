@@ -5,9 +5,12 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.*;
 
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.MoveAttempt;
+import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
+import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.TournamentParticipantRepository;
 import dev.aichessarena.repository.TournamentRepository;
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -38,6 +41,9 @@ class LeaderboardIT {
     @Inject
     TournamentParticipantRepository participants;
 
+    @Inject
+    MoveAttemptRepository attempts;
+
     private final List<UUID> tournamentIds = new ArrayList<>();
     private String alpha;
     private String beta;
@@ -54,10 +60,12 @@ class LeaderboardIT {
             Game old = game(first, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS,
                     LocalDateTime.of(2000, 1, 1, 12, 0));
             old.resultReason = Game.ResultReason.ADJUDICATION;
+            recordEffort(old, ReasoningEffort.LOW);
             Tournament second = tournament(false);
             Game forfeit = game(second, Game.GameStatus.FORFEIT, Game.GameResult.WHITE_FORFEIT,
                     LocalDateTime.of(2000, 1, 2, 12, 0));
             forfeit.resultReason = Game.ResultReason.TIMEOUT;
+            recordEffort(forfeit, ReasoningEffort.HIGH);
             Game pending = game(second, Game.GameStatus.PAUSED, null, null);
             pendingId = pending.id;
         });
@@ -67,6 +75,7 @@ class LeaderboardIT {
     void cleanup() {
         QuarkusTransaction.requiringNew().run(() -> {
             for (UUID id : tournamentIds) {
+                attempts.delete("game.tournament.id", id);
                 games.delete("tournament.id", id);
                 participants.delete("tournament.id", id);
                 tournaments.deleteById(id);
@@ -86,6 +95,7 @@ class LeaderboardIT {
         assertEquals(0, value(response, beta, "forfeits"));
         assertEquals(Boolean.TRUE, value(response, alpha, "provisional"));
         assertEquals(2, value(response, alpha, "ratingHistory.size()"));
+        assertEquals("mixed", value(response, alpha, "reasoningEffort"));
         assertEquals("2000-01-02T12:00:00", value(response, alpha, "lastPlayed"));
     }
 
@@ -99,6 +109,12 @@ class LeaderboardIT {
         assertEquals(1484, value(unhinted, alpha, "rating"));
         assertEquals(1, value(hinted, alpha, "games"));
         assertEquals(1, value(unhinted, alpha, "games"));
+        assertEquals("low", value(hinted, alpha, "reasoningEffort"));
+        assertEquals("high", value(unhinted, alpha, "reasoningEffort"));
+
+        given().queryParam("legalMoveHints", false).queryParam("includeForfeits", false)
+                .get("/api/analytics/leaderboard").then().statusCode(200)
+                .body("models.find { it.modelId == '" + alpha + "' }", equalTo(null));
         given().queryParam("legalMoveHints", "").get("/api/analytics/leaderboard").then().statusCode(400);
     }
 
@@ -126,6 +142,7 @@ class LeaderboardIT {
         assertEquals(1484, value(response, beta, "rating"));
         assertEquals(0, value(response, alpha, "forfeits"));
         assertEquals(1, value(response, alpha, "ratingHistory.size()"));
+        assertEquals("low", value(response, alpha, "reasoningEffort"));
         assertEquals("2000-01-01T12:00:00", value(response, alpha, "lastPlayed"));
     }
 
@@ -214,6 +231,19 @@ class LeaderboardIT {
 
     private Tournament tournament() {
         return tournament(true);
+    }
+
+    private void recordEffort(Game game, ReasoningEffort effort) {
+        MoveAttempt attempt = new MoveAttempt();
+        attempt.game = game;
+        attempt.moveNumber = 1;
+        attempt.color = "WHITE";
+        attempt.attemptNumber = 1;
+        attempt.modelId = alpha;
+        attempt.outcome = MoveAttempt.Outcome.ILLEGAL_MOVE;
+        attempt.reasoningEffort = effort;
+        attempt.createdAt = game.completedAt;
+        attempts.persist(attempt);
     }
 
     private Tournament tournament(boolean legalMoveHints) {

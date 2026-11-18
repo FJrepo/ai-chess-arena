@@ -58,7 +58,7 @@ public class AnalyticsResource {
             @Context UriInfo uriInfo
     ) {
         return Response.ok(analyticsService.getComparison(days, tournamentId, minGames,
-                parseLegalMoveHints(uriInfo))).build();
+                parseLegalMoveHints(uriInfo), parseReasoningEffort(uriInfo))).build();
     }
 
     @GET
@@ -100,5 +100,14 @@ public class AnalyticsResource {
             case "false" -> false;
             default -> throw new IllegalArgumentException("legalMoveHints must be true or false");
         };
+    }
+
+    private static String parseReasoningEffort(UriInfo uriInfo) {
+        var values = uriInfo.getQueryParameters().get("reasoningEffort");
+        if (values == null) return null;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("reasoningEffort must be specified at most once");
+        }
+        return values.getFirst();
     }
 }
