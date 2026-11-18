@@ -17,6 +17,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V32__durable_runs.sql` records which game loop owns a game and whether a model request is in flight. The previous version kept no such record, so the upgrade pauses games it left in progress (check spend, then resume) and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. See [Durable runs migration (V32)](docs/deployment.md#durable-runs-migration-v32).
 
+- Flyway `V33__benchmark_reruns.sql` records the pinned prompt version on saved V31 benchmarks. Apply V32 before V33. Back up the database and recreate backend and frontend together.
+
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
   - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
@@ -26,6 +28,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Run the **Stockfish ladder** against a verified engine build and weights, compare color-paired results and spend, and cancel unfinished runs without losing results. Benchmark reports show concrete model IDs when OpenRouter resolves a moving alias.
+- **Rerun and compare** a benchmark with one setting changed or repeat the same setup, preview the settings before spending, and review paired outcomes, telemetry and cost deltas.
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 - The **Live games** menu shows why a paused game needs attention.
@@ -33,6 +36,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- The Analytics **Behaviour** tab makes persuasion counts easier to compare, with clearer role headers, quieter sample notes and columns that stay put when the table is empty.
+- Benchmark reports lead with model scores and game counts, distinguish opening-pair outcomes, and keep small charges visible.
 - The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
 - Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.
@@ -41,11 +46,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - A request that may have reached OpenRouter is never retried automatically: a connection that breaks or times out after sending, a broken successful answer, or an answer that could not be saved pauses the game for a spend check. Connection failures before sending are still retried; after sending, only OpenRouter's complete error document (one JSON object with `error.code` and `error.message`) with a status that shows nothing was run (400, 401, 402, 403, 404, 413, 422, 429, 500, 502, 503, 504) is an ordinary failure. A choice that reports an error, and (without a move time limit) a started answer that reaches the safety cap, pause for a spend check instead of being retried. Running out of move time stays a loss on time, also once the answer has started; that attempt is recorded as a timeout with an unknown cost, and the move time starts only after the first request is admitted. A cache-control rejection is recorded before its plain retry is checked like any request.
 - A game held for a spend check resumes only through **Spend checked, resume** (`acknowledgeUncertainRequest` names the request, so a stale tab cannot confirm a newer one); a plain resume, queued resume, the scheduler and restart recovery never clear it. Restart recovery also completes paused games whose last move already decided them. See [Restarts](docs/how-it-works.md#restarts).
 - A connection to OpenRouter (TCP or TLS) still being set up when the move time runs out pauses the game for a spend check instead of forfeiting it on time. See [Model turns and prompts](docs/how-it-works.md#model-turns-and-prompts).
+- The game's spend-check banner keeps the pause reason beside **Spend checked, resume** and points operators to their OpenRouter activity.
 
 ### Fixed
 
-- Retrying an unconfirmed benchmark creation in the same tab returns the original run even after reloading. Terminal model and Stockfish moves are saved with their results, so cancellation keeps committed wins and draws. Opening positions supply a baseline for move quality.
+- Retrying an unconfirmed benchmark creation in the same tab returns the original run, including after reloading when browser storage is available. Terminal model and Stockfish moves are saved with their results, so cancellation keeps committed wins and draws. Opening positions supply a baseline for move quality.
 - Benchmark games stay out of Analytics health counts while their spend remains visible. Benchmark games show their configured chat mode between turns and give recovery guidance for cut-off answers.
+- Recover an unconfirmed rerun using its original request after reloading or after a recovery error. Starting a separate run requires explicit confirmation.
+- Starting a benchmark or rerun requires confirmation when the browser blocks the save that protects against duplicate paid runs after reload.
+- Benchmark comparisons exclude budget and concurrency from playing settings, flag incompatible prompt versions and multiple setting changes, and show reasons and possible missing spend for spend-check pauses.
+- Benchmark comparisons show missing scores and telemetry without empty labels, and count outcome changes only across scored games.
+- Benchmark first-try legality includes earlier attempts at the same ply across pauses. New reruns reject stale budget or concurrency previews even if the source changes during verification.
+
+### Security
 
 ## [1.9.0] - 2026-11-18
 

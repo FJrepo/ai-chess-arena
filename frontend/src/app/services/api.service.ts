@@ -1,14 +1,19 @@
 import type {
+  BenchmarkComparison,
+  BenchmarkComparisonGameSide,
+  BenchmarkComparisonModelSide,
   BenchmarkRun,
   BenchmarkRunSettings,
   BenchmarkSummary,
+  BenchmarkTelemetry,
   CreateBenchmarkRequest,
+  RerunBenchmarkRequest,
 } from '../models/benchmark.model';
 import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
 import type { LiveGamesSnapshot } from '../models/live-games.model';
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, defer, tap } from 'rxjs';
+import { Observable, defer, map, tap } from 'rxjs';
 import {
   TournamentRunSettings,
   BracketDrawMode,
@@ -91,6 +96,18 @@ export class ApiService {
 
   createBenchmark(request: CreateBenchmarkRequest): Observable<BenchmarkRun> {
     return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks`, request);
+  }
+
+  rerunBenchmark(id: string, request: RerunBenchmarkRequest): Observable<BenchmarkRun> {
+    return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/rerun`, request);
+  }
+
+  compareBenchmarks(base: string, candidate: string): Observable<BenchmarkComparison> {
+    return this.http
+      .get<BenchmarkComparison>(`${this.baseUrl}/benchmarks/compare`, {
+        params: { base, candidate },
+      })
+      .pipe(map(normalizeBenchmarkComparison));
   }
 
   pauseBenchmark(id: string): Observable<BenchmarkRun> {
@@ -447,4 +464,52 @@ export class ApiService {
       { params: httpParams },
     );
   }
+}
+
+function normalizeBenchmarkComparison(report: BenchmarkComparison): BenchmarkComparison {
+  const summary = (run: BenchmarkSummary): BenchmarkSummary => ({
+    ...run,
+    pauseReason: run.pauseReason ?? null,
+    rerunOf: run.rerunOf ?? null,
+  });
+  const telemetry = (sample: BenchmarkTelemetry): BenchmarkTelemetry => ({
+    ...sample,
+    firstTryLegalRate: sample.firstTryLegalRate ?? null,
+    reasoningTokensPerMove: sample.reasoningTokensPerMove ?? null,
+  });
+  const modelSide = (side: BenchmarkComparisonModelSide): BenchmarkComparisonModelSide => ({
+    ...side,
+    telemetry: telemetry(side.telemetry),
+  });
+  const gameSide = (side: BenchmarkComparisonGameSide): BenchmarkComparisonGameSide => ({
+    ...side,
+    gameId: side.gameId ?? null,
+    status: side.status ?? null,
+    reason: side.reason ?? null,
+    statusDetail: side.statusDetail ?? null,
+    uncertainRequest: side.uncertainRequest ?? false,
+    outcome: side.outcome ?? null,
+    points: side.points ?? null,
+    telemetry: side.telemetry ? telemetry(side.telemetry) : null,
+    spendUsd: side.spendUsd ?? null,
+  });
+  return {
+    ...report,
+    base: summary(report.base),
+    candidate: summary(report.candidate),
+    spendDeltaUsd: report.spendDeltaUsd ?? null,
+    models: report.models.map((model) => ({
+      ...model,
+      base: modelSide(model.base),
+      candidate: modelSide(model.candidate),
+      scoreDelta: model.scoreDelta ?? null,
+    })),
+    matchups: report.matchups.map((matchup) => ({
+      ...matchup,
+      base: gameSide(matchup.base),
+      candidate: gameSide(matchup.candidate),
+      scoreDelta: matchup.scoreDelta ?? null,
+      spendDeltaUsd: matchup.spendDeltaUsd ?? null,
+    })),
+  };
 }

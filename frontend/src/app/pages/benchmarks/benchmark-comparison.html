@@ -1,0 +1,416 @@
+<div class="desktop-page">
+  <header class="page-hero page-hero-surface">
+    <div class="page-title-block">
+      <a class="back-link" routerLink="/benchmarks">Back to Benchmarks</a>
+      <h1 class="page-title">Compare benchmark runs</h1>
+      <p class="page-subtitle">Performance against this Stockfish setup</p>
+    </div>
+  </header>
+
+  <section class="panel" aria-label="Choose runs">
+    <form class="comparison-controls" (ngSubmit)="compare()">
+      <mat-form-field appearance="outline">
+        <mat-label>Base run</mat-label>
+        <select matNativeControl name="base" [(ngModel)]="baseId">
+          <option value="">Choose base</option>
+          @for (run of runs(); track run.id) {
+            <option [value]="run.id">{{ run.name }} · {{ run.createdAt | date: 'short' }}</option>
+          }
+        </select>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Candidate run</mat-label>
+        <select matNativeControl name="candidate" [(ngModel)]="candidateId">
+          <option value="">Choose candidate</option>
+          @for (run of runs(); track run.id) {
+            <option [value]="run.id">{{ run.name }} · {{ run.createdAt | date: 'short' }}</option>
+          }
+        </select>
+      </mat-form-field>
+      <button
+        mat-flat-button
+        type="submit"
+        [disabled]="!baseId || !candidateId || baseId === candidateId || loading()"
+      >
+        Compare
+      </button>
+    </form>
+    @if (listError()) {
+      <p role="alert" class="error">{{ listError() }}</p>
+    }
+    @if (reportError()) {
+      <p role="alert" class="error">{{ reportError() }}</p>
+    }
+    @if (loading()) {
+      <p role="status">Loading comparison…</p>
+    }
+  </section>
+
+  @if (report(); as data) {
+    @if (!data.comparable) {
+      <section class="panel comparison-warning" role="alert" aria-labelledby="incompatible">
+        <h2 id="incompatible">Not comparable</h2>
+        <p>The runs have different matchup conditions.</p>
+        <ng-container
+          *ngTemplateOutlet="
+            settingsDiff;
+            context: { $implicit: data.differences, label: 'Incompatible settings' }
+          "
+        />
+      </section>
+    }
+
+    @if (
+      data.comparable && (data.settingChanges.length || data.comparisonType === 'CONTROLLED_RERUN')
+    ) {
+      <section class="panel" aria-labelledby="setting-changes">
+        <h2 id="setting-changes">
+          {{
+            data.comparisonType === 'CONTROLLED_RERUN' ? 'Controlled rerun' : 'Run settings changes'
+          }}
+        </h2>
+        @if (data.comparisonType === 'MULTIPLE_SETTINGS') {
+          <p>Differences cannot be attributed to a single setting.</p>
+        }
+        @if (data.comparisonType === 'CONTROLLED_RERUN') {
+          <p class="secondary">
+            A controlled rerun repeats the source’s playing settings or makes one recorded change.
+            Playing settings compared are model IDs, requested effort, legal move hints, chat mode,
+            maximum attempts per move, move time limit, and maximum output tokens.
+          </p>
+          <p class="secondary">
+            Both runs must match on opening suite, seed and lines, Stockfish executable and NNUE
+            weights, search nodes, threads and hash size, Stockfish levels, model colors, and
+            underlying prompt version.
+          </p>
+        }
+        @if (data.settingChanges.length) {
+          <ng-container
+            *ngTemplateOutlet="
+              settingsDiff;
+              context: { $implicit: data.settingChanges, label: 'Run settings changes' }
+            "
+          />
+        }
+      </section>
+    }
+
+    <section class="panel" aria-labelledby="run-totals">
+      <h2 id="run-totals">Run spend</h2>
+      @if (data.operationalLimitsNote) {
+        <p class="secondary">{{ data.operationalLimitsNote }}.</p>
+      }
+      <div class="table-scroll">
+        <table aria-labelledby="run-totals">
+          <thead>
+            <tr>
+              <th scope="col">Run</th>
+              <th scope="col" class="num">Spend</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">
+                Base · <a [routerLink]="['/benchmarks', data.base.id]">{{ data.base.name }}</a> ·
+                {{ data.base.status | titlecase }}
+              </th>
+              <td class="num">{{ data.baseSpendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}</td>
+            </tr>
+            <tr>
+              <th scope="row">
+                Candidate ·
+                <a [routerLink]="['/benchmarks', data.candidate.id]">{{ data.candidate.name }}</a> ·
+                {{ data.candidate.status | titlecase }}
+              </th>
+              <td class="num">
+                {{ data.candidateSpendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}
+              </td>
+            </tr>
+            @if (data.spendDeltaUsd !== null) {
+              <tr>
+                <th scope="row">Cost delta</th>
+                <td class="num">
+                  <ng-container
+                    *ngTemplateOutlet="costDelta; context: { $implicit: data.spendDeltaUsd }"
+                  />
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    @if (data.comparable) {
+      <section class="panel" aria-labelledby="comparison-models">
+        <h2 id="comparison-models">By model</h2>
+        @if (data.unmatchedBaseModels.length || data.unmatchedCandidateModels.length) {
+          <p class="pause-note">
+            Unmatched models. Base {{ data.unmatchedBaseModels.join(', ') || '—' }}. Candidate
+            {{ data.unmatchedCandidateModels.join(', ') || '—' }}.
+          </p>
+        }
+        @if (data.models.length) {
+          <p class="secondary">
+            Score deltas use games scored in both runs. All deltas are candidate minus base.
+          </p>
+          <div class="table-scroll">
+            <table class="comparison-table" aria-labelledby="comparison-models">
+              <colgroup>
+                <col class="model-name" />
+                <col class="model-results" />
+                <col class="model-name" />
+                <col class="model-results" />
+                <col class="delta" />
+                <col class="delta" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">Base model</th>
+                  <th scope="col" class="num">Base results</th>
+                  <th scope="col">Candidate model</th>
+                  <th scope="col" class="num">Candidate results</th>
+                  <th scope="col" class="num">Score delta</th>
+                  <th scope="col" class="num">Cost delta</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (model of data.models; track model.baseModelId) {
+                  <tr>
+                    <th scope="row">
+                      {{ model.baseModelId }}
+                      @if (model.base.resolvedModelIds.length) {
+                        <small class="secondary"
+                          >Resolved to {{ model.base.resolvedModelIds.join(', ') }}</small
+                        >
+                      }
+                    </th>
+                    <td class="comparison-values">
+                      <ng-container
+                        *ngTemplateOutlet="modelSide; context: { $implicit: model.base }"
+                      />
+                    </td>
+                    <td>
+                      {{ model.candidateModelId }}
+                      @if (model.candidate.resolvedModelIds.length) {
+                        <small class="secondary"
+                          >Resolved to {{ model.candidate.resolvedModelIds.join(', ') }}</small
+                        >
+                      }
+                    </td>
+                    <td class="comparison-values">
+                      <ng-container
+                        *ngTemplateOutlet="modelSide; context: { $implicit: model.candidate }"
+                      />
+                    </td>
+                    <td class="num">
+                      @if (model.scoreDelta !== null) {
+                        {{ model.scoreDelta > 0 ? '+' : ''
+                        }}{{ model.scoreDelta * 100 | number: '1.0-2' }} pp
+                        <small>{{ model.matchedGames | number }} matched</small>
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td class="num">
+                      <ng-container
+                        *ngTemplateOutlet="costDelta; context: { $implicit: model.spendDeltaUsd }"
+                      />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="secondary">Choose runs with a shared model or one clear replacement.</p>
+        }
+      </section>
+      @if (data.matchups.length) {
+        <section class="panel" aria-labelledby="comparison-matchups">
+          <h2 id="comparison-matchups">By matchup</h2>
+          <p class="secondary">
+            Changed outcomes appear first, with the largest point swings at the top.
+          </p>
+          <div class="table-scroll">
+            <table class="comparison-table" aria-labelledby="comparison-matchups">
+              <colgroup>
+                <col class="matchup-name" />
+                <col class="game-results" />
+                <col class="game-results" />
+                <col class="delta" />
+                <col class="delta" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">Opening / color / Stockfish level</th>
+                  <th scope="col" class="num">Base game</th>
+                  <th scope="col" class="num">Candidate game</th>
+                  <th scope="col" class="num">Point delta</th>
+                  <th scope="col" class="num">Cost delta</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (
+                  row of data.matchups;
+                  track row.baseModelId +
+                    '/' +
+                    row.openingId +
+                    '/' +
+                    row.targetStrength +
+                    '/' +
+                    row.color
+                ) {
+                  <tr>
+                    <th scope="row">
+                      {{ row.openingName }}
+                      <small
+                        >{{ row.color | titlecase }} ·
+                        <span class="num">{{ row.targetStrength | number }}</span></small
+                      >
+                      <small class="secondary">
+                        {{ row.baseModelId }}
+                        @if (row.baseModelId !== row.candidateModelId) {
+                          → {{ row.candidateModelId }}
+                        }
+                      </small>
+                      @if (row.outcomeChanged) {
+                        <small>Outcome changed</small>
+                      }
+                    </th>
+                    <td class="comparison-values">
+                      <ng-container
+                        *ngTemplateOutlet="gameSide; context: { $implicit: row.base }"
+                      />
+                    </td>
+                    <td class="comparison-values">
+                      <ng-container
+                        *ngTemplateOutlet="gameSide; context: { $implicit: row.candidate }"
+                      />
+                    </td>
+                    <td class="num">
+                      @if (row.scoreDelta !== null) {
+                        {{ row.scoreDelta > 0 ? '+' : '' }}{{ row.scoreDelta | number: '1.0-1' }}
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td class="num">
+                      <ng-container
+                        *ngTemplateOutlet="costDelta; context: { $implicit: row.spendDeltaUsd }"
+                      />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+    }
+  }
+</div>
+
+<ng-template #modelSide let-side>
+  @if (side.score.scoredGames > 0) {
+    <span class="num">{{ side.score.points / side.score.scoredGames | percent: '1.0-1' }}</span>
+    <small class="num"
+      >{{ side.score.wins }} W / {{ side.score.draws }} D / {{ side.score.losses }} L</small
+    >
+  } @else {
+    <span aria-label="No scored games">—</span>
+  }
+  <small
+    ><span class="num">{{ side.score.forfeits }}</span> forfeits ·
+    <span class="num">{{ side.incompletePairs }}</span> incomplete pairs</small
+  >
+  <ng-container *ngTemplateOutlet="telemetry; context: { $implicit: side.telemetry }" />
+  <small
+    ><span class="num">{{ side.spendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}</span>
+    spend</small
+  >
+</ng-template>
+
+<ng-template #gameSide let-game>
+  @if (game.gameId) {
+    <a [routerLink]="['/games', game.gameId]">{{ resultLabel(game) }}</a>
+  } @else {
+    {{ resultLabel(game) }}
+  }
+  @if (game.reason) {
+    <small>{{ reasonLabel(game.reason) }}</small>
+  }
+  @if (game.status === 'PAUSED') {
+    @if (game.statusDetail) {
+      <small>{{ game.statusDetail }}</small>
+    }
+    @if (game.uncertainRequest) {
+      <small class="pause-note">Displayed spend may be missing this request’s cost.</small>
+    }
+  }
+  @if (game.pairIncomplete) {
+    <small>Incomplete pair</small>
+  }
+  @if (game.telemetry) {
+    <ng-container *ngTemplateOutlet="telemetry; context: { $implicit: game.telemetry }" />
+    <small
+      ><span class="num">{{ game.spendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}</span>
+      spend</small
+    >
+  }
+</ng-template>
+
+<ng-template #telemetry let-sample>
+  <small>
+    First-try legal
+    @if (sample.firstTryLegalRate !== null) {
+      <span class="num">
+        {{ sample.firstTryLegalRate | percent: '1.0-1' }} ({{ sample.firstTryMoves }}/{{
+          sample.turnsSampled
+        }})
+      </span>
+    } @else {
+      —
+    }
+  </small>
+  <small>
+    Reasoning tok/move
+    @if (sample.reasoningTokensPerMove !== null) {
+      <span class="num">{{ sample.reasoningTokensPerMove | number: '1.0-1' }}</span>
+      (<span class="num">{{ sample.reasoningMovesReported }}</span> reported)
+    } @else {
+      —
+    }
+  </small>
+</ng-template>
+
+<ng-template #costDelta let-delta>
+  @if (delta !== null) {
+    {{ delta > 0 ? '+' : '' }}{{ delta | currency: 'USD' : 'symbol' : '1.2-8' }}
+  } @else {
+    —
+  }
+</ng-template>
+
+<ng-template #settingsDiff let-rows let-label="label">
+  <div class="table-scroll">
+    <table [attr.aria-label]="label">
+      <thead>
+        <tr>
+          <th scope="col">Setting</th>
+          <th scope="col">Base</th>
+          <th scope="col">Candidate</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows; track row.setting) {
+          <tr>
+            <th scope="row">{{ row.setting }}</th>
+            <td>{{ row.base }}</td>
+            <td>{{ row.candidate }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</ng-template>
