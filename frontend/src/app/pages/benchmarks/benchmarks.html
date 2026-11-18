@@ -130,7 +130,7 @@
           <p class="secondary" role="status">A benchmark creation may already be in progress</p>
         }
 
-        <form class="create-form" (ngSubmit)="create()">
+        <form class="create-form" [inert]="needsReloadConfirmation()" (ngSubmit)="create()">
           <div class="form-grid">
             <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
               <mat-label>Run name</mat-label>
@@ -210,7 +210,7 @@
           </fieldset>
 
           <div class="form-footer">
-            <button mat-flat-button type="submit" [disabled]="busy()">
+            <button mat-flat-button type="submit" [disabled]="busy() || needsReloadConfirmation()">
               {{ busy() ? 'Creating…' : 'Create and start run' }}
             </button>
             <p class="secondary">
@@ -221,6 +221,9 @@
             <p class="error" role="alert">{{ actionError() }}</p>
           }
         </form>
+        @if (needsReloadConfirmation()) {
+          <ng-container *ngTemplateOutlet="reloadConfirmation" />
+        }
       </section>
 
       @if (runs(); as saved) {
@@ -274,7 +277,12 @@
           </p>
         } @else {
           <p>The new run starts automatically and uses its own budget.</p>
-          <form id="rerun-form" aria-label="Rerun benchmark" (ngSubmit)="createRerun(data)">
+          <form
+            id="rerun-form"
+            aria-label="Rerun benchmark"
+            [inert]="needsReloadConfirmation()"
+            (ngSubmit)="createRerun(data)"
+          >
             <div class="form-grid">
               <mat-form-field appearance="outline">
                 <mat-label>Setting to change</mat-label>
@@ -371,43 +379,47 @@
         @if (pendingRerun() ? actionError() : validation || actionError(); as error) {
           <p class="error" role="alert">{{ error }}</p>
         }
-        <div class="page-actions run-actions">
-          @if (pendingRerun()) {
-            <button
-              mat-flat-button
-              type="button"
-              [disabled]="busy() || loading()"
-              (click)="recoverRerun(data.run.id)"
-            >
-              Recover rerun
-            </button>
+        @if (needsReloadConfirmation()) {
+          <ng-container *ngTemplateOutlet="reloadConfirmation" />
+        } @else {
+          <div class="page-actions run-actions">
+            @if (pendingRerun()) {
+              <button
+                mat-flat-button
+                type="button"
+                [disabled]="busy() || loading()"
+                (click)="recoverRerun(data.run.id)"
+              >
+                Recover rerun
+              </button>
+              <button
+                mat-button
+                type="button"
+                [disabled]="busy() || loading()"
+                (click)="startSeparateRerun(data)"
+              >
+                Start a separate rerun
+              </button>
+            } @else {
+              <button
+                mat-flat-button
+                type="submit"
+                form="rerun-form"
+                [disabled]="busy() || loading() || !!validation"
+              >
+                Create and start rerun
+              </button>
+            }
             <button
               mat-button
               type="button"
-              [disabled]="busy() || loading()"
-              (click)="startSeparateRerun(data)"
+              [disabled]="busy()"
+              (click)="rerunOpen.set(false); actionError.set('')"
             >
-              Start a separate rerun
+              Close
             </button>
-          } @else {
-            <button
-              mat-flat-button
-              type="submit"
-              form="rerun-form"
-              [disabled]="busy() || loading() || !!validation"
-            >
-              Create and start rerun
-            </button>
-          }
-          <button
-            mat-button
-            type="button"
-            [disabled]="busy()"
-            (click)="rerunOpen.set(false); actionError.set('')"
-          >
-            Close
-          </button>
-        </div>
+          </div>
+        }
       </section>
     }
 
@@ -703,6 +715,27 @@
     }
   }
 </div>
+
+<ng-template #reloadConfirmation>
+  <div class="reload-confirmation">
+    <p id="reload-protection-warning" class="pause-note" role="alert">
+      Reload protection is unavailable in this browser (storage blocked). If you reload before the
+      run appears, a second run could be started. Start anyway?
+    </p>
+    <div class="page-actions run-actions">
+      <button
+        mat-flat-button
+        type="button"
+        aria-describedby="reload-protection-warning"
+        [disabled]="reloadConfirmationDisabled()"
+        (click)="confirmUnprotectedStart()"
+      >
+        Start anyway
+      </button>
+      <button mat-button type="button" (click)="cancelUnprotectedStart()">Go back</button>
+    </div>
+  </div>
+</ng-template>
 
 <ng-template #runStatus let-status>
   <span class="status-chip" [attr.data-status]="status">

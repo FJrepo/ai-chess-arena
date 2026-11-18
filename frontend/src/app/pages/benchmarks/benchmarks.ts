@@ -6,7 +6,15 @@ import {
   TitleCasePipe,
   formatCurrency,
 } from '@angular/common';
-import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  LOCALE_ID,
+  WritableSignal,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -69,6 +77,7 @@ export class Benchmarks {
   private readonly reload = new Subject<void>();
   private readonly pendingSubmissions = signal(this.readPendingSubmissions());
   private readonly pendingReruns = signal(this.readPendingReruns());
+  private readonly unprotectedStart = signal<(() => void) | null>(null);
 
   readonly pendingRerun = computed(() => {
     const id = this.runId();
@@ -82,6 +91,10 @@ export class Benchmarks {
   readonly busy = signal(false);
   readonly loadError = signal('');
   readonly actionError = signal('');
+  readonly needsReloadConfirmation = computed(() => this.unprotectedStart() !== null);
+  readonly reloadConfirmationDisabled = computed(
+    () => this.busy() || (this.runId() !== null && this.loading()),
+  );
   readonly hasPendingSubmission = computed(() =>
     [...this.pendingSubmissions().keys()].some((key) => !key.startsWith('rerun:')),
   );
@@ -134,6 +147,7 @@ export class Benchmarks {
           this.report.set(null);
           this.actionError.set('');
           this.rerunOpen.set(false);
+          this.cancelUnprotectedStart();
           return this.reload.pipe(
             startWith(undefined),
             switchMap(() => {
@@ -213,24 +227,65 @@ export class Benchmarks {
     }
   }
 
-  private setPendingSubmission(fingerprint: string, requestId: string | null): void {
-    const pending = new Map(this.pendingSubmissions());
-    if (requestId === null) pending.delete(fingerprint);
-    else pending.set(fingerprint, requestId);
-    this.pendingSubmissions.set(pending);
+  private persistPending(storageKey: string, pending: ReadonlyMap<string, unknown>): boolean {
     try {
       if (pending.size) {
-        sessionStorage.setItem(pendingSubmissionsKey, JSON.stringify(Object.fromEntries(pending)));
+        sessionStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(pending)));
       } else {
-        sessionStorage.removeItem(pendingSubmissionsKey);
+        sessionStorage.removeItem(storageKey);
       }
+      return true;
     } catch {
-      // In-memory retries still work when storage is unavailable.
+      return false;
     }
   }
 
+  private startWithPendingRequest<T>(
+    pending: WritableSignal<Map<string, T>>,
+    storageKey: string,
+    key: string,
+    request: T,
+    submit: () => void,
+  ): void {
+    const next = new Map(pending()).set(key, request);
+    const start = () => {
+      pending.set(next);
+      submit();
+    };
+    if (this.persistPending(storageKey, next)) {
+      start();
+    } else {
+      this.unprotectedStart.set(() => {
+        this.persistPending(storageKey, next);
+        start();
+      });
+    }
+  }
+
+  private clearPendingRequest<T>(
+    pending: WritableSignal<Map<string, T>>,
+    storageKey: string,
+    key: string,
+  ): void {
+    const next = new Map(pending());
+    next.delete(key);
+    pending.set(next);
+    this.persistPending(storageKey, next);
+  }
+
+  confirmUnprotectedStart(): void {
+    if (this.reloadConfirmationDisabled()) return;
+    const start = this.unprotectedStart();
+    this.cancelUnprotectedStart();
+    start?.();
+  }
+
+  cancelUnprotectedStart(): void {
+    this.unprotectedStart.set(null);
+  }
+
   create(): void {
-    if (this.busy()) return;
+    if (this.busy() || this.needsReloadConfirmation()) return;
     this.actionError.set('');
     const name = this.name.trim();
     const low = this.lowerStrength;
@@ -257,18 +312,31 @@ export class Benchmarks {
       const fingerprint = JSON.stringify(details);
       const pendingId = this.pendingSubmissions().get(fingerprint);
       const clientRequestId = pendingId ?? newRequestId();
-      if (!pendingId) this.setPendingSubmission(fingerprint, clientRequestId);
-      const clearPending = () => this.setPendingSubmission(fingerprint, null);
-      this.submitCreation(
-        this.api.createBenchmark({ ...details, clientRequestId }),
-        clearPending,
-        (id) => void this.router.navigate(['/benchmarks', id]),
-        clearPending,
-      );
+      const clearPending = () =>
+        this.clearPendingRequest(this.pendingSubmissions, pendingSubmissionsKey, fingerprint);
+      const submit = () =>
+        this.submitCreation(
+          this.api.createBenchmark({ ...details, clientRequestId }),
+          clearPending,
+          (id) => void this.router.navigate(['/benchmarks', id]),
+          clearPending,
+        );
+      if (pendingId) {
+        submit();
+      } else {
+        this.startWithPendingRequest(
+          this.pendingSubmissions,
+          pendingSubmissionsKey,
+          fingerprint,
+          clientRequestId,
+          submit,
+        );
+      }
     }
   }
 
   openRerun(source: BenchmarkRun): void {
+    this.cancelUnprotectedStart();
     this.rerunSetting = '';
     this.rerunModelFrom = source.definition.modelIds[0];
     this.rerunModelTo = '';
@@ -364,7 +432,14 @@ export class Benchmarks {
   }
 
   createRerun(source: BenchmarkRun): void {
-    if (this.busy() || this.loading() || this.pendingReruns().has(source.run.id)) return;
+    if (
+      this.busy() ||
+      this.loading() ||
+      this.needsReloadConfirmation() ||
+      this.pendingReruns().has(source.run.id)
+    ) {
+      return;
+    }
     const change = this.rerunChange(source);
     const validation = this.rerunValidation(source, change);
     this.actionError.set(validation);
@@ -377,8 +452,9 @@ export class Benchmarks {
         maxConcurrentGames: source.maxConcurrentGames,
       },
     };
-    this.setPendingRerun(source.run.id, request);
-    this.recoverRerun(source.run.id);
+    this.startWithPendingRequest(this.pendingReruns, pendingRerunsKey, source.run.id, request, () =>
+      this.recoverRerun(source.run.id),
+    );
   }
 
   recoverRerun(sourceId: string): void {
@@ -388,7 +464,7 @@ export class Benchmarks {
     this.actionError.set('');
     this.submitCreation(
       this.api.rerunBenchmark(sourceId, request),
-      () => this.setPendingRerun(sourceId, null),
+      () => this.clearPendingRequest(this.pendingReruns, pendingRerunsKey, sourceId),
       (id) =>
         void this.router.navigate(['/benchmarks', 'compare'], {
           queryParams: { base: sourceId, candidate: id },
@@ -398,7 +474,7 @@ export class Benchmarks {
 
   startSeparateRerun(source: BenchmarkRun): void {
     if (this.busy() || this.loading()) return;
-    this.setPendingRerun(source.run.id, null);
+    this.clearPendingRequest(this.pendingReruns, pendingRerunsKey, source.run.id);
     this.openRerun(source);
   }
 
@@ -420,22 +496,6 @@ export class Benchmarks {
       );
     } catch {
       return new Map();
-    }
-  }
-
-  private setPendingRerun(sourceId: string, request: RerunBenchmarkRequest | null): void {
-    const pending = new Map(this.pendingReruns());
-    if (request === null) pending.delete(sourceId);
-    else pending.set(sourceId, request);
-    this.pendingReruns.set(pending);
-    try {
-      if (pending.size) {
-        sessionStorage.setItem(pendingRerunsKey, JSON.stringify(Object.fromEntries(pending)));
-      } else {
-        sessionStorage.removeItem(pendingRerunsKey);
-      }
-    } catch {
-      // In-memory retries still work when storage is unavailable.
     }
   }
 
