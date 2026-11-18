@@ -51,6 +51,71 @@ describe('Leaderboard', () => {
     return fixture.nativeElement;
   }
 
+  it('summarizes the first ranked model before the table', async () => {
+    getLeaderboard.mockReturnValue(
+      of(
+        response([
+          model({
+            displayName: 'Paper Kestrel',
+            games: 12,
+            wins: 8,
+            draws: 3,
+            losses: 1,
+            provisional: false,
+          }),
+          model({ modelId: 'openai/other', displayName: 'Other', rating: 1516 }),
+        ]),
+      ),
+    );
+    const element = await render();
+    const leader = element.querySelector('.leader-summary');
+    const table = element.querySelector('table')!;
+    expect(leader).not.toBeNull();
+    expect(leader?.textContent).toContain('Current leader');
+    expect(leader?.textContent).toContain('Paper Kestrel');
+    expect(leader?.querySelector('app-provider-logo img')?.getAttribute('src')).toContain(
+      'anthropic',
+    );
+    expect(leader?.textContent).toMatch(/Elo\s*1516/);
+    expect(leader?.textContent).not.toContain('Provisional');
+    expect(leader?.textContent).toMatch(/W–D–L\s*8\s*–\s*3\s*–\s*1/);
+    expect(leader?.textContent).toMatch(/Games rated\s*12/);
+    expect(leader?.compareDocumentPosition(table)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('shows an accessible Provisional label beside the Elo of a provisional leader', async () => {
+    const element = await render();
+    const elo = element.querySelector('.leader-summary dd');
+    const label = elo?.querySelector('.provisional');
+    expect(elo?.textContent).toMatch(/1516\s*Provisional/);
+    expect(label?.textContent?.trim()).toBe('Provisional');
+    expect(label?.closest('[aria-hidden="true"], .cdk-visually-hidden')).toBeNull();
+  });
+
+  it('keeps the ratings explanation closed until its keyboard-focusable summary is activated', async () => {
+    const element = await render();
+    const details = element.querySelector('details');
+    const summary = details?.querySelector('summary');
+    expect(summary?.textContent?.trim()).toBe('How ratings work');
+    expect(details?.open).toBe(false);
+    summary?.focus();
+    expect(document.activeElement).toBe(summary);
+    // Native keyboard activation dispatches a click. jsdom implements the click default action.
+    summary?.click();
+    expect(details?.open).toBe(true);
+    expect(details?.textContent).toContain('Elo starts at 1500');
+  });
+
+  it('states the provisional threshold only in the legend with the ratings explanation open', async () => {
+    const element = await render();
+    const details = element.querySelector('details')!;
+    details.open = true;
+    const threshold = /fewer than\s+10\s+rated\s+games/g;
+    expect(element.querySelector('.provisional-legend')?.textContent).toMatch(threshold);
+    expect(element.textContent?.match(threshold)).toHaveLength(1);
+    expect(details.textContent).toContain('See the table legend for the provisional rating cutoff');
+  });
+
   it('renders ranked API rows, records, last played, provider logos and accessible sparklines', async () => {
     getLeaderboard.mockReturnValue(
       of(
@@ -68,29 +133,74 @@ describe('Leaderboard', () => {
     expect(rows[0].querySelector('.last-played')?.textContent).toContain('Nov 1, 2026');
     expect(rows[0].querySelector('app-provider-logo')).not.toBeNull();
     expect(rows[0].querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('1516');
-    expect(rows[0].querySelector('polyline')?.getAttribute('points')).toBe('2,14 98,14');
     expect(element.querySelector('caption')?.textContent).toContain('Including forfeits');
     expect(getLeaderboard).toHaveBeenCalledWith(true);
   });
 
-  it('renders provisional and alias badges only on flagged rows', async () => {
+  it('explains provisional status once and gives flagged rows an accessible marker', async () => {
     getLeaderboard.mockReturnValue(
       of(
         response([
           model({ modelId: '~anthropic/example', alias: true }),
+          model({ modelId: 'anthropic/another' }),
           model({ modelId: 'anthropic/established', provisional: false, games: 10 }),
         ]),
       ),
     );
     const element = await render();
     const rows = element.querySelectorAll('tbody tr');
-    expect(rows[0].querySelector('.provisional')?.textContent).toContain('Provisional');
+    expect(element.querySelectorAll('.provisional-legend')).toHaveLength(1);
+    expect(element.querySelector('.provisional-legend')?.textContent).toContain(
+      'Provisional: fewer than 10 rated games',
+    );
+    for (const row of [rows[0], rows[1]]) {
+      const marker = row.querySelector('.provisional');
+      expect(marker?.querySelector('[aria-hidden="true"]')?.textContent).toBe('P');
+      expect(marker?.querySelector('.cdk-visually-hidden')?.textContent).toBe('Provisional');
+      expect(marker?.hasAttribute('title')).toBe(false);
+    }
     expect(rows[0].querySelector('.alias')?.textContent).toContain('Latest alias');
     expect(rows[0].querySelector('app-provider-logo img')?.getAttribute('src')).toContain(
       'anthropic',
     );
-    expect(rows[1].querySelector('.provisional')).toBeNull();
+    expect(rows[2].querySelector('.provisional')).toBeNull();
     expect(rows[1].querySelector('.alias')).toBeNull();
+  });
+
+  it('renders a single point with a singular accessible label for a one-game rating history', async () => {
+    const element = await render();
+    const trend = element.querySelector('tbody .trend');
+    expect(trend?.querySelectorAll('svg circle')).toHaveLength(1);
+    expect(trend?.querySelector('polyline')).toBeNull();
+    expect(trend?.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toBe(
+      'example: one rated game, Elo 1516',
+    );
+  });
+
+  it('announces missing rating history and hides the decorative dash from assistive technology', async () => {
+    getLeaderboard.mockReturnValue(of(response([model({ ratingHistory: [] })])));
+    const element = await render();
+    const trend = element.querySelector('tbody .trend');
+    expect(trend?.querySelector('svg')).toBeNull();
+    expect
+      .soft(trend?.querySelector('.cdk-visually-hidden')?.textContent?.trim())
+      .toBe('No rating history');
+    expect.soft(trend?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('—');
+  });
+
+  it('keeps the effort labels attached to the selected rated rows', async () => {
+    getLeaderboard.mockReturnValue(
+      of(response([model({ modelId: 'anthropic/mixed', reasoningEffort: 'mixed' })])),
+    );
+    const element = await render();
+    expect(element.querySelector('tbody th')?.textContent).toContain('Mixed effort');
+
+    getLeaderboard.mockReturnValue(
+      of(response([model({ modelId: 'anthropic/mixed', reasoningEffort: 'xhigh' })])),
+    );
+    fixture.componentInstance.setLegalMoveHints(false);
+    await render();
+    expect(element.querySelector('tbody th')?.textContent).toContain('Extra high');
   });
 
   it('requests a full recalculation when the forfeits toggle changes', async () => {
@@ -103,6 +213,7 @@ describe('Leaderboard', () => {
     const element = await render();
     expect(getLeaderboard).toHaveBeenLastCalledWith(false);
     expect(fixture.componentInstance.includeForfeits()).toBe(false);
+    expect(element.querySelector('.leader-summary')?.textContent).toContain('1500');
     expect(element.querySelector('.rating')?.textContent?.trim()).toBe('1500');
     expect(element.querySelector('caption')?.textContent).toContain('Excluding forfeits');
     const button = Array.from(element.querySelectorAll('button')).find((item) =>
@@ -122,10 +233,15 @@ describe('Leaderboard', () => {
     expect(getLeaderboard).toHaveBeenLastCalledWith(true);
   });
 
-  it('shows the empty state without a table', async () => {
-    getLeaderboard.mockReturnValue(of(response([])));
+  it('opens with a clear empty state when the selected filters yield no rated models', async () => {
+    getLeaderboard.mockReturnValue(of({ ...response([]), gamesCount: 0 }));
     const element = await render();
-    expect(element.querySelector('.empty-state')?.textContent).toContain('No rated games yet');
+    const empty = element.querySelector('.empty-state');
+    expect(empty?.textContent).toContain('No rated models for these filters');
+    expect(empty?.compareDocumentPosition(element.querySelector('.controls')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(element.querySelector('.leader-summary')).toBeNull();
     expect(element.querySelector('table')).toBeNull();
   });
 
@@ -170,7 +286,6 @@ describe('Leaderboard', () => {
 
   it('scales varying and flat histories without invalid SVG coordinates', () => {
     const point = model().ratingHistory[0];
-    expect(fixture.componentInstance.sparklinePoints([])).toBe('2,14 98,14');
     expect(fixture.componentInstance.sparklinePoints([point, point])).toBe('2.0,14.0 98.0,14.0');
     expect(
       fixture.componentInstance.sparklinePoints([

@@ -7,6 +7,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
@@ -25,6 +26,7 @@ import { observedReasoningEffortLabel } from '../../utils/reasoning-effort';
     MatSelectModule,
     MatProgressSpinnerModule,
     MatSlideToggleModule,
+    MatTooltipModule,
     ProviderLogoComponent,
     RouterLink,
   ],
@@ -33,6 +35,8 @@ import { observedReasoningEffortLabel } from '../../utils/reasoning-effort';
 })
 export class Leaderboard implements OnInit, OnDestroy {
   readonly effortLabel = observedReasoningEffortLabel;
+  // EloRatingService uses this cutoff to set the API's provisional flags.
+  readonly provisionalGames = 10;
   readonly includeForfeits = signal(true);
   readonly legalMoveHints = signal<boolean | 'all'>('all');
   readonly response = signal<LeaderboardResponse | null>(null);
@@ -83,7 +87,6 @@ export class Leaderboard implements OnInit, OnDestroy {
   }
 
   sparklinePoints(history: RatingHistoryPoint[]): string {
-    if (history.length < 2) return '2,14 98,14';
     const ratings = history.map((point) => point.rating);
     const min = Math.min(...ratings);
     const range = Math.max(...ratings) - min;
