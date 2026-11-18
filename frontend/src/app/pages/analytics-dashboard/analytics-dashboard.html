@@ -741,9 +741,11 @@
                     <tr>
                       <td colspan="4" class="empty">
                         {{
-                          persuasionExplanation()
-                            ? 'No resignations between models in finished games yet.'
-                            : 'Persuasion data not reported'
+                          !persuasionExplanation()
+                            ? 'Persuasion data not reported'
+                            : comparisonFiltersActive()
+                              ? 'No model-vs-model resignations match the current filters.'
+                              : 'No resignations between models in finished games yet.'
                         }}
                       </td>
                     </tr>
@@ -764,9 +766,6 @@
               <span class="table-note">{{
                 count.evaluated === 1 ? 'resignation' : 'resignations'
               }}</span>
-              @if (count.lowSample) {
-                <mat-chip class="grade-chip" data-grade="Insufficient data">Low sample</mat-chip>
-              }
             } @else {
               <ng-container
                 *ngTemplateOutlet="
@@ -777,6 +776,9 @@
                   }
                 "
               ></ng-container>
+            }
+            @if (count.resignations > 0 && count.lowSample) {
+              <mat-chip class="grade-chip" data-grade="Insufficient data">Low sample</mat-chip>
             }
             @if (count.resignations > count.evaluated) {
               <span class="table-note"

@@ -355,9 +355,22 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return (
       `Talked out of the game: in a finished model-vs-model game, the resigning model was not lost by Stockfish's evaluation of the position it gave up (better than ${this.formatPawns(rules.lostThresholdCp)} pawns from its own view, no forced mate against it) ` +
       `and its opponent sent at least one chat message on its last ${rules.messageWindowMoves} ${moves} before the resignation. ` +
-      `The persuader's level is the banter level of its last move. Counts are of evaluated resignations; fewer than ${rules.lowSampleResignations} is a low sample.`
+      `Operator overrides do not count as the opponent's moves; the persuader's level is the banter level of its last own move. Counts are of evaluated resignations; fewer than ${rules.lowSampleResignations} is a low sample.`
     );
   });
+
+  /**
+   * Whether a filter beyond the analysis window narrows the comparison report: minimum games (as applied
+   * by the loaded report), tournament, legal move hints or comparison effort.
+   */
+  comparisonFiltersActive(): boolean {
+    return (
+      (this.comparison()?.minGames ?? 0) > 0 ||
+      this.selectedTournamentId !== '' ||
+      this.selectedLegalMoveHints !== 'all' ||
+      this.selectedReasoningEffort !== ''
+    );
+  }
 
   /** Centipawns as signed pawns with a typographic minus, e.g. "−2.00". */
   formatPawns(cp: number): string {

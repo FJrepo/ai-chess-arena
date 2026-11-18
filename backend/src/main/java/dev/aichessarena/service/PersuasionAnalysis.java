@@ -18,10 +18,11 @@ import java.util.List;
  *       forced mate for the resigner is not lost. Without an evaluation the position is unknown and never counts;
  *       the start position counts as level;</li>
  *   <li>the opponent (the persuader) sent a non-empty chat message on at least one of its last
- *       {@value #MESSAGE_WINDOW_MOVES} moves before the resignation.</li>
+ *       {@value #MESSAGE_WINDOW_MOVES} model-played moves before the resignation (operator overrides, human and book
+ *       moves are skipped).</li>
  * </ul>
- * The persuader's banter level is the tone of its own last move before the resignation, read from that move's
- * prompt version (tone changes apply from the next turn).
+ * The persuader's banter level is the tone of its own last model-played move before the resignation, read from that
+ * move's prompt version (tone changes apply from the next turn). The evaluation is always the final board ply's.
  */
 public final class PersuasionAnalysis {
 
@@ -66,19 +67,27 @@ public final class PersuasionAnalysis {
         return sign * score.cp() > LOST_THRESHOLD_CP ? Position.NOT_LOST : Position.LOST;
     }
 
-    /** The persuader's last {@value #MESSAGE_WINDOW_MOVES} moves in {@code movesInPlayOrder}, in play order. */
+    /**
+     * The persuader's last {@value #MESSAGE_WINDOW_MOVES} model-played moves in {@code movesInPlayOrder} (canonical
+     * plies), in play order. Operator overrides, human moves and book moves take no slot: the model did not choose
+     * them, so they say nothing about its messages or its tone.
+     */
     public static List<Move> persuaderWindow(List<Move> movesInPlayOrder, String persuaderColor) {
         List<Move> window = new ArrayList<>();
         for (int i = movesInPlayOrder.size() - 1; i >= 0 && window.size() < MESSAGE_WINDOW_MOVES; i--) {
             Move move = movesInPlayOrder.get(i);
-            if (persuaderColor.equals(move.color)) {
+            if (persuaderColor.equals(move.color) && isModelPlayed(move)) {
                 window.addFirst(move);
             }
         }
         return window;
     }
 
-    /** Whether the latest move of {@code persuaderWindow} was played with the Mind games tone. */
+    private static boolean isModelPlayed(Move move) {
+        return !move.isOverride && !move.isBook && move.modelId != null && !move.modelId.isBlank();
+    }
+
+    /** Whether the latest model move of {@code persuaderWindow} was played with the Mind games tone. */
     public static boolean usedMindGames(List<Move> persuaderWindow) {
         return !persuaderWindow.isEmpty()
                 && PromptService.banterLevelOf(persuaderWindow.getLast().promptVersion) == BanterLevel.MIND_GAMES;

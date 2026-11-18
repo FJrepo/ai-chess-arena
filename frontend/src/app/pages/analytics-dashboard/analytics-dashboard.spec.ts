@@ -1807,6 +1807,11 @@ describe('AnalyticsDashboard', () => {
       'No evaluated resignations',
     );
     expect(cell.textContent).toContain('2 not evaluated');
+    // A sample with resignations but none evaluated is still a low sample; an empty cell is not.
+    expect(cell.querySelector('.grade-chip')?.textContent?.trim()).toBe('Low sample');
+    expect(
+      unevaluated.querySelector('.persuasion-table tbody tr td:nth-child(2) .grade-chip'),
+    ).toBeNull();
     TestBed.resetTestingModule();
 
     const zero = await renderBehaviour(
@@ -1823,6 +1828,38 @@ describe('AnalyticsDashboard', () => {
       'Persuasion data not reported',
     );
     expect(legacy.querySelector('.persuasion-table-card .table-footnote')).toBeNull();
+  });
+
+  it('says the filters exclude every persuasion row when minimum games empties a populated report', async () => {
+    const populated = [
+      comparisonRow('model.persuader', {
+        persuasion: persuasion({ asPersuaderMindGames: count(2, 2, 1, true) }),
+      }),
+    ];
+    const { harness, api } = await renderDashboard('?tab=behaviour', {
+      comparison: of({
+        ...comparisonReport(),
+        models: populated,
+        persuasionRules: PERSUASION_RULES,
+      }),
+    });
+    const element = harness.routeNativeElement!;
+    expect(element.querySelectorAll('.persuasion-table tbody tr td.col-model')).toHaveLength(1);
+
+    api.getAnalyticsComparison.mockReturnValue(
+      of({ ...comparisonReport(6), models: [], persuasionRules: PERSUASION_RULES }),
+    );
+    const input = element.querySelector<HTMLInputElement>('.filter-min-games input')!;
+    input.value = '6';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    harness.detectChanges();
+
+    expect(api.getAnalyticsComparison).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minGames: 6 }),
+    );
+    expect(element.querySelector('.persuasion-table .empty')?.textContent?.trim()).toBe(
+      'No model-vs-model resignations match the current filters.',
+    );
   });
 
   it('sorts persuasion rows by opponents talked out, then by times talked out', () => {

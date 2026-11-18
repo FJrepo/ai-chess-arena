@@ -1268,6 +1268,38 @@ class AnalyticsServiceTest {
         assertEquals(new PersuasionCountDto(0, 0, 0, true), gamma.asPersuaderMindGames());
     }
 
+    /**
+     * Regression: an operator override as the persuader's last move made the tone "Other levels" and took a slot of
+     * the message window. The window and the tone use the persuader's canonical model moves; the evaluation is still
+     * the final board ply's.
+     */
+    @Test
+    void persuasionSkipsOperatorOverridesAndUsesTheCanonicalModelPly() {
+        Resigned game = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, null, null);
+        Move last = game.moves().getLast();
+        last.modelId = null;
+        last.promptVersion = "admin-override";
+        last.isOverride = true;
+        last.evaluationCp = -100;
+        // A later duplicate of alpha's move 9 (possible before V8) with another tone: the earliest row wins.
+        Move duplicate = chatMove(game.game(), "model.alpha", 9, "WHITE", ChatMode.OPTIONAL);
+        duplicate.promptVersion = SPICY;
+        duplicate.createdAt = last.createdAt.plusMinutes(5);
+        List<Move> moves = new ArrayList<>(game.moves());
+        moves.add(duplicate);
+        // Alpha's message on move 7: within its last three model moves (7, 8, 9), not counting the override.
+        AnalyticsService service = service(List.of(game.game()), moves, List.of(),
+                List.of(message(game, 7, "WHITE")));
+
+        AnalyticsModelComparisonDto response = service.getComparison(30, null, 0);
+
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(response, "model.alpha").persuasion()
+                .asPersuaderMindGames());
+        assertEquals(new PersuasionCountDto(0, 0, 0, true), row(response, "model.alpha").persuasion()
+                .asPersuaderOtherLevels());
+        assertEquals(new PersuasionCountDto(1, 1, 1, true), row(response, "model.beta").persuasion().asPersuaded());
+    }
+
     @Test
     void persuasionWithoutAnyOpponentMessageIsNeverCounted() {
         Resigned silent = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, -300, null);

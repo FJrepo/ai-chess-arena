@@ -79,8 +79,8 @@ class PersuasionAnalysisTest {
     void theMessageWindowIsThePersuadersLastThreeMoves() {
         List<Move> moves = new ArrayList<>();
         for (int number = 1; number <= 6; number++) {
-            moves.add(ply(number, "WHITE", null));
-            moves.add(ply(number, "BLACK", null));
+            moves.add(modelPly(number, "WHITE", null));
+            moves.add(modelPly(number, "BLACK", null));
         }
         List<Move> window = PersuasionAnalysis.persuaderWindow(moves, "BLACK");
         assertEquals(List.of(4, 5, 6), window.stream().map(move -> move.moveNumber).toList());
@@ -88,6 +88,35 @@ class PersuasionAnalysisTest {
         assertEquals(List.of(1), PersuasionAnalysis.persuaderWindow(moves.subList(0, 2), "WHITE").stream()
                 .map(move -> move.moveNumber).toList());
         assertTrue(PersuasionAnalysis.persuaderWindow(List.of(), "WHITE").isEmpty());
+    }
+
+    @Test
+    void theWindowAndToneUseOnlyMovesTheModelPlayed() {
+        String mindGames = new PromptService().getSystemPromptVersion(ChatMode.OPTIONAL, true,
+                BanterLevel.MIND_GAMES);
+        List<Move> moves = new ArrayList<>();
+        for (int number = 6; number <= 9; number++) {
+            moves.add(modelPly(number, "WHITE", mindGames));
+            moves.add(modelPly(number, "BLACK", null));
+        }
+        Move book = modelPly(5, "WHITE", null);
+        book.isBook = true;
+        moves.addFirst(book);
+        Move human = ply(10, "WHITE", "human");
+        moves.add(human);
+        moves.add(modelPly(10, "BLACK", null));
+        Move override = ply(11, "WHITE", "admin-override");
+        override.isOverride = true;
+        moves.add(override);
+
+        List<Move> window = PersuasionAnalysis.persuaderWindow(moves, "WHITE");
+        assertEquals(List.of(7, 8, 9), window.stream().map(move -> move.moveNumber).toList(),
+                "a human move and an operator override take no window slot");
+        assertTrue(PersuasionAnalysis.usedMindGames(window), "the tone comes from the last model move");
+        // The evaluation is still the final board ply's, here the override's.
+        override.evaluationCp = -500;
+        assertEquals(Position.LOST, PersuasionAnalysis.positionAtResignation(moves, "WHITE"));
+        assertEquals(Position.NOT_LOST, PersuasionAnalysis.positionAtResignation(moves, "BLACK"));
     }
 
     @Test
@@ -129,6 +158,12 @@ class PersuasionAnalysisTest {
         Move move = ply(10, color, null);
         move.evaluationCp = cp;
         move.evaluationMate = mate;
+        return move;
+    }
+
+    private static Move modelPly(int number, String color, String promptVersion) {
+        Move move = ply(number, color, promptVersion);
+        move.modelId = "model." + color.toLowerCase(java.util.Locale.ROOT);
         return move;
     }
 
