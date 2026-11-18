@@ -385,6 +385,31 @@ class TournamentAutoRunIT {
     }
 
     @Test
+    void queueParameterNameIsCaseInsensitiveAndCountsEveryCasing() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        UUID paused = gameIds(id).getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        long revision = snapshot(paused).statusRevision();
+
+        given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                .post("/api/games/" + paused + "/start?QueueIfFull=false").then().statusCode(409)
+                .body("error", equalTo("Tournament concurrency limit reached"));
+        for (String query : List.of("QueueIfFull=true&queueIfFull=false", "queueiffull=false&QUEUEIFFULL=false")) {
+            given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                    .post("/api/games/" + paused + "/start?" + query).then().statusCode(400)
+                    .body("error", equalTo("queueIfFull must be given at most once"));
+        }
+        given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                .post("/api/games/" + paused + "/start?QUEUEIFFULL=").then().statusCode(400)
+                .body("error", equalTo("queueIfFull must be true or false"));
+
+        assertNull(snapshot(paused).resumeRequestedAt());
+        assertEquals(revision, snapshot(paused).statusRevision());
+        assertEquals(GameStatus.PAUSED, status(paused));
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
     void newerManualResumeQueuesBehindAnOlderRequestWhenTheOnlySlotFrees() {
         UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED, GameStatus.PAUSED);
         List<UUID> ids = gameIds(id);

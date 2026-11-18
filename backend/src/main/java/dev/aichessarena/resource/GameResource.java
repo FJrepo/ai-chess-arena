@@ -24,6 +24,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -143,7 +144,7 @@ public class GameResource {
     @POST
     @Path("/{id}/start")
     public Response startGame(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
-        return startGame(id, parseQueueIfFull(uriInfo.getQueryParameters().get("queueIfFull")));
+        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(uriInfo, "queueIfFull")));
     }
 
     Response startGame(UUID id, boolean queueIfFull) {
@@ -158,6 +159,21 @@ public class GameResource {
         }
         return Response.ok(queueIfFull ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id))
                 .build();
+    }
+
+    /**
+     * Every value of a query parameter whose name matches regardless of case (as with the former {@code @QueryParam}),
+     * or null when none is present.
+     */
+    static List<String> queryValuesIgnoringCase(UriInfo uriInfo, String name) {
+        List<String> values = null;
+        for (var parameter : uriInfo.getQueryParameters().entrySet()) {
+            if (parameter.getKey().equalsIgnoreCase(name)) {
+                if (values == null) values = new ArrayList<>();
+                values.addAll(parameter.getValue());
+            }
+        }
+        return values;
     }
 
     /**
