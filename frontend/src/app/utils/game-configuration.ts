@@ -11,7 +11,7 @@ export interface ConfigurationDifference {
 
 export function requestedEffortLabel(player: GameConfigurationPlayer | null | undefined): string {
   if (!player) return 'Unknown';
-  if (player.controlType === 'HUMAN') return 'Human';
+  if (player.controlType !== 'AI') return '—';
   return reasoningEffortLabel(player.requestedReasoningEffort) || 'Model default';
 }
 
@@ -31,12 +31,17 @@ export function configurationFields(
     { setting: color + ' player', value: player?.playerName ?? 'None' },
     {
       setting: color + ' control',
-      value: player ? (player.controlType === 'HUMAN' ? 'Human' : 'Model') : 'None',
+      value: player
+        ? { HUMAN: 'Human', AI: 'Model', STOCKFISH: 'Stockfish' }[player.controlType]
+        : 'None',
     },
     { setting: color + ' model', value: player?.modelId ?? 'None' },
     {
       setting: color + ' effort override',
-      value: player ? reasoningEffortLabel(player.reasoningEffortOverride) || 'Inherit' : 'None',
+      value:
+        player?.controlType === 'AI'
+          ? reasoningEffortLabel(player.reasoningEffortOverride) || 'Inherit'
+          : '—',
     },
     { setting: color + ' requested effort', value: requestedEffortLabel(player) },
     ...(includeInstructionFingerprints
@@ -85,6 +90,9 @@ export function configurationFields(
       : []),
     ...side('White', settings.white),
     ...side('Black', settings.black),
+    ...(settings.stockfishElo == null
+      ? []
+      : [{ setting: 'Stockfish target Elo', value: String(settings.stockfishElo) }]),
   ];
 }
 

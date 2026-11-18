@@ -395,15 +395,17 @@
               [disabled]="humanMoveSubmitting()"
             />
           </mat-form-field>
-          <mat-form-field appearance="outline" class="human-message-field">
-            <mat-label>Optional Message</mat-label>
-            <input
-              matInput
-              [(ngModel)]="humanMessage"
-              placeholder="Optional message to your opponent"
-              [disabled]="humanMoveSubmitting()"
-            />
-          </mat-form-field>
+          @if (g.practiceKind !== 'HUMAN_STOCKFISH') {
+            <mat-form-field appearance="outline" class="human-message-field">
+              <mat-label>Optional Message</mat-label>
+              <input
+                matInput
+                [(ngModel)]="humanMessage"
+                placeholder="Optional message to your opponent"
+                [disabled]="humanMoveSubmitting()"
+              />
+            </mat-form-field>
+          }
           <button
             mat-raised-button
             color="primary"

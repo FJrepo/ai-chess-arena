@@ -1,7 +1,6 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.dto.GameConfigurationRevisionDto;
-import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.GameConfiguration;
 import dev.aichessarena.entity.GameConfigurationRevision;
@@ -36,7 +35,7 @@ public class GameConfigurationHistory {
                 GameEngineService.moveTimeoutSecondsFor(game),
                 tournament == null ? 3 : tournament.maxRetries,
                 tournament == null ? Tournament.DEFAULT_MAX_OUTPUT_TOKENS : tournament.maxOutputTokens,
-                tournament == null || tournament.chatMode == null ? ChatMode.OPTIONAL.name() : tournament.chatMode.name(),
+                GameConversationService.configuredChatMode(game).name(),
                 tournament == null || tournament.banterLevel == null ? null : tournament.banterLevel.name(),
                 tournament != null && tournament.resignationAllowed,
                 tournament != null && tournament.adjudicationEnabled,
@@ -47,7 +46,8 @@ public class GameConfigurationHistory {
                 player(game.whiteParticipant, game.whitePlayerName, game.whiteModelId, game.playerType("WHITE"),
                         game.requestedReasoningEffort("WHITE")),
                 player(game.blackParticipant, game.blackPlayerName, game.blackModelId, game.playerType("BLACK"),
-                        game.requestedReasoningEffort("BLACK"))
+                        game.requestedReasoningEffort("BLACK")),
+                game.stockfishElo
         );
     }
 

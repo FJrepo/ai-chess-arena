@@ -198,7 +198,7 @@ public class StockfishService {
     }
 
     /** Isolates blocking protocol I/O so deadlines and shutdown can cancel the waiting worker. */
-    private static final class Engine {
+    static final class Engine {
         final Process process;
         final BufferedReader reader;
         final BufferedWriter writer;

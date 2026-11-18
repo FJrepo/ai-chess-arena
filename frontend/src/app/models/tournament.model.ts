@@ -104,10 +104,12 @@ export interface Participant {
   reasoningEffort?: ReasoningEffort | null;
 }
 
+export type GameControlType = Participant['controlType'] | 'STOCKFISH';
+
 export interface GameConfigurationPlayer {
   playerName?: string | null;
   modelId?: string | null;
-  controlType: Participant['controlType'];
+  controlType: GameControlType;
   reasoningEffortOverride?: ReasoningEffort | null;
   requestedReasoningEffort?: ReasoningEffort | null;
   instructionsHash?: string | null;
@@ -135,6 +137,7 @@ export interface GameConfiguration {
   defaultSystemPromptHash?: string | null;
   white: GameConfigurationPlayer | null;
   black: GameConfigurationPlayer | null;
+  stockfishElo?: number | null;
 }
 
 export interface GameConfigurationRevision {
@@ -142,7 +145,7 @@ export interface GameConfigurationRevision {
   settings: GameConfiguration;
 }
 
-export type PracticeKind = 'FROM_GAME';
+export type PracticeKind = 'FROM_GAME' | 'HUMAN_STOCKFISH';
 
 export interface Game {
   /** Immutable opening snapshot; absent for STANDARD and pre-feature games. */
@@ -156,11 +159,12 @@ export interface Game {
   practiceKind?: PracticeKind | null;
   practiceSourceGameId?: string | null;
   practiceSourcePly?: number | null;
+  stockfishElo?: number | null;
   whitePlayerName: string | null;
-  whiteControlType: 'AI' | 'HUMAN';
+  whiteControlType: GameControlType;
   whiteModelId: string | null;
   blackPlayerName: string | null;
-  blackControlType: 'AI' | 'HUMAN';
+  blackControlType: GameControlType;
   blackModelId: string | null;
   status: 'WAITING' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED' | 'FORFEIT' | 'CANCELLED';
   result: string | null;

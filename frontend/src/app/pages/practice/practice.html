@@ -2,6 +2,38 @@
   <header class="page-hero page-hero-surface">
     <h1>Practice</h1>
   </header>
+  <section class="stockfish-setup" aria-labelledby="stockfish-heading">
+    <h2 id="stockfish-heading">Play Stockfish</h2>
+    <form (ngSubmit)="createStockfish()">
+      <mat-form-field appearance="outline">
+        <mat-label>Play as</mat-label>
+        <mat-select [(ngModel)]="side" name="side">
+          <mat-option value="WHITE">White</mat-option>
+          <mat-option value="BLACK">Black</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Target Elo</mat-label>
+        <input
+          matInput
+          type="number"
+          min="1320"
+          max="3190"
+          step="1"
+          [(ngModel)]="elo"
+          name="elo"
+          required
+        />
+        <mat-hint>1320–3190</mat-hint>
+      </mat-form-field>
+      <button mat-flat-button type="submit" [disabled]="!validElo() || creating()">
+        Create practice game
+      </button>
+    </form>
+    @if (createError(); as error) {
+      <p role="alert">{{ error }}</p>
+    }
+  </section>
   @if (games(); as games) {
     @if (games.length) {
       <div class="table-scroll">

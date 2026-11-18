@@ -493,7 +493,7 @@ class StockfishServiceTest {
         }
     }
 
-    private static class FakeProcess extends Process {
+    static class FakeProcess extends Process {
         private volatile boolean alive = true;
         final CountDownLatch destroyed = new CountDownLatch(1);
         boolean failWrites;
@@ -548,7 +548,7 @@ class StockfishServiceTest {
     }
 
     /** A live engine whose read ignores interruption and only unblocks when its pipe is closed. */
-    private static class StalledProcess extends FakeProcess {
+    static class StalledProcess extends FakeProcess {
         final CountDownLatch readStarted = new CountDownLatch(1);
         final CountDownLatch streamsClosed = new CountDownLatch(3);
         private final InputStream input;

@@ -21,3 +21,13 @@ td {
 .num {
   text-align: end;
 }
+
+.stockfish-setup {
+  margin-block: var(--app-page-gap);
+}
+form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--app-space-3);
+}

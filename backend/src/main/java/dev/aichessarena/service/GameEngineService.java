@@ -21,11 +21,13 @@ import jakarta.transaction.Synchronization;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 
 @ApplicationScoped
 public class GameEngineService {
@@ -58,6 +60,9 @@ public class GameEngineService {
 
     @Inject
     GameConfigurationHistory configurations;
+
+    @Inject
+    StockfishOpponentService stockfishOpponent;
 
     @Inject
     TransactionSynchronizationRegistry transactionRegistry;
@@ -331,6 +336,14 @@ public class GameEngineService {
                 return;
             }
 
+            if (game.playerType(sideToMove) == Game.PlayerType.STOCKFISH) {
+                String played = playStockfishTurn(game, board, fen, sideToMove, moveNumber, loop);
+                if (played == null) return;
+                lastMoveSan = played;
+                lastMessage = null;
+                continue;
+            }
+
             boolean isFirstMove = moveNumber == 1 && "WHITE".equals(sideToMove);
 
             int maxRetries = game.tournament != null ? game.tournament.maxRetries : 3;
@@ -387,6 +400,32 @@ public class GameEngineService {
 
         // Game was paused
         gameLifecycleService.markGamePaused(gameId);
+    }
+
+    private String playStockfishTurn(Game game, Board board, String fen, String color, int moveNumber, GameLoop loop) {
+        String bestMove;
+        try {
+            bestMove = stockfishOpponent.chooseMove(board, game.stockfishElo, loop::shouldContinue);
+        } catch (IOException | TimeoutException e) {
+            LOG.warnf(e, "Stockfish opponent search failed for game %s", game.id);
+            gameLifecycleService.pauseWithReason(game.id, "Stockfish could not play a move. Check Stockfish and resume.");
+            return null;
+        }
+        if (bestMove == null || !loop.shouldContinue()) return null;
+
+        var played = chessService.validateAndApplyCoordinates(board, bestMove.substring(0, 2), bestMove.substring(2, 4),
+                bestMove.length() > 4 ? bestMove.substring(4) : null);
+        if (!played.valid()) {
+            gameLifecycleService.pauseWithReason(game.id, "Stockfish returned an illegal move. Resume to retry.");
+            return null;
+        }
+        try {
+            gameMoveService.recordStockfishMove(game.id, color, moveNumber, played, fen, game.statusRevision);
+        } catch (GameStateConflictException e) {
+            LOG.debugf("Discarding stale Stockfish move in game %s", game.id);
+            return null;
+        }
+        return played.san();
     }
 
     public void updateMoveEvaluation(UUID moveId, StockfishService.EvalResult result) {
@@ -453,7 +492,7 @@ public class GameEngineService {
                 result.san(),
                 result.fen(),
                 playerName,
-                message,
+                game.hasModelPlayer() ? message : null,
                 game.currentFen
         );
 

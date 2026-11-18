@@ -140,6 +140,24 @@ public class GameMoveService {
         persistMove(move, playerName, message);
     }
 
+    @Transactional
+    public void recordStockfishMove(UUID gameId, String color, int moveNumber, ChessService.ValidMoveResult played,
+                                    String expectedFen, long expectedStatusRevision) {
+        Game game = gameRepository.findByIdForUpdate(gameId);
+        if (game == null || game.status != Game.GameStatus.IN_PROGRESS || game.statusRevision != expectedStatusRevision
+                || game.playerType(color) != Game.PlayerType.STOCKFISH || !game.currentFen.equals(expectedFen)) {
+            throw new GameStateConflictException("Position changed during the Stockfish search");
+        }
+
+        Move move = new Move();
+        move.game = game;
+        move.color = color;
+        move.moveNumber = moveNumber;
+        move.san = played.san();
+        move.fen = played.fen();
+        persistMove(move, null, null);
+    }
+
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void updateMoveEvaluation(UUID moveId, StockfishService.EvalResult result) {
         LOG.debugf("Updating move %s with evaluation: cp=%d, mate=%d", moveId, result.cp(), result.mate());

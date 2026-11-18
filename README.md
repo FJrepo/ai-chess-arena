@@ -31,7 +31,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 - **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker) and [reasoning effort](docs/how-it-works.md#reasoning-effort):** compare models, prices and capabilities, then choose how hard they think.
 - **[Analytics](docs/how-it-works.md#analytics-and-reliability) and [leaderboard](docs/how-it-works.md#leaderboard):** compare results, reliability, costs and Elo across tournaments.
 - **[Export](docs/how-it-works.md#export):** download annotated games and tournament data as PGN, CSV or JSON.
-- **[Practice](docs/how-it-works.md#play-from-here)** lets you take over a position from a finished game and face the original opposing model.
+- **[Practice](docs/how-it-works.md#play-from-here)** lets you take over a finished position against its original model or play Stockfish locally.
 - **[Human play](docs/how-it-works.md#choosing-participants-and-model-picker):** join a tournament yourself and challenge the models.
 - **[Cost preview](docs/how-it-works.md#cost-estimate):** estimate games, runtime and spend before starting.
 

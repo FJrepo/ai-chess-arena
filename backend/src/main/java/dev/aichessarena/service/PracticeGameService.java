@@ -37,6 +37,20 @@ public class PracticeGameService {
     }
 
     @Transactional
+    public GameDto createStockfish(String humanSide, int elo) {
+        boolean humanWhite = "WHITE".equals(humanSide);
+        Game practice = new Game();
+        practice.practiceKind = Game.PracticeKind.HUMAN_STOCKFISH;
+        practice.stockfishElo = elo;
+        practice.whitePracticeControl = humanWhite ? PlayerType.HUMAN : PlayerType.STOCKFISH;
+        practice.blackPracticeControl = humanWhite ? PlayerType.STOCKFISH : PlayerType.HUMAN;
+        practice.whitePlayerName = humanWhite ? "You" : "Stockfish";
+        practice.blackPlayerName = humanWhite ? "Stockfish" : "You";
+        games.persist(practice);
+        return DtoMapper.toDto(practice, false);
+    }
+
+    @Transactional
     public GameDto fork(UUID sourceId, int ply, String humanSide, UUID requestId, UUID moveId) {
         Game previous = retry(sourceId, requestId, ply, humanSide, moveId);
         if (previous != null) return DtoMapper.toDto(previous, false);

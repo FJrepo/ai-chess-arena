@@ -45,6 +45,12 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Stockfish opponent migration (V28)
+
+Back up the database and recreate the backend and frontend together. Flyway `V28__stockfish_opponent.sql` adds the target Elo setting for Stockfish practice. Existing games and recorded spend are retained. The bundled engine remains Stockfish 19. Native runs need a Stockfish binary on `PATH` that advertises the requested target Elo.
+
+The opponent handshake uses `STOCKFISH_HANDSHAKE_TIMEOUT` (default `PT10S`). Each opponent search uses `STOCKFISH_OPPONENT_TIMEOUT` (default `PT15S`) as a positive duration. The evaluator keeps its own process and evaluation timeout. See [Play Stockfish](how-it-works.md#play-stockfish).
+
 ## Practice games migration (V27)
 
 Back up the database before upgrading and recreate both application services together. Flyway `V27__practice_games.sql` adds standalone practice controls, source references and an inherited-move marker. Earlier games and their data are retained. There is no backfill. Restore the pre-upgrade backup to roll back the schema. See [Play from here](how-it-works.md#play-from-here).
