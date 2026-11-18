@@ -689,7 +689,103 @@
             </div>
             <p class="table-footnote">{{ resignationExplanation }}</p>
           </div>
+          <div class="table-card persuasion-table-card">
+            <div class="section-header">
+              <div>
+                <h2>Persuasion</h2>
+                <p>
+                  Who talked an opponent into resigning a playable position, and who let itself be
+                  talked out of one.
+                </p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="analytics-table persuasion-table">
+                <thead>
+                  <tr>
+                    <th class="col-model" rowspan="2" scope="col">Model</th>
+                    <th class="group-head" colspan="2" scope="colgroup">
+                      As persuader: opponents talked out
+                    </th>
+                    <th class="group-head" scope="col">As persuaded</th>
+                  </tr>
+                  <tr>
+                    <th class="behaviour-metric" scope="col">Mind games</th>
+                    <th class="behaviour-metric" scope="col">Other levels</th>
+                    <th class="behaviour-metric" scope="col">Times talked out</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of persuasionRows(); track row.modelId) {
+                    <tr>
+                      <td class="col-model">
+                        <strong class="model-id">{{ row.modelId }}</strong>
+                      </td>
+                      <ng-container
+                        *ngTemplateOutlet="
+                          persuasionCell;
+                          context: { $implicit: row.asPersuaderMindGames }
+                        "
+                      ></ng-container>
+                      <ng-container
+                        *ngTemplateOutlet="
+                          persuasionCell;
+                          context: { $implicit: row.asPersuaderOtherLevels }
+                        "
+                      ></ng-container>
+                      <ng-container
+                        *ngTemplateOutlet="persuasionCell; context: { $implicit: row.asPersuaded }"
+                      ></ng-container>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="4" class="empty">
+                        {{
+                          persuasionExplanation()
+                            ? 'No resignations between models in finished games yet.'
+                            : 'Persuasion data not reported'
+                        }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (persuasionExplanation(); as explanation) {
+              <p class="table-footnote">{{ explanation }}</p>
+            }
+          </div>
         }
+        <ng-template #persuasionCell let-count>
+          <td class="behaviour-metric">
+            @if (count.evaluated > 0) {
+              <span class="num">{{ count.talkedOut }}</span> of
+              <span class="num">{{ count.evaluated }}</span>
+              <span class="table-note">{{
+                count.evaluated === 1 ? 'resignation' : 'resignations'
+              }}</span>
+              @if (count.lowSample) {
+                <mat-chip class="grade-chip" data-grade="Insufficient data">Low sample</mat-chip>
+              }
+            } @else {
+              <ng-container
+                *ngTemplateOutlet="
+                  behaviourMissing;
+                  context: {
+                    $implicit:
+                      count.resignations === 0 ? 'No resignations' : 'No evaluated resignations',
+                  }
+                "
+              ></ng-container>
+            }
+            @if (count.resignations > count.evaluated) {
+              <span class="table-note"
+                ><span class="num">{{ count.resignations - count.evaluated }}</span> not
+                evaluated</span
+              >
+            }
+          </td>
+        </ng-template>
         <ng-template #behaviourMissing let-reason>
           <span class="behaviour-dash" aria-hidden="true">—</span>
           <span class="cdk-visually-hidden">{{ reason }}</span>

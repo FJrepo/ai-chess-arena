@@ -8,5 +8,6 @@ public record AnalyticsModelComparisonDto(
         UUID tournamentId,
         int minGames,
         long gamesCount,
-        List<AnalyticsModelComparisonRowDto> models
+        List<AnalyticsModelComparisonRowDto> models,
+        PersuasionRulesDto persuasionRules
 ) {}

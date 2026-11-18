@@ -13,6 +13,8 @@ import dev.aichessarena.dto.TournamentCostSummaryDto;
 import dev.aichessarena.dto.TalkativenessDto;
 import dev.aichessarena.dto.PromptCachingDto;
 import dev.aichessarena.dto.ConversionDto;
+import dev.aichessarena.dto.PersuasionCountDto;
+import dev.aichessarena.dto.PersuasionDto;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
@@ -468,6 +470,7 @@ public class AnalyticsService {
         registerConversion(byModel, terminalGames, plies, selected);
         registerTalkativeness(byModel, selectedPlies, scope.messages());
         registerResignations(byModel, terminalGames, plies, selected);
+        registerPersuasion(byModel, terminalGames, plies, scope.messages(), selected);
         for (AttemptUsage usage : scope.attemptUsage()) {
             if (hasTrackedModelId(usage.modelId()) && selected.test(Side.of(usage.gameId(), usage.color(), usage.modelId()))) {
                 byModel.computeIfAbsent(normalizeModelId(usage.modelId()), ignored -> new ComparisonAccumulator())
@@ -578,7 +581,9 @@ public class AnalyticsService {
                             accumulator.evaluatedGames == 0 ? null : accumulator.adjudicatedWins,
                             accumulator.evaluatedGames == 0 ? null : accumulator.thrownAway,
                             accumulator.analyzedMoves == 0 ? null : accumulator.missedMates),
-                    accumulator.reasoning.toDto(effort)
+                    accumulator.reasoning.toDto(effort),
+                    new PersuasionDto(accumulator.persuaderMindGames.toDto(),
+                            accumulator.persuaderOtherLevels.toDto(), accumulator.persuaded.toDto())
             ));
         }
 
@@ -588,7 +593,7 @@ public class AnalyticsService {
                         .thenComparing(Comparator.comparingLong(AnalyticsModelComparisonRowDto::gamesPlayed).reversed())
         );
 
-        return new AnalyticsModelComparisonDto(days, tournamentId, minGames, gamesCount, rows);
+        return new AnalyticsModelComparisonDto(days, tournamentId, minGames, gamesCount, rows, PersuasionAnalysis.RULES);
     }
 
     /** Score each played ply once, but count every priced answer in the selected games. */
@@ -835,12 +840,7 @@ public class AnalyticsService {
      */
     private void registerResignations(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> moves,
                                       Predicate<Side> selected) {
-        Map<UUID, List<Move>> movesByGame = new HashMap<>();
-        for (Move move : moves) {
-            if (move.game != null) {
-                movesByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(move);
-            }
-        }
+        Map<UUID, List<Move>> movesByGame = movesInPlayOrderByGame(moves);
         for (Game game : games) {
             String color = ResignationAnalysis.resigningColor(game);
             if (color == null || !countsAsPlayed(game)) {
@@ -850,8 +850,7 @@ public class AnalyticsService {
             String resignedModel = modelSide(game, whiteResigned);
             if (resignedModel != null
                     && selected.test(Side.of(game.id, color, resignedModel))) {
-                List<Move> gameMoves = new ArrayList<>(movesByGame.getOrDefault(game.id, List.of()));
-                gameMoves.sort(MoveQualityClassifier.PLAY_ORDER);
+                List<Move> gameMoves = movesByGame.getOrDefault(game.id, List.of());
                 Double winChance = ResignationAnalysis.winChanceAtResignation(gameMoves, color);
                 ComparisonAccumulator accumulator =
                         byModel.computeIfAbsent(resignedModel, ignored -> new ComparisonAccumulator());
@@ -869,6 +868,61 @@ public class AnalyticsService {
                 byModel.computeIfAbsent(winnerModel, ignored -> new ComparisonAccumulator()).wonByResignation++;
             }
         }
+    }
+
+    /**
+     * Counts resignations in finished, non-bye games with a model on both sides for persuasion (see
+     * {@link PersuasionAnalysis}): for the resigning model as persuaded, for its opponent as persuader, split by the
+     * opponent's tone (Mind games or another level). Each side counts only when the effort filter selects it.
+     */
+    private void registerPersuasion(Map<String, ComparisonAccumulator> byModel, List<Game> games, List<Move> plies,
+                                    List<PlyMessage> messages, Predicate<Side> selected) {
+        Set<PlyKey> messagePlies = new HashSet<>();
+        for (PlyMessage message : messages) {
+            if (message.length() > 0) {
+                messagePlies.add(new PlyKey(message.gameId(), message.moveNumber(), message.color()));
+            }
+        }
+        Map<UUID, List<Move>> movesByGame = movesInPlayOrderByGame(plies);
+        for (Game game : games) {
+            String resignerColor = ResignationAnalysis.resigningColor(game);
+            if (resignerColor == null || !countsAsPlayed(game)) {
+                continue;
+            }
+            boolean whiteResigned = "WHITE".equals(resignerColor);
+            String persuaderColor = whiteResigned ? "BLACK" : "WHITE";
+            String resigner = modelSide(game, whiteResigned);
+            String persuader = modelSide(game, !whiteResigned);
+            if (resigner == null || persuader == null) {
+                continue;
+            }
+            List<Move> gameMoves = movesByGame.getOrDefault(game.id, List.of());
+            PersuasionAnalysis.Position position = PersuasionAnalysis.positionAtResignation(gameMoves, resignerColor);
+            List<Move> window = PersuasionAnalysis.persuaderWindow(gameMoves, persuaderColor);
+            boolean messaged = window.stream()
+                    .anyMatch(move -> messagePlies.contains(new PlyKey(game.id, move.moveNumber, move.color)));
+            if (selected.test(Side.of(game.id, resignerColor, resigner))) {
+                byModel.computeIfAbsent(resigner, ignored -> new ComparisonAccumulator())
+                        .persuaded.add(position, messaged);
+            }
+            if (selected.test(Side.of(game.id, persuaderColor, persuader))) {
+                ComparisonAccumulator accumulator = byModel.computeIfAbsent(persuader, ignored -> new ComparisonAccumulator());
+                (PersuasionAnalysis.usedMindGames(window) ? accumulator.persuaderMindGames
+                        : accumulator.persuaderOtherLevels).add(position, messaged);
+            }
+        }
+    }
+
+    /** The plies of each game in play order. */
+    private static Map<UUID, List<Move>> movesInPlayOrderByGame(List<Move> moves) {
+        Map<UUID, List<Move>> movesByGame = new HashMap<>();
+        for (Move move : moves) {
+            if (move.game != null) {
+                movesByGame.computeIfAbsent(move.game.id, ignored -> new ArrayList<>()).add(move);
+            }
+        }
+        movesByGame.values().forEach(gameMoves -> gameMoves.sort(MoveQualityClassifier.PLAY_ORDER));
+        return movesByGame;
     }
 
     /** Per model: resigned turns with failed attempts before the resignation, and those failed attempts. */
@@ -1096,6 +1150,9 @@ public class AnalyticsService {
         private long resignationsEvaluated;
         private long resignationsWhileNotLosing;
         private long wonByResignation;
+        private final PersuasionAccumulator persuaderMindGames = new PersuasionAccumulator();
+        private final PersuasionAccumulator persuaderOtherLevels = new PersuasionAccumulator();
+        private final PersuasionAccumulator persuaded = new PersuasionAccumulator();
         private long evaluatedGames;
         private long winningPositionsReached;
         private long converted;
@@ -1104,6 +1161,27 @@ public class AnalyticsService {
         private long missedMates;
         private final ReasoningAnalytics.Sample reasoning = new ReasoningAnalytics.Sample();
         private final List<AttemptUsage> cacheUsage = new ArrayList<>();
+    }
+
+    private static final class PersuasionAccumulator {
+        private long resignations;
+        private long evaluated;
+        private long talkedOut;
+
+        private void add(PersuasionAnalysis.Position position, boolean opponentMessaged) {
+            resignations++;
+            if (position != PersuasionAnalysis.Position.UNKNOWN) {
+                evaluated++;
+            }
+            if (position == PersuasionAnalysis.Position.NOT_LOST && opponentMessaged) {
+                talkedOut++;
+            }
+        }
+
+        private PersuasionCountDto toDto() {
+            return new PersuasionCountDto(resignations, evaluated, talkedOut,
+                    evaluated < PersuasionAnalysis.LOW_SAMPLE_RESIGNATIONS);
+        }
     }
 
     private static final class TalkAccumulator {
