@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Flyway `V34__utc_timestamps.sql` converts the creation, start, completion and update times of tournaments, games, moves, chat messages and attempts to `timestamptz`, reading stored values as UTC. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. Docker installs convert correctly. A source install that ran the backend in another time zone should correct its values before upgrading, see [UTC timestamps migration (V34)](docs/deployment.md#utc-timestamps-migration-v34).
+- API timestamps now carry an explicit UTC offset: `createdAt`, `startedAt`, `completedAt`, `updatedAt`, leaderboard `lastPlayed` and history `completedAt` change from `2026-11-18T23:15:24.540714` to `2026-11-18T23:15:24.540714Z`, in game, move, chat, attempt, tournament, benchmark and leaderboard responses and in the JSON export, which now reports `schemaVersion: 3`. The PGN `Date` tag is the UTC date.
+
+### Fixed
+
+- Times in the game feed, chat, tournament and benchmark lists, leaderboard and exports no longer appear shifted by the browser's offset from UTC: the backend stores and returns instants, independent of its own time zone.
+
 ## [2.0.0] - 2026-11-18
 
 **Benchmarks you can repeat**: measure models against a fixed Stockfish setup, rerun with one change, and see exactly what improved, what regressed and what it cost.

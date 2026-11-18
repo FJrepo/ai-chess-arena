@@ -45,6 +45,27 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## UTC timestamps migration (V34)
+
+Back up the database before upgrading and recreate the backend and frontend together. Flyway `V34__utc_timestamps.sql` converts the remaining `timestamp without time zone` columns (`tournaments.created_at`/`updated_at`, `games.created_at`/`started_at`/`completed_at`, `moves.created_at`, `chat_messages.created_at` and `move_attempts.created_at`) to `timestamptz`, reading each stored value as UTC. From then on the backend stores and returns absolute instants and the API sends them with an explicit offset (`2026-11-18T23:15:24.540714Z`); see [Timestamps and time zones](how-it-works.md#timestamps-and-time-zones). Restore the pre-upgrade backup to roll back the schema.
+
+Earlier versions stored the backend's local wall-clock time without a zone. **Docker installs** run the backend in UTC, so V34 converts their values exactly; no action is needed unless you set `TZ` or `-Duser.timezone` for the backend container. A **source install** that ran the backend outside UTC (for example `mvn quarkus:dev` on a machine set to CET) stored that zone's wall-clock time, so after V34 its existing rows appear shifted by the zone's offset; rows written after the upgrade are correct. To correct them, stop the backend before starting the new version and run this once against the database, replacing `Europe/Vienna` with the time zone the backend used (daylight saving time is taken into account):
+
+```sql
+BEGIN;
+UPDATE tournaments SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC',
+                       updated_at = (updated_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
+UPDATE games SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC',
+                 started_at = (started_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC',
+                 completed_at = (completed_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
+UPDATE moves SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
+UPDATE chat_messages SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
+UPDATE move_attempts SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
+COMMIT;
+```
+
+This rewrites the still-naive values as UTC wall-clock time, which V34 then reads correctly. Run it only before V34 and only once. If V34 has already run, restore the pre-upgrade backup and correct it first, or accept the shift: it only moves the displayed times of older rows and which of them fall inside an analytics date window; ordering within the database stays the same. A database written by both a UTC and a non-UTC backend cannot be corrected per row this way.
+
 ## Durable runs migration (V32)
 
 Back up the database before upgrading and recreate the backend and frontend together. Flyway `V32__durable_runs.sql` adds a game loop's ownership token and lease and the record of a model request in flight. The previous version recorded no requests, so the migration pauses games it left in progress with **Paused by the upgrade to durable runs: a model request may have been in flight. Check spend, then resume.**, and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Check spend, then resume the runs and games. Moves, attempts, results and spend are retained. Restore the pre-upgrade backup to roll back the schema.
@@ -329,6 +350,10 @@ docker compose -f "$compose_file" logs --tail=120 backend
 ```
 
 Flyway migrations run automatically on backend startup.
+
+### Upgrading from 2.0.0 to 2.0.1
+
+Flyway applies V34 ([UTC timestamps](#utc-timestamps-migration-v34)). Back up first and recreate backend and frontend together. Source installs that ran the backend outside UTC should read that section before starting the new version. API clients that parse timestamps now receive an explicit UTC offset; the JSON export reports `schemaVersion: 3`.
 
 ### Upgrading from 1.9 to 2.0
 
