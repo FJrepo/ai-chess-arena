@@ -2560,6 +2560,7 @@ describe('TournamentSetup', () => {
       'Polite',
       'Playful',
       'Spicy',
+      'Mind games',
     ]);
     options[3].click();
     fixture.detectChanges();

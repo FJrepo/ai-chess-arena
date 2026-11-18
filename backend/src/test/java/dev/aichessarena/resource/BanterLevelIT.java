@@ -65,8 +65,9 @@ class BanterLevelIT {
         update(id, "{\"banterLevel\":null}", null);
         assertNull(stored(id));
         update(id, "{\"banterLevel\":\"PLAYFUL\"}", "PLAYFUL");
-        update(id, "{\"banterLevel\":\"MIND_GAMES\"}", "MIND_GAMES");
         assertEquals("PLAYFUL", stored(id));
+        update(id, "{\"banterLevel\":\"MIND_GAMES\"}", "MIND_GAMES");
+        assertEquals("MIND_GAMES", stored(id));
     }
 
     @Test
