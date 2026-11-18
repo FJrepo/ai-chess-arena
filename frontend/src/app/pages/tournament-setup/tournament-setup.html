@@ -420,7 +420,7 @@
             </div>
           </section>
 
-          @if (sourceId() && !rematchTimeoutValid()) {
+          @if (!moveTimeoutValid()) {
             <p class="create-error" role="alert">
               Turn off the move time limit or enter a whole number from 10 to 3600 seconds.
             </p>

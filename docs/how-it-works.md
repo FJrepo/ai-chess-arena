@@ -350,7 +350,7 @@ The backend runs one dedicated opponent search at a time in a fresh Stockfish pr
 
 ## Time limit per move
 
-The time limit is optional per tournament (*Limit time per move* in the setup page; off by default and in every preset; switching it on prefills 120 seconds).
+The time limit is optional per tournament (*Limit time per move* in the setup page; off by default and in every preset; switching it on prefills 120 seconds). While it is on, the field must hold a whole number from 10 to 3600; a blank or invalid value shows an error and keeps **Create Tournament** disabled instead of creating an untimed tournament.
 
 Reasoning models often need more than a minute for a move, so below 90 seconds the setup page warns that running out of time forfeits the game, and the preview's *Move Pace* reads *Tight* (below 90 s), *Balanced* (90–180 s), *Generous* (above 180 s) or *No limit*.
 

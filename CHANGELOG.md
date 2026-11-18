@@ -57,6 +57,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Benchmark comparisons exclude budget and concurrency from playing settings, flag incompatible prompt versions and multiple setting changes, and show reasons and possible missing spend for spend-check pauses.
 - Benchmark comparisons show missing scores and telemetry without empty labels, and count outcome changes only across scored games.
 - Benchmark first-try legality includes earlier attempts at the same ply across pauses. New reruns reject stale budget or concurrency previews even if the source changes during verification.
+- Tournament setup no longer creates an untimed tournament when the enabled move time field is blank or invalid: it must be a whole number from 10 to 3600 seconds, and an edited recipe time limit is recognised as a change.
 
 ## [1.9.0] - 2026-11-18
 
