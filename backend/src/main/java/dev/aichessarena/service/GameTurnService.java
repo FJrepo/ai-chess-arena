@@ -438,7 +438,10 @@ public class GameTurnService {
         boolean atModelMaximum = response.modelMaxCompletionTokens() != null
                 && effective == response.modelMaxCompletionTokens();
         String remedy;
-        if (atModelMaximum) {
+        if (request.benchmark()) {
+            remedy = "The output limit and reasoning effort are fixed for this run. "
+                    + "Start a new benchmark with lower reasoning effort or a different model.";
+        } else if (atModelMaximum) {
             remedy = "Raising the tournament limit cannot help. "
                     + (openRouterService.offersReasoningEffort(request.modelId())
                     ? "Lower the reasoning effort and resume."
@@ -602,7 +605,8 @@ public class GameTurnService {
             ReasoningEffort reasoningEffort,
             BanterLevel tournamentBanterLevel,
             Long statusRevision,
-            GameConfiguration configuration
+            GameConfiguration configuration,
+            boolean benchmark
     ) {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
@@ -614,7 +618,7 @@ public class GameTurnService {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
                     history, lastMoveSan, lastMessage, isFirstMove, maxAttempts, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
-                    resignationAllowed, reasoningEffort, banterLevel, null, null);
+                    resignationAllowed, reasoningEffort, banterLevel, null, null, false);
         }
         /** Compatibility for callers without banter metadata. */
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,

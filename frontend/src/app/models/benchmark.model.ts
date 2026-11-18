@@ -9,6 +9,7 @@ export interface BenchmarkRunSettings {
 }
 
 export interface CreateBenchmarkRequest {
+  clientRequestId: string;
   name: string;
   modelIds: string[];
   targetStrengths: [number, number];
@@ -22,7 +23,7 @@ export interface BenchmarkSummary {
   id: string;
   name: string;
   createdAt: string;
-  status: 'RUNNING' | 'PAUSED' | 'FINISHED';
+  status: 'RUNNING' | 'PAUSED' | 'FINISHED' | 'CANCELLED';
   pauseReason: string | null;
 }
 
@@ -61,6 +62,7 @@ export interface BenchmarkPair {
 
 export interface BenchmarkModelResult {
   modelId: string;
+  resolvedModelIds: string[];
   overall: BenchmarkScore;
   splits: { targetStrength: number; color: BenchmarkColor; score: BenchmarkScore }[];
   incompletePairs: number;
@@ -77,6 +79,7 @@ export interface BenchmarkRun extends BenchmarkRunSettings {
     targetStrengths: number[];
     modelColors: BenchmarkColor[];
     engineSha256: string;
+    engineNetworks: { name: string; sha256: string }[];
     searchNodes: number;
     threads: number;
     hashMiB: number;

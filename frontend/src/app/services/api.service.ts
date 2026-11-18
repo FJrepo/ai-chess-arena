@@ -97,6 +97,10 @@ export class ApiService {
     return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/pause`, {});
   }
 
+  cancelBenchmark(id: string): Observable<BenchmarkRun> {
+    return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/cancel`, {});
+  }
+
   resumeBenchmark(id: string, settings: BenchmarkRunSettings): Observable<BenchmarkRun> {
     return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/resume`, settings);
   }

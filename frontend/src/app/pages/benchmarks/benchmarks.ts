@@ -24,6 +24,7 @@ import type {
 } from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
 import { REASONING_EFFORTS, reasoningEffortLabel } from '../../utils/reasoning-effort';
+import { newRequestId } from '../../utils/request-id';
 import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 
@@ -52,6 +53,7 @@ export class Benchmarks {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly reload = new Subject<void>();
+  private pendingSubmission: { key: string; requestId: string } | null = null;
 
   readonly runId = signal<string | null>(null);
   readonly runs = signal<BenchmarkSummary[] | null>(null);
@@ -130,7 +132,7 @@ export class Benchmarks {
   get modelError(): string {
     const ids = this.modelIds;
     if (ids.length === 0 || ids.length > 8) return 'Enter one to eight model IDs.';
-    if (ids.some((id) => id.length > 255 || !/^[\w.-]+\/[\w.:-]+$/.test(id))) {
+    if (ids.some((id) => id.length > 255 || !/^~?[\w.-]+\/[\w.:-]+$/.test(id))) {
       return 'Use provider/model IDs.';
     }
     return new Set(ids).size !== ids.length ? 'Each model ID must be different.' : '';
@@ -170,41 +172,61 @@ export class Benchmarks {
     } else if (!settings) {
       this.actionError.set('Enter a positive USD budget to the cent and 1–8 concurrent games.');
     } else {
+      const details: Omit<CreateBenchmarkRequest, 'clientRequestId'> = {
+        name,
+        modelIds: this.modelIds,
+        targetStrengths: [low, high],
+        legalMoveHints: this.legalMoveHints,
+        reasoningEffort: this.reasoningEffort,
+        chatMode: this.chatMode,
+        runSettings: settings,
+      };
+      const key = JSON.stringify(details);
+      if (this.pendingSubmission?.key !== key) {
+        this.pendingSubmission = { key, requestId: newRequestId() };
+      }
       this.busy.set(true);
       this.api
-        .createBenchmark({
-          name,
-          modelIds: this.modelIds,
-          targetStrengths: [low, high],
-          legalMoveHints: this.legalMoveHints,
-          reasoningEffort: this.reasoningEffort,
-          chatMode: this.chatMode,
-          runSettings: settings,
-        })
+        .createBenchmark({ ...details, clientRequestId: this.pendingSubmission.requestId })
         .pipe(
           takeUntilDestroyed(this.destroyRef),
           finalize(() => this.busy.set(false)),
         )
         .subscribe({
-          next: ({ run }) => void this.router.navigate(['/benchmarks', run.id]),
+          next: ({ run }) => {
+            this.pendingSubmission = null;
+            void this.router.navigate(['/benchmarks', run.id]);
+          },
           error: (error) =>
             this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.'),
         });
     }
   }
 
-  changeRun(run: BenchmarkSummary, action: 'pause' | 'resume'): void {
+  changeRun(run: BenchmarkSummary, action: 'pause' | 'resume' | 'cancel'): void {
     if (this.busy()) return;
     this.actionError.set('');
-    const settings = this.runSettings(this.resumeBudget.trim(), this.resumeConcurrency);
-    if (action === 'resume' && !settings) {
-      this.actionError.set('Enter a positive USD budget to the cent and 1–8 concurrent games.');
-      return;
+    let request: Observable<BenchmarkRun>;
+    if (action === 'cancel') {
+      if (run.status !== 'RUNNING' && run.status !== 'PAUSED') return;
+      if (
+        !window.confirm(
+          'Cancel this benchmark? Unfinished games will end. Results and spend will be kept.',
+        )
+      ) {
+        return;
+      }
+      request = this.api.cancelBenchmark(run.id);
+    } else if (action === 'resume') {
+      const settings = this.runSettings(this.resumeBudget.trim(), this.resumeConcurrency);
+      if (!settings) {
+        this.actionError.set('Enter a positive USD budget to the cent and 1–8 concurrent games.');
+        return;
+      }
+      request = this.api.resumeBenchmark(run.id, settings);
+    } else {
+      request = this.api.pauseBenchmark(run.id);
     }
-    const request =
-      settings && action === 'resume'
-        ? this.api.resumeBenchmark(run.id, settings)
-        : this.api.pauseBenchmark(run.id);
     this.busy.set(true);
     request
       .pipe(
@@ -212,7 +234,9 @@ export class Benchmarks {
         finalize(() => this.busy.set(false)),
       )
       .subscribe({
-        next: (report) => this.showReport(report, true),
+        next: (report) => {
+          if (this.runId() === run.id) this.showReport(report, true);
+        },
         error: (error) =>
           this.actionError.set(error?.error?.error ?? 'Could not change the benchmark run.'),
       });

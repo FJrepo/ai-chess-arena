@@ -117,15 +117,27 @@
     <section class="panel" aria-labelledby="run-setup">
       <div class="section-heading">
         <h2 id="run-setup">Run setup</h2>
-        @if (data.run.status === 'RUNNING') {
-          <button
-            mat-stroked-button
-            type="button"
-            [disabled]="busy() || loading()"
-            (click)="changeRun(data.run, 'pause')"
-          >
-            Pause run
-          </button>
+        @if (data.run.status === 'RUNNING' || data.run.status === 'PAUSED') {
+          <div class="run-actions">
+            @if (data.run.status === 'RUNNING') {
+              <button
+                mat-stroked-button
+                type="button"
+                [disabled]="busy() || loading()"
+                (click)="changeRun(data.run, 'pause')"
+              >
+                Pause run
+              </button>
+            }
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="busy() || loading()"
+              (click)="changeRun(data.run, 'cancel')"
+            >
+              Cancel run
+            </button>
+          </div>
         }
       </div>
       <dl class="run-facts">
@@ -203,6 +215,11 @@
         <p class="secondary">
           Opponent SHA-256 <code class="num">{{ data.definition.engineSha256 }}</code>
         </p>
+        @for (network of data.definition.engineNetworks; track network.name) {
+          <p class="secondary">
+            {{ network.name }} SHA-256 <code class="num">{{ network.sha256 }}</code>
+          </p>
+        }
         <h3>{{ data.definition.suite }}</h3>
         <dl class="opening-lines">
           @for (opening of data.definition.openings; track opening.id) {
@@ -218,6 +235,9 @@
     @for (model of data.models; track model.modelId) {
       <section class="panel" [attr.aria-labelledby]="'model-' + $index">
         <h2 [id]="'model-' + $index">{{ model.modelId }}</h2>
+        @if (model.resolvedModelIds.length) {
+          <p class="secondary">Reported model IDs {{ model.resolvedModelIds.join(', ') }}</p>
+        }
         <dl class="run-facts">
           <div>
             <dt>Scored games</dt>

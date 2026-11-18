@@ -47,9 +47,9 @@ For native runs, export these variables in the backend process environment. For 
 
 ## Stockfish ladder migration (V31)
 
-Back up the database and recreate the backend and frontend together. Flyway `V31__stockfish_ladder.sql` adds benchmark definitions and game pairs. Existing games and settings are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.
+Back up the database and recreate the backend and frontend together. Flyway `V31__stockfish_ladder.sql` adds benchmark definitions, paired games, and storage for resolved model IDs on benchmark attempts. Benchmark requests use the existing unique tournament creation UUID. Existing games and settings are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.
 
-The [Stockfish ladder](how-it-works.md#stockfish-ladder) records the SHA-256 of the opponent executable on creation and checks it before each benchmark search. Keep that binary installed until the run finishes. An upgrade, architecture change or different native Stockfish build can change its digest. Restore the matching binary and resume the affected games, or start a fresh run using the new build. Practice searches and move evaluations use the currently installed engine.
+The [Stockfish ladder](how-it-works.md#stockfish-ladder) checks the SHA-256 of a private, read-only executable copy and of the loaded NNUE networks at creation and before each search. The [bundled Stockfish](https://github.com/official-stockfish/Stockfish/blob/sf_19/README.md) includes its networks. Native builds must be able to load their weights when launched from the private directory and export them via Stockfish's `export_net` command. An executable or weight mismatch pauses the affected game. Restore the matching build and weights before resuming, or start a fresh run. The Java temporary directory must allow executable files and have room for a copy of Stockfish and its network exports. Practice searches and move evaluations use the currently installed engine.
 
 ## Mind games banter migration (V29)
 

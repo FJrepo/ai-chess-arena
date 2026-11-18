@@ -1,4 +1,8 @@
 ALTER TABLE tournaments ADD COLUMN benchmark_definition JSONB;
+ALTER TABLE tournaments ADD CONSTRAINT benchmark_creation_request_id
+    CHECK (benchmark_definition IS NULL OR client_request_id IS NOT NULL);
+
+ALTER TABLE move_attempts ADD COLUMN resolved_model_id VARCHAR(255);
 
 ALTER TABLE games ADD COLUMN benchmark_pair_id UUID;
 ALTER TABLE games DROP CONSTRAINT stockfish_practice_settings;

@@ -309,7 +309,7 @@ class LiveUpdateTransactionIT {
                 "{\"type\":\"subscribe\",\"gameId\":\"%s\",\"protocol\":2}".formatted(id));
         var turn = new GameTurnService.TurnRequest(id, null, START, null, "WHITE", 1, List.of(), "test/white",
                 "White", "Black", new ArrayList<>(), null, null, true, 1, 30, promptVersion, "hash",
-                BigDecimal.ZERO, () -> true, 1024, ChatMode.OPTIONAL, ChatMode.MANDATORY, false, null, BanterLevel.POLITE, 7L, null);
+                BigDecimal.ZERO, () -> true, 1024, ChatMode.OPTIONAL, ChatMode.MANDATORY, false, null, BanterLevel.POLITE, 7L, null, false);
         timing.record(turn);
         GameDto timed = gameSnapshot(id);
         assertEquals(1, timed.liveRevision());

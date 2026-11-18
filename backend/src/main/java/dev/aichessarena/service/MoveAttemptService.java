@@ -1,5 +1,7 @@
 package dev.aichessarena.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.aichessarena.dto.DtoMapper;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.MoveAttempt;
@@ -12,6 +14,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.transaction.TransactionSynchronizationRegistry;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -46,6 +49,9 @@ public class MoveAttemptService {
 
     @Inject
     TournamentAutoRunService autoRuns;
+
+    @Inject
+    ObjectMapper json;
 
     public record AttemptRecord(
             UUID gameId,
@@ -117,6 +123,9 @@ public class MoveAttemptService {
                 row.costUsd = response.costUsd() != null ? BigDecimal.valueOf(response.costUsd()) : null;
                 row.responseTimeMs = response.responseTimeMs() > 0 ? response.responseTimeMs() : null;
                 row.finishReason = truncate(response.finishReason(), MAX_FINISH_REASON_CHARS);
+                if (game.isBenchmark() && row.modelId != null && row.modelId.startsWith("~")) {
+                    row.resolvedModelId = resolvedModelId(response.rawResponse());
+                }
                 row.rawResponse = truncate(response.rawResponse(), MAX_RAW_RESPONSE_CHARS);
             }
             moveAttemptRepository.persist(row);
@@ -136,6 +145,18 @@ public class MoveAttemptService {
             AfterCommit.run(transactionRegistry, () -> gameWebSocket.broadcastAttemptsUpdated(attempt.gameId()));
         } catch (RuntimeException e) {
             LOG.warnf(e, "Could not record %s attempt for game %s", attempt.outcome(), attempt.gameId());
+        }
+    }
+
+    private String resolvedModelId(String rawResponse) {
+        if (rawResponse == null) return null;
+        try {
+            JsonNode response = json.readTree(rawResponse);
+            String model = response == null ? null : response.path("model").textValue();
+            return model != null && model.length() <= 255 && model.matches("[A-Za-z0-9._-]+/[A-Za-z0-9._:-]+")
+                    ? model : null;
+        } catch (IOException ignored) {
+            return null;
         }
     }
 

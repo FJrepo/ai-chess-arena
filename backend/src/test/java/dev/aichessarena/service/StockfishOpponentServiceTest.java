@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.aichessarena.entity.BenchmarkDefinition;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,6 +23,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class StockfishOpponentServiceTest {
+    static final String TEST_SHA256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    static final String NETWORK_NAME = "nn-test.nnue";
     static final String HANDSHAKE = """
             id name Stockfish 19
             option name UCI_LimitStrength type check default false
@@ -49,19 +52,68 @@ class StockfishOpponentServiceTest {
     }
 
     @Test
-    void refusesToLaunchABenchmarkWhenTheExecutableChanges(@TempDir Path directory) throws IOException {
-        Path binary = Files.writeString(directory.resolve("stockfish"), "abc");
-        var opponent = new StockfishOpponentService() {
-            @Override
-            Path engineBinary() {
-                return binary;
-            }
-        };
-        String pinned = opponent.benchmarkEngineSha256();
-        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", pinned);
+    void refusesToLaunchABenchmarkWhenTheExecutableChanges(@TempDir Path directory) throws IOException, TimeoutException {
+        var fixture = engineWithExport(directory);
+        var benchmark = benchmark(fixture.opponent());
+        Path binary = directory.resolve("stockfish");
+        Files.delete(directory.resolve("launched"));
         Files.writeString(binary, "changed");
-        var mismatch = assertThrows(IOException.class, () -> opponent.startBenchmarkProcess(pinned));
+        var mismatch = assertThrows(IOException.class, () ->
+                fixture.opponent().chooseMove(new ChessService().createBoard(), 1500, benchmark, () -> true));
         assertEquals("Stockfish build does not match this benchmark", mismatch.getMessage());
+        assertFalse(Files.exists(directory.resolve("launched")));
+    }
+
+    @Test
+    void launchesTheVerifiedPrivateCopyInsteadOfTheInstalledExecutable(@TempDir Path directory) throws Exception {
+        var fixture = engineWithExport(directory);
+        var benchmark = benchmark(fixture.opponent());
+        assertEquals("g1f3", fixture.opponent().chooseMove(new ChessService().createBoard(), 1500, benchmark, () -> true));
+        Path launched = Path.of(Files.readString(directory.resolve("launched")).strip());
+        assertFalse(launched.equals(directory.resolve("stockfish")));
+        assertFalse(Files.exists(launched), "the private executable should be cleaned up after the move");
+    }
+
+    @Test
+    void refusesSearchWhenTheLoadedWeightsChangeWithoutChangingTheExecutable(@TempDir Path directory) throws Exception {
+        var fixture = engineWithExport(directory);
+        var benchmark = benchmark(fixture.opponent());
+        Files.writeString(fixture.network(), "replacement weights");
+        assertThrows(IOException.class,
+                () -> fixture.opponent().chooseMove(new ChessService().createBoard(), 1500, benchmark, () -> true));
+        assertFalse(Files.exists(directory.resolve("searched")));
+    }
+
+    private static BenchmarkDefinition benchmark(StockfishOpponentService opponent) throws IOException, TimeoutException {
+        var strengths = List.of(1500, 2000);
+        var fingerprint = opponent.benchmarkFingerprint(strengths);
+        return new BenchmarkDefinition("fixture", List.of(), List.of(), strengths, List.of("WHITE", "BLACK"),
+                fingerprint.sha256(), fingerprint.networks(), 50000, 1, 16);
+    }
+
+    private record EngineFixture(StockfishOpponentService opponent, Path network) {}
+
+    private static EngineFixture engineWithExport(Path directory) throws IOException {
+        Path network = Files.writeString(directory.resolve("external.nnue"), "original weights");
+        Path binary = Files.writeString(directory.resolve("stockfish"), """
+                #!/bin/sh
+                printf '%%s\n' "$0" > '%s/launched'
+                while IFS= read -r command; do
+                  case "$command" in
+                    uci)
+                      printf '%%s\n' 'option name UCI_LimitStrength type check default false' \
+                        'option name UCI_Elo type spin default 1320 min 1320 max 3190' \
+                        'option name EvalFile type string default nn-test.nnue' uciok ;;
+                    isready) echo readyok ;;
+                    export_net) cp '%s' nn-test.nnue && echo 'Network saved successfully to nn-test.nnue' ;;
+                    'go nodes 50000') touch '%s/searched'; echo 'bestmove g1f3' ;;
+                  esac
+                done
+                """.formatted(directory, network, directory));
+        assertTrue(binary.toFile().setExecutable(true, true));
+        return new EngineFixture(new StockfishOpponentService() {
+            @Override Path engineBinary() { return binary; }
+        }, network);
     }
 
     @Test

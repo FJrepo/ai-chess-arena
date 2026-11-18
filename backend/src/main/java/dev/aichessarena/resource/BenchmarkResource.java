@@ -28,8 +28,11 @@ public class BenchmarkResource {
 
     @POST
     public Response create(String body) {
-        BenchmarkRunDto run = benchmarks.create(readBody(body));
-        return Response.created(URI.create("/api/benchmarks/" + run.run().id())).entity(run).build();
+        var result = benchmarks.create(readBody(body));
+        BenchmarkRunDto run = result.run();
+        return result.created()
+                ? Response.created(URI.create("/api/benchmarks/" + run.run().id())).entity(run).build()
+                : Response.ok(run).build();
     }
 
     @GET
@@ -54,6 +57,13 @@ public class BenchmarkResource {
     @Consumes(MediaType.WILDCARD)
     public BenchmarkRunDto pause(@PathParam("id") UUID id) {
         return benchmarks.pause(id);
+    }
+
+    @POST
+    @Path("/{id}/cancel")
+    @Consumes(MediaType.WILDCARD)
+    public BenchmarkRunDto cancel(@PathParam("id") UUID id) {
+        return benchmarks.cancel(id);
     }
 
     private JsonNode readBody(String body) {

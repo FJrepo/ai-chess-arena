@@ -12,6 +12,7 @@
 
 .page-hero,
 .section-heading,
+.run-actions,
 .resume-form {
   display: flex;
   align-items: center;
@@ -21,6 +22,11 @@
 .page-hero,
 .section-heading {
   justify-content: space-between;
+}
+
+.run-actions {
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
 }
 
 .panel {

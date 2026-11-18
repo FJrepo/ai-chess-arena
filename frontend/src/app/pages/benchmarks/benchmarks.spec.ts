@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
-import type { BenchmarkRun } from '../../models/benchmark.model';
+import { Observable, of, throwError } from 'rxjs';
+import type { BenchmarkRun, CreateBenchmarkRequest } from '../../models/benchmark.model';
 import { ApiService } from '../../services/api.service';
 import { Benchmarks } from './benchmarks';
 
@@ -22,6 +22,7 @@ const run: BenchmarkRun = {
     targetStrengths: [1500, 2000],
     modelColors: ['WHITE', 'BLACK'],
     engineSha256: 'abc'.repeat(21) + 'a',
+    engineNetworks: [{ name: 'nn-test.nnue', sha256: 'a'.repeat(64) }],
     searchNodes: 50000,
     threads: 1,
     hashMiB: 16,
@@ -35,6 +36,7 @@ const run: BenchmarkRun = {
   models: [
     {
       modelId: 'fixture/model',
+      resolvedModelIds: [],
       overall: won,
       splits: [
         { targetStrength: 1500, color: 'WHITE', score: won },
@@ -78,8 +80,13 @@ function setup(id?: string) {
   const api = {
     listBenchmarks: vi.fn(() => of([run.run])),
     getBenchmark: vi.fn(() => of(run)),
-    createBenchmark: vi.fn(() => of(run)),
+    createBenchmark: vi.fn<(request: CreateBenchmarkRequest) => Observable<BenchmarkRun>>(() =>
+      of(run),
+    ),
     pauseBenchmark: vi.fn(() => of(run)),
+    cancelBenchmark: vi.fn(() =>
+      of({ ...run, run: { ...run.run, status: 'CANCELLED', pauseReason: null } }),
+    ),
     resumeBenchmark: vi.fn(() =>
       of({ ...run, budgetUsd: '2.50', run: { ...run.run, status: 'RUNNING', pauseReason: null } }),
     ),
@@ -113,6 +120,7 @@ describe('Benchmarks', () => {
     component.chatMode = 'MANDATORY';
     component.create();
     expect(api.createBenchmark).toHaveBeenCalledWith({
+      clientRequestId: expect.any(String),
       name: 'Opening comparison',
       modelIds: ['fixture/one', 'fixture/two'],
       targetStrengths: [1500, 2200],
@@ -122,6 +130,68 @@ describe('Benchmarks', () => {
       runSettings: { budgetUsd: '0.5', maxConcurrentGames: 2 },
     });
     expect(navigate).toHaveBeenCalledWith(['/benchmarks', run.run.id]);
+  });
+
+  it('reuses a failed submission’s request UUID and accepts moving model aliases', () => {
+    const { component, api } = setup();
+    component.name = 'Alias run';
+    component.modelsText = '~anthropic/claude-sonnet-latest';
+    component.budget = '1';
+    api.createBenchmark.mockReturnValueOnce(throwError(() => ({ status: 503 })));
+    component.create();
+    component.create();
+    expect(api.createBenchmark).toHaveBeenCalledTimes(2);
+    const first = api.createBenchmark.mock.calls[0][0];
+    expect(first).toMatchObject({
+      clientRequestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      modelIds: ['~anthropic/claude-sonnet-latest'],
+    });
+    expect(api.createBenchmark.mock.calls[1][0]).toEqual(first);
+    component.budget = '2';
+    component.create();
+    expect(api.createBenchmark.mock.calls[2][0]).not.toMatchObject({
+      clientRequestId: first.clientRequestId,
+    });
+  });
+
+  it('confirms cancellation, renders the terminal state, and removes control actions', () => {
+    const { fixture, api } = setup(run.run.id);
+    const confirm = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    try {
+      fixture.detectChanges();
+      const page: HTMLElement = fixture.nativeElement;
+      const cancel = [...page.querySelectorAll('button')].find(
+        (b) => b.textContent.trim() === 'Cancel run',
+      );
+      expect(cancel).toBeDefined();
+      cancel?.click();
+      expect(api.cancelBenchmark).not.toHaveBeenCalled();
+      cancel?.click();
+      fixture.detectChanges();
+      expect(api.cancelBenchmark).toHaveBeenCalledWith(run.run.id);
+      expect(page.textContent).toContain('Cancelled');
+      expect(page.textContent).not.toContain('Resume run');
+      expect(page.textContent).not.toContain('Cancel run');
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it('renders the requested alias and observed concrete models', () => {
+    const { fixture, component } = setup(run.run.id);
+    const alias = '~anthropic/claude-sonnet-latest';
+    const model = {
+      ...run.models[0],
+      modelId: alias,
+      resolvedModelIds: ['anthropic/claude-sonnet-5'],
+    };
+    component.report.set({ ...run, models: [model] });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(alias);
+    expect(fixture.nativeElement.textContent).toContain('anthropic/claude-sonnet-5');
   });
 
   it('renders scores, the incomplete pair, both game links, and spend', () => {

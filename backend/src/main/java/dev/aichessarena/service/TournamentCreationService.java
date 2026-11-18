@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -40,7 +41,7 @@ public class TournamentCreationService {
     public Result create(Tournament tournament, List<TournamentParticipant> participants, UUID clientRequestId) {
         if (keys != null) keys.requireKey();
         if (clientRequestId != null) {
-            Tournament existing = tournamentRepository.findByClientRequestId(clientRequestId);
+            Tournament existing = findReplay(clientRequestId);
             if (existing != null) {
                 return new Result(tournamentService.completeCreation(existing.id), false);
             }
@@ -73,7 +74,7 @@ public class TournamentCreationService {
         } catch (RuntimeException e) {
             // A concurrent request with the same client request id won the unique constraint.
             if (clientRequestId != null) {
-                Tournament existing = tournamentRepository.findByClientRequestId(clientRequestId);
+                Tournament existing = findReplay(clientRequestId);
                 if (existing != null) {
                     LOG.debugf("Tournament creation %s already completed by a concurrent request", clientRequestId);
                     return new Result(tournamentService.completeCreation(existing.id), false);
@@ -82,5 +83,13 @@ public class TournamentCreationService {
             throw e;
         }
         return new Result(tournamentService.completeCreation(stored.id), true);
+    }
+
+    private Tournament findReplay(UUID requestId) {
+        Tournament existing = tournamentRepository.findByClientRequestId(requestId);
+        if (existing != null && existing.isBenchmark()) {
+            throw new WebApplicationException("Creation request ID belongs to a benchmark", 409);
+        }
+        return existing;
     }
 }

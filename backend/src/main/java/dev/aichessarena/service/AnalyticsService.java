@@ -231,7 +231,8 @@ public class AnalyticsService {
 
     private AnalyticsHealthDto buildHealth(int days, UUID tournamentId, Boolean legalMoveHints) {
         AnalyticsWindowLoader.AnalyticsScope scope = windowLoader.loadHealthScope(days, tournamentId, legalMoveHints);
-        List<Game> games = scope.games().stream().filter(game -> game.status != GameStatus.CANCELLED).toList();
+        List<Game> games = scope.games().stream()
+                .filter(game -> game.status != GameStatus.CANCELLED && !game.isBenchmark()).toList();
         Set<UUID> nonCompetitiveIds = scope.games().stream().filter(Game::isOutsideCompetition).map(game -> game.id)
                 .collect(java.util.stream.Collectors.toSet());
         BigDecimal practiceCostUsd = scope.games().stream().filter(Game::isPractice)

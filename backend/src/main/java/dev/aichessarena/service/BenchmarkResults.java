@@ -17,7 +17,7 @@ final class BenchmarkResults {
 
     private BenchmarkResults() {}
 
-    static ModelResult model(String modelId, BenchmarkDefinition definition, List<Game> games,
+    static ModelResult model(String modelId, List<String> resolvedModelIds, BenchmarkDefinition definition, List<Game> games,
                              AnalyticsGameOutcomeClassifier outcomes) {
         List<Game> played = games.stream().filter(BenchmarkResults::scored).toList();
         List<Split> splits = definition.targetStrengths().stream().flatMap(target -> definition.modelColors().stream()
@@ -26,7 +26,7 @@ final class BenchmarkResults {
                         .toList(), outcomes)))).toList();
         List<Pair> pairs = games.stream().collect(Collectors.groupingBy(game -> game.benchmarkPairId,
                 LinkedHashMap::new, Collectors.toList())).values().stream().map(BenchmarkResults::pair).toList();
-        return new ModelResult(modelId, score(played, outcomes), splits,
+        return new ModelResult(modelId, resolvedModelIds, score(played, outcomes), splits,
                 pairs.stream().filter(pair -> !pair.complete()).count(), spend(games), pairs);
     }
 

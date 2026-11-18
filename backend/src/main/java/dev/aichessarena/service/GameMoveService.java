@@ -53,6 +53,9 @@ public class GameMoveService {
     LiveGameUpdates liveUpdates;
 
     @Inject
+    GameLifecycleService lifecycle;
+
+    @Inject
     Event<MoveEvaluationRequested> moveEvaluationEvents;
 
     /** Null outside CDI (unit tests), where live updates go out immediately. */
@@ -143,13 +146,14 @@ public class GameMoveService {
     @Transactional
     public void recordStockfishMove(UUID gameId, String color, int moveNumber, ChessService.ValidMoveResult played,
                                     String expectedFen, long expectedStatusRevision,
-                                    java.util.function.BooleanSupplier shouldContinue) {
+                                    java.util.function.BooleanSupplier shouldContinue, ChessService.GameEndInfo endInfo) {
         Game game = gameRepository.findByIdForUpdate(gameId);
         if (game == null || game.status != Game.GameStatus.IN_PROGRESS || game.statusRevision != expectedStatusRevision
                 || !shouldContinue.getAsBoolean()
                 || game.playerType(color) != Game.PlayerType.STOCKFISH || !game.currentFen.equals(expectedFen)) {
             throw new GameStateConflictException("Position changed during the Stockfish search");
         }
+        GameLifecycleService.requireActiveTournament(game);
 
         Move move = new Move();
         move.game = game;
@@ -158,6 +162,8 @@ public class GameMoveService {
         move.san = played.san();
         move.fen = played.fen();
         persistMove(move, null, null);
+        // The same locks protect the move and its result from a concurrent budget pause or cancellation.
+        if (endInfo != null) lifecycle.completeLockedGame(game, endInfo);
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
