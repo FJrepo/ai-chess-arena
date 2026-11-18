@@ -19,9 +19,4 @@ public enum ChatMode {
     public boolean allowsMessages() {
         return this != OFF;
     }
-
-    /** The legacy {@code trashTalkEnabled} flag: false → OFF, true → OPTIONAL. */
-    public static ChatMode fromTrashTalkEnabled(boolean trashTalkEnabled) {
-        return trashTalkEnabled ? OPTIONAL : OFF;
-    }
 }

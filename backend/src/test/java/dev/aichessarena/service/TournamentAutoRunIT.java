@@ -307,19 +307,28 @@ class TournamentAutoRunIT {
     }
 
     @Test
-    void startApiRequiresOptInToQueueAndStillStartsImmediatelyWhenThereIsRoom() {
+    void startApiQueuesByDefaultCanOptOutAndStillStartsImmediatelyWhenThereIsRoom() {
         UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
         List<UUID> ids = gameIds(id);
         UUID paused = ids.getLast();
         configure(id, "{\"maxConcurrentGames\":1}", true);
-        given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused).then().statusCode(409)
-                .body("error", equalTo("Tournament concurrency limit reached"));
         given().contentType("application/json").body("{}").queryParam("queueIfFull", false)
-                .post("/api/games/{id}/start", paused).then().statusCode(409);
+                .post("/api/games/{id}/start", paused).then().statusCode(409)
+                .body("error", equalTo("Tournament concurrency limit reached"));
         given().contentType("application/json").body("{}").queryParam("queueIfFull", "yes")
                 .post("/api/games/{id}/start", paused).then().statusCode(400)
                 .body("error", equalTo("queueIfFull must be true or false"));
         assertNull(snapshot(paused).resumeRequestedAt());
+
+        // 2.0: without the parameter a paused game queues for the next free slot.
+        var queued = given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused)
+                .then().statusCode(200)
+                .body("status", equalTo("PAUSED"))
+                .extract().as(GameDto.class);
+        assertNotNull(queued.resumeRequestedAt());
+        assertTrue(starts.isEmpty());
+        given().queryParam("statusRevision", queued.statusRevision())
+                .delete("/api/games/{id}/resume-request", paused).then().statusCode(200);
 
         lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
         given().contentType("application/json").body("{}").post("/api/games/{id}/start", paused).then().statusCode(200)
@@ -351,6 +360,58 @@ class TournamentAutoRunIT {
     }
 
     @Test
+    void emptyBareOrRepeatedQueueParametersFailClosedAndNeverQueue() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        UUID paused = gameIds(id).getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        long revision = snapshot(paused).statusRevision();
+
+        // Empty and bare values must not fall back to the queuing default.
+        for (String query : List.of("queueIfFull=", "queueIfFull", "queueIfFull=%20")) {
+            given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                    .post("/api/games/" + paused + "/start?" + query).then().statusCode(400)
+                    .body("error", equalTo("queueIfFull must be true or false"));
+        }
+        for (List<String> values : List.of(List.of("true", "true"), List.of("true", "false"), List.of("false", ""))) {
+            given().contentType("application/json").body("{}").queryParam("queueIfFull", values)
+                    .post("/api/games/{id}/start", paused).then().statusCode(400)
+                    .body("error", equalTo("queueIfFull must be given at most once"));
+        }
+
+        assertNull(snapshot(paused).resumeRequestedAt());
+        assertEquals(revision, snapshot(paused).statusRevision());
+        assertEquals(GameStatus.PAUSED, status(paused));
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
+    void queueParameterNameIsCaseInsensitiveAndCountsEveryCasing() {
+        UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED);
+        UUID paused = gameIds(id).getLast();
+        configure(id, "{\"maxConcurrentGames\":1}", true);
+        long revision = snapshot(paused).statusRevision();
+
+        given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                .post("/api/games/" + paused + "/start?QueueIfFull=false").then().statusCode(409)
+                .body("error", equalTo("Tournament concurrency limit reached"));
+        // %C4%B1 is a dotless i: it must count as a second value, not collapse into one name.
+        for (String query : List.of("QueueIfFull=true&queueIfFull=false", "queueiffull=false&QUEUEIFFULL=false",
+                "queue%C4%B1fFull=true&queueIfFull=false")) {
+            given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                    .post("/api/games/" + paused + "/start?" + query).then().statusCode(400)
+                    .body("error", equalTo("queueIfFull must be given at most once"));
+        }
+        given().urlEncodingEnabled(false).contentType("application/json").body("{}")
+                .post("/api/games/" + paused + "/start?QUEUEIFFULL=").then().statusCode(400)
+                .body("error", equalTo("queueIfFull must be true or false"));
+
+        assertNull(snapshot(paused).resumeRequestedAt());
+        assertEquals(revision, snapshot(paused).statusRevision());
+        assertEquals(GameStatus.PAUSED, status(paused));
+        assertTrue(starts.isEmpty());
+    }
+
+    @Test
     void newerManualResumeQueuesBehindAnOlderRequestWhenTheOnlySlotFrees() {
         UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.PAUSED, GameStatus.PAUSED);
         List<UUID> ids = gameIds(id);
@@ -360,7 +421,8 @@ class TournamentAutoRunIT {
         assertNotNull(engine.startGame(older, true).resumeRequestedAt());
         lifecycle.pauseWithReason(ids.getFirst(), "Slot freed");
 
-        given().contentType("application/json").body("{}").post("/api/games/{id}/start", newer).then().statusCode(409)
+        given().contentType("application/json").body("{}").queryParam("queueIfFull", false)
+                .post("/api/games/{id}/start", newer).then().statusCode(409)
                 .body("error", equalTo("Available slots are reserved for queued resumes"));
         GameDto queued = engine.startGame(newer, true);
         assertEquals("PAUSED", queued.status());

@@ -729,9 +729,7 @@ export class GameView implements OnInit, OnDestroy {
         if (generation !== this.settingsGeneration) return;
         this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
         this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
-        this.tournamentChatMode.set(
-          tournament.chatMode ?? (tournament.trashTalkEnabled === false ? 'OFF' : 'OPTIONAL'),
-        );
+        this.tournamentChatMode.set(tournament.chatMode ?? 'OPTIONAL');
         this.tournamentBanterLevel.set(tournament.banterLevel ?? null);
         this.tournamentReasoningEffort.set(
           isReasoningEffort(tournament.reasoningEffort) ? tournament.reasoningEffort : null,
@@ -1283,7 +1281,7 @@ export class GameView implements OnInit, OnDestroy {
     const resume = saveLimit.pipe(
       switchMap(() => {
         if (!effortChoice || !side) {
-          return this.api.startGame(this.gameId, true);
+          return this.api.startGame(this.gameId);
         }
         return this.api
           .updateParticipant(tournamentId, effortChoice.participantId, {
@@ -1300,7 +1298,7 @@ export class GameView implements OnInit, OnDestroy {
                     : { ...game, blackReasoningEffort: asked }
                   : game,
               );
-              return this.api.startGame(this.gameId, true);
+              return this.api.startGame(this.gameId);
             }),
           );
       }),
@@ -1325,7 +1323,7 @@ export class GameView implements OnInit, OnDestroy {
     if (this.savingLimit()) {
       return;
     }
-    this.runGameAction(this.api.startGame(this.gameId, true), {
+    this.runGameAction(this.api.startGame(this.gameId), {
       next: (game) => this.applyResumeSnapshot(game),
       error: (err) => {
         this.showServerError(

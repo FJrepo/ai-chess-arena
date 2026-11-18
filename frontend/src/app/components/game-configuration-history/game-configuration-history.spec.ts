@@ -7,7 +7,7 @@ import { GameConfigurationHistory } from './game-configuration-history';
 describe('GameConfigurationHistory', () => {
   it('shows the requested and sent effort per attempt, including unknowns and reported zero', () => {
     const first: GameConfiguration = {
-      maxRetries: 3,
+      maxAttempts: 3,
       maxOutputTokens: 16384,
       chatMode: 'OPTIONAL',
       resignationAllowed: false,

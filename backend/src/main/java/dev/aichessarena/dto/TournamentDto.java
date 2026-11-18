@@ -15,11 +15,9 @@ public record TournamentDto(
         String sharedCustomInstructions,
         // Always serialized: null means no time limit per move (other null fields are omitted).
         @JsonInclude(JsonInclude.Include.ALWAYS) Integer moveTimeoutSeconds,
-        int maxRetries,
+        int maxAttempts,
         int matchupBestOf,
         Integer finalsBestOf,
-        // True unless chatMode is OFF; kept for older clients.
-        boolean trashTalkEnabled,
         String chatMode,
         @JsonInclude(JsonInclude.Include.ALWAYS) String banterLevel,
         // Models may resign instead of moving from their 10th move on (Tournament.MIN_RESIGNATION_MOVE).

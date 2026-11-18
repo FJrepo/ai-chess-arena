@@ -1090,7 +1090,7 @@ describe('GameView', () => {
     component.saveLimitAndResume(8192);
 
     expect(updateTournament).toHaveBeenCalledWith('t-1', { maxOutputTokens: 8192 });
-    expect(startGame).toHaveBeenCalledWith('g-1', true);
+    expect(startGame).toHaveBeenCalledWith('g-1');
     expect(calls).toEqual(['update', 'start']);
     expect(component.tournamentMaxOutputTokens()).toBe(8192);
     expect(component.savingLimit()).toBe(false);
@@ -1458,7 +1458,7 @@ describe('GameView', () => {
 
     expect(updateTournament).toHaveBeenCalledWith('t-1', { maxOutputTokens: 32768 });
     expect(updateParticipant).toHaveBeenCalledWith('t-1', 'p-2', { reasoningEffort: 'low' });
-    expect(startGame).toHaveBeenCalledWith('g-1', true);
+    expect(startGame).toHaveBeenCalledWith('g-1');
     expect(calls).toEqual(['tournament', 'participant', 'start']);
     expect(component.game()?.blackReasoningEffort).toBe('low');
     expect(component.savingLimit()).toBe(false);
@@ -1538,7 +1538,7 @@ describe('GameView', () => {
       expect(component.savingLimit()).toBe(true);
       expect(startGame).not.toHaveBeenCalled();
       participantSaved.next({ reasoningEffort: 'low' });
-      expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1', true);
+      expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
       expect(calls).toEqual(
         changed ? ['tournament', 'participant', 'start'] : ['participant', 'start'],
       );
@@ -1582,7 +1582,7 @@ describe('GameView', () => {
     updateParticipant.mockClear();
     component.saveTruncationFixAndResume({ maxOutputTokens: 8192 });
     expect(updateParticipant).not.toHaveBeenCalled();
-    expect(startGame).toHaveBeenCalledWith('g-1', true);
+    expect(startGame).toHaveBeenCalledWith('g-1');
   });
 
   it('shows the start position when the history is rewound to before the first move', () => {
@@ -2822,7 +2822,7 @@ describe('GameView resume while saving', () => {
     resume.click();
     fixture.detectChanges();
 
-    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1', true);
+    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
     expect(element.querySelector('app-queued-resume [role="status"]')?.textContent).toMatch(
       /Queued: resumes when a slot frees\s*\(3\/3 running\)/,
     );
@@ -2909,7 +2909,7 @@ describe('GameView resume while saving', () => {
     participantSaved.next({ reasoningEffort: 'low' });
     participantSaved.complete();
     fixture.detectChanges();
-    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1', true);
+    expect(startGame).toHaveBeenCalledExactlyOnceWith('g-1');
     expect(component.game()?.blackReasoningEffort).toBe('low');
     expect(component.savingLimit()).toBe(false);
     expect(resume.disabled).toBe(false);

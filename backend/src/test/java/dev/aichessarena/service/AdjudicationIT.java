@@ -60,7 +60,7 @@ class AdjudicationIT {
         String id = createApi("{}");
         given().get("/api/tournaments/{id}", id).then().statusCode(200)
                 .body("adjudicationEnabled", equalTo(false));
-        for (String body : List.of("{\"adjudicationEnabled\":true}", "{\"maxRetries\":2}", "{\"adjudicationEnabled\":null}")) {
+        for (String body : List.of("{\"adjudicationEnabled\":true}", "{\"maxAttempts\":2}", "{\"adjudicationEnabled\":null}")) {
             given().contentType("application/json").body(body).put("/api/tournaments/{id}", id)
                     .then().statusCode(200).body("adjudicationEnabled", equalTo(true));
         }
@@ -330,7 +330,8 @@ class AdjudicationIT {
     }
 
     private String createApi(String fields) {
-        String body = fields.replaceFirst("\\{", "{\"name\":\"Adjudication API\"," ).replace(",}", "}");
+        String body = fields.replaceFirst("\\{", "{\"name\":\"Adjudication API\",\"generateBracket\":false," )
+                .replace(",}", "}");
         return given().contentType("application/json").body(body).post("/api/tournaments")
                 .then().statusCode(201).extract().path("id");
     }

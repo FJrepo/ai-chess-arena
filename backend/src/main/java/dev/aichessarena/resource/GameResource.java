@@ -19,9 +19,15 @@ import dev.aichessarena.websocket.GameStream;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Path("/api/games")
@@ -133,13 +139,17 @@ public class GameResource {
                 gameStream.id(), configurations.read(id))).build();
     }
 
+    /**
+     * Starts or resumes a game. In a tournament with an active run, a paused game queues for the next free slot when
+     * all slots are occupied or reserved (default since 2.0); {@code queueIfFull=false} returns 409 instead.
+     */
     @POST
     @Path("/{id}/start")
-    public Response startGame(@PathParam("id") UUID id,
-                              @QueryParam("queueIfFull") @DefaultValue("false") String queueIfFull) {
-        if (!"true".equals(queueIfFull) && !"false".equals(queueIfFull)) {
-            throw new IllegalArgumentException("queueIfFull must be true or false");
-        }
+    public Response startGame(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
+        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(uriInfo, "queueIfFull")));
+    }
+
+    Response startGame(UUID id, boolean queueIfFull) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         if (game.tournament != null
@@ -149,8 +159,44 @@ public class GameResource {
         if (!hasConfiguredPlayer(game, true) || !hasConfiguredPlayer(game, false)) {
             throw new IllegalArgumentException("Both players must be set");
         }
-        return Response.ok("true".equals(queueIfFull)
-                ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id)).build();
+        return Response.ok(queueIfFull ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id))
+                .build();
+    }
+
+    /**
+     * Every value of a query parameter whose name matches regardless of case (as with the former {@code @QueryParam}),
+     * or null when none is present. Parsed from the raw query: the case-insensitive parameter map can merge names
+     * that differ only in special characters (such as a dotless i) and drop values.
+     */
+    static List<String> queryValuesIgnoringCase(UriInfo uriInfo, String name) {
+        String query = uriInfo.getRequestUri().getRawQuery();
+        if (query == null || query.isEmpty()) return null;
+        List<String> values = null;
+        for (String pair : query.split("&", -1)) {
+            int separator = pair.indexOf('=');
+            String key = URLDecoder.decode(separator < 0 ? pair : pair.substring(0, separator), StandardCharsets.UTF_8);
+            if (key.equalsIgnoreCase(name)) {
+                if (values == null) values = new ArrayList<>();
+                values.add(separator < 0 ? "" : URLDecoder.decode(pair.substring(separator + 1), StandardCharsets.UTF_8));
+            }
+        }
+        return values;
+    }
+
+    /**
+     * Only an absent parameter means the default (true). Read explicitly because {@code @DefaultValue} would also
+     * replace an empty value, which must fail closed instead of queuing a paid resume.
+     */
+    static boolean parseQueueIfFull(List<String> values) {
+        if (values == null) return true;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("queueIfFull must be given at most once");
+        }
+        String value = values.getFirst();
+        if (!"true".equals(value) && !"false".equals(value)) {
+            throw new IllegalArgumentException("queueIfFull must be true or false");
+        }
+        return "true".equals(value);
     }
 
     @DELETE

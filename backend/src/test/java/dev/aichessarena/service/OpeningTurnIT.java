@@ -177,7 +177,7 @@ class OpeningTurnIT {
             tournament.openingId = openingId;
             tournament.resignationAllowed = true;
             tournament.legalMoveHints = legalMoveHints;
-            tournament.maxRetries = 3;
+            tournament.maxAttempts = 3;
             for (String color : List.of("White", "Black")) {
                 TournamentParticipant participant = new TournamentParticipant();
                 participant.tournament = tournament;

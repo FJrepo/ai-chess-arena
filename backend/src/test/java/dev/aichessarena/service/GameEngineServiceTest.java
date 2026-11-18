@@ -141,7 +141,7 @@ class GameEngineServiceTest {
 
         assertNull(request.moveTimeoutSeconds());
         assertEquals("model-white", request.modelId());
-        assertEquals(2, request.maxRetries());
+        assertEquals(2, request.maxAttempts());
     }
 
     @Test
@@ -286,7 +286,7 @@ class GameEngineServiceTest {
     private static Tournament tournamentWithTimeout(Integer moveTimeoutSeconds) {
         Tournament tournament = new Tournament();
         tournament.moveTimeoutSeconds = moveTimeoutSeconds;
-        tournament.maxRetries = 2;
+        tournament.maxAttempts = 2;
         return tournament;
     }
 

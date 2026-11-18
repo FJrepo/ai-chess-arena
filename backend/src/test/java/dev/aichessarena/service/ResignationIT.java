@@ -87,7 +87,7 @@ class ResignationIT {
                 .body("resignationAllowed", equalTo(true));
         assertEquals(true, stored(id));
 
-        given().contentType("application/json").body("{\"maxRetries\":2}")
+        given().contentType("application/json").body("{\"maxAttempts\":2}")
                 .when().put("/api/tournaments/{id}", id)
                 .then().statusCode(200)
                 .body("resignationAllowed", equalTo(true));
@@ -423,7 +423,7 @@ class ResignationIT {
     }
 
     private static String withName(String body) {
-        String name = "\"name\":\"Resign " + UUID.randomUUID() + "\"";
+        String name = "\"name\":\"Resign " + UUID.randomUUID() + "\",\"generateBracket\":false";
         return "{}".equals(body) ? "{" + name + "}" : "{" + name + "," + body.substring(1);
     }
 

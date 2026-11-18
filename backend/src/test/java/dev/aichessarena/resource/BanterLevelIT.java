@@ -35,7 +35,7 @@ class BanterLevelIT {
 
     @Test
     void oldClientsAndExplicitNullKeepTheOriginalBehaviorOnCreate() {
-        for (String fields : new String[] {"", ",\"banterLevel\":null", ",\"trashTalkEnabled\":false"}) {
+        for (String fields : new String[] {"", ",\"banterLevel\":null", ",\"chatMode\":\"OFF\""}) {
             String id = create(fields, null);
             assertNull(stored(id));
             given().get("/api/tournaments/{id}", id).then().statusCode(200).body("banterLevel", nullValue());
@@ -58,7 +58,7 @@ class BanterLevelIT {
     @Test
     void omittedUpdateRetainsToneExplicitNullClearsAndOffRetainsSelection() {
         String id = create(",\"banterLevel\":\"POLITE\"", "POLITE");
-        update(id, "{\"maxRetries\":2}", "POLITE");
+        update(id, "{\"maxAttempts\":2}", "POLITE");
         update(id, "{\"chatMode\":\"OFF\"}", "POLITE");
         update(id, "{\"banterLevel\":\"SPICY\"}", "SPICY");
         update(id, "{\"chatMode\":\"MANDATORY\"}", "SPICY");
@@ -183,7 +183,7 @@ class BanterLevelIT {
 
     private String create(String fields, String level) {
         return given().contentType("application/json")
-                .body("{\"name\":\"Banter " + UUID.randomUUID() + "\"" + fields + "}")
+                .body("{\"name\":\"Banter " + UUID.randomUUID() + "\",\"generateBracket\":false" + fields + "}")
                 .post("/api/tournaments").then().statusCode(201)
                 .body("banterLevel", level == null ? nullValue() : equalTo(level)).extract().path("id");
     }

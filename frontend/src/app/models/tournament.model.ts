@@ -54,11 +54,10 @@ export interface Tournament {
    * removes the limit and an omitted or null value keeps the default (no limit) or the current value.
    */
   moveTimeoutSeconds: number | null;
-  maxRetries: number;
+  /** Attempts per move, including the first one (1-20). Called maxRetries before 2.0. */
+  maxAttempts: number;
   matchupBestOf: 1 | 3 | 5 | 7;
   finalsBestOf: 1 | 3 | 5 | 7 | null;
-  /** True unless chatMode is OFF; kept for older clients. */
-  trashTalkEnabled: boolean;
   /** Whether models talk: OFF, OPTIONAL (default) or MANDATORY. Absent from backends before 1.4. */
   chatMode?: ChatMode;
   /** Null retains the original tone; ignored while chat is Off. */
@@ -125,7 +124,7 @@ export interface GameConfiguration {
   configuredOpeningId?: string | null;
   gameOpeningId?: string | null;
   moveTimeoutSeconds?: number | null;
-  maxRetries: number;
+  maxAttempts: number;
   maxOutputTokens: number;
   chatMode: ChatMode;
   banterLevel?: BanterLevel | null;
@@ -511,6 +510,6 @@ export interface CreateTournamentRequest extends Partial<
   runSettings?: { maxConcurrentGames: number; budgetUsd: string | number | null };
   /** Create-only draw choice; API default ORDER preserves seeds, setup defaults to RANDOM. */
   drawMode?: BracketDrawMode;
-  /** Only true generates on create (requires >=2); omitted, null or false keeps a draft. */
+  /** Omitted, null or true generates on create (requires >=2 participants); false keeps a draft. */
   generateBracket?: boolean | null;
 }

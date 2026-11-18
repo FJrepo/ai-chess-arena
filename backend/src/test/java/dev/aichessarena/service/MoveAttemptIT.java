@@ -165,12 +165,12 @@ class MoveAttemptIT {
 
     @Test
     void tournamentsDefaultToTheOutputTokenLimit() {
-        given().contentType("application/json").body("{\"name\":\"Token limit " + UUID.randomUUID() + "\"}")
+        given().contentType("application/json").body("{\"generateBracket\":false,\"name\":\"Token limit " + UUID.randomUUID() + "\"}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
                 .body("maxOutputTokens", equalTo(16384));
         given().contentType("application/json")
-                .body("{\"name\":\"Token limit " + UUID.randomUUID() + "\",\"maxOutputTokens\":16384}")
+                .body("{\"generateBracket\":false,\"name\":\"Token limit " + UUID.randomUUID() + "\",\"maxOutputTokens\":16384}")
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
                 .body("maxOutputTokens", equalTo(16384));

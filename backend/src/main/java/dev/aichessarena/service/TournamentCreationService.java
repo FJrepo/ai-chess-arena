@@ -52,7 +52,8 @@ public class TournamentCreationService {
         tournament.name = tournament.name.trim();
 
         if (tournament.creationDrawMode != null && (participants == null || participants.size() < 2)) {
-            throw new IllegalArgumentException("Need at least 2 participants to generate the bracket");
+            throw new IllegalArgumentException(
+                    "Need at least 2 participants to generate the bracket; send generateBracket: false to create a draft");
         }
 
         List<TournamentParticipant> prepared = new ArrayList<>();

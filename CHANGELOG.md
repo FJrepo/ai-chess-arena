@@ -11,12 +11,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V29__mind_games_banter.sql` extends the tournament banter constraint. Back up the database and recreate backend and frontend together. Existing tournament settings are retained without a backfill.
 
+- Flyway `V30__v2_api_cleanup.sql` renames `tournaments.max_retries` to `max_attempts`, renames the `maxRetries` key to `maxAttempts` in stored game configuration snapshots and drops the pre-1.4 column `tournaments.trash_talk_enabled` (it only mirrored `chat_mode`). Back up the database and recreate backend and frontend together; rolling back requires restoring that backup.
+
+- Breaking API changes for scripts and API clients (2.0):
+  - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
+  - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
+  - `generateBracket` omitted or null -> generates the bracket on `POST /api/tournaments` (was: draft). Creation still checks the OpenRouter credential first (HTTP 409 without a key); after that, fewer than two participants returns HTTP 400 unless the request sends `"generateBracket": false`.
+  - `POST /api/games/{id}/start` without `queueIfFull` -> queues a paused game when the auto-run's slots are full (was: HTTP 409). Send `?queueIfFull=false` for the old behaviour. An empty, non-boolean or repeated `queueIfFull` returns HTTP 400.
+
 ### Added
 
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 
 ### Changed
+
+- The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
+- Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
+- Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.
+- Removed the `trashTalkEnabled` flag, replaced by chat modes since 1.4, from the API and the database.
 
 ### Fixed
 

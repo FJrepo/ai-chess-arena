@@ -356,13 +356,13 @@ public class GameLifecycleService {
     ) {}
 
     @Transactional
-    public void forfeitInvalidMoves(UUID gameId, String forfeitColor, int maxRetries) {
+    public void forfeitInvalidMoves(UUID gameId, String forfeitColor, int maxAttempts) {
         Game game = markForfeit(gameId, forfeitColor, ResultReason.FORFEIT_INVALID_MOVES);
         if (game == null) {
             return;
         }
         broadcastForfeitAfterCommit(game, forfeitColor,
-                "Failed to produce a legal move after %d attempts".formatted(maxRetries));
+                "Failed to produce a legal move after %d attempts".formatted(maxAttempts));
         advanceTournamentWinnerIfNeeded(game);
     }
 

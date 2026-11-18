@@ -394,7 +394,7 @@ describe('TournamentBracket', () => {
     resume()!.click();
     fixture.detectChanges();
 
-    expect(api.startGame).toHaveBeenCalledExactlyOnceWith(paused.id, true);
+    expect(api.startGame).toHaveBeenCalledExactlyOnceWith(paused.id);
     expect(card.querySelector('[role="status"]')?.textContent).toMatch(
       /Queued: resumes when a slot frees\s*\(3\/3 running\)/,
     );
@@ -1211,10 +1211,9 @@ function tournament(
     drawPolicy: 'BLACK_ADVANCES',
     sharedCustomInstructions: null,
     moveTimeoutSeconds: 60,
-    maxRetries: 3,
+    maxAttempts: 3,
     matchupBestOf: 1,
     finalsBestOf: null,
-    trashTalkEnabled: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     participants: [],

@@ -1,8 +1,8 @@
 package dev.aichessarena.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.IntNode;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,13 +11,14 @@ import java.util.UUID;
  * used on create: the tournament and all participants are stored together or not at all, and repeating a
  * request with the same {@code clientRequestId} returns the tournament created by the first one.
  * The original creation's bracket choice is retained on retries. {@code drawMode} defaults to ORDER;
- * {@code generateBracket} generates only when explicitly true, which requires at least two participants.
- * Omitted, null or false preserves draft creation for API clients. These fields are create-only.
+ * {@code generateBracket} defaults to true (omitted or null), which requires at least two participants. Send
+ * false to create a draft without a bracket. These fields are create-only.
  * Optional {@code runSettings} sets the same limits accepted by the run configuration endpoint without starting it.
  * On create, {@code budgetUsd} also accepts an exact decimal string so clients can preserve stored cents.
  *
- * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY. The older {@code trashTalkEnabled} is still accepted: alone,
- * false means OFF and true means OPTIONAL; when both are sent, {@code chatMode} wins.
+ * <p>{@code maxAttempts} is the number of attempts per move, including the first one (1-20).
+ *
+ * <p>{@code chatMode} is OFF, OPTIONAL or MANDATORY.
  *
  * <p>{@code banterLevel} accepts POLITE, PLAYFUL, SPICY, MIND_GAMES or explicit JSON null (clear to original tone).
  * Omitted retains the current tone on update. Chat OFF and legacy full templates ignore it.
@@ -35,16 +36,18 @@ import java.util.UUID;
  * <p>{@code reasoningEffort} is OpenRouter's reasoning effort for all models (none, minimal, low, medium, high, xhigh,
  * max; case-insensitive) or {@code "default"} for each model's own default. Null keeps the model default on create
  * and the current value on update; {@code "default"} clears it on update.
+ *
+ * <p>The fields removed in 2.0 ({@code maxRetries}, {@code trashTalkEnabled}) are bound only so that a request
+ * still sending them is rejected with a 400 naming the replacement, instead of being silently ignored.
  */
 public record CreateTournamentRequest(
         String name,
         String sharedCustomInstructions,
         Integer moveTimeoutSeconds,
         // Keep the JSON type so fractional or empty input cannot be coerced to an integer or null.
-        JsonNode maxRetries,
+        JsonNode maxAttempts,
         Integer matchupBestOf,
         Integer finalsBestOf,
-        Boolean trashTalkEnabled,
         String drawPolicy,
         List<AddParticipantRequest> participants,
         UUID clientRequestId,
@@ -61,54 +64,20 @@ public record CreateTournamentRequest(
         JsonNode banterLevel,
         // Omitted defaults to true on create. Explicit null and other non-boolean values are invalid.
         JsonNode legalMoveHints,
-        @JsonDeserialize(using = ExactDecimalTreeDeserializer.class) JsonNode runSettings
+        @JsonDeserialize(using = ExactDecimalTreeDeserializer.class) JsonNode runSettings,
+        // Removed in 2.0; non-null (also explicit JSON null) when a client still sends the old field.
+        @JsonProperty("maxRetries") JsonNode removedMaxRetries,
+        @JsonProperty("trashTalkEnabled") JsonNode removedTrashTalkEnabled
 ) {
-    /** Compatibility constructor for callers without creation-time bracket or banter settings. */
-    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
-                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
-                                   Boolean trashTalkEnabled, String drawPolicy,
-                                   List<AddParticipantRequest> participants, UUID clientRequestId,
-                                   Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
-                                   String reasoningEffort, Boolean adjudicationEnabled,
-                                   String openingMode, String openingId) {
-        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries == null ? null : IntNode.valueOf(maxRetries),
-                matchupBestOf, finalsBestOf, trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, adjudicationEnabled, openingMode, openingId, null, null, null, null, null);
-    }
-
-    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
-                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
-                                   Boolean trashTalkEnabled, String drawPolicy,
-                                   List<AddParticipantRequest> participants, UUID clientRequestId,
-                                   Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
-                                   String reasoningEffort, Boolean adjudicationEnabled) {
-        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
-                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, adjudicationEnabled, null, null);
-    }
-
-    /** Compatibility constructor for callers without adjudication settings. */
-    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
-                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
-                                   Boolean trashTalkEnabled, String drawPolicy,
-                                   List<AddParticipantRequest> participants, UUID clientRequestId,
-                                   Integer maxOutputTokens, String chatMode, Boolean resignationAllowed,
-                                   String reasoningEffort) {
-        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
-                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode,
-                resignationAllowed, reasoningEffort, null);
-    }
-
-    /**
-     * A request without {@code resignationAllowed} and {@code reasoningEffort}: create keeps the defaults, update the
-     * current values.
-     */
-    public CreateTournamentRequest(String name, String sharedCustomInstructions, Integer moveTimeoutSeconds,
-                                   Integer maxRetries, Integer matchupBestOf, Integer finalsBestOf,
-                                   Boolean trashTalkEnabled, String drawPolicy,
-                                   List<AddParticipantRequest> participants, UUID clientRequestId,
-                                   Integer maxOutputTokens, String chatMode) {
-        this(name, sharedCustomInstructions, moveTimeoutSeconds, maxRetries, matchupBestOf, finalsBestOf,
-                trashTalkEnabled, drawPolicy, participants, clientRequestId, maxOutputTokens, chatMode, null, null, null);
+    /** Fields removed in 2.0 with the message that names their replacement. */
+    public void rejectRemovedFields() {
+        if (removedMaxRetries != null) {
+            throw new IllegalArgumentException(
+                    "maxRetries was removed in 2.0; send maxAttempts (attempts per move including the first, 1-20)");
+        }
+        if (removedTrashTalkEnabled != null) {
+            throw new IllegalArgumentException(
+                    "trashTalkEnabled was removed in 2.0; send chatMode (OFF, OPTIONAL or MANDATORY)");
+        }
     }
 }

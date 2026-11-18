@@ -3,6 +3,8 @@ package dev.aichessarena.resource;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasKey;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,24 +42,35 @@ class ChatModeIT {
     String password;
 
     @Test
-    void createAcceptsChatModeAndTheOlderTrashTalkFlag() {
-        // neither: OPTIONAL
-        assertCreated("{}", "OPTIONAL", true);
-        // only trashTalkEnabled
-        assertCreated("{\"trashTalkEnabled\":false}", "OFF", false);
-        assertCreated("{\"trashTalkEnabled\":true}", "OPTIONAL", true);
-        // only chatMode
-        assertCreated("{\"chatMode\":\"MANDATORY\"}", "MANDATORY", true);
-        assertCreated("{\"chatMode\":\"off\"}", "OFF", false);
-        // both: chatMode wins
-        assertCreated("{\"chatMode\":\"MANDATORY\",\"trashTalkEnabled\":false}", "MANDATORY", true);
-        assertCreated("{\"chatMode\":\"OFF\",\"trashTalkEnabled\":true}", "OFF", false);
+    void createAcceptsChatModeAndDefaultsToOptional() {
+        assertCreated("{}", "OPTIONAL");
+        assertCreated("{\"chatMode\":\"MANDATORY\"}", "MANDATORY");
+        assertCreated("{\"chatMode\":\"off\"}", "OFF");
+    }
+
+    @Test
+    void theRemovedTrashTalkFlagIsRejectedAndNotReturned() {
+        for (String body : new String[] {"{\"trashTalkEnabled\":false}", "{\"trashTalkEnabled\":null}",
+                "{\"chatMode\":\"OFF\",\"trashTalkEnabled\":true}"}) {
+            given().contentType("application/json").body(withName(body))
+                    .when().post("/api/tournaments")
+                    .then().statusCode(400)
+                    .body("error", equalTo("trashTalkEnabled was removed in 2.0; send chatMode (OFF, OPTIONAL or MANDATORY)"));
+        }
+        String id = create("{\"chatMode\":\"MANDATORY\"}");
+        given().contentType("application/json").body("{\"trashTalkEnabled\":false}")
+                .when().put("/api/tournaments/{id}", id)
+                .then().statusCode(400)
+                .body("error", containsString("send chatMode"));
+        given().when().get("/api/tournaments/{id}", id)
+                .then().statusCode(200)
+                .body("chatMode", equalTo("MANDATORY"))
+                .body("$", not(hasKey("trashTalkEnabled")));
     }
 
     @Test
     void unknownChatModesAreRejected() {
-        for (String body : new String[] {"{\"chatMode\":\"LOUD\"}", "{\"chatMode\":\"\"}",
-                "{\"chatMode\":\"LOUD\",\"trashTalkEnabled\":true}"}) {
+        for (String body : new String[] {"{\"chatMode\":\"LOUD\"}", "{\"chatMode\":\"\"}"}) {
             given().contentType("application/json").body(withName(body))
                     .when().post("/api/tournaments")
                     .then().statusCode(400)
@@ -72,29 +85,24 @@ class ChatModeIT {
     }
 
     @Test
-    void updateChangesTheModeOnlyWhenAFieldIsSentAndKeepsTheOldColumnInSync() {
+    void updateChangesTheModeOnlyWhenItIsSent() {
         String id = create("{\"chatMode\":\"MANDATORY\"}");
-        assertEquals(true, stored(id, "trash_talk_enabled"));
 
-        given().contentType("application/json").body("{\"maxRetries\":2}")
+        given().contentType("application/json").body("{\"maxAttempts\":2}")
                 .when().put("/api/tournaments/{id}", id)
                 .then().statusCode(200)
                 .body("chatMode", equalTo("MANDATORY"));
 
-        given().contentType("application/json").body("{\"trashTalkEnabled\":false}")
+        given().contentType("application/json").body("{\"chatMode\":\"OFF\"}")
                 .when().put("/api/tournaments/{id}", id)
                 .then().statusCode(200)
-                .body("chatMode", equalTo("OFF"))
-                .body("trashTalkEnabled", equalTo(false));
+                .body("chatMode", equalTo("OFF"));
         assertEquals("OFF", stored(id, "chat_mode"));
-        assertEquals(false, stored(id, "trash_talk_enabled"));
 
-        given().contentType("application/json").body("{\"chatMode\":\"OPTIONAL\",\"trashTalkEnabled\":false}")
+        given().contentType("application/json").body("{\"chatMode\":\"OPTIONAL\"}")
                 .when().put("/api/tournaments/{id}", id)
                 .then().statusCode(200)
-                .body("chatMode", equalTo("OPTIONAL"))
-                .body("trashTalkEnabled", equalTo(true));
-        assertEquals(true, stored(id, "trash_talk_enabled"));
+                .body("chatMode", equalTo("OPTIONAL"));
 
         given().when().get("/api/tournaments/{id}", id)
                 .then().statusCode(200)
@@ -242,15 +250,13 @@ class ChatModeIT {
         return values;
     }
 
-    private void assertCreated(String body, String chatMode, boolean trashTalkEnabled) {
+    private void assertCreated(String body, String chatMode) {
         String id = given().contentType("application/json").body(withName(body))
                 .when().post("/api/tournaments")
                 .then().statusCode(201)
                 .body("chatMode", equalTo(chatMode))
-                .body("trashTalkEnabled", equalTo(trashTalkEnabled))
                 .extract().path("id");
         assertEquals(chatMode, stored(id, "chat_mode"), body);
-        assertEquals(trashTalkEnabled, stored(id, "trash_talk_enabled"), body);
     }
 
     private String create(String body) {
@@ -261,7 +267,7 @@ class ChatModeIT {
     }
 
     private static String withName(String body) {
-        String name = "\"name\":\"Chat " + UUID.randomUUID() + "\"";
+        String name = "\"name\":\"Chat " + UUID.randomUUID() + "\",\"generateBracket\":false";
         return "{}".equals(body) ? "{" + name + "}" : "{" + name + "," + body.substring(1);
     }
 

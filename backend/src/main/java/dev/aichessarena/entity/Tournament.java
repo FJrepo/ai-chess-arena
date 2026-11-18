@@ -65,8 +65,9 @@ public class Tournament extends PanacheEntityBase {
     public static final int MIN_MOVE_ATTEMPTS = 1;
     public static final int MAX_MOVE_ATTEMPTS = 20;
 
-    @Column(name = "max_retries", nullable = false)
-    public int maxRetries = 3;
+    /** Attempts per move, including the first one ({@value #MIN_MOVE_ATTEMPTS}-{@value #MAX_MOVE_ATTEMPTS}). */
+    @Column(name = "max_attempts", nullable = false)
+    public int maxAttempts = 3;
 
     @Column(name = "matchup_best_of", nullable = false)
     public int matchupBestOf = 1;
@@ -86,14 +87,6 @@ public class Tournament extends PanacheEntityBase {
 
     @Column(name = "legal_move_hints", nullable = false, updatable = false)
     public boolean legalMoveHints = true;
-
-    /**
-     * The pre-1.4 column {@code trash_talk_enabled}, kept in sync with {@link #chatMode} (false only for OFF). Not
-     * read by this version; to be dropped in a later release. Rolling back to an older version requires restoring
-     * the pre-upgrade database backup (see docs/deployment.md).
-     */
-    @Column(name = "trash_talk_enabled", nullable = false)
-    boolean legacyTrashTalkEnabled = true;
 
     /**
      * Whether models may resign instead of moving, from their {@value #MIN_RESIGNATION_MOVE}th move on. Off by
@@ -155,21 +148,6 @@ public class Tournament extends PanacheEntityBase {
 
     @OneToMany(mappedBy = "tournament")
     public List<Game> games = new ArrayList<>();
-
-    /** Panache routes writes of {@code chatMode} through this setter, which keeps the legacy column in sync. */
-    public void setChatMode(ChatMode chatMode) {
-        this.chatMode = chatMode;
-        this.legacyTrashTalkEnabled = chatMode != ChatMode.OFF;
-    }
-
-    public ChatMode getChatMode() {
-        return chatMode;
-    }
-
-    /** True unless chat is OFF; the API still reports this as {@code trashTalkEnabled}. */
-    public boolean isTrashTalkEnabled() {
-        return chatMode != ChatMode.OFF;
-    }
 
     public enum AutoRunStatus {
         OFF, RUNNING, PAUSED, FINISHED
