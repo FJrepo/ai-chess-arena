@@ -136,8 +136,8 @@ export class ModelPicker {
       .join(' · ');
   }
 
-  focusSearch(): void {
-    this.search().nativeElement.focus();
+  get searchInput(): HTMLInputElement {
+    return this.search().nativeElement;
   }
 
   /** Tooltip explaining a moving "latest" alias; null for concrete models. */

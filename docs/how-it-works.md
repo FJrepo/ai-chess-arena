@@ -200,7 +200,7 @@ Narrow the list by provider, *Reasoning only* or *Free only* (input and output p
 
 Arrow keys and Enter select a model. Choosing a model, including reselecting the current model, fills an empty **Display Name** and focuses it so you can edit it. With a name already entered, focus moves to **Add Participant**. Adding returns focus to **Model** when the catalog is available. Editing or clearing the search field clears the selection.
 
-If the catalog fails to load, **Retry** moves focus to the loading status. After the request finishes, focus moves to **Model** on success or back to **Retry** on failure if focus is still on the loading status.
+**Retry** and **Refresh model catalog** move focus to the loading status while the request is pending, then to **Model** on success or **Retry** on failure. Catalog actions and lineup edits preserve your focus if you move to another control before the page updates.
 
 The card below shows the selected model's release date, input/output/cache-read price per 1M tokens, context window, max output tokens, reasoning (always on or optional, effort levels, default effort), Intelligence Index and description, with "n/a" for anything OpenRouter does not provide.
 

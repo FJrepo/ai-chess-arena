@@ -44,6 +44,7 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
 import { ModelDetails } from '../../components/model-details/model-details';
+import { handoffFocus } from './focus-handoff';
 import {
   REASONING_EFFORT_HINT,
   REASONING_EFFORTS,
@@ -841,32 +842,32 @@ Your opponent is %s (%s).`;
     );
   }
 
-  retryModels(fromRematch = false): void {
+  reloadModels(event: Event, fromRematch = false): void {
     const injector = this.injector;
-    if (!injector) {
+    const origin = event.currentTarget;
+    if (!injector || !(origin instanceof HTMLElement)) {
       this.loadModels();
       return;
     }
 
-    let status: HTMLElement | undefined;
+    let focusOrigin: HTMLElement | undefined = origin;
     afterNextRender(
       () => {
-        status = this.catalogLoading?.nativeElement;
-        status?.focus();
+        const status = this.catalogLoading?.nativeElement;
+        if (status) focusOrigin = handoffFocus(focusOrigin, status);
       },
       { injector },
     );
     this.loadModels(() => {
-      if (status && status.ownerDocument.activeElement !== status) return;
-
       afterNextRender(
         () => {
           if (this.modelsError()) {
             const retry = fromRematch ? this.rematchCatalogRetry : this.catalogRetry;
-            (retry ?? this.catalogRetry ?? this.rematchCatalogRetry)?.nativeElement.focus();
+            const target = retry ?? this.catalogRetry ?? this.rematchCatalogRetry;
+            handoffFocus(focusOrigin, target?.nativeElement);
           } else {
             // NgModel re-enables the search input in a microtask after the view updates.
-            queueMicrotask(() => this.focusParticipantEntry());
+            queueMicrotask(() => handoffFocus(focusOrigin, this.participantEntryTarget()));
           }
         },
         { injector },
@@ -892,6 +893,7 @@ Your opponent is %s (%s).`;
   }
 
   onModelChosen(modelId: string): void {
+    const origin = this.modelPicker?.searchInput;
     const needsName = !this.newPlayerName.trim();
     this.onModelChanged(modelId);
     if (!this.injector) return;
@@ -899,11 +901,9 @@ Your opponent is %s (%s).`;
     afterNextRender(
       () => {
         const add = this.addButton?.nativeElement;
-        if (needsName || !add || add.disabled) {
-          this.participantName?.nativeElement.focus();
-        } else {
-          add.focus();
-        }
+        const target =
+          needsName || !add || add.disabled ? this.participantName?.nativeElement : add;
+        handoffFocus(origin, target);
       },
       { injector: this.injector },
     );
@@ -944,6 +944,7 @@ Your opponent is %s (%s).`;
       return;
     }
 
+    const origin = this.addButton?.nativeElement;
     const editing = this.editingParticipantIndex();
     this.participants.update((list) => {
       const previous = editing === null ? undefined : list[editing];
@@ -983,16 +984,17 @@ Your opponent is %s (%s).`;
     this.resetParticipantForm();
     if (this.injector) {
       // A human entry switches back to the model form when the view updates.
-      afterNextRender(() => this.focusParticipantEntry(), { injector: this.injector });
+      afterNextRender(() => handoffFocus(origin, this.participantEntryTarget()), {
+        injector: this.injector,
+      });
     }
   }
 
-  private focusParticipantEntry(): void {
+  private participantEntryTarget(): HTMLElement | undefined {
     if (this.modelPicker && !this.modelPicker.disabled()) {
-      this.modelPicker.focusSearch();
-    } else {
-      this.participantName?.nativeElement.focus();
+      return this.modelPicker.searchInput;
     }
+    return this.participantName?.nativeElement;
   }
 
   editParticipant(index: number): void {
@@ -1018,6 +1020,7 @@ Your opponent is %s (%s).`;
   }
 
   removeParticipant(index: number): void {
+    const origin = this.removeButtons?.get(index)?.nativeElement;
     this.participants.update((list) => list.filter((_, i) => i !== index));
     const editing = this.editingParticipantIndex();
     if (editing === index) this.resetParticipantForm();
@@ -1027,11 +1030,7 @@ Your opponent is %s (%s).`;
       afterNextRender(
         () => {
           const button = this.removeButtons?.get(index) ?? this.removeButtons?.last;
-          if (button) {
-            button.nativeElement.focus();
-          } else {
-            this.focusParticipantEntry();
-          }
+          handoffFocus(origin, button?.nativeElement ?? this.participantEntryTarget());
         },
         { injector: this.injector },
       );

@@ -93,7 +93,7 @@
                 mat-button
                 type="button"
                 class="retry-button"
-                (click)="retryModels()"
+                (click)="reloadModels($event)"
               >
                 Retry
               </button>
@@ -877,7 +877,12 @@
             } @else if (modelsError()) {
               <p class="create-error" role="alert">
                 Model availability could not be checked.
-                <button #rematchCatalogRetry mat-button type="button" (click)="retryModels(true)">
+                <button
+                  #rematchCatalogRetry
+                  mat-button
+                  type="button"
+                  (click)="reloadModels($event, true)"
+                >
                   Retry model catalog
                 </button>
               </p>
@@ -886,7 +891,12 @@
               unavailableModels().length ||
               createError()?.startsWith('Model is not allowed by backend policy:')
             ) {
-              <button mat-button type="button" (click)="loadModels()" [disabled]="modelsLoading()">
+              <button
+                mat-button
+                type="button"
+                (click)="reloadModels($event, true)"
+                [disabled]="modelsLoading()"
+              >
                 Refresh model catalog
               </button>
             }
