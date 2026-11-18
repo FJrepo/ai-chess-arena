@@ -9,7 +9,9 @@ import {
   Injector,
   OnDestroy,
   OnInit,
+  QueryList,
   ViewChild,
+  ViewChildren,
   afterNextRender,
   computed,
   signal,
@@ -367,6 +369,14 @@ Your opponent is %s (%s).`;
   @ViewChild('addButton', { read: ElementRef })
   private addButton?: ElementRef<HTMLButtonElement>;
 
+  @ViewChildren('removeButton', { read: ElementRef })
+  private removeButtons?: QueryList<ElementRef<HTMLButtonElement>>;
+
+  @ViewChild('catalogLoading') private catalogLoading?: ElementRef<HTMLElement>;
+  @ViewChild('catalogRetry', { read: ElementRef })
+  private catalogRetry?: ElementRef<HTMLButtonElement>;
+  @ViewChild('rematchCatalogRetry', { read: ElementRef })
+  private rematchCatalogRetry?: ElementRef<HTMLButtonElement>;
   @ViewChild(ModelPicker) private modelPicker?: ModelPicker;
 
   @ViewChild('setupAside') private setupAside!: ElementRef<HTMLElement>;
@@ -801,27 +811,66 @@ Your opponent is %s (%s).`;
   }
 
   /** Loads the whole catalog (every text-output model, no cap) once; the picker filters it client-side. */
-  loadModels(): void {
+  loadModels(onSettled?: () => void): void {
     this.modelsLoading.set(true);
     this.modelsError.set(null);
 
-    this.api.getModels({ featuredOnly: false, limit: 0 }).subscribe({
-      next: (response) => {
-        const models = response.data ?? [];
-        this.models.set(models);
-        this.featuredProviders.set(response.featuredProviders ?? []);
-        if (response.error) {
-          this.modelsError.set(response.error);
-        } else if (models.length === 0) {
-          this.modelsError.set('OpenRouter returned no models.');
-        }
-        this.modelsLoading.set(false);
+    const settle = () => {
+      this.modelsLoading.set(false);
+      onSettled?.();
+    };
+    this.subscriptions.add(
+      this.api.getModels({ featuredOnly: false, limit: 0 }).subscribe({
+        next: (response) => {
+          const models = response.data ?? [];
+          this.models.set(models);
+          this.featuredProviders.set(response.featuredProviders ?? []);
+          if (response.error) {
+            this.modelsError.set(response.error);
+          } else if (models.length === 0) {
+            this.modelsError.set('OpenRouter returned no models.');
+          }
+          settle();
+        },
+        error: () => {
+          this.models.set([]);
+          this.modelsError.set('Failed to fetch models from OpenRouter.');
+          settle();
+        },
+      }),
+    );
+  }
+
+  retryModels(fromRematch = false): void {
+    const injector = this.injector;
+    if (!injector) {
+      this.loadModels();
+      return;
+    }
+
+    let status: HTMLElement | undefined;
+    afterNextRender(
+      () => {
+        status = this.catalogLoading?.nativeElement;
+        status?.focus();
       },
-      error: () => {
-        this.models.set([]);
-        this.modelsError.set('Failed to fetch models from OpenRouter.');
-        this.modelsLoading.set(false);
-      },
+      { injector },
+    );
+    this.loadModels(() => {
+      if (status && status.ownerDocument.activeElement !== status) return;
+
+      afterNextRender(
+        () => {
+          if (this.modelsError()) {
+            const retry = fromRematch ? this.rematchCatalogRetry : this.catalogRetry;
+            (retry ?? this.catalogRetry ?? this.rematchCatalogRetry)?.nativeElement.focus();
+          } else {
+            // NgModel re-enables the search input in a microtask after the view updates.
+            queueMicrotask(() => this.focusParticipantEntry());
+          }
+        },
+        { injector },
+      );
     });
   }
 
@@ -842,9 +891,10 @@ Your opponent is %s (%s).`;
     }
   }
 
-  focusAfterModelChoice(): void {
-    if (!this.injector) return;
+  onModelChosen(modelId: string): void {
     const needsName = !this.newPlayerName.trim();
+    this.onModelChanged(modelId);
+    if (!this.injector) return;
     // Autocomplete returns focus to the search field before the updated form renders.
     afterNextRender(
       () => {
@@ -933,16 +983,15 @@ Your opponent is %s (%s).`;
     this.resetParticipantForm();
     if (this.injector) {
       // A human entry switches back to the model form when the view updates.
-      afterNextRender(
-        () => {
-          if (this.modelPicker && !this.modelPicker.disabled()) {
-            this.modelPicker.focusSearch();
-          } else {
-            this.participantName?.nativeElement.focus();
-          }
-        },
-        { injector: this.injector },
-      );
+      afterNextRender(() => this.focusParticipantEntry(), { injector: this.injector });
+    }
+  }
+
+  private focusParticipantEntry(): void {
+    if (this.modelPicker && !this.modelPicker.disabled()) {
+      this.modelPicker.focusSearch();
+    } else {
+      this.participantName?.nativeElement.focus();
     }
   }
 
@@ -968,11 +1017,25 @@ Your opponent is %s (%s).`;
     this.newReasoningEffort = null;
   }
 
-  removeParticipant(index: number) {
+  removeParticipant(index: number): void {
     this.participants.update((list) => list.filter((_, i) => i !== index));
     const editing = this.editingParticipantIndex();
     if (editing === index) this.resetParticipantForm();
     else if (editing !== null && editing > index) this.editingParticipantIndex.set(editing - 1);
+
+    if (this.injector) {
+      afterNextRender(
+        () => {
+          const button = this.removeButtons?.get(index) ?? this.removeButtons?.last;
+          if (button) {
+            button.nativeElement.focus();
+          } else {
+            this.focusParticipantEntry();
+          }
+        },
+        { injector: this.injector },
+      );
+    }
   }
 
   creating = signal(false);

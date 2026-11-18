@@ -55,7 +55,13 @@
         </mat-card-header>
         <mat-card-content>
           @if (modelsLoading()) {
-            <div class="openrouter-status" role="status">
+            <div
+              #catalogLoading
+              class="openrouter-status"
+              role="status"
+              aria-live="polite"
+              tabindex="-1"
+            >
               <mat-spinner diameter="18"></mat-spinner>
               <span>Loading models from OpenRouter...</span>
             </div>
@@ -82,7 +88,13 @@
             <div class="openrouter-status warn" role="alert">
               <mat-icon>warning</mat-icon>
               <span>{{ modelsError() }}</span>
-              <button mat-button type="button" class="retry-button" (click)="loadModels()">
+              <button
+                #catalogRetry
+                mat-button
+                type="button"
+                class="retry-button"
+                (click)="retryModels()"
+              >
                 Retry
               </button>
             </div>
@@ -95,8 +107,8 @@
               [featuredProviders]="featuredProviders()"
               [disabled]="modelsLoading() || models().length === 0"
               [selectedId]="newModelId"
-              (optionChosen)="focusAfterModelChoice()"
-              (selectedIdChange)="onModelChanged($event)"
+              (optionChosen)="onModelChosen($event)"
+              (selectedIdChange)="!$event && onModelChanged('')"
             />
           }
 
@@ -789,6 +801,7 @@
                   </button>
                 }
                 <button
+                  #removeButton
                   mat-icon-button
                   class="remove-button"
                   (click)="removeParticipant($index)"
@@ -864,7 +877,9 @@
             } @else if (modelsError()) {
               <p class="create-error" role="alert">
                 Model availability could not be checked.
-                <button mat-button type="button" (click)="loadModels()">Retry model catalog</button>
+                <button #rematchCatalogRetry mat-button type="button" (click)="retryModels(true)">
+                  Retry model catalog
+                </button>
               </p>
             }
             @if (

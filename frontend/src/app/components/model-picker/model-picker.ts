@@ -64,7 +64,7 @@ export class ModelPicker {
   readonly disabled = input(false);
   /** Id of the selected model, '' when none. */
   readonly selectedId = model('');
-  readonly optionChosen = output<void>();
+  readonly optionChosen = output<string>();
   private readonly search = viewChild.required<ElementRef<HTMLInputElement>>('search');
 
   readonly formatTokenCount = formatTokenCount;
@@ -123,7 +123,7 @@ export class ModelPicker {
   }
 
   priceCell(price: number | null): string {
-    return price === 0 ? '0' : formatPrice(price).replace(/^\$/, '');
+    return price === 0 ? '0' : formatPrice(price).replace('$', '');
   }
 
   markers(option: OpenRouterModelOption): string {
@@ -158,9 +158,8 @@ export class ModelPicker {
 
   onSelected(option: OpenRouterModelOption): void {
     this.inputValue.set(option);
-    // Let the setup form read its draft before the selection fills an empty name.
-    this.optionChosen.emit();
     this.selectedId.set(option.id);
+    this.optionChosen.emit(option.id);
   }
 
   clear(): void {

@@ -210,7 +210,8 @@ export const NOT_AVAILABLE = 'n/a';
 
 /**
  * At least two decimals, more for small prices (two significant digits): "$3.00", "$0.10", "$0.50", "$0.01",
- * "$0.075", "$0.0002"; "Free" for 0; "n/a" for a missing, negative or non-numeric price.
+ * "$0.075", "$0.0002"; "<$0.0001" when a positive price rounds to zero;
+ * "Free" for 0; "n/a" for a missing, negative or non-numeric price.
  */
 export function formatPrice(pricePerMillion: number | null | undefined): string {
   const value = finiteOrNull(pricePerMillion);
@@ -227,6 +228,9 @@ export function formatPrice(pricePerMillion: number | null | undefined): string 
   const rounded = Number(value.toPrecision(2));
   const decimals = Math.min(10, Math.max(2, 1 - Math.floor(Math.log10(rounded))));
   const fixed = rounded.toFixed(decimals);
+  if (Number(fixed) === 0) {
+    return '<$0.0001';
+  }
   return `$${fixed.replace(/(\.\d\d\d*?)0+$/, '$1')}`;
 }
 

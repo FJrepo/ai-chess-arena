@@ -9,7 +9,7 @@ import { Subject, of, throwError } from 'rxjs';
 import { TournamentSetup } from './tournament-setup';
 import { ApiService } from '../../services/api.service';
 import { OpenRouterKeyStatus } from '../../services/openrouter-client';
-import { OpenRouterModelOption } from '../../models/openrouter.model';
+import { OpenRouterModelOption, OpenRouterModelsResponse } from '../../models/openrouter.model';
 import { Tournament, DEFAULT_MOVE_TIMEOUT_SECONDS } from '../../models/tournament.model';
 
 describe('TournamentSetup', () => {
@@ -1457,6 +1457,108 @@ describe('TournamentSetup', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(search.value).toBe('');
+  });
+
+  it('focuses the next removal, previous removal, or model search after lineup removal', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    fixture.componentInstance.participants.set([
+      pricedParticipant('Alpha', 'example/alpha', 1, 2),
+      pricedParticipant('Beta', 'example/beta', 1, 2),
+      pricedParticipant('Gamma', 'example/gamma', 1, 2),
+    ]);
+    fixture.detectChanges();
+
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    const remove = (name: string) =>
+      element.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`)!;
+    for (const [name, next] of [
+      ['Beta', 'Gamma'],
+      ['Gamma', 'Alpha'],
+      ['Alpha', null],
+    ] as const) {
+      const button = remove(name);
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      button.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(remove(name)).toBeNull();
+      expect(next ? remove(next) : search).not.toBeNull();
+      expect(document.activeElement).toBe(next ? remove(next) : search);
+    }
+  });
+
+  it('fills an emptied display name and enables Add when reselecting the same model', async () => {
+    const fixture = await renderSetup(createStatusApi());
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    const name = element.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Claude Opus 4.6"]',
+    )!;
+    const add = element.querySelector<HTMLButtonElement>('.add-button')!;
+    const chooseModel = async () => {
+      search.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      document.querySelector<HTMLElement>('.model-picker-panel mat-option')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    await chooseModel();
+    expect(name.value).toBe('Fixture model');
+    name.value = '';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(add.disabled).toBe(true);
+    expect(fixture.componentInstance.newModelId).toBe('acme/model');
+
+    await chooseModel();
+    expect(name.value).toBe('Fixture model');
+    expect(add.disabled).toBe(false);
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('moves catalog Retry focus through loading to Retry on failure and Model on success', async () => {
+    const api = createStatusApi();
+    const failed = new Subject<OpenRouterModelsResponse>();
+    const succeeded = new Subject<OpenRouterModelsResponse>();
+    vi.mocked(api.getModels)
+      .mockReturnValueOnce(throwError(() => ({ status: 503 })))
+      .mockReturnValueOnce(failed)
+      .mockReturnValueOnce(succeeded);
+    const fixture = await renderSetup(api);
+    const element: HTMLElement = fixture.nativeElement;
+    const search = element.querySelector<HTMLInputElement>('app-model-picker input')!;
+    const retry = () => element.querySelector<HTMLButtonElement>('.retry-button')!;
+    const startRetry = async () => {
+      const button = retry();
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      button.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const status = element.querySelector<HTMLElement>('.openrouter-status[role="status"]')!;
+      expect(status.textContent).toContain('Loading models');
+      expect(status.getAttribute('aria-live')).toBe('polite');
+      expect(status.tabIndex).toBe(-1);
+      expect(document.activeElement).toBe(status);
+    };
+
+    await startRetry();
+    failed.error({ status: 503 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(retry());
+
+    await startRetry();
+    succeeded.next({ data: [catalogModel('acme/model', 'Fixture model')] });
+    succeeded.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(search.disabled).toBe(false);
+    expect(document.activeElement).toBe(search);
   });
 
   it('shows one next-input hint beside Create as the lineup and tournament name are filled', async () => {

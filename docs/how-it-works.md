@@ -184,6 +184,8 @@ Use **OpenRouter chat models** as participants (text-output models; embedding, v
 
 Tournament setup starts with **Add participant**, with optional custom instructions revealed on demand; collapsing the field preserves its draft when adding a participant. The **Tournament lineup** groups the tournament name, roster, visible participant reasoning-effort overrides and **Create Tournament** action before the rough runtime and spend estimate. A hint beside **Create Tournament** asks for the first missing input in order: the first participant, the second participant, then the tournament name. At widths of at least 1200px, the sidebar stays sticky only when its measured height fits the window with an 88px top offset and a 24px bottom gap; otherwise it uses natural page scrolling. Without ResizeObserver support, it also uses natural page scrolling. Below 1200px, the order is add participant, settings, lineup, then estimate, matching keyboard navigation. Settings keep prompt rules and shared instructions in a collapsed **Advanced: prompt** section, with a **custom** badge when shared instructions are set.
 
+Removing a participant moves focus to the next **Remove** button, or to the previous one if the last row was removed. When the lineup is empty, focus returns to **Model** if available, or to **Display Name**.
+
 ### Model catalog
 
 The setup page loads every text-output model from the OpenRouter catalog once (refreshed by the backend every 5 minutes). Search appears above a compact filter row, followed by display name, control type and optional custom instructions. **Add Participant** sits directly below the draft fields. The lineup shows the current participant count.
@@ -192,11 +194,13 @@ Concurrent catalog lookups use a consistent snapshot for freshness and model dat
 
 Type into *Model*: every word must appear in the model's name, id or provider, in any order, so "anthropic sonnet", "sonnet 5.5" and "gpt 6" all work ("-", "." and spaces are interchangeable).
 
-Suggestions are grouped by provider (the featured providers from `openrouter.featured-providers` first). Compare the model name, input/output price per 1M tokens and context window in aligned columns. *Free* and *Reasoning* markers appear beside the model name where applicable. Hover over a truncated name to see it in full.
+Suggestions are grouped by provider (the featured providers from `openrouter.featured-providers` first). Compare the model name, input/output price per 1M tokens and context window in aligned columns. Names wrap to two lines. Hover over a truncated name to see it in full. *Free* and *Reasoning* markers appear beside the model name where applicable. A price that would round to zero appears as `<0.0001`, while zero appears as `0` and unknown prices appear as `n/a`.
 
 Narrow the list by provider, *Reasoning only* or *Free only* (input and output price 0) and sort by *Newest* (default), *Cheapest* (input + output price) or *Intelligence Index*; models without that value go last.
 
-Arrow keys and Enter select a model. An empty **Display Name** is filled with the model name and receives focus so you can edit it. With a name already entered, focus moves to **Add Participant**. Adding returns focus to **Model** when the catalog is available. Editing or clearing the search field clears the selection.
+Arrow keys and Enter select a model. Choosing a model, including reselecting the current model, fills an empty **Display Name** and focuses it so you can edit it. With a name already entered, focus moves to **Add Participant**. Adding returns focus to **Model** when the catalog is available. Editing or clearing the search field clears the selection.
+
+If the catalog fails to load, **Retry** moves focus to the loading status. After the request finishes, focus moves to **Model** on success or back to **Retry** on failure if focus is still on the loading status.
 
 The card below shows the selected model's release date, input/output/cache-read price per 1M tokens, context window, max output tokens, reasoning (always on or optional, effort levels, default effort), Intelligence Index and description, with "n/a" for anything OpenRouter does not provide.
 

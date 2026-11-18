@@ -78,10 +78,12 @@
   min-width: 0;
 
   .option-title {
+    display: -webkit-box;
     font-weight: 600;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 }
 

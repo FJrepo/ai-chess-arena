@@ -23,7 +23,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 - The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
-- Tournament setup aligns model prices and context, moves focus through participant entry and shows one next-step hint. The tournament list keeps search visible, folds away filters and shows running game activity.
+- Tournament setup aligns model names (up to two lines), prices and context, moves focus through participant entry and shows one next-step hint. The tournament list keeps search visible, folds away filters and shows running game activity.
 
 ### Fixed
 
@@ -35,6 +35,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Analytics keeps results aligned with the selected filters across all four tabs. A slow or failed report no longer blocks refreshes for the others.
 - The five Analytics filters fit on one row at 1280 px. Cost & reliability section links restore heading focus on navigation, including Back and Forward. A waiting jump yields to filter edits, focus changes and **Sync Data**. Background refreshes leave jump links responsive when report data is already visible.
 - Live game views recover missed updates without losing the move under review or form drafts. The board, turn clock, chat, evaluation and spend follow committed game revisions.
+- Tournament setup keeps keyboard focus after removing a participant or retrying the model catalog, and refills a cleared display name when the same model is chosen again. Prices that round to zero show as a less-than value instead of zero.
 
 ## [1.7.1] - 2026-11-17
 
