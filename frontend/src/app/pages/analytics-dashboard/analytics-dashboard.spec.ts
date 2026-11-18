@@ -1141,8 +1141,8 @@ describe('AnalyticsDashboard', () => {
 
   it('reports the Optional-chat sample when just one model reaches the minimum', async () => {
     const element = await renderBehaviour([
-      comparisonRow('model.at-minimum', {
-        optionalChat: { moves: 20, messages: 20, talkRate: 1 },
+      comparisonRow('model.above-minimum', {
+        optionalChat: { moves: 200, messages: 200, talkRate: 1 },
       }),
       comparisonRow('model.below-minimum', {
         optionalChat: { moves: 19, messages: 0, talkRate: 0 },
@@ -1151,12 +1151,32 @@ describe('AnalyticsDashboard', () => {
       comparisonRow('model.mandatory-only', {
         mandatoryChat: { moves: 24, messages: 24, talkRate: 1 },
       }),
+      comparisonRow('model.also-mandatory-only', {
+        mandatoryChat: { moves: 15, messages: 15, talkRate: 1 },
+      }),
+      comparisonRow('model.chat-off', {
+        optionalChat: { moves: 0, messages: 0 },
+        mandatoryChat: { moves: 0, messages: 0 },
+      }),
+      comparisonRow('model.legacy'),
     ]);
 
     const intro = element.querySelector('.tab-intro');
-    expect(intro?.textContent).toContain('Not enough Optional-chat moves yet to compare models.');
-    expect(intro?.textContent).toContain('39 Optional-chat moves total');
-    expect(intro?.textContent).toContain('1 of 3 models reached 20 moves');
+    expect(intro?.textContent).toContain(
+      'Fewer than two models have at least 20 Optional-chat moves.',
+    );
+    expect(intro?.textContent).toContain('219 Optional-chat moves total');
+    expect(intro?.textContent).toContain('1 of 3 models with Optional-chat data reached 20 moves');
+  });
+
+  it('uses a singular move and model in the sparse Optional-chat takeaway', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.only', { optionalChat: { moves: 1, messages: 1, talkRate: 1 } }),
+    ]);
+
+    const intro = element.querySelector('.tab-intro');
+    expect(intro?.textContent).toContain('1 Optional-chat move total');
+    expect(intro?.textContent).toContain('0 of 1 model with Optional-chat data reached 20 moves');
   });
 
   it.each([
@@ -1181,14 +1201,48 @@ describe('AnalyticsDashboard', () => {
     expect(intro).toContain(`${60 * rate} of 60 moves total`);
   });
 
-  it('leads with a quiet empty state when there are no recorded chat moves', async () => {
+  it.each([
+    [5997, '>99.9%'],
+    [3, '<0.1%'],
+  ])('shows the non-endpoint rate for %i of 6000 chat moves', async (messages, rateLabel) => {
+    const chat = { moves: 6000, messages, talkRate: messages / 6000 };
+    const element = await renderBehaviour([
+      comparisonRow('model.first', { optionalChat: chat, mandatoryChat: chat }),
+      comparisonRow('model.second', { optionalChat: chat }),
+    ]);
+
+    const cells = element.querySelectorAll('.talk-table tbody tr:first-child td');
+    for (const cell of [cells[1], cells[3]]) {
+      expect(cell.querySelector('.num')?.textContent).toBe(rateLabel);
+      expect(cell.querySelector('.table-note')?.textContent).toContain(`${messages} of 6000 moves`);
+    }
+    const intro = element.querySelector('.tab-intro')?.textContent.replace(/\s+/g, ' ');
+    expect(intro).toContain(`on the same share of moves (${rateLabel})`);
+    expect(intro).toContain(`${2 * messages} of 12000 moves total`);
+  });
+
+  it.each([
+    [59997, 1, '>99.9%'],
+    [3, 0, '<0.1%'],
+  ])(
+    'uses chat counts when the reported rate for %i of 60000 moves is rounded to an endpoint',
+    async (messages, talkRate, rateLabel) => {
+      const element = await renderBehaviour([
+        comparisonRow('model.rounded', { optionalChat: { moves: 60000, messages, talkRate } }),
+      ]);
+      expect(element.querySelector('.talk-table tbody tr td:nth-child(2) .num')?.textContent).toBe(
+        rateLabel,
+      );
+    },
+  );
+
+  it('leads with a quiet empty state when every model reports zero chat moves', async () => {
     const element = await renderBehaviour([
       comparisonRow('model.chat-off', {
         optionalChat: { moves: 0, messages: 0 },
         mandatoryChat: { moves: 0, messages: 0 },
         wonByResignation: 1,
       }),
-      comparisonRow('model.legacy'),
     ]);
 
     expect(element.querySelector('.tab-intro')?.textContent).toContain(
@@ -1196,6 +1250,65 @@ describe('AnalyticsDashboard', () => {
     );
     expect(element.querySelector('.talk-table tbody')).toBeNull();
     expect(element.querySelector('.resign-table tbody')?.textContent).toContain('model.chat-off');
+  });
+
+  it('reports unknown chat data when a legacy report omits both modes', async () => {
+    const element = await renderBehaviour([comparisonRow('model.legacy')]);
+
+    expect(element.querySelector('.tab-intro')?.textContent).toContain('Chat data not reported');
+  });
+
+  it('reports unknown chat data when explicit zeros are mixed with an omitted mode', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.chat-off', {
+        optionalChat: { moves: 0, messages: 0 },
+        mandatoryChat: { moves: 0, messages: 0 },
+      }),
+      comparisonRow('model.partial', { optionalChat: { moves: 0, messages: 0 } }),
+    ]);
+
+    expect(element.querySelector('.tab-intro')?.textContent).toContain('Chat data not reported');
+  });
+
+  it('distinguishes omitted chat modes from explicit zeros in the accessible table cells', async () => {
+    const optionalChat = { moves: 24, messages: 24, talkRate: 1 };
+    const element = await renderBehaviour([
+      comparisonRow('model.explicit-zero', {
+        optionalChat,
+        mandatoryChat: { moves: 0, messages: 0 },
+      }),
+      comparisonRow('model.omitted', { optionalChat }),
+    ]);
+
+    const rows = element.querySelectorAll<HTMLTableRowElement>('.talk-table tbody tr');
+    for (const [row, label] of [
+      [rows[0], 'No moves in this mode'],
+      [rows[1], 'Not reported'],
+    ] as const) {
+      for (const cell of [row.cells[3], row.cells[4]]) {
+        expect(cell.querySelector('[aria-hidden="true"]')?.textContent).toBe('—');
+        expect(cell.querySelector('.cdk-visually-hidden')?.textContent).toBe(label);
+      }
+    }
+  });
+
+  it('shows an unknown resignation judgement when the evaluated count is omitted', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.legacy', { resignations: 2, resignationsWhileNotLosing: 0 }),
+    ]);
+
+    const judgement = element.querySelector('.resign-table tbody td:nth-child(3)');
+    expect(judgement?.querySelector('.table-note')).toBeNull();
+    expect(judgement?.querySelector('[aria-hidden="true"]')?.textContent).toBe('—');
+    expect(judgement?.querySelector('.cdk-visually-hidden')?.textContent).toBe('Not reported');
+  });
+
+  it('reports unknown resignation data when the report omits every resignation field', async () => {
+    const element = await renderBehaviour([comparisonRow('model.legacy')]);
+
+    expect(element.querySelector('.resign-table .empty')?.textContent).toContain(
+      'Resignation data not reported',
+    );
   });
 
   it('gives missing Behaviour metrics accessible dashes and preserves reported zeros', async () => {
@@ -1226,7 +1339,7 @@ describe('AnalyticsDashboard', () => {
     const winner = resignationRows[2];
     const missing = [
       [talkCells[2], 'No messages in this chat mode'],
-      [talkCells[3], 'No recorded moves in this chat mode'],
+      [talkCells[3], 'Not reported'],
       [unevaluated.cells[2], 'No evaluated resignations'],
       [winner.cells[2], 'No resignations'],
     ] as const;
@@ -1356,7 +1469,11 @@ describe('AnalyticsDashboard', () => {
       minGames: 0,
       gamesCount: 6,
       models: [
-        comparisonRow('model.winner', { resignations: 0, wonByResignation: 3 }),
+        comparisonRow('model.winner', {
+          resignations: 0,
+          resignationsEvaluated: 0,
+          wonByResignation: 3,
+        }),
         comparisonRow('model.quitter', {
           gamesPlayed: 4,
           resignations: 3,

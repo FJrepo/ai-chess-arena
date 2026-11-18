@@ -439,22 +439,27 @@
               }
               @case ('equal') {
                 All <span class="num">{{ summary.qualifyingCount }}</span> qualifying models talked
-                @if (summary.rate === 0) {
+                @if (summary.messages === 0) {
                   on no move
-                } @else if (summary.rate === 1) {
+                } @else if (summary.messages === summary.moves) {
                   on every move
                 } @else {
-                  on the same share of moves (<span class="num">{{ percent(summary.rate) }}</span
+                  on the same share of moves (<span class="num">{{
+                    formatChatRate(summary.messages, summary.moves)
+                  }}</span
                   >)
                 }
                 with Optional chat (<span class="num">{{ summary.messages }}</span> of
                 <span class="num">{{ summary.moves }}</span> moves total).
               }
               @case ('sparse') {
-                Not enough Optional-chat moves yet to compare models.
-                <span class="num">{{ summary.moves }}</span> Optional-chat moves total.
+                Fewer than two models have at least
+                <span class="num">{{ minOptionalChatMoves }}</span> Optional-chat moves.
+                <span class="num">{{ summary.moves }}</span> Optional-chat
+                {{ summary.moves === 1 ? 'move' : 'moves' }} total.
                 <span class="num">{{ summary.qualifyingCount }}</span> of
-                <span class="num">{{ summary.modelCount }}</span> models reached
+                <span class="num">{{ summary.modelCount }}</span>
+                {{ summary.modelCount === 1 ? 'model' : 'models' }} with Optional-chat data reached
                 <span class="num">{{ minOptionalChatMoves }}</span> moves.
               }
             }
@@ -477,7 +482,13 @@
             </span>
           </p>
         } @else if (comparison()) {
-          <p class="tab-intro">No model moves with chat Optional or Mandatory in this scope.</p>
+          <p class="tab-intro">
+            {{
+              chatMovesExplicitlyZero()
+                ? 'No model moves with chat Optional or Mandatory in this scope.'
+                : 'Chat data not reported'
+            }}
+          </p>
         } @else {
           <p class="tab-intro">How models communicate and when they choose to give up.</p>
         }
@@ -535,7 +546,7 @@
             <p class="table-footnote">{{ talkExplanation }}</p>
             @if (talkRows().length || resignationRows().length) {
               <p class="table-footnote behaviour-legend">
-                — metric unavailable, for example when there are no moves, messages or evaluated
+                — metric not reported or unavailable when there are no moves, messages or evaluated
                 resignations.
               </p>
             }
@@ -574,7 +585,7 @@
                           <ng-container
                             *ngTemplateOutlet="
                               behaviourMissing;
-                              context: { $implicit: 'Resignation count unavailable' }
+                              context: { $implicit: 'Not reported' }
                             "
                           ></ng-container>
                         }
@@ -596,12 +607,13 @@
                                     ? 'No resignations'
                                     : row.resignationsEvaluated === 0
                                       ? 'No evaluated resignations'
-                                      : 'Resignation judgement unavailable',
+                                      : 'Not reported',
                               }
                             "
                           ></ng-container>
                         }
-                        @if (unevaluatedResignations(row); as count) {
+                        @let count = unevaluatedResignations(row);
+                        @if (count !== null && count > 0) {
                           <span class="table-note"
                             ><span class="num">{{ count }}</span> not evaluated</span
                           >
@@ -614,7 +626,7 @@
                           <ng-container
                             *ngTemplateOutlet="
                               behaviourMissing;
-                              context: { $implicit: 'Wins by resignation unavailable' }
+                              context: { $implicit: 'Not reported' }
                             "
                           ></ng-container>
                         }
@@ -622,7 +634,13 @@
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="4" class="empty">No resignations in finished games yet.</td>
+                      <td colspan="4" class="empty">
+                        {{
+                          resignationsExplicitlyZero()
+                            ? 'No resignations in finished games yet.'
+                            : 'Resignation data not reported'
+                        }}
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -636,7 +654,7 @@
           <span class="cdk-visually-hidden">{{ reason }}</span>
         </ng-template>
         <ng-template #behaviourChatCells let-chat>
-          @let noMoves = 'No recorded moves in this chat mode';
+          @let missingMode = chat ? 'No moves in this mode' : 'Not reported';
           <td class="behaviour-metric">
             @if (formatTalkRate(chat); as rate) {
               <span class="num">{{ rate }}</span>
@@ -644,7 +662,7 @@
               <ng-container
                 *ngTemplateOutlet="
                   behaviourMissing;
-                  context: { $implicit: chat?.moves ? 'Talk rate unavailable' : noMoves }
+                  context: { $implicit: chat?.moves ? 'Talk rate unavailable' : missingMode }
                 "
               ></ng-container>
             }
@@ -664,7 +682,7 @@
                   behaviourMissing;
                   context: {
                     $implicit: !chat?.moves
-                      ? noMoves
+                      ? missingMode
                       : chat.messages === 0
                         ? 'No messages in this chat mode'
                         : 'Average message length unavailable',

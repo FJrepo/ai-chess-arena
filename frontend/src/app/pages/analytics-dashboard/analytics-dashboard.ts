@@ -248,10 +248,15 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       ),
   );
 
+  chatMovesExplicitlyZero = computed(() =>
+    this.comparison()?.models.every(
+      ({ optionalChat, mandatoryChat }) => optionalChat?.moves === 0 && mandatoryChat?.moves === 0,
+    ),
+  );
+
   readonly minOptionalChatMoves = 20;
   optionalChatSummary = computed(() => {
-    const rows = this.talkRows();
-    const samples = rows.flatMap(({ modelId, optionalChat }) =>
+    const samples = (this.comparison()?.models ?? []).flatMap(({ modelId, optionalChat }) =>
       optionalChat ? [{ modelId, ...optionalChat }] : [],
     );
     const qualified = samples
@@ -264,7 +269,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       return {
         kind: 'sparse' as const,
         qualifyingCount,
-        modelCount: rows.length,
+        modelCount: samples.length,
         moves: samples.reduce((total, sample) => total + sample.moves, 0),
       };
     }
@@ -275,7 +280,6 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       return {
         kind: 'equal' as const,
         qualifyingCount,
-        rate: most.messages / most.moves,
         moves: qualified.reduce((total, sample) => total + sample.moves, 0),
         messages: qualified.reduce((total, sample) => total + sample.messages, 0),
       };
@@ -314,6 +318,12 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
           (b.wonByResignation ?? 0) - (a.wonByResignation ?? 0) ||
           a.modelId.localeCompare(b.modelId),
       ),
+  );
+
+  resignationsExplicitlyZero = computed(() =>
+    this.comparison()?.models.every(
+      ({ resignations, wonByResignation }) => resignations === 0 && wonByResignation === 0,
+    ),
   );
 
   colorSplitHighlights = computed(() =>
@@ -535,8 +545,11 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   /** Resignations whose final position had no evaluation. */
-  unevaluatedResignations(row: AnalyticsComparisonModel): number {
-    return (row.resignations ?? 0) - (row.resignationsEvaluated ?? 0);
+  unevaluatedResignations(row: AnalyticsComparisonModel): number | null {
+    const { resignations, resignationsEvaluated } = row;
+    return resignations == null || resignationsEvaluated == null
+      ? null
+      : resignations - resignationsEvaluated;
   }
 
   /** Resignations per game played, e.g. "2 (10%)". */
@@ -549,7 +562,16 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   }
 
   formatTalkRate(talk: AnalyticsTalkativeness | undefined): string | null {
-    return !talk?.moves || talk.talkRate == null ? null : this.percent(talk.talkRate);
+    return !talk?.moves || talk.talkRate == null
+      ? null
+      : this.formatChatRate(talk.messages, talk.moves);
+  }
+
+  formatChatRate(messages: number, moves: number): string {
+    if (messages > 0 && messages * 1000 < moves) return '<0.1%';
+    const silentMoves = moves - messages;
+    if (silentMoves > 0 && silentMoves * 1000 < moves) return '>99.9%';
+    return this.percent(messages / moves);
   }
 
   formatMs(value: number | null): string {
