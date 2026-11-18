@@ -20,11 +20,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 - The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
 
 ### Fixed
 
+- Keep the Champion column reachable within the bracket and make room for the first match on shorter desktop windows.
+- Wrap long champion names within the bracket header, preserve keyboard focus during exports and live-game updates, and identify live matchups by round and match number.
 - System Status shows a neutral validation state for untested OpenRouter keys and unavailable checks. Testing the key updates the status card.
 - Analytics Overview uses the singular for a one-game scope.
 - The game move list scrolls to the selected ply, and the evaluation bar fits signed scores and mate counts in both themes.

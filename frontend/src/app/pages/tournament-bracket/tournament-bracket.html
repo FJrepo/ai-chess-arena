@@ -1,4 +1,5 @@
 @if (tournament(); as t) {
+  @let liveGames = runningGames();
   <div class="bracket-page desktop-page">
     <div class="header-v2">
       <div class="header-left">
@@ -17,23 +18,20 @@
             {{ statusLabel(t.status) }}
           </span>
           @if (t.winnerName) {
-            <span class="dot-separator"></span>
-            <span class="champion-tag"
-              ><mat-icon>emoji_events</mat-icon> Champion: {{ t.winnerName }}</span
-            >
+            <span class="champion-tag">
+              <span class="champion-label">
+                <mat-icon aria-hidden="true">emoji_events</mat-icon>
+                <span>Champion: {{ t.winnerName }}</span>
+              </span>
+            </span>
           }
-          <span class="dot-separator"></span>
           <span class="count-tag">{{ t.participants.length }} Players</span>
-          <span class="dot-separator"></span>
           <span class="count-tag">{{ t.games.length }} Games</span>
-          <span class="dot-separator"></span>
           <span class="count-tag">Best of {{ t.matchupBestOf }}</span>
-          <span class="dot-separator"></span>
           <span class="count-tag"
             >Legal move hints {{ t.legalMoveHints === false ? 'off' : 'on' }}</span
           >
           @if (t.finalsBestOf) {
-            <span class="dot-separator"></span>
             <span class="count-tag">Final best of {{ t.finalsBestOf }}</span>
           }
         </div>
@@ -43,18 +41,28 @@
         <a mat-stroked-button [routerLink]="['/tournaments', t.id, 'rematch']">
           Run this tournament again
         </a>
-        @for (format of exportFormats; track format) {
-          <button
-            mat-stroked-button
-            class="export-tournament"
-            (click)="exportTournament(format)"
-            [disabled]="exporting()"
-            [attr.aria-label]="'Download tournament ' + format.toUpperCase()"
-          >
-            <mat-icon aria-hidden="true">download</mat-icon>
-            {{ format.toUpperCase() }}
-          </button>
-        }
+        <button
+          mat-stroked-button
+          class="export-trigger"
+          [matMenuTriggerFor]="exportMenu"
+          [disabled]="exporting()"
+          disabledInteractive
+        >
+          Export
+          <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
+        </button>
+        <mat-menu #exportMenu="matMenu" aria-label="Export tournament">
+          @for (format of exportFormats; track format) {
+            <button
+              mat-menu-item
+              (click)="exportTournament(format)"
+              [disabled]="exporting()"
+              [attr.aria-label]="'Download tournament ' + format.toUpperCase()"
+            >
+              {{ format.toUpperCase() }}
+            </button>
+          }
+        </mat-menu>
         <button
           mat-stroked-button
           class="cancel-tournament"
@@ -76,50 +84,79 @@
     </div>
 
     @if (t.status !== 'CREATED') {
+      @let showRunTotals = hasActiveRun() || t.autoRunStatus === 'FINISHED';
       <mat-card class="auto-run-panel">
         <mat-card-content>
-          <p class="run-status" role="status">
-            {{
-              t.autoRunStatus === 'RUNNING'
-                ? 'Running'
-                : t.autoRunStatus === 'PAUSED'
-                  ? 'Paused'
-                  : t.autoRunStatus === 'FINISHED'
-                    ? 'Finished'
-                    : 'Auto-run off'
-            }}
-            @if (hasActiveRun() || t.autoRunStatus === 'FINISHED') {
-              · {{ runningGames() }} {{ runningGames() === 1 ? 'game' : 'games' }} running (limit
-              {{ t.maxConcurrentGames ?? 2 }}) · {{ runSpend() | currency: 'USD' }}
-              @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
-                of {{ t.budgetUsdExact ? '$' + t.budgetUsdExact : (t.budgetUsd | currency: 'USD') }}
+          <div class="run-summary">
+            <p #runStatus class="run-status" role="status" tabindex="-1">
+              {{
+                t.autoRunStatus === 'RUNNING'
+                  ? 'Running'
+                  : t.autoRunStatus === 'PAUSED'
+                    ? 'Paused'
+                    : t.autoRunStatus === 'FINISHED'
+                      ? 'Finished'
+                      : 'Auto-run off'
+              }}
+              @if (showRunTotals || liveGames.length) {
+                · <span class="num">{{ liveGames.length }}</span>
+                {{ liveGames.length === 1 ? 'game' : 'games' }} running
+                @if (showRunTotals) {
+                  (limit <span class="num">{{ t.maxConcurrentGames ?? 2 }}</span>)
+                }
               }
-              spent
-              @if (t.budgetUsd === null || t.budgetUsd === undefined) {
-                · no budget cap
-              }
-              · {{ attentionGames() }} need attention
-            } @else {
-              · limit {{ runConcurrency }} ·
-              @if (!validRunBudget) {
-                budget needs correction
-              } @else if (runBudgetUsd !== null) {
-                {{
-                  t.budgetUsdExact && !runBudgetChanged
-                    ? '$' + t.budgetUsdExact
-                    : (runBudgetUsd | currency: 'USD')
-                }}
-                budget
+              @if (showRunTotals) {
+                · {{ runSpend() | currency: 'USD' }}
+                @if (t.budgetUsd !== null && t.budgetUsd !== undefined) {
+                  of
+                  {{ t.budgetUsdExact ? '$' + t.budgetUsdExact : (t.budgetUsd | currency: 'USD') }}
+                }
+                spent
+                @if (t.budgetUsd === null || t.budgetUsd === undefined) {
+                  · no budget cap
+                }
+                · {{ attentionGames() }} need attention
               } @else {
-                no budget cap
+                · limit {{ runConcurrency }} ·
+                @if (!validRunBudget) {
+                  budget needs correction
+                } @else if (runBudgetUsd !== null) {
+                  {{
+                    t.budgetUsdExact && !runBudgetChanged
+                      ? '$' + t.budgetUsdExact
+                      : (runBudgetUsd | currency: 'USD')
+                  }}
+                  budget
+                } @else {
+                  no budget cap
+                }
               }
+            </p>
+            @if (liveGames.length === 1) {
+              <a #watchLive mat-flat-button [routerLink]="['/games', liveGames[0].id]"
+                >Watch live</a
+              >
+            } @else if (liveGames.length > 1) {
+              <button #watchLive mat-flat-button [matMenuTriggerFor]="liveMenu">
+                Watch live
+                <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
+              </button>
+              <mat-menu #liveMenu="matMenu" aria-label="Watch live">
+                @for (game of liveGames; track game.id) {
+                  <a mat-menu-item class="live-matchup" [routerLink]="['/games', game.id]">
+                    {{ game.bracketRound || 'Unknown round' }} · Match
+                    {{ game.bracketPosition === null ? '?' : game.bracketPosition + 1 }}:
+                    {{ game.whitePlayerName || 'TBD' }} vs {{ game.blackPlayerName || 'TBD' }}
+                  </a>
+                }
+              </mat-menu>
             }
-          </p>
+          </div>
           @if (t.autoRunPauseReason) {
             <p>{{ t.autoRunPauseReason }}</p>
           }
           <div class="run-controls">
-            <mat-form-field appearance="outline">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
               <mat-label>Concurrent games</mat-label>
               <mat-select [(ngModel)]="runConcurrency" [disabled]="!canRun()">
                 @for (n of concurrencyOptions; track n) {
@@ -127,7 +164,7 @@
                 }
               </mat-select>
             </mat-form-field>
-            <mat-form-field appearance="outline">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic">
               <mat-label>Budget (USD, optional)</mat-label>
               <input
                 matInput
@@ -182,8 +219,8 @@
             </p>
           }
           <p class="run-hint">
-            Queued resumes get the next slots. Human games start manually. In-flight answers can
-            exceed the budget.
+            Queued resumes go first. Start human games manually. In-flight answers can exceed the
+            budget.
           </p>
         </mat-card-content>
       </mat-card>
@@ -282,7 +319,7 @@
         <app-bracket-display
           [games]="t.games"
           [runCapacity]="{
-            runningGames: runningGames(),
+            runningGames: liveGames.length,
             maxConcurrentGames: t.maxConcurrentGames ?? 2,
           }"
           [champion]="t.status === 'COMPLETED' ? (t.winnerName ?? null) : null"

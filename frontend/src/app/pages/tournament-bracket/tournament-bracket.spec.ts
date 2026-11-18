@@ -1,6 +1,7 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { MatMenuHarness } from '@angular/material/menu/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { EMPTY, of, Subject, throwError } from 'rxjs';
@@ -55,7 +56,7 @@ describe('TournamentBracket', () => {
     expect(element.querySelector('.start-run')?.textContent).toContain('Run tournament');
   });
 
-  it('links to setup with only the tournament ID in the rematch URL', () => {
+  it('opens rematch setup with only the tournament ID in the URL', () => {
     const original = {
       ...tournament('COMPLETED', 'Winner', finalGame({ status: 'COMPLETED' })),
       sharedCustomInstructions: 'Private instructions',
@@ -65,6 +66,10 @@ describe('TournamentBracket', () => {
       (link) => link.textContent.trim() === 'Run this tournament again',
     );
     expect(action?.getAttribute('href')).toBe('/tournaments/' + original.id + '/rematch');
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    action?.click();
+    expect(navigate.mock.calls[0][0].toString()).toBe('/tournaments/t-1/rematch');
   });
 
   function runPage(
@@ -107,6 +112,201 @@ describe('TournamentBracket', () => {
     return { fixture, api, component: fixture.componentInstance, current };
   }
 
+  const liveGames = [0, 1].map((bracketPosition) =>
+    finalGame({
+      id: `live-${bracketPosition + 1}`,
+      seriesId: `live-${bracketPosition + 1}`,
+      bracketRound: 'Quarterfinal',
+      bracketPosition,
+      status: 'IN_PROGRESS',
+      whitePlayerName: 'Aster',
+      blackPlayerName: 'Birch',
+    }),
+  );
+
+  function keydown(element: Element, key: string, keyCode: number): void {
+    element.dispatchEvent(
+      new KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true }),
+    );
+  }
+
+  function activateButtonWithKey(button: HTMLButtonElement, key: 'Enter' | ' '): void {
+    keydown(button, key, key === 'Enter' ? 13 : 32);
+    // jsdom needs the click that the browser synthesizes for a native button.
+    button.click();
+  }
+
+  it.each(['RUNNING', 'OFF'] as const)(
+    'links directly to the only live game with auto-run %s',
+    (runStatus) => {
+      const { fixture, component, current } = runPage('IN_PROGRESS', runStatus);
+      const game = finalGame({ status: 'IN_PROGRESS' });
+      component.tournament.set({ ...current, games: [game] });
+      fixture.detectChanges();
+
+      const action = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>(
+        '.run-summary a',
+      )!;
+      expect(action.textContent?.trim()).toBe('Watch live');
+      expect(runBanner(fixture)).toContain('1 game running');
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+      action.click();
+      expect(navigate.mock.calls[0][0].toString()).toBe('/games/' + game.id);
+    },
+  );
+
+  it('lists each live matchup in Watch live and opens the selected game', async () => {
+    const { fixture, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+    const games = [
+      ...liveGames,
+      finalGame({
+        id: 'queued-1',
+        seriesId: 'queued-1',
+        bracketRound: 'Semifinal',
+        bracketPosition: 1,
+        status: 'PAUSED',
+        resumeRequestedAt: '2026-11-17T20:00:00Z',
+      }),
+    ];
+    component.tournament.set({ ...current, games });
+    fixture.detectChanges();
+
+    const summary = (fixture.nativeElement as HTMLElement).querySelector('.run-summary')!;
+    const statuses = summary.querySelectorAll('[role="status"]');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].nextElementSibling?.textContent?.trim()).toMatch(/^Watch live/);
+    expect(runBanner(fixture)).toMatch(/2 games running .* spent .* need attention$/);
+    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatMenuHarness.with({ triggerText: /^Watch live/ }),
+    );
+    await menu.open();
+    const items = await menu.getItems();
+    expect(await Promise.all(items.map((item) => item.getText()))).toEqual([
+      'Quarterfinal · Match 1: Aster vs Birch',
+      'Quarterfinal · Match 2: Aster vs Birch',
+    ]);
+    expect(
+      await Promise.all(items.map(async (item) => (await item.host()).getAttribute('href'))),
+    ).toEqual(['/games/live-1', '/games/live-2']);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    await menu.clickItem({ text: 'Quarterfinal · Match 2: Aster vs Birch' });
+    expect(navigate.mock.calls[0][0].toString()).toBe('/games/live-2');
+  });
+
+  it.each(['trigger', 'menu item', 'elsewhere'] as const)(
+    'updates Watch live as polling goes from multiple games to one to zero with focus on %s',
+    async (focus) => {
+      const { fixture, api, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+      const element = fixture.nativeElement as HTMLElement;
+      api.getTournament.mockReturnValue(of({ ...current, games: liveGames }));
+      component.loadTournament();
+      fixture.detectChanges();
+
+      const watch = element.querySelector<HTMLButtonElement>('.run-summary button')!;
+      const exportButton = element.querySelector<HTMLButtonElement>('.export-trigger')!;
+      const status = element.querySelector<HTMLElement>('.run-summary [role="status"]')!;
+      let menuId: string | null = null;
+      if (focus === 'menu item') {
+        watch.click();
+        await fixture.whenStable();
+        menuId = watch.getAttribute('aria-controls');
+        expect(menuId).toBeTruthy();
+        const menu = document.getElementById(menuId!)!;
+        expect(document.querySelectorAll(`#${menuId}`)).toHaveLength(1);
+        expect(document.activeElement).toBe(menu.querySelector('[role="menuitem"]'));
+      } else {
+        (focus === 'trigger' ? watch : exportButton).focus();
+      }
+
+      const finished = { ...liveGames[0], status: 'COMPLETED' as const };
+      api.getTournament.mockReturnValue(of({ ...current, games: [finished, liveGames[1]] }));
+      component.loadTournament();
+      fixture.detectChanges();
+
+      const link = element.querySelector<HTMLAnchorElement>('.run-summary a')!;
+      expect(watch.isConnected).toBe(false);
+      if (menuId) expect(document.getElementById(menuId)).toBeNull();
+      expect(link.getAttribute('href')).toBe('/games/live-2');
+      expect(runBanner(fixture)).toContain('1 game running');
+      expect(document.activeElement).toBe(focus === 'elsewhere' ? exportButton : link);
+
+      api.getTournament.mockReturnValue(
+        of({ ...current, games: [finished, { ...liveGames[1], status: 'COMPLETED' }] }),
+      );
+      component.loadTournament();
+      fixture.detectChanges();
+
+      expect(element.querySelector('.run-summary a, .run-summary button')).toBeNull();
+      expect(runBanner(fixture)).toContain('0 games running');
+      expect(status.tabIndex).toBe(-1);
+      expect(document.activeElement).toBe(focus === 'elsewhere' ? exportButton : status);
+    },
+  );
+
+  it('focuses the run status when polling removes the open Watch live menu', async () => {
+    const { fixture, api, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+    const element = fixture.nativeElement as HTMLElement;
+    component.tournament.set({ ...current, games: liveGames });
+    fixture.detectChanges();
+    const watch = element.querySelector<HTMLButtonElement>('.run-summary button')!;
+    watch.click();
+    await fixture.whenStable();
+    const menu = document.getElementById(watch.getAttribute('aria-controls')!)!;
+    expect(document.activeElement).toBe(menu.querySelector('[role="menuitem"]'));
+
+    api.getTournament.mockReturnValue(of(current));
+    component.loadTournament();
+    fixture.detectChanges();
+
+    expect(menu.isConnected).toBe(false);
+    expect(document.activeElement).toBe(element.querySelector('.run-summary [role="status"]'));
+  });
+
+  it.each(['.export-trigger', '.run-summary button'])(
+    'opens %s with Enter and Space and restores focus on Escape',
+    async (selector) => {
+      const { fixture, component, current } = runPage('IN_PROGRESS', 'RUNNING');
+      component.tournament.set({ ...current, games: liveGames });
+      fixture.detectChanges();
+      const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+        selector,
+      )!;
+      trigger.focus();
+      for (const key of ['Enter', ' '] as const) {
+        activateButtonWithKey(trigger, key);
+        await fixture.whenStable();
+        const menu = document.getElementById(trigger.getAttribute('aria-controls')!)!;
+        const firstItem = menu.querySelector('[role="menuitem"]')!;
+        expect(document.activeElement).toBe(firstItem);
+
+        keydown(firstItem, 'Escape', 27);
+        await fixture.whenStable();
+        expect(trigger.getAttribute('aria-expanded')).toBe('false');
+        expect(document.activeElement).toBe(trigger);
+      }
+    },
+  );
+
+  it('hides Watch live when the tournament has no running games', () => {
+    const element = render(tournament('COMPLETED', 'White', finalGame()));
+    expect(element.querySelector('.run-summary')?.textContent).not.toContain('Watch live');
+  });
+
+  it('keeps Review focusable and opens the completed game', () => {
+    const game = finalGame();
+    const element = render(tournament('COMPLETED', 'White', game));
+    const review = [...element.querySelectorAll<HTMLButtonElement>('.card-footer button')].find(
+      (action) => action.textContent?.includes('Review'),
+    )!;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    review.focus();
+    expect(document.activeElement).toBe(review);
+    review.click();
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(['/games', game.id]);
+  });
+
   it('starts with an unchanged large cap and never rounds an edited amount into a patch', () => {
     const { api, component, current } = runPage();
     const exact = '99999999999999999.99';
@@ -145,10 +345,8 @@ describe('TournamentBracket', () => {
   });
 
   function runBanner(fixture: ComponentFixture<TournamentBracket>): string {
-    return fixture.nativeElement
-      .querySelector('.run-status')
-      .textContent.replace(/\s+/g, ' ')
-      .trim();
+    const status = (fixture.nativeElement as HTMLElement).querySelector('.run-status')!;
+    return status.textContent.replace(/\s+/g, ' ').trim();
   }
 
   it('queues Resume with a full run, keeps the pause reason, and cancels from the card', () => {
@@ -281,42 +479,66 @@ describe('TournamentBracket', () => {
     expect(component.tournament()?.games[0]).toEqual(replacement);
   });
 
-  it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the tournament page', (format) => {
+  it.each(['pgn', 'csv', 'json'] as const)('downloads %s from the Export menu', async (format) => {
     const { fixture, component, api } = runPage();
-    vi.useFakeTimers();
     const createObjectURL = vi.fn().mockReturnValue('blob:export');
-    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static override createObjectURL = createObjectURL;
+        static override revokeObjectURL = vi.fn();
+      },
+    );
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    const button = fixture.nativeElement.querySelector(
-      `[aria-label="Download tournament ${format.toUpperCase()}"]`,
-    ) as HTMLButtonElement;
-    button.click();
+    const exportTournament = vi.spyOn(component, 'exportTournament');
+    const menu = await TestbedHarnessEnvironment.loader(fixture).getHarness(
+      MatMenuHarness.with({ triggerText: /^Export/ }),
+    );
+    await menu.open();
+    const [item] = await menu.getItems({ text: format.toUpperCase() });
+    expect(await (await item.host()).getAttribute('aria-label')).toBe(
+      'Download tournament ' + format.toUpperCase(),
+    );
+    await item.click();
+    expect(exportTournament).toHaveBeenCalledExactlyOnceWith(format);
     expect(api.getTournamentExport).toHaveBeenCalledWith('t-1', format);
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe(
       `tournament-t-1.${format}`,
     );
     expect(component.exporting()).toBe(false);
-    vi.advanceTimersByTime(1000);
-    vi.useRealTimers();
   });
 
-  it('disables duplicate exports while downloading and reports failures without a download', () => {
+  it('keeps Export focused and blocks reactivation during a pending download', async () => {
     const { fixture, component, api } = runPage();
     const pending = new Subject<Blob>();
     api.getTournamentExport.mockReturnValue(pending);
     const snackbar = vi.spyOn(TestBed.inject(MatSnackBar), 'open');
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
-    component.exportTournament('json');
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.export-trigger',
+    )!;
+    trigger.focus();
+    activateButtonWithKey(trigger, 'Enter');
+    await fixture.whenStable();
+    const firstItem = document.activeElement as HTMLButtonElement;
+    expect(firstItem.getAttribute('aria-label')).toBe('Download tournament PGN');
+    activateButtonWithKey(firstItem, 'Enter');
+    await fixture.whenStable();
+
+    expect(trigger.getAttribute('aria-disabled')).toBe('true');
+    expect(trigger.disabled).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    activateButtonWithKey(trigger, ' ');
+    await fixture.whenStable();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
     component.exportTournament('csv');
-    fixture.detectChanges();
-    const buttons = Array.from(
-      fixture.nativeElement.querySelectorAll('.export-tournament'),
-    ) as HTMLButtonElement[];
-    expect(buttons.every((button) => button.disabled)).toBe(true);
     expect(api.getTournamentExport).toHaveBeenCalledOnce();
     pending.error(new Error('offline'));
-    expect(component.exporting()).toBe(false);
+    await fixture.whenStable();
+    expect(trigger.getAttribute('aria-disabled')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
     expect(click).not.toHaveBeenCalled();
     expect(snackbar).toHaveBeenCalledWith(
       'Could not export tournament. Please try again.',
@@ -690,7 +912,29 @@ describe('TournamentBracket', () => {
   it('shows the winner of a completed tournament after the final', () => {
     const el = render(tournament('COMPLETED', 'White', finalGame({ advancedPlayerName: 'White' })));
 
-    expect(el.querySelector('.champion-card')?.textContent).toContain('White');
+    const bracket = el.querySelector<HTMLElement>(
+      '[role="region"][aria-label="Tournament bracket"]',
+    );
+    expect(bracket?.tabIndex).toBe(0);
+    expect([...bracket!.querySelectorAll('h3')].map((heading) => heading.textContent)).toEqual([
+      'Final',
+      'Champion',
+    ]);
+    expect(bracket?.querySelector('.champion-card')?.textContent).toContain('White');
+  });
+
+  it('keeps a 60-character champion name intact and lets the header wrap', () => {
+    const name = 'W'.repeat(60);
+    const element = render(tournament('COMPLETED', name, finalGame()));
+    const header = element.querySelector('.header-left')!;
+    const facts = element.querySelector('.meta-row')!;
+    const champion = facts.querySelector('.champion-label')!;
+    const count = facts.querySelector('.count-tag')!;
+    expect(champion.querySelector('span')?.textContent).toBe(`Champion: ${name}`);
+    expect(getComputedStyle(header).minWidth).toBe('0px');
+    expect(getComputedStyle(facts).flexWrap).toBe('wrap');
+    expect(getComputedStyle(champion).overflowWrap).toBe('anywhere');
+    expect(getComputedStyle(count).whiteSpace).toBe('nowrap');
   });
 
   it('shows the winner of a final decided by the draw policy', () => {

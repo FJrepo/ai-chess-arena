@@ -1,5 +1,15 @@
 import { OpenRouterAccess } from '../../services/openrouter-access';
-import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  afterNextRender,
+  computed,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -9,6 +19,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
+import { MatMenu, MatMenuModule } from '@angular/material/menu';
 import { Observable } from 'rxjs';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { CurrencyPipe } from '@angular/common';
@@ -32,6 +43,7 @@ import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget'
     MatButtonModule,
     MatIconModule,
     MatExpansionModule,
+    MatMenuModule,
     CurrencyPipe,
     BracketDisplay,
   ],
@@ -53,7 +65,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
   runBudget = '';
   readonly concurrencyOptions = [1, 2, 3, 4, 5, 6, 7, 8];
   readonly runningGames = computed(
-    () => this.tournament()?.games.filter((g) => g.status === 'IN_PROGRESS').length ?? 0,
+    () => this.tournament()?.games.filter((g) => g.status === 'IN_PROGRESS') ?? [],
   );
   readonly attentionGames = computed(
     () =>
@@ -124,6 +136,9 @@ export class TournamentBracket implements OnInit, OnDestroy {
     [...(this.tournament()?.participants ?? [])].sort((a, b) => a.seed - b.seed),
   );
   readonly statusLabel = tournamentStatusLabel;
+  @ViewChild('watchLive', { read: ElementRef }) private watchLive?: ElementRef<HTMLElement>;
+  @ViewChild('liveMenu') private liveMenu?: MatMenu;
+  @ViewChild('runStatus') private runStatus?: ElementRef<HTMLElement>;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private loadGeneration = 0;
   private refreshAfterRun = false;
@@ -134,6 +149,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     private api: ApiService,
     private snackBar: MatSnackBar,
     private connection: OpenRouterAccess = null!,
+    private injector?: Injector,
   ) {}
 
   ngOnInit() {
@@ -255,18 +271,17 @@ export class TournamentBracket implements OnInit, OnDestroy {
   }
 
   private applyResumeResponse(updated: Game): void {
-    this.tournament.update((t) =>
-      t
-        ? {
-            ...t,
-            games: t.games.map((g) =>
-              g.id === updated.id && (updated.statusRevision ?? 0) >= (g.statusRevision ?? 0)
-                ? updated
-                : g,
-            ),
-          }
-        : t,
-    );
+    const t = this.tournament();
+    if (t) {
+      this.setTournament({
+        ...t,
+        games: t.games.map((g) =>
+          g.id === updated.id && (updated.statusRevision ?? 0) >= (g.statusRevision ?? 0)
+            ? updated
+            : g,
+        ),
+      });
+    }
     this.refreshAfterResumeChange();
   }
 
@@ -277,7 +292,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
 
   private applyTournamentSnapshot(t: Tournament): void {
     const currentGames = new Map(this.tournament()?.games.map((game) => [game.id, game]));
-    this.tournament.set({
+    this.setTournament({
       ...t,
       games: t.games.map((game) => {
         const current = currentGames.get(game.id);
@@ -286,6 +301,27 @@ export class TournamentBracket implements OnInit, OnDestroy {
           : game;
       }),
     });
+  }
+
+  private setTournament(t: Tournament): void {
+    const control = this.watchLive?.nativeElement;
+    if (control) {
+      const document = control.ownerDocument;
+      const focused = document.activeElement;
+      // The menu panel lives in an overlay and disappears with its trigger.
+      const panel = this.liveMenu && document.getElementById(this.liveMenu.panelId);
+      if (control.contains(focused) || panel?.contains(focused)) {
+        afterNextRender(
+          () => {
+            if (!control.isConnected && document.activeElement === document.body) {
+              (this.watchLive ?? this.runStatus)?.nativeElement.focus();
+            }
+          },
+          { injector: this.injector },
+        );
+      }
+    }
+    this.tournament.set(t);
   }
 
   runTournament(): void {
@@ -363,7 +399,7 @@ export class TournamentBracket implements OnInit, OnDestroy {
     this.api.cancelTournament(this.tournamentId).subscribe({
       next: (tournament) => {
         ++this.loadGeneration;
-        this.tournament.set(tournament);
+        this.setTournament(tournament);
         this.cancelling.set(false);
         this.loadCostSummary();
       },
