@@ -89,7 +89,7 @@ public class BenchmarkRunService {
         run.benchmarkDefinition = new BenchmarkDefinition(StockfishLadderOpenings.SUITE, StockfishLadderOpenings.OPENINGS,
                 modelIds, strengths, COLORS, fingerprint.sha256(), fingerprint.networks(),
                 StockfishOpponentService.SEARCH_NODES, StockfishOpponentService.THREADS, StockfishOpponentService.HASH_MIB,
-                promptVersion(run), null);
+                promptVersion(run), null, null);
         return createRun(run);
     }
 
@@ -107,7 +107,31 @@ public class BenchmarkRunService {
         Creation replay = replay(requestId, change);
         if (replay != null) return replay;
 
-        Tournament base = QuarkusTransaction.requiringNew().call(() -> requireRun(baseId));
+        try {
+            Tournament source = QuarkusTransaction.requiringNew().call(() -> requireRun(baseId));
+            Tournament preview = rerunDraft(source, requestId, change, expected);
+            var saved = source.benchmarkDefinition;
+            var fingerprint = fingerprint(saved.targetStrengths());
+            if (!fingerprint.sha256().equals(saved.engineSha256()) || !fingerprint.networks().equals(saved.engineNetworks())) {
+                throw new GameStateConflictException("The installed Stockfish build or NNUE weights differ from the source run.");
+            }
+            prepareModels(preview.benchmarkDefinition.modelIds());
+
+            // Verify the engine and models before locking the source. Its saved matchup definition is immutable,
+            // but a concurrent resume can change the budget and concurrency until we take the lock.
+            var created = QuarkusTransaction.requiringNew().call(() -> {
+                Tournament base = requireBenchmark(tournaments.findByIdForUpdate(baseId));
+                if (replayId(requestId, change) != null) return null;
+                return persistRun(rerunDraft(base, requestId, change, expected));
+            });
+            if (created != null) return new Creation(created, true);
+            return replay(requestId, change);
+        } catch (RuntimeException failure) {
+            return replayOrThrow(requestId, change, failure);
+        }
+    }
+
+    private Tournament rerunDraft(Tournament base, UUID requestId, Rerun change, Tournament expected) {
         BenchmarkDefinition saved = base.benchmarkDefinition;
         if (expected != null && (expected.maxConcurrentGames != base.maxConcurrentGames
                 || expected.budgetUsd.compareTo(base.budgetUsd) != 0)) {
@@ -130,15 +154,10 @@ public class BenchmarkRunService {
         run.moveTimeoutSeconds = base.moveTimeoutSeconds;
         run.maxOutputTokens = base.maxOutputTokens;
         List<String> modelIds = applyChange(base, run, change);
-
-        var fingerprint = fingerprint(saved.targetStrengths());
-        if (!fingerprint.sha256().equals(saved.engineSha256()) || !fingerprint.networks().equals(saved.engineNetworks())) {
-            throw new GameStateConflictException("The installed Stockfish build or NNUE weights differ from the source run.");
-        }
         run.benchmarkDefinition = new BenchmarkDefinition(saved.suite(), saved.openings(), modelIds,
                 saved.targetStrengths(), saved.modelColors(), saved.engineSha256(), saved.engineNetworks(),
-                saved.searchNodes(), saved.threads(), saved.hashMiB(), promptVersion(run), change);
-        return createRun(run);
+                saved.searchNodes(), saved.threads(), saved.hashMiB(), promptVersion(run), change, saved.openingSeed());
+        return run;
     }
 
     private static Tournament requiredRunSettings(JsonNode settings) {
@@ -254,35 +273,48 @@ public class BenchmarkRunService {
         }
     }
 
-    private Creation createRun(Tournament run) {
-        for (String modelId : run.benchmarkDefinition.modelIds()) {
+    private void prepareModels(List<String> modelIds) {
+        for (String modelId : modelIds) {
             TournamentParticipant model = new TournamentParticipant();
             model.playerName = modelId;
             model.modelId = modelId;
             tournamentService.prepareParticipant(model);
         }
-        run.status = Tournament.TournamentStatus.IN_PROGRESS;
-        run.autoRunStatus = Tournament.AutoRunStatus.RUNNING;
+    }
+
+    private Creation createRun(Tournament run) {
+        prepareModels(run.benchmarkDefinition.modelIds());
         try {
             return new Creation(QuarkusTransaction.requiringNew().call(() -> persistRun(run)), true);
         } catch (RuntimeException failure) {
-            // A duplicate insert waits for the other transaction. Re-read only after ours rolls back.
-            Creation replay = replay(run.clientRequestId, run.benchmarkDefinition.rerun());
-            if (replay != null) return replay;
-            throw failure;
+            return replayOrThrow(run.clientRequestId, null, failure);
         }
     }
 
+    private Creation replayOrThrow(UUID requestId, Rerun change, RuntimeException failure) {
+        // A duplicate insert waits for the other transaction. Re-read only after ours rolls back.
+        Creation replay = replay(requestId, change);
+        if (replay != null) return replay;
+        throw failure;
+    }
+
     private Creation replay(UUID requestId, Rerun change) {
+        UUID id = replayId(requestId, change);
+        return id == null ? null : new Creation(get(id), false);
+    }
+
+    private UUID replayId(UUID requestId, Rerun change) {
         Tournament existing = tournaments.findByClientRequestId(requestId);
         if (existing == null) return null;
         if (!existing.isBenchmark() || !Objects.equals(existing.benchmarkDefinition.rerun(), change)) {
             throw new GameStateConflictException("Creation request ID belongs to a different creation request");
         }
-        return new Creation(get(existing.id), false);
+        return existing.id;
     }
 
     private BenchmarkRunDto persistRun(Tournament run) {
+        run.status = Tournament.TournamentStatus.IN_PROGRESS;
+        run.autoRunStatus = Tournament.AutoRunStatus.RUNNING;
         tournaments.persistAndFlush(run);
         List<Game> created = createGames(run);
         created.forEach(tournamentService::persistGameWithOpening);
@@ -304,7 +336,10 @@ public class BenchmarkRunService {
     }
 
     Tournament requireRun(UUID id) {
-        Tournament run = tournaments.findById(id);
+        return requireBenchmark(tournaments.findById(id));
+    }
+
+    private static Tournament requireBenchmark(Tournament run) {
         if (run == null || !run.isBenchmark()) throw new NotFoundException("Benchmark run not found");
         return run;
     }

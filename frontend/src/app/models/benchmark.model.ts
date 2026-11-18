@@ -76,6 +76,7 @@ export interface BenchmarkRun extends BenchmarkRunSettings {
   definition: {
     suite: string;
     openings: BenchmarkOpening[];
+    openingSeed?: number;
     modelIds: string[];
     targetStrengths: number[];
     modelColors: BenchmarkColor[];
@@ -145,6 +146,7 @@ export interface BenchmarkComparison {
   base: BenchmarkSummary;
   candidate: BenchmarkSummary;
   comparable: boolean;
+  comparisonType: 'CONTROLLED_RERUN' | 'COMPARABLE' | 'MULTIPLE_SETTINGS' | 'NOT_COMPARABLE';
   differences: BenchmarkSettingDifference[];
   settingChanges: BenchmarkSettingDifference[];
   baseSpendUsd: number;

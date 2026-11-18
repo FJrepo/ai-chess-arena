@@ -88,7 +88,7 @@ class StockfishOpponentServiceTest {
         var strengths = List.of(1500, 2000);
         var fingerprint = opponent.benchmarkFingerprint(strengths);
         return new BenchmarkDefinition("fixture", List.of(), List.of(), strengths, List.of("WHITE", "BLACK"),
-                fingerprint.sha256(), fingerprint.networks(), 50000, 1, 16, "v2-silent", null);
+                fingerprint.sha256(), fingerprint.networks(), 50000, 1, 16, "v2-silent", null, null);
     }
 
     private record EngineFixture(StockfishOpponentService opponent, Path network) {}

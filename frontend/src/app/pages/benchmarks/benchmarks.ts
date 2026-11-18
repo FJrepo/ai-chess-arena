@@ -31,7 +31,7 @@ import { gameStatusLabel, resultReasonLabel } from '../../utils/status-labels';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 
 const pendingSubmissionsKey = 'benchmark-pending-submissions';
-const rerunFingerprintPrefix = 'rerun:';
+const pendingRerunsKey = 'benchmark-pending-reruns';
 const promptChatSuffix = { OFF: '-silent', OPTIONAL: '', MANDATORY: '-chat-required' };
 const noHintsSuffix = '-no-hints';
 
@@ -61,6 +61,12 @@ export class Benchmarks {
   private readonly destroyRef = inject(DestroyRef);
   private readonly reload = new Subject<void>();
   private readonly pendingSubmissions = signal(this.readPendingSubmissions());
+  private readonly pendingReruns = signal(this.readPendingReruns());
+
+  readonly pendingRerun = computed(() => {
+    const id = this.runId();
+    return id === null ? null : (this.pendingReruns().get(id) ?? null);
+  });
 
   readonly runId = signal<string | null>(null);
   readonly runs = signal<BenchmarkSummary[] | null>(null);
@@ -70,7 +76,7 @@ export class Benchmarks {
   readonly loadError = signal('');
   readonly actionError = signal('');
   readonly hasPendingSubmission = computed(() =>
-    [...this.pendingSubmissions().keys()].some((key) => !key.startsWith(rerunFingerprintPrefix)),
+    [...this.pendingSubmissions().keys()].some((key) => !key.startsWith('rerun:')),
   );
   readonly rerunOpen = signal(false);
   readonly rerunSettings = {
@@ -241,9 +247,13 @@ export class Benchmarks {
         chatMode: this.chatMode,
         runSettings: settings,
       };
+      const fingerprint = JSON.stringify(details);
+      const pendingId = this.pendingSubmissions().get(fingerprint);
+      const clientRequestId = pendingId ?? newRequestId();
+      if (!pendingId) this.setPendingSubmission(fingerprint, clientRequestId);
       this.submitCreation(
-        JSON.stringify(details),
-        (clientRequestId) => this.api.createBenchmark({ ...details, clientRequestId }),
+        this.api.createBenchmark({ ...details, clientRequestId }),
+        () => this.setPendingSubmission(fingerprint, null),
         (id) => void this.router.navigate(['/benchmarks', id]),
       );
     }
@@ -344,58 +354,101 @@ export class Benchmarks {
     ];
   }
 
-  hasPendingRerun(source: BenchmarkRun): boolean {
-    const prefix = rerunFingerprintPrefix + source.run.id + ':';
-    return [...this.pendingSubmissions().keys()].some((key) => key.startsWith(prefix));
-  }
-
   createRerun(source: BenchmarkRun): void {
-    if (this.busy() || this.loading()) return;
+    if (this.busy() || this.loading() || this.pendingReruns().has(source.run.id)) return;
     const change = this.rerunChange(source);
     const validation = this.rerunValidation(source, change);
     this.actionError.set(validation);
     if (validation) return;
-    const details: Omit<RerunBenchmarkRequest, 'clientRequestId'> = {
+    const request: RerunBenchmarkRequest = {
+      clientRequestId: newRequestId(),
       change,
       expectedRunSettings: {
         budgetUsd: canonicalBudget(source.budgetUsd),
         maxConcurrentGames: source.maxConcurrentGames,
       },
     };
+    this.setPendingRerun(source.run.id, request);
+    this.recoverRerun(source.run.id);
+  }
+
+  recoverRerun(sourceId: string): void {
+    if (this.busy() || this.loading()) return;
+    const request = this.pendingReruns().get(sourceId);
+    if (!request) return;
+    this.actionError.set('');
     this.submitCreation(
-      rerunFingerprintPrefix + source.run.id + ':' + JSON.stringify(change),
-      (clientRequestId) => this.api.rerunBenchmark(source.run.id, { ...details, clientRequestId }),
+      this.api.rerunBenchmark(sourceId, request),
+      () => this.setPendingRerun(sourceId, null),
       (id) =>
         void this.router.navigate(['/benchmarks', 'compare'], {
-          queryParams: { base: source.run.id, candidate: id },
+          queryParams: { base: sourceId, candidate: id },
         }),
     );
   }
 
+  startSeparateRerun(source: BenchmarkRun): void {
+    if (this.busy() || this.loading()) return;
+    this.setPendingRerun(source.run.id, null);
+    this.openRerun(source);
+  }
+
+  private readPendingReruns(): Map<string, RerunBenchmarkRequest> {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(pendingRerunsKey) ?? '{}') as Record<
+        string,
+        RerunBenchmarkRequest
+      >;
+      return new Map(
+        Object.entries(stored).filter(
+          ([, request]) =>
+            typeof request?.clientRequestId === 'string' &&
+            request.change !== null &&
+            typeof request.change === 'object' &&
+            typeof request.expectedRunSettings?.budgetUsd === 'string' &&
+            Number.isInteger(request.expectedRunSettings.maxConcurrentGames),
+        ),
+      );
+    } catch {
+      return new Map();
+    }
+  }
+
+  private setPendingRerun(sourceId: string, request: RerunBenchmarkRequest | null): void {
+    const pending = new Map(this.pendingReruns());
+    if (request === null) pending.delete(sourceId);
+    else pending.set(sourceId, request);
+    this.pendingReruns.set(pending);
+    try {
+      if (pending.size) {
+        sessionStorage.setItem(pendingRerunsKey, JSON.stringify(Object.fromEntries(pending)));
+      } else {
+        sessionStorage.removeItem(pendingRerunsKey);
+      }
+    } catch {
+      // In-memory retries still work when storage is unavailable.
+    }
+  }
+
   private submitCreation(
-    fingerprint: string,
-    request: (clientRequestId: string) => Observable<BenchmarkRun>,
+    request: Observable<BenchmarkRun>,
+    clearPending: () => void,
     onCreated: (id: string) => void,
   ): void {
-    const pendingId = this.pendingSubmissions().get(fingerprint);
-    const requestId = pendingId ?? newRequestId();
-    if (!pendingId) this.setPendingSubmission(fingerprint, requestId);
     this.busy.set(true);
-    request(requestId)
+    request
       .pipe(
         takeUntilDestroyed(this.destroyRef),
         finalize(() => this.busy.set(false)),
       )
       .subscribe({
         next: ({ run }) => {
-          this.setPendingSubmission(fingerprint, null);
+          clearPending();
           onCreated(run.id);
         },
         error: (error) => {
           const status = error?.status;
-          if (status >= 400 && status < 500 && status !== 408) {
-            this.setPendingSubmission(fingerprint, null);
-          }
+          if (status >= 400 && status < 500 && status !== 408) clearPending();
           this.actionError.set(error?.error?.error ?? 'Could not create the benchmark.');
         },
       });

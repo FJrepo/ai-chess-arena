@@ -60,15 +60,28 @@
       </section>
     }
 
-    @if (data.comparable && data.settingChanges.length) {
+    @if (
+      data.comparable && (data.settingChanges.length || data.comparisonType === 'CONTROLLED_RERUN')
+    ) {
       <section class="panel" aria-labelledby="setting-changes">
-        <h2 id="setting-changes">Run settings changes</h2>
-        <ng-container
-          *ngTemplateOutlet="
-            settingsDiff;
-            context: { $implicit: data.settingChanges, label: 'Run settings changes' }
-          "
-        />
+        <h2 id="setting-changes">
+          {{
+            data.comparisonType === 'CONTROLLED_RERUN' ? 'Controlled rerun' : 'Run settings changes'
+          }}
+        </h2>
+        @if (data.comparisonType === 'MULTIPLE_SETTINGS') {
+          <p>Differences cannot be attributed to a single setting.</p>
+        }
+        @if (data.settingChanges.length) {
+          <ng-container
+            *ngTemplateOutlet="
+              settingsDiff;
+              context: { $implicit: data.settingChanges, label: 'Run settings changes' }
+            "
+          />
+        } @else {
+          <p>The rerun repeats the source settings to measure run-to-run variance.</p>
+        }
       </section>
     }
 

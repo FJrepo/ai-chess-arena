@@ -303,58 +303,70 @@ describe('Benchmarks', () => {
     expect(fixture.nativeElement.textContent).toContain('anthropic/claude-sonnet-5');
   });
 
-  it('shows the field diff before creating a paid rerun and retries with the same UUID', async () => {
-    const { fixture, api, navigate } = setup(run.run.id);
-    fixture.detectChanges();
-    const page: HTMLElement = fixture.nativeElement;
-    [...page.querySelectorAll('button')]
-      .find((button) => button.textContent.trim() === 'Rerun')
-      ?.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    const setting = page.querySelector<HTMLSelectElement>('select[name="rerunSetting"]')!;
-    expect(setting).not.toBeNull();
-    setting.value = 'legalMoveHints';
-    setting.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-    fixture.detectChanges();
-    const diff = page.querySelector('table[aria-label="Rerun settings"]')!;
-    const hints = [...diff.querySelectorAll('tr')].find((row) =>
-      row.textContent.includes('Legal move hints'),
-    );
-    expect(hints?.textContent).toMatch(/Off.*On/);
-    expect(diff.textContent).toContain('Opening suite');
-    expect(api.rerunBenchmark).not.toHaveBeenCalled();
-    api.rerunBenchmark.mockReturnValueOnce(throwError(() => ({ status: 0 })));
-    page
-      .querySelector<HTMLFormElement>('form[aria-label="Rerun benchmark"]')!
-      .dispatchEvent(new Event('submit'));
-    const original = api.rerunBenchmark.mock.calls[0][1];
-    fixture.destroy();
-    const reloaded = TestBed.createComponent(Benchmarks);
-    reloaded.detectChanges();
-    const nextPage: HTMLElement = reloaded.nativeElement;
-    [...nextPage.querySelectorAll('button')]
-      .find((button) => button.textContent.trim() === 'Rerun')
-      ?.click();
-    reloaded.detectChanges();
-    await reloaded.whenStable();
-    reloaded.detectChanges();
-    const nextSetting = nextPage.querySelector<HTMLSelectElement>('select[name="rerunSetting"]')!;
-    nextSetting.value = 'legalMoveHints';
-    nextSetting.dispatchEvent(new Event('change'));
-    await reloaded.whenStable();
-    reloaded.detectChanges();
-    nextPage
-      .querySelector<HTMLFormElement>('form[aria-label="Rerun benchmark"]')!
-      .dispatchEvent(new Event('submit'));
-    expect(api.rerunBenchmark).toHaveBeenLastCalledWith(run.run.id, original);
-    expect(original.change).toEqual({ legalMoveHints: true });
-    expect(navigate).toHaveBeenCalledWith(['/benchmarks', 'compare'], {
-      queryParams: { base: run.run.id, candidate: 'candidate-run' },
-    });
-  });
+  it.each(['Recover rerun', 'Start a separate rerun'])(
+    'requires an explicit reload choice after an unconfirmed submission (%s)',
+    async (choice) => {
+      const { fixture, api, navigate } = setup(run.run.id);
+      const click = (page: HTMLElement, label: string) => {
+        const button = [...page.querySelectorAll('button')].find(
+          (element) => element.textContent.trim() === label,
+        );
+        expect(button).toBeDefined();
+        button!.click();
+      };
+      fixture.detectChanges();
+      const page: HTMLElement = fixture.nativeElement;
+      click(page, 'Rerun');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const setting = page.querySelector<HTMLSelectElement>('select[name="rerunSetting"]')!;
+      setting.value = 'legalMoveHints';
+      setting.dispatchEvent(new Event('change'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const diff = page.querySelector('table[aria-label="Rerun settings"]')!;
+      const hints = [...diff.querySelectorAll('tr')].find((row) =>
+        row.textContent.includes('Legal move hints'),
+      );
+      expect(hints?.textContent).toMatch(/Off.*On/);
+      expect(api.rerunBenchmark).not.toHaveBeenCalled();
+      api.rerunBenchmark.mockReturnValueOnce(throwError(() => ({ status: 0 })));
+      click(page, 'Create and start rerun');
+      const original = api.rerunBenchmark.mock.calls[0][1];
+      expect(original.change).toEqual({ legalMoveHints: true });
+      fixture.destroy();
+
+      api.getBenchmark.mockReturnValue(of({ ...run, budgetUsd: '9.00', maxConcurrentGames: 3 }));
+      const reloaded = TestBed.createComponent(Benchmarks);
+      reloaded.detectChanges();
+      const nextPage: HTMLElement = reloaded.nativeElement;
+      click(nextPage, 'Rerun');
+      reloaded.detectChanges();
+      expect(nextPage.textContent).toContain('A rerun may already have been created');
+      expect(nextPage.textContent).not.toContain('Create and start rerun');
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(1);
+
+      click(nextPage, choice);
+      if (choice === 'Recover rerun') {
+        expect(api.rerunBenchmark).toHaveBeenLastCalledWith(run.run.id, original);
+      } else {
+        reloaded.detectChanges();
+        await reloaded.whenStable();
+        reloaded.detectChanges();
+        expect(api.rerunBenchmark).toHaveBeenCalledTimes(1);
+        click(nextPage, 'Create and start rerun');
+        const separate = api.rerunBenchmark.mock.calls[1][1];
+        expect(separate.clientRequestId).not.toBe(original.clientRequestId);
+        expect(separate.change).toEqual({});
+        expect(separate.expectedRunSettings).toEqual({ budgetUsd: '9', maxConcurrentGames: 3 });
+      }
+      expect(api.rerunBenchmark).toHaveBeenCalledTimes(2);
+      expect(navigate).toHaveBeenCalledWith(['/benchmarks', 'compare'], {
+        queryParams: { base: run.run.id, candidate: 'candidate-run' },
+      });
+    },
+  );
 
   it('renders scores, the incomplete pair, both game links, and spend', () => {
     const { fixture, api, component } = setup(run.run.id);

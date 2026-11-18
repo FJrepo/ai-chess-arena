@@ -9,11 +9,13 @@ import java.util.List;
 import java.util.UUID;
 
 public record BenchmarkComparisonDto(
-        Summary base, Summary candidate, boolean comparable, List<Difference> differences, List<Difference> settingChanges,
+        Summary base, Summary candidate, boolean comparable, ComparisonType comparisonType, List<Difference> differences, List<Difference> settingChanges,
         BigDecimal baseSpendUsd, BigDecimal candidateSpendUsd, BigDecimal spendDeltaUsd,
         List<String> unmatchedBaseModels, List<String> unmatchedCandidateModels,
         List<Model> models, List<Matchup> matchups
 ) {
+    public enum ComparisonType { CONTROLLED_RERUN, COMPARABLE, MULTIPLE_SETTINGS, NOT_COMPARABLE }
+
     public record Difference(String setting, String base, String candidate) {}
 
     public record Model(

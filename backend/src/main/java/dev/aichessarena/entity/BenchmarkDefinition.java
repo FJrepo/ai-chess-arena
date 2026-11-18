@@ -7,7 +7,7 @@ import java.util.UUID;
 public record BenchmarkDefinition(
         String suite, List<Opening> openings, List<String> modelIds, List<Integer> targetStrengths,
         List<String> modelColors, String engineSha256, List<Network> engineNetworks, int searchNodes, int threads, int hashMiB,
-        String promptVersion, Rerun rerun
+        String promptVersion, Rerun rerun, Long openingSeed
 ) {
     public BenchmarkDefinition {
         engineNetworks = engineNetworks == null ? List.of() : List.copyOf(engineNetworks);

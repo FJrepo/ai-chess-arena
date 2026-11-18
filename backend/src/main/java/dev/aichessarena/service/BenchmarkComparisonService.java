@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.dto.BenchmarkComparisonDto;
+import dev.aichessarena.dto.BenchmarkComparisonDto.ComparisonType;
 import dev.aichessarena.dto.BenchmarkComparisonDto.Difference;
 import dev.aichessarena.dto.BenchmarkComparisonDto.GameSide;
 import dev.aichessarena.dto.BenchmarkComparisonDto.Matchup;
@@ -23,6 +24,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,12 +52,19 @@ public class BenchmarkComparisonService {
         List<Game> candidateGames = games.findByTournamentId(candidateId);
         BigDecimal baseSpend = BenchmarkResults.spend(baseGames);
         BigDecimal candidateSpend = BenchmarkResults.spend(candidateGames);
-        List<Difference> differences = differences(base.benchmarkDefinition, candidate.benchmarkDefinition);
+        List<Difference> differences = differences(base, candidate);
+        Map<String, Difference> changedSettings = settingChanges(base, candidate);
+        var displayedChanges = new ArrayList<>(changedSettings.values());
+        differ(displayedChanges, "Prompt version",
+                base.benchmarkDefinition.promptVersion(), candidate.benchmarkDefinition.promptVersion());
+        boolean comparable = differences.isEmpty();
+        ComparisonType comparisonType = comparable ? comparisonType(base, candidate, changedSettings)
+                : ComparisonType.NOT_COMPARABLE;
         List<Model> models = new ArrayList<>();
         List<Matchup> matchups = new ArrayList<>();
         List<String> unmatchedBase = new ArrayList<>(base.benchmarkDefinition.modelIds());
         List<String> unmatchedCandidate = new ArrayList<>(candidate.benchmarkDefinition.modelIds());
-        if (differences.isEmpty()) {
+        if (comparable) {
             RunData before = runData(base, baseGames);
             RunData after = runData(candidate, candidateGames);
             for (String id : base.benchmarkDefinition.modelIds()) {
@@ -81,8 +90,8 @@ public class BenchmarkComparisonService {
             unmatchedCandidate.clear();
         }
         return new BenchmarkComparisonDto(BenchmarkRunService.summary(base), BenchmarkRunService.summary(candidate),
-                differences.isEmpty(), differences, settingChanges(base, candidate), baseSpend, candidateSpend,
-                differences.isEmpty() ? candidateSpend.subtract(baseSpend) : null,
+                comparable, comparisonType, differences, displayedChanges, baseSpend, candidateSpend,
+                comparable ? candidateSpend.subtract(baseSpend) : null,
                 unmatchedBase, unmatchedCandidate, models, matchups);
     }
 
@@ -98,7 +107,9 @@ public class BenchmarkComparisonService {
             return game != null && game.benchmarkModelColor().equals(move.color())
                     && game.benchmarkModelId().equals(move.modelId());
         }).toList();
-        var firstTries = modelMoves.stream().filter(move -> move.retryCount() <= 0)
+        var movesWithPriorAnswers = moves.findBenchmarkMovesWithPriorAnswers(run.id);
+        var firstTries = modelMoves.stream()
+                .filter(move -> move.retryCount() <= 0 && !movesWithPriorAnswers.contains(move.id()))
                 .collect(Collectors.groupingBy(ReasoningPly::gameId, Collectors.counting()));
         var reasoning = ReasoningAnalytics.bySide(attempts.findBenchmarkReasoningAttempts(run.id), modelMoves);
         var resolved = run.benchmarkDefinition.modelIds().stream().anyMatch(id -> id.startsWith("~"))
@@ -141,8 +152,8 @@ public class BenchmarkComparisonService {
     }
 
     private static boolean outcomeChanged(GameSide base, GameSide candidate) {
-        return !Objects.equals(base.outcome(), candidate.outcome())
-                || base.forfeit() != candidate.forfeit();
+        return base.points() != null && candidate.points() != null
+                && (!Objects.equals(base.outcome(), candidate.outcome()) || base.forfeit() != candidate.forfeit());
     }
 
     private static boolean incomplete(RunData data, String model, Opening opening, int target) {
@@ -190,23 +201,51 @@ public class BenchmarkComparisonService {
                 usage.reportedMoves(), usage.averageTokens());
     }
 
-    private static List<Difference> settingChanges(Tournament base, Tournament candidate) {
-        var changes = new ArrayList<Difference>();
-        differ(changes, "Model IDs", String.join(", ", base.benchmarkDefinition.modelIds()),
+    private static Map<String, Difference> settingChanges(Tournament base, Tournament candidate) {
+        var changes = new LinkedHashMap<String, Difference>();
+        settingChange(changes, "modelId", "Model IDs", String.join(", ", base.benchmarkDefinition.modelIds()),
                 String.join(", ", candidate.benchmarkDefinition.modelIds()));
-        differ(changes, "Requested effort", BenchmarkRunService.effortValue(base.reasoningEffort),
+        settingChange(changes, "reasoningEffort", "Requested effort", BenchmarkRunService.effortValue(base.reasoningEffort),
                 BenchmarkRunService.effortValue(candidate.reasoningEffort));
-        differ(changes, "Legal move hints", base.legalMoveHints ? "On" : "Off", candidate.legalMoveHints ? "On" : "Off");
-        differ(changes, "Chat mode", base.chatMode, candidate.chatMode);
-        differ(changes, "Prompt version", base.benchmarkDefinition.promptVersion(), candidate.benchmarkDefinition.promptVersion());
-        differ(changes, "Current budget (USD)", base.budgetUsd, candidate.budgetUsd);
-        differ(changes, "Concurrent games", base.maxConcurrentGames, candidate.maxConcurrentGames);
+        settingChange(changes, "legalMoveHints", "Legal move hints", base.legalMoveHints ? "On" : "Off",
+                candidate.legalMoveHints ? "On" : "Off");
+        settingChange(changes, "chatMode", "Chat mode", base.chatMode, candidate.chatMode);
+        settingChange(changes, "budgetUsd", "Current budget (USD)", base.budgetUsd, candidate.budgetUsd);
+        settingChange(changes, "maxConcurrentGames", "Concurrent games", base.maxConcurrentGames, candidate.maxConcurrentGames);
+        settingChange(changes, "maxAttempts", "Max attempts per move", base.maxAttempts, candidate.maxAttempts);
+        settingChange(changes, "moveTimeoutSeconds", "Move time limit (seconds)", base.moveTimeoutSeconds,
+                candidate.moveTimeoutSeconds);
+        settingChange(changes, "maxOutputTokens", "Max output tokens", base.maxOutputTokens, candidate.maxOutputTokens);
         return changes;
     }
 
-    private static List<Difference> differences(BenchmarkDefinition base, BenchmarkDefinition candidate) {
+    private static void settingChange(Map<String, Difference> settings, String key, String label, Object base, Object candidate) {
+        if (!Objects.equals(base, candidate)) {
+            settings.put(key, new Difference(label, Objects.toString(base, "Missing"), Objects.toString(candidate, "Missing")));
+        }
+    }
+
+    private static ComparisonType comparisonType(Tournament base, Tournament candidate, Map<String, Difference> changes) {
+        if (changes.size() > 1) return ComparisonType.MULTIPLE_SETTINGS;
+        return isControlledRerun(base, candidate, changes) || isControlledRerun(candidate, base, changes)
+                ? ComparisonType.CONTROLLED_RERUN : ComparisonType.COMPARABLE;
+    }
+
+    private static boolean isControlledRerun(Tournament source, Tournament rerun, Map<String, Difference> changes) {
+        var recorded = rerun.benchmarkDefinition.rerun();
+        if (recorded == null || !source.id.equals(recorded.baseId())) return false;
+        if (changes.isEmpty()) return recorded.setting() == null;
+        if (!changes.containsKey(recorded.setting())) return false;
+        // Budget is the only recorded change that can be edited after the rerun is created.
+        return !"budgetUsd".equals(recorded.setting()) || rerun.budgetUsd.compareTo(new BigDecimal(recorded.value())) == 0;
+    }
+
+    private static List<Difference> differences(Tournament before, Tournament after) {
+        var base = before.benchmarkDefinition;
+        var candidate = after.benchmarkDefinition;
         var differences = new ArrayList<Difference>();
         differ(differences, "Opening suite", base.suite(), candidate.suite());
+        differ(differences, "Opening seed", base.openingSeed(), candidate.openingSeed());
         var baseLines = base.openings().stream().collect(Collectors.toMap(Opening::id, opening -> String.join(" ", opening.moves())));
         var candidateLines = candidate.openings().stream().collect(Collectors.toMap(Opening::id, opening -> String.join(" ", opening.moves())));
         var openingIds = new TreeSet<>(baseLines.keySet());
@@ -223,7 +262,24 @@ public class BenchmarkComparisonService {
                 candidate.targetStrengths().stream().sorted().toList());
         differ(differences, "Model colors", base.modelColors().stream().sorted().toList(),
                 candidate.modelColors().stream().sorted().toList());
+        if (!compatiblePrompts(before, after)) {
+            differences.add(new Difference("Prompt version", Objects.toString(base.promptVersion(), "Missing"),
+                    Objects.toString(candidate.promptVersion(), "Missing")));
+        }
         return differences;
+    }
+
+    private static boolean compatiblePrompts(Tournament base, Tournament candidate) {
+        String baseRules = promptRulesVersion(base);
+        String candidateRules = promptRulesVersion(candidate);
+        return baseRules != null && baseRules.equals(candidateRules);
+    }
+
+    private static String promptRulesVersion(Tournament run) {
+        String version = run.benchmarkDefinition.promptVersion();
+        String suffix = PromptService.benchmarkVersionSuffix(run.chatMode, run.legalMoveHints);
+        return version != null && version.length() > suffix.length() && version.endsWith(suffix)
+                ? version.substring(0, version.length() - suffix.length()) : null;
     }
 
     private static List<String> networks(BenchmarkDefinition definition) {

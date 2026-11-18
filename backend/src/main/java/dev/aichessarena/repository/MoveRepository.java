@@ -1,11 +1,14 @@
 package dev.aichessarena.repository;
 
 import dev.aichessarena.entity.Move;
+import dev.aichessarena.entity.MoveAttempt.Outcome;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -33,6 +36,19 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
 
     public List<ReasoningPly> findBenchmarkPlies(UUID runId) {
         return reasoningPlies(" where g.tournament.id = :runId", Parameters.with("runId", runId));
+    }
+
+    /** The accepted move and an earlier answer can have the same attempt number after resuming a game. */
+    public Set<UUID> findBenchmarkMovesWithPriorAnswers(UUID runId) {
+        return new HashSet<>(getEntityManager().createQuery("""
+                select m.id from Move m
+                where m.game.tournament.id = :runId and m.isBook = false and m.modelId is not null
+                  and exists (select 1 from MoveAttempt a
+                      where a.game = m.game and a.color = m.color and a.moveNumber = m.moveNumber
+                        and a.modelId = m.modelId and a.outcome not in :providerFailures and a.createdAt < m.createdAt)
+                """, UUID.class).setParameter("runId", runId)
+                .setParameter("providerFailures", List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_FATAL))
+                .getResultList());
     }
 
     private List<ReasoningPly> reasoningPlies(String condition, Parameters parameters) {

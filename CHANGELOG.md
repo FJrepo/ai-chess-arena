@@ -17,7 +17,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V32__durable_runs.sql` records which game loop owns a game and whether a model request is in flight. The previous version kept no such record, so the upgrade pauses games it left in progress (check spend, then resume) and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Back up the database and recreate backend and frontend together; rolling back requires restoring that backup. See [Durable runs migration (V32)](docs/deployment.md#durable-runs-migration-v32).
 
-- Flyway `V33__benchmark_reruns.sql` records the pinned prompt version on saved V31 benchmarks. Back up the database and recreate backend and frontend together.
+- Flyway `V33__benchmark_reruns.sql` records the pinned prompt version on saved V31 benchmarks. Apply V32 before V33. Back up the database and recreate backend and frontend together.
 
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
@@ -48,6 +48,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Retrying an unconfirmed benchmark creation in the same tab returns the original run even after reloading. Terminal model and Stockfish moves are saved with their results, so cancellation keeps committed wins and draws. Opening positions supply a baseline for move quality.
 - Benchmark games stay out of Analytics health counts while their spend remains visible. Benchmark games show their configured chat mode between turns and give recovery guidance for cut-off answers.
+- Recover an unconfirmed rerun using its original request after reloading. Starting a separate run requires explicit confirmation.
+- Benchmark comparisons flag incompatible prompt versions and multiple setting changes, show missing scores and telemetry without empty labels, and count outcome changes only across scored games.
+- Benchmark first-try legality includes earlier attempts at the same ply across pauses. New reruns reject stale budget or concurrency previews even if the source changes during verification.
 
 ### Security
 
