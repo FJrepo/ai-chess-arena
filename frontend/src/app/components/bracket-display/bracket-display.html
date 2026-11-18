@@ -1,5 +1,5 @@
 <div class="bracket-shell">
-  <div class="bracket-scroll">
+  <div class="bracket-scroll" role="region" aria-label="Tournament bracket" tabindex="0">
     <div class="bracket-content" #bracketContent>
       <svg
         class="connector-layer"
@@ -131,16 +131,12 @@
                         series.currentGame.status === 'COMPLETED' ||
                         series.currentGame.status === 'FORFEIT'
                       ) {
-                        <button mat-flat-button color="primary" (click)="review(series)">
+                        <button mat-button (click)="review(series)">
                           <mat-icon>preview</mat-icon>
                           Review
                         </button>
                       } @else if (series.currentGame.status === 'CANCELLED') {
-                        <button
-                          mat-flat-button
-                          color="primary"
-                          (click)="view.emit(series.currentGame)"
-                        >
+                        <button mat-button (click)="view.emit(series.currentGame)">
                           <mat-icon>preview</mat-icon>
                           Review
                         </button>
@@ -194,7 +190,7 @@
                   @if (championModel) {
                     <app-provider-logo [modelId]="championModel" [size]="18" />
                   }
-                  {{ champion }}
+                  <span class="champion-text">{{ champion }}</span>
                 </span>
               </div>
             </div>

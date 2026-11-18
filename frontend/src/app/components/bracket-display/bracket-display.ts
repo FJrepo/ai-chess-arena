@@ -377,8 +377,8 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       }
     }
 
-    this.connectorSvgWidth.set(Math.ceil(content.scrollWidth));
-    this.connectorSvgHeight.set(Math.ceil(content.scrollHeight));
+    this.connectorSvgWidth.set(Math.ceil(hostRect.width));
+    this.connectorSvgHeight.set(Math.ceil(hostRect.height));
     this.connectorPaths.set(paths);
   }
 

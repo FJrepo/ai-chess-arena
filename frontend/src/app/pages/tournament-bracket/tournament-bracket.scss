@@ -1,3 +1,5 @@
+@use '@angular/material' as mat;
+
 .bracket-page {
   display: flex;
   flex-direction: column;
@@ -19,6 +21,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
   }
 
   .title-row {
@@ -35,6 +38,9 @@
 
     h2 {
       margin: 0;
+      // Long or unbroken titles wrap inside the header instead of running under the actions.
+      min-width: 0;
+      overflow-wrap: anywhere;
       font-size: 1.6rem;
       font-weight: 800;
       letter-spacing: 0.04em;
@@ -45,16 +51,26 @@
   .meta-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--mat-sys-on-surface-variant);
 
-    .dot-separator {
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: color-mix(in srgb, var(--mat-sys-on-surface) 20%, transparent);
+    .count-tag,
+    .champion-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: inherit;
+
+      &::before {
+        content: '';
+        flex: none;
+        width: var(--app-space-1);
+        height: var(--app-space-1);
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--mat-sys-on-surface) 20%, transparent);
+      }
     }
 
     // Same pill language as the tournament list cards.
@@ -304,39 +320,92 @@
   }
 }
 
+.count-tag {
+  white-space: nowrap;
+}
+
 .champion-tag {
+  max-width: 100%;
+}
+
+.champion-label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--app-space-1);
   font-weight: 600;
+  overflow-wrap: anywhere;
 
   mat-icon {
+    flex: none;
     font-size: 18px;
     width: 18px;
     height: 18px;
   }
 }
 
+.export-trigger {
+  @include mat.button-overrides(
+    (
+      outlined-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+    )
+  );
+}
+
+.live-matchup {
+  overflow-wrap: anywhere;
+}
+
 .auto-run-panel {
-  margin-bottom: 20px;
+  mat-card-content {
+    display: grid;
+    gap: var(--app-space-2);
+    padding: var(--app-space-2) var(--app-space-4);
+
+    p {
+      margin: 0;
+    }
+  }
+
+  .run-summary,
+  .run-controls,
+  .run-save-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--app-space-2);
+  }
 
   .run-status {
     font-weight: 600;
   }
+
   .run-controls {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
+    gap: var(--app-space-3);
+    @include mat.form-field-overrides(
+      (
+        outlined-disabled-input-text-color: var(--mat-sys-on-surface-variant),
+        outlined-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+      )
+    );
+    @include mat.select-overrides(
+      (
+        disabled-trigger-text-color: var(--mat-sys-on-surface-variant),
+      )
+    );
+    @include mat.button-overrides(
+      (
+        outlined-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+        protected-disabled-label-text-color: var(--mat-sys-on-surface-variant),
+      )
+    );
+
+    mat-form-field {
+      @include mat.form-field-density(-4);
+    }
   }
-  .run-save-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
+
   .run-hint {
     color: var(--mat-sys-on-surface-variant);
-    font-size: 13px;
+    font-size: var(--app-text-secondary-size);
   }
 }

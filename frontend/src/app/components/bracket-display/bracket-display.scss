@@ -77,6 +77,11 @@ $warning: mat.$orange-palette;
 .bracket-content {
   position: relative;
   min-width: min-content;
+
+  // Fit the extra column at the desktop page width, with local scrolling on smaller windows.
+  &:has(.champion-round) {
+    --bracket-gap: var(--app-bracket-gap-compact);
+  }
 }
 
 .connector-layer {
@@ -278,6 +283,7 @@ $warning: mat.$orange-palette;
   line-height: 1.3;
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .player-score {
@@ -404,10 +410,18 @@ $warning: mat.$orange-palette;
   color: var(--bracket-trophy);
 }
 
+.champion-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .champion-name {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  // Unbroken winner names wrap inside the champion card.
+  max-width: 100%;
+  min-width: 0;
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.3;
