@@ -55,4 +55,62 @@ describe('LiveGamesSwitcher', () => {
       vi.useRealTimers();
     }
   });
+
+  it('restores keyboard focus after reordered, removed and emptied live rows', () => {
+    vi.useFakeTimers();
+    const changed = new Subject<void>();
+    const first = { id: 'first', status: 'IN_PROGRESS', practice: false } as const;
+    const second = { id: 'second', status: 'IN_PROGRESS', practice: true } as const;
+    let snapshot: LiveGamesSnapshot = { active: [first, second] };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: { getLiveGames: () => of(snapshot) } },
+        {
+          provide: WebSocketService,
+          useValue: { liveGamesChanges: () => changed, watchLiveGames: vi.fn() },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(LiveGamesSwitcher);
+    const row = (id: string) =>
+      document.querySelector<HTMLAnchorElement>(`a[data-live-game-id="${id}"]`)!;
+    const refresh = (active: LiveGamesSnapshot['active']) => {
+      snapshot = { active };
+      changed.next();
+      vi.advanceTimersByTime(200);
+    };
+
+    try {
+      fixture.detectChanges();
+      const trigger = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+      trigger.focus();
+      trigger.click();
+      fixture.detectChanges();
+      row('second').focus();
+
+      refresh([second, { ...first, status: 'PAUSED' }]);
+      // The test DOM does not drop focus when Angular detaches and reinserts this row.
+      row('second').blur();
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(row('second'));
+
+      const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true });
+      Object.defineProperty(down, 'keyCode', { value: 40 });
+      row('second').dispatchEvent(down);
+      expect(document.activeElement).toBe(row('first'));
+
+      refresh([second]);
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(row('second'));
+
+      refresh([]);
+      fixture.detectChanges();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    } finally {
+      fixture.destroy();
+      vi.useRealTimers();
+    }
+  });
 });
