@@ -18,6 +18,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { Game, RunCapacity } from '../../models/tournament.model';
 import { ProviderLogoComponent } from '../provider-logo/provider-logo';
 import { QueuedResume } from '../queued-resume/queued-resume';
+import { compareInstants } from '../../utils/instant';
 import { gameStatusLabel } from '../../utils/status-labels';
 
 interface ConnectorPath {
@@ -405,7 +406,7 @@ export class BracketDisplay implements AfterViewInit, OnDestroy {
       if (left.seriesGameNumber !== right.seriesGameNumber) {
         return left.seriesGameNumber - right.seriesGameNumber;
       }
-      return left.createdAt.localeCompare(right.createdAt);
+      return compareInstants(left.createdAt, right.createdAt) || left.id.localeCompare(right.id);
     });
     const firstGame = orderedGames[0];
     const lastGame = orderedGames[orderedGames.length - 1];

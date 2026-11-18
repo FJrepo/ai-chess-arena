@@ -18,6 +18,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { compareInstants } from '../../utils/instant';
 import { newRequestId } from '../../utils/request-id';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 import { FormsModule } from '@angular/forms';
@@ -294,7 +295,7 @@ Your opponent is %s (%s).`;
     const games = this.rematchSource()?.games.filter((game) => game.startedAt) ?? [];
     return games.sort(
       (left, right) =>
-        left.startedAt!.localeCompare(right.startedAt!) || left.id.localeCompare(right.id),
+        compareInstants(left.startedAt, right.startedAt) || left.id.localeCompare(right.id),
     )[0];
   });
   readonly rematchLoadError = signal<string | null>(null);
