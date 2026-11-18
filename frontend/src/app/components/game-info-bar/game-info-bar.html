@@ -126,26 +126,32 @@
     </div>
   }
   @let pauseDetail = game.status === 'PAUSED' ? game.statusDetail : null;
-  <div class="pause-panel" [class.spend-pause]="game.uncertainRequest">
-    <div class="pause-head" role="status">
+  <div
+    class="pause-panel"
+    [class.pause-warning]="pauseDetail"
+    [class.spend-pause]="pauseDetail && game.uncertainRequest"
+  >
+    <div class="pause-head">
       @if (pauseDetail) {
         <mat-icon class="pause-icon" aria-hidden="true">pause_circle</mat-icon>
-        <div class="pause-copy">
-          <h2 class="pause-title">
-            {{
-              game.uncertainRequest
-                ? 'Paused for a spend check'
-                : game.resumeRequestedAt || showRaiseLimit()
-                  ? 'Game paused'
-                  : 'Paused. Fix the problem, then resume the game.'
-            }}
-          </h2>
-          <p class="pause-detail">{{ pauseDetail }}</p>
-          @if (game.uncertainRequest) {
-            <p class="pause-hint">Check your OpenRouter activity for this request.</p>
-          }
-        </div>
       }
+      <div class="pause-copy">
+        @if (pauseDetail) {
+          @if (game.uncertainRequest) {
+            <h2 class="pause-title">Paused for a spend check</h2>
+          } @else {
+            <span class="pause-title">{{
+              game.resumeRequestedAt || showRaiseLimit()
+                ? 'Game paused'
+                : 'Paused. Fix the problem, then resume the game.'
+            }}</span>
+          }
+        }
+        <p class="pause-detail" role="status">{{ pauseDetail }}</p>
+        @if (pauseDetail && game.uncertainRequest) {
+          <p class="pause-hint">Find this request in your OpenRouter activity.</p>
+        }
+      </div>
     </div>
     @if (pauseDetail) {
       @if (game.uncertainRequest) {
@@ -158,8 +164,7 @@
         >
           Spend checked, resume
         </button>
-      }
-      @if (showRaiseLimit()) {
+      } @else if (showRaiseLimit()) {
         <div class="raise-limit">
           <mat-form-field appearance="outline" class="limit-field" subscriptSizing="dynamic">
             <mat-label>Max output tokens per answer</mat-label>
