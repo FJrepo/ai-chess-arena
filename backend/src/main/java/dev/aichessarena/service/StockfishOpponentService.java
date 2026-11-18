@@ -1,11 +1,20 @@
 package dev.aichessarena.service;
 
 import com.github.bhlangonijr.chesslib.Board;
+import dev.aichessarena.entity.BenchmarkDefinition;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.EOFException;
+import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +31,8 @@ public class StockfishOpponentService {
     public static final int MIN_ELO = 1320;
     public static final int MAX_ELO = 3190;
     static final int SEARCH_NODES = 50_000;
+    static final int THREADS = 1;
+    static final int HASH_MIB = 16;
 
     private static final Pattern ELO_OPTION = Pattern.compile("option name UCI_Elo type spin default \\d+ min (\\d+) max (\\d+)");
     private static final Pattern BEST_MOVE = Pattern.compile("bestmove ([a-h][1-8][a-h][1-8][qrbn]?)(?:\\s.*)?");
@@ -42,25 +53,68 @@ public class StockfishOpponentService {
         return new ProcessBuilder("stockfish").redirectErrorStream(true).start();
     }
 
+    String benchmarkEngineSha256() throws IOException {
+        return sha256(engineBinary());
+    }
+
+    Path engineBinary() throws IOException {
+        String path = System.getenv("PATH");
+        if (path != null) {
+            for (String directory : path.split(Pattern.quote(File.pathSeparator), -1)) {
+                Path candidate = Path.of(directory, "stockfish");
+                if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) return candidate.toRealPath();
+            }
+        }
+        throw new IOException("Stockfish executable is missing from PATH");
+    }
+
+    private static String sha256(Path binary) throws IOException {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            try (var input = new DigestInputStream(Files.newInputStream(binary), digest)) {
+                input.transferTo(OutputStream.nullOutputStream());
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    Process startBenchmarkProcess(String expectedSha256) throws IOException {
+        Path binary = engineBinary();
+        if (!sha256(binary).equals(expectedSha256)) {
+            throw new IOException("Stockfish build does not match this benchmark");
+        }
+        return new ProcessBuilder(binary.toString()).redirectErrorStream(true).start();
+    }
+
     /** Returns null when the owning game stops before its search. */
     String chooseMove(Board board, int elo, BooleanSupplier shouldContinue) throws IOException, TimeoutException {
+        return chooseMove(board, elo, null, shouldContinue);
+    }
+
+    String chooseMove(Board board, int elo, BenchmarkDefinition benchmark, BooleanSupplier shouldContinue)
+            throws IOException, TimeoutException {
         if (!acquireSlot(shouldContinue)) return null;
         try {
             if (!shouldContinue.getAsBoolean()) return null;
             requireProcessSlot();
 
-            StockfishService.Engine engine = new StockfishService.Engine(startProcess());
+            Process process = benchmark == null ? startProcess() : startBenchmarkProcess(benchmark.engineSha256());
+            StockfishService.Engine engine = new StockfishService.Engine(process);
             try {
                 synchronized (this) {
                     if (closed) throw new IOException("Stockfish opponent is shut down");
                     active = engine;
                 }
                 engine.call(() -> {
-                    configure(engine, elo);
+                    configure(engine, elo, benchmark == null ? THREADS : benchmark.threads(),
+                            benchmark == null ? HASH_MIB : benchmark.hashMiB());
                     return null;
                 }, handshakeTimeout, shouldContinue);
                 if (!shouldContinue.getAsBoolean()) return null;
-                return engine.call(() -> search(engine, position(board)), opponentTimeout, shouldContinue);
+                int nodes = benchmark == null ? SEARCH_NODES : benchmark.searchNodes();
+                return engine.call(() -> search(engine, position(board), nodes), opponentTimeout, shouldContinue);
             } finally {
                 stopAndAwaitExit(engine);
             }
@@ -103,7 +157,7 @@ public class StockfishOpponentService {
         }
     }
 
-    private void configure(StockfishService.Engine engine, int elo) throws IOException {
+    private static void configure(StockfishService.Engine engine, int elo, int threads, int hashMiB) throws IOException {
         engine.sendCommand("uci");
         boolean supportedElo = false;
         boolean limitStrength = false;
@@ -121,8 +175,8 @@ public class StockfishOpponentService {
             throw new IOException("This Stockfish version does not support the requested target Elo");
         }
 
-        engine.sendCommand("setoption name Threads value 1");
-        engine.sendCommand("setoption name Hash value 16");
+        engine.sendCommand("setoption name Threads value " + threads);
+        engine.sendCommand("setoption name Hash value " + hashMiB);
         engine.sendCommand("setoption name UCI_LimitStrength value true");
         engine.sendCommand("setoption name UCI_Elo value " + elo);
         engine.sendCommand("ucinewgame");
@@ -133,9 +187,9 @@ public class StockfishOpponentService {
         throw new EOFException("Stockfish exited before readyok");
     }
 
-    private static String search(StockfishService.Engine engine, String position) throws IOException {
+    private static String search(StockfishService.Engine engine, String position, int nodes) throws IOException {
         engine.sendCommand(position);
-        engine.sendCommand("go nodes " + SEARCH_NODES);
+        engine.sendCommand("go nodes " + nodes);
         String line;
         while ((line = engine.reader.readLine()) != null) {
             if (line.startsWith("bestmove")) {

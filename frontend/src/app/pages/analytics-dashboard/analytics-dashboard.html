@@ -783,6 +783,14 @@
                     }}</span>
                   </p>
                 }
+                @if (h.benchmarkCostUsd !== undefined && (h.tournamentId ?? null) === null) {
+                  <p class="sub">
+                    Benchmarks
+                    <span class="num">{{
+                      h.benchmarkCostUsd | currency: 'USD' : 'symbol' : '1.2-6'
+                    }}</span>
+                  </p>
+                }
               } @else {
                 <ng-container [ngTemplateOutlet]="healthKpiEmpty"></ng-container>
               }

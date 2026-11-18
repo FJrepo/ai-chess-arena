@@ -102,14 +102,14 @@ public class TournamentResource {
 
     @GET
     public List<TournamentDto> list() {
-        return tournamentRepository.listAll().stream().map(DtoMapper::toDto).toList();
+        return tournamentRepository.list("benchmarkDefinition is null").stream().map(DtoMapper::toDto).toList();
     }
 
     @GET
     @Path("/{id}")
     public Response get(@PathParam("id") UUID id) {
         Tournament t = tournamentRepository.findById(id);
-        if (t == null) return Response.status(404).build();
+        if (t == null || t.isBenchmark()) return Response.status(404).build();
         return Response.ok(DtoMapper.toDto(t)).build();
     }
 
@@ -117,7 +117,7 @@ public class TournamentResource {
     @Path("/{id}/cost-summary")
     public Response getCostSummary(@PathParam("id") UUID id) {
         Tournament t = tournamentRepository.findById(id);
-        if (t == null) return Response.status(404).build();
+        if (t == null || t.isBenchmark()) return Response.status(404).build();
         return Response.ok(analyticsService.getTournamentCostSummary(id)).build();
     }
 
@@ -126,7 +126,7 @@ public class TournamentResource {
     @Transactional
     public Response update(@PathParam("id") UUID id, CreateTournamentRequest req) {
         Tournament t = tournamentRepository.findByIdForUpdate(id);
-        if (t == null) return Response.status(404).build();
+        if (t == null || t.isBenchmark()) return Response.status(404).build();
         if (req == null) {
             throw new IllegalArgumentException("Request body is required");
         }

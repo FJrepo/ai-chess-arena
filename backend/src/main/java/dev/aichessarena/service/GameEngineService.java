@@ -405,10 +405,15 @@ public class GameEngineService {
     private String playStockfishTurn(Game game, Board board, String fen, String color, int moveNumber, GameLoop loop) {
         String bestMove;
         try {
-            bestMove = stockfishOpponent.chooseMove(board, game.stockfishElo, loop::shouldContinue);
+            bestMove = game.isBenchmark()
+                    ? stockfishOpponent.chooseMove(board, game.stockfishElo, game.tournament.benchmarkDefinition,
+                            loop::shouldContinue)
+                    : stockfishOpponent.chooseMove(board, game.stockfishElo, loop::shouldContinue);
         } catch (IOException | TimeoutException e) {
             LOG.warnf(e, "Stockfish opponent search failed for game %s", game.id);
-            gameLifecycleService.pauseWithReason(game.id, "Stockfish could not play a move. Check Stockfish and resume.");
+            gameLifecycleService.pauseWithReason(game.id, game.isBenchmark()
+                    ? "Stockfish could not play a move. Check that the benchmark's engine build is installed, then resume."
+                    : "Stockfish could not play a move. Check Stockfish and resume.");
             return null;
         }
         if (bestMove == null || !loop.shouldContinue()) return null;

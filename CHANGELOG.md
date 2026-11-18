@@ -13,6 +13,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Flyway `V30__v2_api_cleanup.sql` renames `tournaments.max_retries` to `max_attempts`, renames the `maxRetries` key to `maxAttempts` in stored game configuration snapshots and drops the pre-1.4 column `tournaments.trash_talk_enabled` (it only mirrored `chat_mode`). Back up the database and recreate backend and frontend together; rolling back requires restoring that backup.
 
+- Flyway `V31__stockfish_ladder.sql` adds benchmark definitions and paired games. Back up the database and recreate backend and frontend together. Existing games need no backfill.
+
 - Breaking API changes for scripts and API clients (2.0):
   - `maxRetries` -> `maxAttempts` in `POST`/`PUT /api/tournaments`, tournament responses, game `startingConfiguration`/`configurationHistory` settings and the JSON export (`settings.maxAttempts`, now `schemaVersion: 2`). Values and the 1–20 range are unchanged. Requests that still send `maxRetries` get HTTP 400.
   - `trashTalkEnabled` -> `chatMode` (`OFF`, `OPTIONAL`, `MANDATORY`). Requests that still send `trashTalkEnabled` get HTTP 400; responses no longer include it.
@@ -21,6 +23,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Run the **Stockfish ladder** against fixed engine settings and compare each model’s color-paired results and spend.
 - Open running games, paused games that need attention, and the most recent finished game from the header.
 - Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 

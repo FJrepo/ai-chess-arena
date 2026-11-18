@@ -45,6 +45,12 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Stockfish ladder migration (V31)
+
+Back up the database and recreate the backend and frontend together. Flyway `V31__stockfish_ladder.sql` adds benchmark definitions and game pairs. Existing games and settings are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.
+
+The [Stockfish ladder](how-it-works.md#stockfish-ladder) records the SHA-256 of the opponent executable on creation and checks it before each benchmark search. Keep that binary installed until the run finishes. An upgrade, architecture change or different native Stockfish build can change its digest. Restore the matching binary and resume the affected games, or start a fresh run using the new build. Practice searches and move evaluations use the currently installed engine.
+
 ## Mind games banter migration (V29)
 
 Back up the database before upgrading and recreate the backend and frontend together. Flyway `V29__mind_games_banter.sql` extends the allowed tournament banter values. Existing settings and prompt records are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.

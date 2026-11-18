@@ -13,7 +13,7 @@
           <span class="model"
             >{{
               game.whiteControlType === 'STOCKFISH'
-                ? 'Target Elo ' + game.stockfishElo
+                ? (game.benchmarkRunId ? 'Target strength ' : 'Target Elo ') + game.stockfishElo
                 : game.whiteModelId || 'Human player'
             }}
             @if (sideEffort('WHITE'); as effort) {
@@ -53,7 +53,7 @@
           <span class="model"
             >{{
               game.blackControlType === 'STOCKFISH'
-                ? 'Target Elo ' + game.stockfishElo
+                ? (game.benchmarkRunId ? 'Target strength ' : 'Target Elo ') + game.stockfishElo
                 : game.blackModelId || 'Human player'
             }}
             @if (sideEffort('BLACK'); as effort) {

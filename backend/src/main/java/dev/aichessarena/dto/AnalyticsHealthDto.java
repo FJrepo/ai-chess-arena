@@ -20,5 +20,6 @@ public record AnalyticsHealthDto(
         long completionTokensTotal,
         BigDecimal costTotalUsd,
         BigDecimal practiceCostUsd,
+        BigDecimal benchmarkCostUsd,
         List<AnalyticsHealthModelRowDto> models
 ) {}

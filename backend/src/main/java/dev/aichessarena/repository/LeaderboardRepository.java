@@ -20,7 +20,7 @@ public class LeaderboardRepository implements PanacheRepositoryBase<Game, UUID> 
 
     static String rankedGameWhere(boolean includeForfeits, Boolean legalMoveHints) {
         return GameRepository.hintsJoin(legalMoveHints)
-                + " where g.practiceKind is null and g.status in :statuses and g.completedAt is not null and g.result is not null"
+                + " where g.practiceKind is null and g.benchmarkPairId is null and g.status in :statuses and g.completedAt is not null and g.result is not null"
                 + " and g.whiteModelId is not null and g.blackModelId is not null"
                 + (includeForfeits ? "" : " and g.result not in :forfeits")
                 + GameRepository.hintsPredicate(legalMoveHints);

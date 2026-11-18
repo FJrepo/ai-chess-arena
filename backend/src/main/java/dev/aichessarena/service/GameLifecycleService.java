@@ -471,7 +471,7 @@ public class GameLifecycleService {
     }
 
     private void advanceTournamentWinnerIfNeeded(Game game) {
-        if (game.tournament != null) {
+        if (game.tournament != null && !game.isBenchmark()) {
             tournamentService.advanceWinner(game.id);
         }
     }

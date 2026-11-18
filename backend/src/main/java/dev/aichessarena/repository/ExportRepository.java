@@ -162,7 +162,7 @@ public class ExportRepository {
     public Snapshot read(UUID id, boolean singleGame, boolean includeChat, boolean includeAttempts) {
         String tournamentFilter = singleGame
                 ? "where t.id = (select g.tournament.id from Game g where g.id = :id)"
-                : "where t.id = :id";
+                : "where t.id = :id and t.benchmarkDefinition is null";
         Tournament tournament = session.createQuery(TOURNAMENT_SELECT + tournamentFilter, Tuple.class)
                 .setParameter("id", id).getResultList().stream().map(this::tournament).findFirst().orElse(null);
         if (tournament == null && !singleGame) throw new NotFoundException();

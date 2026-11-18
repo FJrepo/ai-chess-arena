@@ -231,6 +231,7 @@ public class GameMoveService {
             throw new WebApplicationException("Game not found", Response.Status.NOT_FOUND);
         }
         GameLifecycleService.requireActiveTournament(game);
+        if (game.isBenchmark()) throw new GameStateConflictException("Benchmark moves cannot be overridden");
         if (game.status != Game.GameStatus.PAUSED) {
             throw new GameStateConflictException("Pause the game before overriding moves");
         }

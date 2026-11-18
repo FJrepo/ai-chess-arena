@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.FutureTask;
@@ -15,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -43,6 +46,22 @@ class StockfishOpponentServiceTest {
                 "ucinewgame", "isready", "position startpos moves e2e4 e7e5", "go nodes 50000"
         ), process.commands.toString(StandardCharsets.UTF_8).lines().toList());
         assertTrue(process.destroyed.await(2, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void refusesToLaunchABenchmarkWhenTheExecutableChanges(@TempDir Path directory) throws IOException {
+        Path binary = Files.writeString(directory.resolve("stockfish"), "abc");
+        var opponent = new StockfishOpponentService() {
+            @Override
+            Path engineBinary() {
+                return binary;
+            }
+        };
+        String pinned = opponent.benchmarkEngineSha256();
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", pinned);
+        Files.writeString(binary, "changed");
+        var mismatch = assertThrows(IOException.class, () -> opponent.startBenchmarkProcess(pinned));
+        assertEquals("Stockfish build does not match this benchmark", mismatch.getMessage());
     }
 
     @Test

@@ -1,3 +1,9 @@
+import type {
+  BenchmarkRun,
+  BenchmarkRunSettings,
+  BenchmarkSummary,
+  CreateBenchmarkRequest,
+} from '../models/benchmark.model';
 import type { ObservedReasoningEffort } from '../utils/reasoning-effort';
 import type { LiveGamesSnapshot } from '../models/live-games.model';
 import { Injectable } from '@angular/core';
@@ -73,6 +79,26 @@ export class ApiService {
 
   getOpenings(): Observable<Opening[]> {
     return this.http.get<Opening[]>(`${this.baseUrl}/openings`);
+  }
+
+  listBenchmarks(): Observable<BenchmarkSummary[]> {
+    return this.http.get<BenchmarkSummary[]>(`${this.baseUrl}/benchmarks`);
+  }
+
+  getBenchmark(id: string): Observable<BenchmarkRun> {
+    return this.http.get<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}`);
+  }
+
+  createBenchmark(request: CreateBenchmarkRequest): Observable<BenchmarkRun> {
+    return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks`, request);
+  }
+
+  pauseBenchmark(id: string): Observable<BenchmarkRun> {
+    return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/pause`, {});
+  }
+
+  resumeBenchmark(id: string, settings: BenchmarkRunSettings): Observable<BenchmarkRun> {
+    return this.http.post<BenchmarkRun>(`${this.baseUrl}/benchmarks/${id}/resume`, settings);
   }
 
   // Tournaments

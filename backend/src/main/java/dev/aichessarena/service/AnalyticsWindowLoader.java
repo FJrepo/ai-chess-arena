@@ -48,9 +48,9 @@ public class AnalyticsWindowLoader {
     private AnalyticsScope loadScope(int days, UUID tournamentId, Boolean legalMoveHints, boolean includeModelAnalytics) {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
         List<Game> games = gameRepository.findInWindow(cutoff, tournamentId, legalMoveHints).stream()
-                .filter(game -> game.isPractice() || !AnalyticsGameOutcomeClassifier.isBye(game))
-                .filter(game -> !includeModelAnalytics || !game.isPractice())
-                .filter(game -> game.status != Game.GameStatus.CANCELLED || game.isPractice())
+                .filter(game -> game.isOutsideCompetition() || !AnalyticsGameOutcomeClassifier.isBye(game))
+                .filter(game -> !includeModelAnalytics || !game.isOutsideCompetition())
+                .filter(game -> game.status != Game.GameStatus.CANCELLED || game.isOutsideCompetition())
                 .toList();
         return scopeFor(
                 cutoff,

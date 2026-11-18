@@ -330,7 +330,12 @@ export class GameView implements OnInit, OnDestroy {
   });
 
   isLive!: () => boolean;
-  overrideAllowed = computed(() => this.gameActionsAvailable() && this.game()?.status === 'PAUSED');
+  overrideAllowed = computed(
+    () =>
+      this.gameActionsAvailable() &&
+      !this.game()?.benchmarkRunId &&
+      this.game()?.status === 'PAUSED',
+  );
   activeColor!: () => 'WHITE' | 'BLACK' | null;
   moveTimerSeconds!: () => number | null;
   moveTimerDisplay!: () => string;
