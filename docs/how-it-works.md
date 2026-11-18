@@ -2,6 +2,8 @@
 
 Detailed rules, settings and API conventions for running tournaments. For setup and development commands, see the [README](../README.md); for upgrades and operations, see the [deployment guide](deployment.md).
 
+To choose settings for a specific question (playing strength, effort, cost, reliability, persuasion), see the [benchmark guide](benchmarks.md).
+
 ## Contents
 
 - [Connecting OpenRouter](#connecting-openrouter)
@@ -807,3 +809,5 @@ New model releases arrive with impressive benchmark numbers. A chess bracket is 
 A model that tops the leaderboards but cannot get through a game without invalid moves is worth a closer look.
 
 Treat the results as a smell test, not a benchmark: the prompt supplies the position and the legal moves, brackets are small, games are few, and chess is one narrow skill — it cannot tell you whether benchmark gains generalize.
+
+For repeatable comparisons, use the Stockfish ladder with the [benchmark guide](benchmarks.md#read-this-first) and its caveats on sample sizes, reasoning effort and ratings.
