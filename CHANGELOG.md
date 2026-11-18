@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-18
+
+**Benchmarks you can repeat**: measure models against a fixed Stockfish setup, rerun with one change, and see exactly what improved, what regressed and what it cost.
+
+- 🏁 **Stockfish ladder**: paired benchmark runs from the same openings with colours reversed against a pinned engine setup.
+- 🔁 **Rerun and compare**: repeat a run with one changed setting and compare results, telemetry and spend side by side.
+- 🧭 **Benchmark recipes**: a guide and setup presets for what you want to test, from playing strength to persuasion.
+- 🛡️ **Durable runs**: work continues after a restart, and a request that may already have been charged is not sent again without your check.
+- 📺 **Live games switcher**: jump into any running game from the header, with a live lamp.
+- 🗣️ **Mind games**: a banter level that tries to talk the opponent into resigning, with persuasion analytics.
+
+> 💾 [Back up your database](docs/deployment.md#backups-and-rollback) before upgrading. 2.0 contains breaking API changes; see the upgrade notes below.
+
 ### Upgrade notes
 
 - Flyway `V29__mind_games_banter.sql` extends the tournament banter constraint. Back up the database and recreate backend and frontend together. Existing tournament settings are retained without a backfill.
