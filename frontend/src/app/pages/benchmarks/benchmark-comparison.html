@@ -52,8 +52,10 @@
     @if (!data.comparable) {
       <section class="panel comparison-state blocked" role="alert" aria-labelledby="incompatible">
         <div class="state-heading">
-          <h2 id="incompatible">Not comparable</h2>
-          <p>Scores and deltas are hidden because matchup conditions differ.</p>
+          <div class="state-message">
+            <h2 id="incompatible">Not comparable</h2>
+            <p>Scores and deltas are hidden because matchup conditions differ.</p>
+          </div>
         </div>
         <ng-container
           *ngTemplateOutlet="
@@ -65,42 +67,40 @@
     } @else {
       <section
         class="panel comparison-state"
+        [class.info]="!multipleSettings"
         [class.warning]="multipleSettings"
         aria-labelledby="setting-changes"
       >
         <div class="state-heading">
-          <h2 id="setting-changes">
+          <div class="state-message">
+            <h2 id="setting-changes">
+              @if (controlled) {
+                Controlled rerun
+              } @else if (multipleSettings) {
+                Multiple settings differ
+              } @else {
+                Comparable runs
+              }
+            </h2>
             @if (controlled) {
-              Controlled rerun
+              <p>The rerun repeats the playing settings or makes one recorded change.</p>
             } @else if (multipleSettings) {
-              Multiple settings differ
+              <p>Differences cannot be attributed to a single setting.</p>
             } @else {
-              Comparable runs
+              <p>The runs share the same matchup conditions.</p>
             }
-          </h2>
+          </div>
           @if (controlled) {
-            <p>The rerun repeats the playing settings or makes one recorded change.</p>
-            <span class="state-help">
-              <button
-                class="hint-help"
-                type="button"
-                aria-label="Controlled rerun requirements"
-                aria-describedby="controlled-requirements"
-              >
-                ?
-              </button>
-              <span id="controlled-requirements" role="tooltip">
+            <details class="state-requirements">
+              <summary>Controlled rerun requirements</summary>
+              <p id="controlled-requirements">
                 Playing settings are model IDs, requested effort, legal move hints, chat mode,
                 maximum attempts per move, move time limit, and maximum output tokens. The runs must
                 match on opening suite, seed and lines, Stockfish executable and NNUE weights,
                 search nodes, threads and hash size, Stockfish levels, model colors, and underlying
                 prompt version.
-              </span>
-            </span>
-          } @else if (multipleSettings) {
-            <p>Differences cannot be attributed to a single setting.</p>
-          } @else {
-            <p>The runs share the same matchup conditions.</p>
+              </p>
+            </details>
           }
         </div>
         @if (data.settingChanges.length) {
@@ -139,6 +139,7 @@
                     <td class="align-end">
                       @if (model.scoreDelta !== null) {
                         @let swing = model.scoreDelta * model.matchedGames;
+                        @let swingPoints = swing | number: '1.0-1';
                         <div
                           class="score-swing"
                           [class.higher]="swing > 0"
@@ -153,14 +154,19 @@
                               No change
                             }
                           </span>
-                          <span class="num"
-                            >{{ swing > 0 ? '+' : '' }}{{ swing | number: '1.0-1' }}</span
-                          >
+                          <span class="score-points">
+                            <span class="num">{{ swing > 0 ? '+' : '' }}{{ swingPoints }}</span>
+                            {{ swingPoints === '1' || swingPoints === '-1' ? 'point' : 'points' }}
+                          </span>
+                          <span class="shared-games">
+                            over <span class="num">{{ model.matchedGames | number }}</span> shared
+                            {{ model.matchedGames === 1 ? 'game' : 'games' }}
+                          </span>
                         </div>
-                        <small class="secondary">
-                          Over <span class="num">{{ model.matchedGames | number }}</span>
-                          {{ model.matchedGames === 1 ? 'game' : 'games' }} scored in both runs
-                        </small>
+                        <!-- Use the analytics reliability cutoff of three games. -->
+                        @if (model.matchedGames < 3) {
+                          <small class="secondary">Low sample</small>
+                        }
                       } @else {
                         <span class="secondary">No games scored in both runs</span>
                       }
@@ -263,7 +269,9 @@
                 <th scope="col" class="align-end">Telemetry</th>
                 <th scope="col" class="group-start align-end">Results</th>
                 <th scope="col" class="align-end">Telemetry</th>
-                <th scope="col" class="group-start align-end">Score</th>
+                <th scope="col" class="group-start align-end">
+                  Score rate change (percentage points)
+                </th>
                 <th scope="col" class="align-end">Cost</th>
               </tr>
             </thead>
@@ -323,103 +331,133 @@
     }
 
     @if (data.comparable && data.matchups.length) {
+      @let changed = data.matchups.filter((row) => row.outcomeChanged);
+      @let other = data.matchups.filter((row) => !row.outcomeChanged);
       <section class="panel" aria-labelledby="comparison-matchups">
         <h2 id="comparison-matchups">By matchup</h2>
-        <p class="secondary">
-          Changed outcomes appear first, with the largest point swings at the top.
-        </p>
-        <div class="table-scroll">
-          <table class="detail-table matchup-detail" aria-labelledby="comparison-matchups">
-            <colgroup class="matchup-col"></colgroup>
-            <colgroup class="game-col"></colgroup>
-            <colgroup class="game-col"></colgroup>
-            <colgroup class="delta-col">
-              <col />
-              <col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col" rowspan="2">Opening / color / Stockfish level</th>
-                <th scope="colgroup" class="group-start base-game">Base run</th>
-                <th scope="colgroup" class="group-start candidate-game">Candidate run</th>
-                <th scope="colgroup" colspan="2" class="group-start align-end">Delta</th>
-              </tr>
-              <tr>
-                <th scope="col" class="group-start base-game">Game &amp; telemetry</th>
-                <th scope="col" class="group-start candidate-game">Game &amp; telemetry</th>
-                <th scope="col" class="group-start align-end">Points</th>
-                <th scope="col" class="align-end">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (
-                row of data.matchups;
-                track row.baseModelId +
-                  '/' +
-                  row.openingId +
-                  '/' +
-                  row.targetStrength +
-                  '/' +
-                  row.color
-              ) {
-                @if ($first && row.outcomeChanged) {
-                  <tr class="matchup-heading">
-                    <th colspan="5">Changed outcomes</th>
-                  </tr>
-                } @else if (
-                  !row.outcomeChanged && !$first && data.matchups[$index - 1].outcomeChanged
-                ) {
-                  <tr class="matchup-heading">
-                    <th colspan="5">Other matchups</th>
-                  </tr>
-                }
-                <tr>
-                  <th scope="row">
-                    {{ row.openingName }}
-                    <small>
-                      {{ row.color | titlecase }} ·
-                      <span class="num">{{ row.targetStrength | number }}</span>
-                    </small>
-                    <small class="secondary">
-                      <ng-container
-                        *ngTemplateOutlet="modelIdentity; context: { $implicit: row }"
-                      />
-                    </small>
-                  </th>
-                  <td class="game-result group-start base-game">
-                    <ng-container *ngTemplateOutlet="gameSide; context: { $implicit: row.base }" />
-                  </td>
-                  <td class="game-result group-start candidate-game">
-                    @if (row.outcomeChanged) {
-                      <span class="outcome-arrow" aria-hidden="true">→</span>
-                    }
-                    <ng-container
-                      *ngTemplateOutlet="gameSide; context: { $implicit: row.candidate }"
-                    />
-                  </td>
-                  <td class="group-start align-end">
-                    @if (row.scoreDelta !== null) {
-                      <span class="num">
-                        {{ row.scoreDelta > 0 ? '+' : '' }}{{ row.scoreDelta | number: '1.0-1' }}
-                      </span>
-                    } @else {
-                      <span class="secondary" title="Pair not scored in both runs">—</span>
-                    }
-                  </td>
-                  <td class="num">
-                    <ng-container
-                      *ngTemplateOutlet="costDelta; context: { $implicit: row.spendDeltaUsd }"
-                    />
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+        @if (changed.length) {
+          <p class="secondary matchup-note">Largest point swings first.</p>
+          <ng-container
+            *ngTemplateOutlet="
+              matchupTable;
+              context: { $implicit: changed, label: 'Changed outcomes' }
+            "
+          />
+        } @else {
+          <p class="secondary matchup-note">No scored outcomes changed.</p>
+        }
+        @if (other.length) {
+          <details class="other-matchups">
+            <summary>
+              <span class="hide-matchups">Hide</span><span class="show-matchups">Show</span>
+              {{ other.length | number }} unchanged
+              {{ other.length === 1 ? 'matchup' : 'matchups' }}
+            </summary>
+            <ng-container
+              *ngTemplateOutlet="
+                matchupTable;
+                context: { $implicit: other, label: 'Other matchups' }
+              "
+            />
+          </details>
+        }
       </section>
     }
   }
 </div>
+
+<ng-template #matchupTable let-rows let-label="label">
+  <div class="table-scroll">
+    <table class="detail-table matchup-detail" [attr.aria-label]="label">
+      <colgroup class="matchup-col"></colgroup>
+      <colgroup class="game-col"></colgroup>
+      <colgroup class="game-col"></colgroup>
+      <colgroup class="delta-col">
+        <col />
+        <col />
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col" rowspan="2">Opening / color / Stockfish level</th>
+          <th scope="colgroup" class="group-start base-game">Base run</th>
+          <th scope="colgroup" class="group-start candidate-game">Candidate run</th>
+          <th scope="colgroup" colspan="2" class="group-start align-end">Delta</th>
+        </tr>
+        <tr>
+          <th scope="col" class="group-start base-game">Game &amp; telemetry</th>
+          <th scope="col" class="group-start candidate-game">Game &amp; telemetry</th>
+          <th scope="col" class="group-start align-end">Points</th>
+          <th scope="col" class="align-end">Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="matchup-heading">
+          <th scope="rowgroup" colspan="5">{{ label }}</th>
+        </tr>
+        @for (
+          row of rows;
+          track row.baseModelId + '/' + row.openingId + '/' + row.targetStrength + '/' + row.color
+        ) {
+          <tr>
+            <th scope="row">
+              {{ row.openingName }}
+              <small>
+                {{ row.color | titlecase }} ·
+                <span class="num">{{ row.targetStrength | number }}</span>
+              </small>
+              <small class="secondary">
+                <ng-container *ngTemplateOutlet="modelIdentity; context: { $implicit: row }" />
+              </small>
+            </th>
+            <td class="game-result group-start base-game">
+              <ng-container
+                *ngTemplateOutlet="
+                  gameSide;
+                  context: {
+                    $implicit: row.base,
+                    matchup: row,
+                    run: 'Base',
+                    model: row.baseModelId,
+                  }
+                "
+              />
+            </td>
+            <td class="game-result group-start candidate-game">
+              @if (row.outcomeChanged) {
+                <span class="outcome-arrow" aria-hidden="true">→</span>
+              }
+              <ng-container
+                *ngTemplateOutlet="
+                  gameSide;
+                  context: {
+                    $implicit: row.candidate,
+                    matchup: row,
+                    run: 'Candidate',
+                    model: row.candidateModelId,
+                  }
+                "
+              />
+            </td>
+            <td class="group-start align-end">
+              @if (row.scoreDelta !== null) {
+                <span class="num">
+                  {{ row.scoreDelta > 0 ? '+' : '' }}{{ row.scoreDelta | number: '1.0-1' }}
+                </span>
+              } @else {
+                <span class="secondary" title="Pair not scored in both runs">—</span>
+              }
+            </td>
+            <td class="num">
+              <ng-container
+                *ngTemplateOutlet="costDelta; context: { $implicit: row.spendDeltaUsd }"
+              />
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</ng-template>
 
 <ng-template #modelIdentity let-model>
   {{ model.baseModelId }}
@@ -439,9 +477,15 @@
   } @else {
     <span class="secondary" title="No scored games">—</span>
   }
-  <small class="secondary">
-    <span class="num">{{ side.score.forfeits }}</span> forfeits ·
-    <span class="num">{{ side.incompletePairs }}</span> incomplete pairs
+  <small class="secondary metric-items">
+    <span>
+      <span class="num">{{ side.score.forfeits }}</span>
+      {{ side.score.forfeits === 1 ? 'forfeit' : 'forfeits' }}
+    </span>
+    <span>
+      <span class="num">{{ side.incompletePairs }}</span> incomplete
+      {{ side.incompletePairs === 1 ? 'pair' : 'pairs' }}
+    </span>
   </small>
   <small
     ><span class="num">{{ side.spendUsd | currency: 'USD' : 'symbol' : '1.2-8' }}</span>
@@ -449,13 +493,29 @@
   >
 </ng-template>
 
-<ng-template #gameSide let-game>
+<ng-template #gameSide let-game let-matchup="matchup" let-run="run" let-model="model">
   @let label = resultLabel(game);
   @let tone = game.forfeit ? 'Forfeit loss' : label;
   @if (game.gameId) {
-    <a class="game-outcome" [attr.data-outcome]="tone" [routerLink]="['/games', game.gameId]">{{
-      label
-    }}</a>
+    <a
+      class="game-outcome"
+      [attr.data-outcome]="tone"
+      [attr.aria-label]="
+        label +
+        ', ' +
+        run +
+        ' run, ' +
+        model +
+        ', ' +
+        matchup.openingName +
+        ', ' +
+        (matchup.color | titlecase) +
+        ', Stockfish level ' +
+        (matchup.targetStrength | number)
+      "
+      [routerLink]="['/games', game.gameId]"
+      >{{ label }}</a
+    >
   } @else {
     <span class="game-outcome" [attr.data-outcome]="tone">{{ label }}</span>
   }
@@ -464,9 +524,7 @@
   }
   @if (game.status === 'PAUSED') {
     @if (game.statusDetail) {
-      <small class="secondary pause-detail" [title]="game.statusDetail">
-        {{ game.statusDetail }}
-      </small>
+      <small class="secondary pause-detail">{{ game.statusDetail }}</small>
     }
     @if (game.uncertainRequest) {
       <small class="secondary">Displayed spend may be missing this request’s cost.</small>
@@ -488,7 +546,7 @@
 
 <ng-template #telemetry let-sample>
   <small class="secondary">
-    First-try legal
+    <span class="metric-label">First-try legal</span>&ngsp;
     @if (sample.firstTryLegalRate !== null) {
       <span class="metric-value">
         <span class="num">{{ sample.firstTryLegalRate | percent: '1.0-1' }}</span>
@@ -500,7 +558,7 @@
     }
   </small>
   <small class="secondary">
-    Reasoning tok/move
+    <span class="metric-label">Reasoning tok/move</span>&ngsp;
     @if (sample.reasoningTokensPerMove !== null) {
       <span class="metric-value">
         <span class="num">{{ sample.reasoningTokensPerMove | number: '1.0-1' }}</span>
