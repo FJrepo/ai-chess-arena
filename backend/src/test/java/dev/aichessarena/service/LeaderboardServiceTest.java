@@ -10,7 +10,7 @@ import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.LeaderboardRepository;
 import dev.aichessarena.repository.MoveAttemptRepository;
 import dev.aichessarena.repository.MoveRepository;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -113,7 +113,7 @@ class LeaderboardServiceTest {
         game.blackPlayerName = "B";
         game.status = GameStatus.COMPLETED;
         game.result = Game.GameResult.WHITE_WINS;
-        game.completedAt = LocalDateTime.of(2026, 1, 1, 12, 0);
+        game.completedAt = Instant.parse("2026-01-01T12:00:00Z");
         return game;
     }
 }

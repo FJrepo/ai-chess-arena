@@ -12,7 +12,8 @@ import dev.aichessarena.repository.MoveAttemptRepository.ResignationTurnAttempt;
 import dev.aichessarena.repository.MoveRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -46,7 +47,7 @@ public class AnalyticsWindowLoader {
     }
 
     private AnalyticsScope loadScope(int days, UUID tournamentId, Boolean legalMoveHints, boolean includeModelAnalytics) {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
+        Instant cutoff = Instant.now().minus(Duration.ofDays(days));
         List<Game> games = gameRepository.findInWindow(cutoff, tournamentId, legalMoveHints).stream()
                 .filter(game -> game.isOutsideCompetition() || !AnalyticsGameOutcomeClassifier.isBye(game))
                 .filter(game -> !includeModelAnalytics || !game.isOutsideCompetition())
@@ -78,7 +79,7 @@ public class AnalyticsWindowLoader {
     }
 
     /** Keeps only the moves, attempt costs, messages and resignation attempts that belong to {@code games}. */
-    static AnalyticsScope scopeFor(LocalDateTime cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
+    static AnalyticsScope scopeFor(Instant cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
                                    List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
                                    List<AttemptUsage> attemptUsage) {
         Set<UUID> gameIds = games.stream().map(game -> game.id).collect(Collectors.toSet());
@@ -100,7 +101,7 @@ public class AnalyticsWindowLoader {
         return new AnalyticsScope(cutoff, games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts, gameUsage);
     }
 
-    record AnalyticsScope(LocalDateTime cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
+    record AnalyticsScope(Instant cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
                           List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
                           List<AttemptUsage> attemptUsage) {
     }

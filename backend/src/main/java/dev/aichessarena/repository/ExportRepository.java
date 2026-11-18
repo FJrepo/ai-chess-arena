@@ -16,7 +16,7 @@ import jakarta.inject.Inject;
 import jakarta.persistence.Tuple;
 import jakarta.ws.rs.NotFoundException;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -223,8 +223,8 @@ public class ExportRepository {
         t.id = row.get("id", UUID.class);
         t.name = row.get("name", String.class);
         t.status = row.get("status", Tournament.TournamentStatus.class);
-        t.createdAt = row.get("createdAt", LocalDateTime.class);
-        t.updatedAt = row.get("updatedAt", LocalDateTime.class);
+        t.createdAt = row.get("createdAt", Instant.class);
+        t.updatedAt = row.get("updatedAt", Instant.class);
         t.format = row.get("format", Tournament.TournamentFormat.class);
         t.drawPolicy = row.get("drawPolicy", Tournament.DrawPolicy.class);
         t.moveTimeoutSeconds = row.get("moveTimeoutSeconds", Integer.class);
@@ -277,9 +277,9 @@ public class ExportRepository {
         g.seriesGameNumber = row.get("seriesGameNumber", Integer.class);
         g.seriesBestOf = row.get("seriesBestOf", Integer.class);
         g.totalCostUsd = row.get("totalCostUsd", BigDecimal.class);
-        g.createdAt = row.get("createdAt", LocalDateTime.class);
-        g.startedAt = row.get("startedAt", LocalDateTime.class);
-        g.completedAt = row.get("completedAt", LocalDateTime.class);
+        g.createdAt = row.get("createdAt", Instant.class);
+        g.startedAt = row.get("startedAt", Instant.class);
+        g.completedAt = row.get("completedAt", Instant.class);
         g.whiteParticipant = participantId(row.get("whiteParticipantId", UUID.class));
         g.blackParticipant = participantId(row.get("blackParticipantId", UUID.class));
         g.advancedParticipant = participantId(row.get("advancedParticipantId", UUID.class));
@@ -304,7 +304,7 @@ public class ExportRepository {
         m.isOverride = row.get("isOverride", Boolean.class);
         m.evaluationCp = row.get("evaluationCp", Integer.class);
         m.evaluationMate = row.get("evaluationMate", Integer.class);
-        m.createdAt = row.get("createdAt", LocalDateTime.class);
+        m.createdAt = row.get("createdAt", Instant.class);
         m.chatMode = row.get("chatMode", ChatMode.class);
         m.isBook = row.get("isBook", Boolean.class);
         return m;
@@ -317,7 +317,7 @@ public class ExportRepository {
         c.senderModel = row.get("senderModel", String.class);
         c.senderColor = row.get("senderColor", String.class);
         c.message = row.get("message", String.class);
-        c.createdAt = row.get("createdAt", LocalDateTime.class);
+        c.createdAt = row.get("createdAt", Instant.class);
         return c;
     }
 
@@ -340,6 +340,6 @@ public class ExportRepository {
                 effort == null ? null : effort.apiValue(),
                 row.get("responseTimeMs", Long.class),
                 row.get("costUsd", BigDecimal.class),
-                row.get("createdAt", LocalDateTime.class));
+                row.get("createdAt", Instant.class));
     }
 }

@@ -9,6 +9,7 @@ import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.entity.Game.GameStatus;
 import dev.aichessarena.entity.Game.ResultReason;
+import dev.aichessarena.entity.Timestamps;
 import dev.aichessarena.entity.Tournament.TournamentStatus;
 import dev.aichessarena.repository.ChatMessageRepository;
 import dev.aichessarena.repository.GameRepository;
@@ -22,7 +23,6 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
@@ -154,7 +154,7 @@ public class GameLifecycleService {
         }
         game.status = GameStatus.IN_PROGRESS;
         game.resumeRequestedAt = null;
-        game.startedAt = game.startedAt != null ? game.startedAt : LocalDateTime.now();
+        game.startedAt = game.startedAt != null ? game.startedAt : Timestamps.now();
         game.statusDetail = null;
         game.statusRevision++;
         if (runOwnership != null) {
@@ -214,7 +214,7 @@ public class GameLifecycleService {
         game.resultReason = null;
         game.advancedParticipant = null;
         game.statusDetail = null;
-        game.completedAt = LocalDateTime.now();
+        game.completedAt = Timestamps.now();
         game.statusRevision++;
         gameRepository.persist(game);
         announceStatus(game, null, null);
@@ -526,7 +526,7 @@ public class GameLifecycleService {
         game.result = GameResult.valueOf(endInfo.result());
         game.resultReason = ResultReason.valueOf(endInfo.reason());
         game.statusDetail = null;
-        game.completedAt = LocalDateTime.now();
+        game.completedAt = Timestamps.now();
         game.statusRevision++;
         gameRepository.persist(game);
 
@@ -600,7 +600,7 @@ public class GameLifecycleService {
         game.result = "WHITE".equals(color) ? GameResult.BLACK_WINS : GameResult.WHITE_WINS;
         game.resultReason = ResultReason.RESIGNATION;
         game.statusDetail = null;
-        game.completedAt = LocalDateTime.now();
+        game.completedAt = Timestamps.now();
         game.statusRevision++;
         gameRepository.persist(game);
         LOG.infof("Game %s: %s resigned at move %d", gameId, color, resignation.moveNumber());
@@ -722,7 +722,7 @@ public class GameLifecycleService {
         game.result = "WHITE".equals(forfeitColor) ? GameResult.WHITE_FORFEIT : GameResult.BLACK_FORFEIT;
         game.resultReason = reason;
         game.statusDetail = null;
-        game.completedAt = LocalDateTime.now();
+        game.completedAt = Timestamps.now();
         game.statusRevision++;
         gameRepository.persist(game);
         return game;

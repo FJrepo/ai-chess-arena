@@ -40,7 +40,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TimeZone;
@@ -913,7 +913,7 @@ class BenchmarkRunIT {
         pay(gameId, "WHITE", 0.10);
         QuarkusTransaction.requiringNew().run(() -> {
             assertEquals(1, attemptRows.findByGameId(gameId).size());
-            LocalDateTime cutoff = LocalDateTime.now().minusDays(1);
+            Instant cutoff = Instant.now().minus(1, ChronoUnit.DAYS);
             assertTrue(attemptRows.findReasoningAttempts(cutoff, id, null).isEmpty());
             assertTrue(attemptRows.findReasoningAttempts(cutoff, null, null).stream()
                     .noneMatch(attempt -> attempt.gameId().equals(gameId)));

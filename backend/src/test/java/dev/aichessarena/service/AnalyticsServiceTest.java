@@ -45,7 +45,8 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +66,7 @@ import org.junit.jupiter.api.Test;
 
 class AnalyticsServiceTest {
 
-    private static final LocalDateTime YESTERDAY = LocalDateTime.now().minusDays(1);
+    private static final Instant YESTERDAY = Instant.now().minus(1, ChronoUnit.DAYS);
 
     @Test
     void hintsFiltersSeparateCachedFinishedSamplesAndOperationalHealth() {
@@ -141,7 +142,7 @@ class AnalyticsServiceTest {
         var failure = new CompletionException(new IllegalStateException("analytics database unavailable"));
         service.windowLoader.gameRepository = new GameRepository() {
             @Override
-            public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+            public List<Game> findInWindow(Instant cutoff, UUID tournamentId, Boolean legalMoveHints) {
                 if (tournamentId == null && calls.incrementAndGet() == 1) {
                     loadStarted.countDown();
                     try {
@@ -205,24 +206,24 @@ class AnalyticsServiceTest {
         AnalyticsService service = service(List.of(), List.of(), List.of());
         service.windowLoader.chatMessageRepository = new ChatMessageRepository() {
             @Override
-            public List<PlyMessage> findPlyMessagesInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            public List<PlyMessage> findPlyMessagesInWindow(Instant cutoff, UUID tournamentId) {
                 throw new AssertionError("health does not use chat projections");
             }
         };
         service.windowLoader.moveAttemptRepository = new MoveAttemptRepository() {
             @Override
-            public List<RejectedAttemptCost> findRejectedCostsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            public List<RejectedAttemptCost> findRejectedCostsInWindow(Instant cutoff, UUID tournamentId) {
                 return List.of();
             }
 
             @Override
             public List<ResignationTurnAttempt> findResignationTurnAttemptsInWindow(
-                    LocalDateTime cutoff, UUID tournamentId) {
+                    Instant cutoff, UUID tournamentId) {
                 throw new AssertionError("health does not use resignation retries");
             }
 
             @Override
-            public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            public List<AttemptUsage> findUsageInWindow(Instant cutoff, UUID tournamentId) {
                 throw new AssertionError("health does not use attempt token projections");
             }
         };
@@ -398,11 +399,11 @@ class AnalyticsServiceTest {
 
     @Test
     void finishedGamesAreSelectedByCompletionTime() {
-        LocalDateTime longAgo = LocalDateTime.now().minusDays(40);
+        Instant longAgo = Instant.now().minus(40, ChronoUnit.DAYS);
         Game finishedRecently = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, longAgo);
-        finishedRecently.completedAt = LocalDateTime.now().minusDays(2);
+        finishedRecently.completedAt = Instant.now().minus(2, ChronoUnit.DAYS);
         Game finishedLongAgo = finishedGame("model.alpha", "model.beta", Game.GameResult.BLACK_WINS, null, longAgo);
-        finishedLongAgo.completedAt = LocalDateTime.now().minusDays(35);
+        finishedLongAgo.completedAt = Instant.now().minus(35, ChronoUnit.DAYS);
         Game staleWaiting = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.WAITING);
         staleWaiting.createdAt = longAgo;
 
@@ -513,7 +514,7 @@ class AnalyticsServiceTest {
     void perModelCostIncludesRejectedAttempts() {
         Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
         Game outside = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
-        outside.completedAt = LocalDateTime.now().minusDays(60);
+        outside.completedAt = Instant.now().minus(60, ChronoUnit.DAYS);
 
         AnalyticsService service = service(
                 List.of(game, outside),
@@ -899,7 +900,7 @@ class AnalyticsServiceTest {
     void promptCachingAggregatesAttemptsInFinishedNonByeGamesAndUsesTokenWeightedRate() {
         Game recent = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
         Game unfinished = unfinishedGame("model.alpha", "model.beta", Game.GameStatus.PAUSED);
-        Game old = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY.minusDays(40));
+        Game old = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY.minus(40, ChronoUnit.DAYS));
         Game bye = finishedGame("model.alpha", null, Game.GameResult.WHITE_WINS, null, YESTERDAY);
         bye.blackPlayerName = "BYE";
         bye.blackParticipant = null;
@@ -1284,7 +1285,7 @@ class AnalyticsServiceTest {
         // A later duplicate of alpha's move 9 (possible before V8) with another tone: the earliest row wins.
         Move duplicate = chatMove(game.game(), "model.alpha", 9, "WHITE", ChatMode.OPTIONAL);
         duplicate.promptVersion = SPICY;
-        duplicate.createdAt = last.createdAt.plusMinutes(5);
+        duplicate.createdAt = last.createdAt.plus(5, ChronoUnit.MINUTES);
         List<Move> moves = new ArrayList<>(game.moves());
         moves.add(duplicate);
         // Alpha's message on move 7: within its last three model moves (7, 8, 9), not counting the override.
@@ -1355,7 +1356,7 @@ class AnalyticsServiceTest {
         inTournament.game().tournament = unhinted;
         Resigned highEffort = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
         Resigned old = resigned("model.alpha", "model.beta", "BLACK", MIND_GAMES, 0, null);
-        old.game().completedAt = YESTERDAY.minusDays(40);
+        old.game().completedAt = YESTERDAY.minus(40, ChronoUnit.DAYS);
 
         List<Resigned> all = List.of(inTournament, highEffort, old);
         AnalyticsService service = service(games(all), moves(all), List.of(),
@@ -1469,7 +1470,7 @@ class AnalyticsServiceTest {
         loader.moveAttemptRepository = service.moveAttemptRepository;
         loader.chatMessageRepository = new ChatMessageRepository() {
             @Override
-            public List<PlyMessage> findPlyMessagesInWindow(LocalDateTime cutoff, UUID tournamentId) {
+            public List<PlyMessage> findPlyMessagesInWindow(Instant cutoff, UUID tournamentId) {
                 return messages;
             }
         };
@@ -1503,7 +1504,7 @@ class AnalyticsServiceTest {
             String blackModelId,
             Game.GameResult result,
             Game.ResultReason resultReason,
-            LocalDateTime createdAt
+            Instant createdAt
     ) {
         Game game = game(whiteModelId, blackModelId);
         game.status = result == Game.GameResult.WHITE_FORFEIT || result == Game.GameResult.BLACK_FORFEIT
@@ -1512,7 +1513,7 @@ class AnalyticsServiceTest {
         game.result = result;
         game.resultReason = resultReason;
         game.createdAt = createdAt;
-        game.completedAt = createdAt.plusHours(1);
+        game.completedAt = createdAt.plus(1, ChronoUnit.HOURS);
         return game;
     }
 
@@ -1550,7 +1551,7 @@ class AnalyticsServiceTest {
         move.color = Objects.equals(modelId, game.whiteModelId) ? "WHITE" : "BLACK";
         move.moveNumber = number;
         move.modelId = modelId;
-        move.createdAt = game.createdAt.plusMinutes(1);
+        move.createdAt = game.createdAt.plus(1, ChronoUnit.MINUTES);
         move.responseTimeMs = responseTimeMs;
         move.costUsd = costUsd == null ? null : new BigDecimal(costUsd);
         move.retryCount = retryCount;
@@ -1566,7 +1567,7 @@ class AnalyticsServiceTest {
         }
 
         @Override
-        public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+        public List<Game> findInWindow(Instant cutoff, UUID tournamentId, Boolean legalMoveHints) {
             return games.stream()
                     .filter(game -> tournamentId == null
                             || game.tournament != null && tournamentId.equals(game.tournament.id))
@@ -1592,7 +1593,7 @@ class AnalyticsServiceTest {
         }
 
         @Override
-        public List<Move> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        public List<Move> findInWindow(Instant cutoff, UUID tournamentId) {
             return moves;
         }
 
@@ -1604,22 +1605,22 @@ class AnalyticsServiceTest {
 
     private static final class FakeMoveAttemptRepository extends MoveAttemptRepository {
         private final List<RejectedAttemptCost> costs;
-        private LocalDateTime reasoningCutoff;
+        private Instant reasoningCutoff;
         private List<ReasoningAttempt> reasoningAttempts = List.of();
-        private LocalDateTime costCutoff;
+        private Instant costCutoff;
 
         private FakeMoveAttemptRepository(List<RejectedAttemptCost> costs) {
             this.costs = costs;
         }
 
         @Override
-        public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+        public List<ReasoningAttempt> findReasoningAttempts(Instant cutoff, UUID tournamentId, Boolean legalMoveHints) {
             reasoningCutoff = cutoff;
             return reasoningAttempts;
         }
 
         @Override
-        public List<RejectedAttemptCost> findRejectedCostsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        public List<RejectedAttemptCost> findRejectedCostsInWindow(Instant cutoff, UUID tournamentId) {
             costCutoff = cutoff;
             return costs;
         }
@@ -1632,7 +1633,7 @@ class AnalyticsServiceTest {
         private List<AttemptUsage> usage = List.of();
 
         @Override
-        public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+        public List<AttemptUsage> findUsageInWindow(Instant cutoff, UUID tournamentId) {
             return usage;
         }
 
@@ -1640,7 +1641,7 @@ class AnalyticsServiceTest {
 
         @Override
         public List<MoveAttemptRepository.ResignationTurnAttempt> findResignationTurnAttemptsInWindow(
-                LocalDateTime cutoff, UUID tournamentId) {
+                Instant cutoff, UUID tournamentId) {
             return resignationAttempts;
         }
     }

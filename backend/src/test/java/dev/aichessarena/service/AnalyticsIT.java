@@ -27,7 +27,8 @@ import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,9 +82,9 @@ class AnalyticsIT {
             tournamentRepository.persist(tournament);
             TournamentParticipant alpha = participant(tournament, "Alpha", 0);
             TournamentParticipant beta = participant(tournament, "Beta", 1);
-            LocalDateTime now = LocalDateTime.now();
+            Instant now = Instant.now();
 
-            Game recent = game(tournament, alpha, beta, 0, GameStatus.COMPLETED, now.minusDays(40), now.minusDays(1));
+            Game recent = game(tournament, alpha, beta, 0, GameStatus.COMPLETED, now.minus(40, ChronoUnit.DAYS), now.minus(1, ChronoUnit.DAYS));
             recent.result = Game.GameResult.WHITE_WINS;
             recent.resultReason = Game.ResultReason.CHECKMATE;
             gameRepository.persist(recent);
@@ -93,7 +94,7 @@ class AnalyticsIT {
             chat(recent, 1, "WHITE", "model-alpha", "  Good luck!  ");
             // A duplicate message for the same ply (possible in databases from before V8): only the first counts.
             chat(recent, 1, "WHITE", "model-alpha", "A much longer duplicate message").createdAt =
-                    LocalDateTime.now().plusMinutes(1);
+                    Instant.now().plus(1, ChronoUnit.MINUTES);
             MoveAttempt rejected = attempt(recent, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0.003");
             rejected.reasoningTokens = 300;
             rejected.reasoningEffort = ReasoningEffort.MEDIUM;
@@ -104,20 +105,20 @@ class AnalyticsIT {
             attempt(recent, 2, "WHITE", 1, "model-alpha", Outcome.TRUNCATED, "0.001")
                     .reasoningEffort = ReasoningEffort.MEDIUM;
 
-            Game old = game(tournament, beta, alpha, 1, GameStatus.COMPLETED, now.minusDays(50), now.minusDays(35));
+            Game old = game(tournament, beta, alpha, 1, GameStatus.COMPLETED, now.minus(50, ChronoUnit.DAYS), now.minus(35, ChronoUnit.DAYS));
             old.result = Game.GameResult.WHITE_WINS;
             gameRepository.persist(old);
             move(old, 1, "BLACK", "model-alpha", "1.00", 0).chatMode = ChatMode.OPTIONAL;
             chat(old, 1, "BLACK", "model-alpha", "Outside the window");
             attempt(old, 1, "BLACK", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "1.00");
 
-            Game bye = game(tournament, alpha, null, 2, GameStatus.COMPLETED, now.minusDays(2), null);
+            Game bye = game(tournament, alpha, null, 2, GameStatus.COMPLETED, now.minus(2, ChronoUnit.DAYS), null);
             bye.result = Game.GameResult.WHITE_WINS;
             bye.blackPlayerName = "BYE";
             gameRepository.persist(bye);
             attempt(bye, 1, "WHITE", 1, "model-alpha", Outcome.ACCEPTED, "0");
 
-            Game waiting = game(tournament, alpha, beta, 3, GameStatus.WAITING, now.minusDays(1), null);
+            Game waiting = game(tournament, alpha, beta, 3, GameStatus.WAITING, now.minus(1, ChronoUnit.DAYS), null);
             gameRepository.persist(waiting);
             attempt(waiting, 1, "WHITE", 1, "model-alpha", Outcome.DISCARDED, "0");
             return tournament.id;
@@ -149,7 +150,7 @@ class AnalyticsIT {
             Game recent = gameRepository.find("tournament.id = ?1 and bracketPosition = 0", tournamentId).firstResult();
             bodylessTimeout(recent, ReasoningEffort.HIGH);
             Game second = game(tournamentRepository.findById(tournamentId), recent.whiteParticipant,
-                    recent.blackParticipant, 4, GameStatus.COMPLETED, LocalDateTime.now(), LocalDateTime.now());
+                    recent.blackParticipant, 4, GameStatus.COMPLETED, Instant.now(), Instant.now());
             second.result = Game.GameResult.WHITE_WINS;
             gameRepository.persist(second);
             move(second, 1, "WHITE", "model-alpha", "0", 0);
@@ -190,7 +191,7 @@ class AnalyticsIT {
             beta.reasoningTokens = null;
 
             Game forfeit = game(tournamentRepository.findById(tournamentId), recent.whiteParticipant,
-                    recent.blackParticipant, 4, GameStatus.FORFEIT, LocalDateTime.now(), LocalDateTime.now());
+                    recent.blackParticipant, 4, GameStatus.FORFEIT, Instant.now(), Instant.now());
             forfeit.result = Game.GameResult.WHITE_FORFEIT;
             gameRepository.persist(forfeit);
             attempt(forfeit, 1, "WHITE", 1, "model-alpha", Outcome.ILLEGAL_MOVE, "0")
@@ -356,8 +357,8 @@ class AnalyticsIT {
                     .firstResult();
             TournamentParticipant beta = participantRepository.find("tournament.id = ?1 and seed = 1", tournamentId)
                     .firstResult();
-            LocalDateTime now = LocalDateTime.now();
-            Game resigned = game(tournament, alpha, beta, 4, GameStatus.COMPLETED, now.minusDays(2), now.minusDays(1));
+            Instant now = Instant.now();
+            Game resigned = game(tournament, alpha, beta, 4, GameStatus.COMPLETED, now.minus(2, ChronoUnit.DAYS), now.minus(1, ChronoUnit.DAYS));
             resigned.result = Game.GameResult.WHITE_WINS;
             resigned.resultReason = Game.ResultReason.RESIGNATION;
             gameRepository.persist(resigned);
@@ -397,8 +398,8 @@ class AnalyticsIT {
             TournamentParticipant black,
             int position,
             GameStatus status,
-            LocalDateTime createdAt,
-            LocalDateTime completedAt
+            Instant createdAt,
+            Instant completedAt
     ) {
         Game game = new Game();
         game.tournament = tournament;

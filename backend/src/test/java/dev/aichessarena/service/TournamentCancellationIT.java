@@ -33,7 +33,6 @@ import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -222,7 +221,7 @@ class TournamentCancellationIT {
     void writerWithCachedStateCannotUndoCancellation(TournamentStatus status, boolean participantUpdate) throws Exception {
         UUID id = seed(status);
         UUID participantId = participantId(id);
-        LocalDateTime updatedAt = QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).updatedAt);
+        Instant updatedAt = QuarkusTransaction.requiringNew().call(() -> tournaments.findById(id).updatedAt);
         CountDownLatch loaded = new CountDownLatch(1);
         CountDownLatch cancelled = new CountDownLatch(1);
         try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -483,7 +482,7 @@ class TournamentCancellationIT {
                             ? Game.GameResult.DRAW : Game.GameResult.BLACK_FORFEIT;
                     game.resultReason = game.status == GameStatus.COMPLETED
                             ? Game.ResultReason.STALEMATE : Game.ResultReason.TIMEOUT;
-                    game.completedAt = LocalDateTime.now();
+                    game.completedAt = Instant.now();
                 }
                 games.persist(game);
                 // A waiting game has the start position, so the mid-turn answer e4 is legal.

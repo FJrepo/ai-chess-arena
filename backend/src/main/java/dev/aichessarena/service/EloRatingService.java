@@ -5,7 +5,7 @@ import dev.aichessarena.dto.LeaderboardDto.HistoryPoint;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.service.ReasoningAnalytics.Side;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -19,7 +19,7 @@ import java.util.UUID;
 @ApplicationScoped
 public class EloRatingService {
 
-    public record RatedGame(UUID id, LocalDateTime completedAt, String whiteModelId, String blackModelId,
+    public record RatedGame(UUID id, Instant completedAt, String whiteModelId, String blackModelId,
                             GameResult result) {
         boolean isForfeit() {
             return result == GameResult.WHITE_FORFEIT || result == GameResult.BLACK_FORFEIT;
@@ -90,14 +90,14 @@ public class EloRatingService {
         private long draws;
         private long losses;
         private long forfeits;
-        private LocalDateTime lastPlayed;
+        private Instant lastPlayed;
         private final ArrayDeque<HistoryPoint> history = new ArrayDeque<>();
 
         private Rating(String modelId) {
             this.modelId = modelId;
         }
 
-        private void recordResult(double score, boolean forfeited, LocalDateTime completedAt) {
+        private void recordResult(double score, boolean forfeited, Instant completedAt) {
             games++;
             if (score == 1.0) {
                 wins++;

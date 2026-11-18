@@ -2,7 +2,7 @@ package dev.aichessarena.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,8 +27,8 @@ public record TournamentDto(
         int maxOutputTokens,
         // OpenRouter reasoning effort for all models (lower case); null (omitted) means each model's default.
         String reasoningEffort,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt,
+        Instant createdAt,
+        Instant updatedAt,
         List<ParticipantDto> participants,
         List<GameDto> games,
         String winnerName,

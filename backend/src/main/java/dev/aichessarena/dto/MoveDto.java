@@ -1,7 +1,7 @@
 package dev.aichessarena.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record MoveDto(
@@ -21,7 +21,7 @@ public record MoveDto(
         boolean isOverride,
         Integer evaluationCp,
         Integer evaluationMate,
-        LocalDateTime createdAt,
+        Instant createdAt,
         /** Null when the move is not judged (an evaluation is missing) or outside a full game view. */
         MoveQualityDto quality,
         /** The chat mode that applied to a model move (OFF, OPTIONAL, MANDATORY); omitted for human moves and overrides. */

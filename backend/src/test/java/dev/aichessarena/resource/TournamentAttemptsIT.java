@@ -48,7 +48,7 @@ class TournamentAttemptsIT {
                     .put("/api/tournaments/{id}", id).then().statusCode(200).body("maxAttempts", equalTo(20));
         }
         given().get("/api/tournaments/{id}/export.json", id).then().statusCode(200)
-                .body("schemaVersion", equalTo(2))
+                .body("schemaVersion", equalTo(3))
                 .body("settings.maxAttempts", equalTo(20))
                 .body("settings", not(hasKey("maxRetries")));
     }

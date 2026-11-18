@@ -25,7 +25,8 @@ import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -198,7 +199,7 @@ class GameLoopFreshStateIT {
         UUID id = QuarkusTransaction.requiringNew().call(() -> {
             Game game = new Game();
             game.status = GameStatus.PAUSED;
-            game.startedAt = LocalDateTime.now().minusDays(1);
+            game.startedAt = Instant.now().minus(1, ChronoUnit.DAYS);
             gameRepository.persist(game);
             return game.id;
         });

@@ -6,7 +6,7 @@ import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.TypedQuery;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -41,7 +41,7 @@ public class ChatMessageRepository implements PanacheRepositoryBase<ChatMessage,
      * The ply and length (characters, without surrounding whitespace) of every chat message in the games of an
      * analytics window (see {@link GameRepository#findInWindow}), oldest first; the text itself is not loaded.
      */
-    public List<PlyMessage> findPlyMessagesInWindow(LocalDateTime cutoff, UUID tournamentId) {
+    public List<PlyMessage> findPlyMessagesInWindow(Instant cutoff, UUID tournamentId) {
         TypedQuery<Object[]> query = getEntityManager().createQuery(
                 "select c.game.id, c.moveNumber, c.senderColor, length(trim(c.message)) from ChatMessage c where "
                         + GameRepository.windowPredicate("c.game")

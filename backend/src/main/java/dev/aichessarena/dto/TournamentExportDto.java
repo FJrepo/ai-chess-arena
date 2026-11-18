@@ -2,7 +2,7 @@ package dev.aichessarena.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -10,7 +10,7 @@ import java.util.UUID;
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public record TournamentExportDto(
         int schemaVersion, UUID id, String name, String status,
-        LocalDateTime createdAt, LocalDateTime updatedAt, Settings settings,
+        Instant createdAt, Instant updatedAt, Settings settings,
         List<Participant> participants, List<ExportGame> games, BigDecimal totalCostUsd
 ) {
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -36,7 +36,7 @@ public record TournamentExportDto(
             UUID blackParticipantId, String blackPlayerName, String blackModelId,
             UUID advancedParticipantId, String status, String result, String resultReason,
             String termination, String currentFen, String openingId, String openingName, String openingEco,
-            LocalDateTime createdAt, LocalDateTime startedAt, LocalDateTime completedAt,
+            Instant createdAt, Instant startedAt, Instant completedAt,
             List<MoveDto> moves, GameQualitySummaryDto qualitySummary,
             List<ChatMessageDto> chatMessages, List<Attempt> attempts, BigDecimal totalCostUsd
     ) {}
@@ -48,6 +48,6 @@ public record TournamentExportDto(
             Integer promptTokens, Integer cachedPromptTokens, Integer cacheWriteTokens,
             Integer completionTokens, Integer reasoningTokens, Integer effectiveMaxOutputTokens,
             Integer modelMaxCompletionTokens, String reasoningEffort, Long responseTimeMs,
-            BigDecimal costUsd, LocalDateTime createdAt
+            BigDecimal costUsd, Instant createdAt
     ) {}
 }

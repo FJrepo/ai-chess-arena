@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import dev.aichessarena.dto.LeaderboardDto;
 import dev.aichessarena.entity.Game.GameResult;
 import dev.aichessarena.service.EloRatingService.RatedGame;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,7 +16,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 class EloRatingServiceTest {
 
-    private static final LocalDateTime START = LocalDateTime.of(2026, 1, 1, 12, 0);
+    private static final Instant START = Instant.parse("2026-01-01T12:00:00Z");
     private final EloRatingService service = new EloRatingService();
 
     @Test

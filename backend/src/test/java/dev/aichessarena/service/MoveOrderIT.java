@@ -15,7 +15,8 @@ import dev.aichessarena.repository.MoveRepository;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ class MoveOrderIT {
 
     @Test
     void pliesOfOneMoveNumberComeBackWhiteFirst() {
-        LocalDateTime sameInstant = LocalDateTime.now().minusMinutes(5);
+        Instant sameInstant = Instant.now().minus(5, ChronoUnit.MINUTES);
         UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
             Game game = new Game();
             game.status = GameStatus.PAUSED;
@@ -86,7 +87,7 @@ class MoveOrderIT {
 
     @Test
     void attemptsOfAResumedPlyKeepTheirTimeOrder() {
-        LocalDateTime start = LocalDateTime.now().minusMinutes(10);
+        Instant start = Instant.now().minus(10, ChronoUnit.MINUTES);
         UUID gameId = QuarkusTransaction.requiringNew().call(() -> {
             Game game = new Game();
             game.status = GameStatus.IN_PROGRESS;
@@ -97,7 +98,7 @@ class MoveOrderIT {
             attempt(game, 1, "WHITE", 1, Outcome.ILLEGAL_MOVE, start);
             attempt(game, 1, "WHITE", 2, Outcome.TRUNCATED, start.plusSeconds(10));
             // After the resume the attempt counter restarts at 1.
-            attempt(game, 1, "WHITE", 1, Outcome.ACCEPTED, start.plusMinutes(5));
+            attempt(game, 1, "WHITE", 1, Outcome.ACCEPTED, start.plus(5, ChronoUnit.MINUTES));
             return game.id;
         });
 
@@ -107,7 +108,7 @@ class MoveOrderIT {
                 .body("attemptNumber", contains(1, 2, 1));
     }
 
-    private void move(Game game, int moveNumber, String color, String san, LocalDateTime createdAt) {
+    private void move(Game game, int moveNumber, String color, String san, Instant createdAt) {
         Move move = new Move();
         move.game = game;
         move.moveNumber = moveNumber;
@@ -118,13 +119,13 @@ class MoveOrderIT {
         moveRepository.persist(move);
     }
 
-    private void attempt(Game game, int moveNumber, String color, int number, LocalDateTime createdAt) {
+    private void attempt(Game game, int moveNumber, String color, int number, Instant createdAt) {
         Outcome outcome = number == 1 && "WHITE".equals(color) ? Outcome.ILLEGAL_MOVE : Outcome.ACCEPTED;
         attempt(game, moveNumber, color, number, outcome, createdAt);
     }
 
     private void attempt(Game game, int moveNumber, String color, int number, Outcome outcome,
-            LocalDateTime createdAt) {
+            Instant createdAt) {
         MoveAttempt attempt = new MoveAttempt();
         attempt.game = game;
         attempt.moveNumber = moveNumber;

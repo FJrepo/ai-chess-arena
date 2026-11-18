@@ -10,9 +10,10 @@ import dev.aichessarena.entity.Move;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ class ExportServiceTest {
         game.status = Game.GameStatus.COMPLETED;
         game.result = Game.GameResult.DRAW;
         game.resultReason = Game.ResultReason.REPETITION;
-        game.startedAt = LocalDateTime.of(2026, 3, 6, 10, 30);
+        game.startedAt = Instant.parse("2026-03-06T10:30:00Z");
         game.tournament.moveTimeoutSeconds = 120;
         game.openingName = "Open Game";
         game.openingEco = "C20";
@@ -200,6 +201,20 @@ class ExportServiceTest {
         if ("CANCELLED".equals(status)) assertTrue(pgn.contains("[TerminationDetails \"cancelled\"]"));
         assertTrue(pgn.endsWith(marker + "\n"));
         assertEquals(1, parse(pgn).getGames().size());
+    }
+
+    @Test
+    void pgnDateIsTheUtcDateWhateverTheJvmTimeZone() {
+        TimeZone original = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Vienna"));
+        try {
+            Game game = game();
+            // 00:30 on 19 November in Vienna, still 18 November in UTC.
+            game.startedAt = Instant.parse("2026-11-18T23:30:00Z");
+            assertTrue(exports.gamePgn(game, false).contains("[Date \"2026.11.18\"]"));
+        } finally {
+            TimeZone.setDefault(original);
+        }
     }
 
     @Test

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Move;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,7 +21,7 @@ class CanonicalPliesTest {
         later.game = game;
         later.color = "WHITE";
         later.moveNumber = 1;
-        later.createdAt = LocalDateTime.of(2026, 1, 1, 0, 0);
+        later.createdAt = Instant.parse("2026-01-01T00:00:00Z");
         later.id = new UUID(0, 0);
 
         Move earlier = new Move();

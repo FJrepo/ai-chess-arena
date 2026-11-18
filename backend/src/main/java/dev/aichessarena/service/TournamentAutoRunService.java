@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.Game.GameStatus;
+import dev.aichessarena.entity.Timestamps;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.Tournament.AutoRunStatus;
 import dev.aichessarena.entity.Tournament.TournamentStatus;
@@ -16,7 +17,6 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.WebApplicationException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -112,7 +112,7 @@ public class TournamentAutoRunService {
             t.autoRunStatus = AutoRunStatus.RUNNING;
             t.autoRunPauseReason = null;
         }
-        t.updatedAt = LocalDateTime.now();
+        t.updatedAt = Timestamps.now();
         if (t.autoRunStatus == AutoRunStatus.RUNNING && !pauseIfBudgetReached(t)) {
             List<Game> running = games.findByTournamentId(id).stream()
                     .filter(g -> g.status == GameStatus.IN_PROGRESS).sorted(runOrder(t)).toList();
@@ -231,7 +231,7 @@ public class TournamentAutoRunService {
             t.autoRunPauseReason = null;
             if (t.isBenchmark()) {
                 t.status = TournamentStatus.COMPLETED;
-                t.updatedAt = LocalDateTime.now();
+                t.updatedAt = Timestamps.now();
             }
             return;
         }
@@ -291,7 +291,7 @@ public class TournamentAutoRunService {
     private void pauseRun(Tournament t, String reason) {
         t.autoRunStatus = AutoRunStatus.PAUSED;
         t.autoRunPauseReason = reason;
-        t.updatedAt = LocalDateTime.now();
+        t.updatedAt = Timestamps.now();
         for (Game game : games.findByTournamentId(t.id)) {
             if (game.status == GameStatus.IN_PROGRESS) pauseGame(game.id, reason);
         }

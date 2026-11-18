@@ -13,7 +13,8 @@ import dev.aichessarena.repository.TournamentRepository;
 import jakarta.inject.Inject;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -26,12 +27,12 @@ class LiveGamesIT {
     @Test
     void listsRunningAndPausedGamesAndOneRealFinishedGame() {
         Fixture fixture = QuarkusTransaction.requiringNew().call(() -> {
-            LocalDateTime now = LocalDateTime.now();
+            Instant now = Instant.now();
             Tournament tournament = new Tournament();
             tournament.name = "Live fixture";
             tournament.persist();
-            Game playing = game(tournament, "Tournament White", GameStatus.IN_PROGRESS, now.minusMinutes(2));
-            Game practice = game(null, "Practice White", GameStatus.IN_PROGRESS, now.minusMinutes(1));
+            Game playing = game(tournament, "Tournament White", GameStatus.IN_PROGRESS, now.minus(2, ChronoUnit.MINUTES));
+            Game practice = game(null, "Practice White", GameStatus.IN_PROGRESS, now.minus(1, ChronoUnit.MINUTES));
             practice.practiceKind = Game.PracticeKind.HUMAN_STOCKFISH;
             practice.whitePracticeControl = Game.PlayerType.HUMAN;
             practice.blackPracticeControl = Game.PlayerType.STOCKFISH;
@@ -39,13 +40,13 @@ class LiveGamesIT {
             Game paused = game(tournament, "Paused White", GameStatus.PAUSED, now);
             paused.statusDetail = "A model request was in flight during a backend restart";
             Game finished = game(tournament, "Finished White", GameStatus.FORFEIT, now);
-            finished.completedAt = now.plusDays(1);
+            finished.completedAt = now.plus(1, ChronoUnit.DAYS);
             Game old = game(tournament, "Old finish", GameStatus.COMPLETED, now);
-            old.completedAt = now.minusMinutes(2);
+            old.completedAt = now.minus(2, ChronoUnit.MINUTES);
             Game bye = game(tournament, "BYE", GameStatus.COMPLETED, now);
-            bye.completedAt = now.plusDays(2);
+            bye.completedAt = now.plus(2, ChronoUnit.DAYS);
             Game cancelled = game(tournament, "Cancelled White", GameStatus.CANCELLED, now);
-            cancelled.completedAt = now.plusDays(2);
+            cancelled.completedAt = now.plus(2, ChronoUnit.DAYS);
 
             Move scored = move(playing, "WHITE");
             scored.evaluationCp = 135;
@@ -78,7 +79,7 @@ class LiveGamesIT {
 
     private record Fixture(UUID tournamentId, List<UUID> games) {}
 
-    private static Game game(Tournament tournament, String white, GameStatus status, LocalDateTime startedAt) {
+    private static Game game(Tournament tournament, String white, GameStatus status, Instant startedAt) {
         Game game = new Game();
         game.tournament = tournament;
         game.whitePlayerName = white;

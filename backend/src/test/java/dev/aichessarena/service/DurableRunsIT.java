@@ -494,7 +494,7 @@ class DurableRunsIT {
             g.whitePlayerName = "Stockfish";
             g.blackPlayerName = "You";
             g.status = GameStatus.IN_PROGRESS;
-            g.startedAt = java.time.LocalDateTime.now();
+            g.startedAt = java.time.Instant.now();
             g.runOwner = UUID.randomUUID();
             g.runLeaseUntil = Instant.now().plusSeconds(600);
             games.persist(g);
@@ -617,7 +617,7 @@ class DurableRunsIT {
             g.blackPlayerName = engine ? "Stockfish" : "Model";
             g.blackModelId = engine ? null : "test/black";
             g.status = GameStatus.IN_PROGRESS;
-            g.startedAt = java.time.LocalDateTime.now();
+            g.startedAt = java.time.Instant.now();
             g.runOwner = UUID.randomUUID();
             g.runLeaseUntil = Instant.now().plusSeconds(600);
             games.persist(g);
@@ -768,7 +768,7 @@ class DurableRunsIT {
             g.blackPlayerName = "Model";
             g.blackModelId = "test/black";
             g.status = GameStatus.IN_PROGRESS;
-            g.startedAt = java.time.LocalDateTime.now();
+            g.startedAt = java.time.Instant.now();
             games.persist(g);
             return g.id;
         });
@@ -1384,7 +1384,7 @@ class DurableRunsIT {
             g.blackPlayerName = "Model";
             g.blackModelId = "test/black";
             g.status = GameStatus.IN_PROGRESS;
-            g.startedAt = java.time.LocalDateTime.now();
+            g.startedAt = java.time.Instant.now();
             games.persist(g);
             Board board = new Board();
             for (String san : List.of("e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6")) {
@@ -1484,7 +1484,7 @@ class DurableRunsIT {
                 g.whitePlayerName = white.playerName;
                 g.blackPlayerName = black.playerName;
                 g.status = statuses[i];
-                if (statuses[i] != GameStatus.WAITING) g.startedAt = java.time.LocalDateTime.now();
+                if (statuses[i] != GameStatus.WAITING) g.startedAt = java.time.Instant.now();
                 g.bracketRound = "Semifinal";
                 g.bracketPosition = i;
                 games.persist(g);
@@ -1516,7 +1516,7 @@ class DurableRunsIT {
             g.blackPlayerName = "Model";
             g.blackModelId = "test/black";
             g.status = GameStatus.IN_PROGRESS;
-            g.startedAt = java.time.LocalDateTime.now();
+            g.startedAt = java.time.Instant.now();
             g.currentFen = fen;
             games.persist(g);
             return g.id;

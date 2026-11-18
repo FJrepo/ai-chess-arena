@@ -158,7 +158,7 @@ class PracticeGameIT {
                     duplicate.color = "WHITE";
                     duplicate.san = "e4";
                     duplicate.fen = chess.validateAndApply(chess.createBoard(), "e4").fen();
-                    duplicate.createdAt = java.time.LocalDateTime.now().plusSeconds(1);
+                    duplicate.createdAt = java.time.Instant.now().plusSeconds(1);
                     moves.persistAndFlush(duplicate);
                     var snapshot = DtoMapper.toMoveDtos(moves.findByGameId(game.id));
                     assertTrue(snapshot.getFirst().isCanonical());
@@ -194,7 +194,7 @@ class PracticeGameIT {
             game.status = Game.GameStatus.COMPLETED;
             game.result = Game.GameResult.DRAW;
             game.resultReason = Game.ResultReason.REPETITION;
-            game.completedAt = java.time.LocalDateTime.now();
+            game.completedAt = java.time.Instant.now();
             game.totalCostUsd = new BigDecimal("0.50");
             games.persist(game);
             var board = chess.createBoard();
