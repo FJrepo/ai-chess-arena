@@ -403,7 +403,7 @@ jobs:
             printf -- '- `%s:%s` (`%s`)\n' "$FRONTEND_IMAGE" "$VERSION" "$FRONTEND_DIGEST"
             printf '\n### Assets\n\n'
             printf -- '- [docker-compose.yml](%s/%s/releases/download/%s/docker-compose.yml): images default to `%s`.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION" "$VERSION"
-            printf -- '- [env.example](%s/%s/releases/download/%s/env.example): set your OpenRouter key and database password.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION"
+            printf -- '- [env.example](%s/%s/releases/download/%s/env.example): copy to `.env`. On a new install, start with the defaults and choose **Connect OpenRouter** in System. For an upgrade, keep your existing `.env` and database credentials.\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$VERSION"
             if [[ -n "$previous_tag" ]]; then
               printf '\n[Full Changelog](%s/%s/compare/%s...%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous_tag" "$VERSION"
             else
