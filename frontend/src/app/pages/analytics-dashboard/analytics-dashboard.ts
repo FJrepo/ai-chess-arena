@@ -18,6 +18,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import {
   CurrencyPipe,
   DatePipe,
@@ -83,6 +84,7 @@ type CostSection = (typeof COST_SECTIONS)[number]['id'];
     MatProgressSpinnerModule,
     MatSelectModule,
     MatTabsModule,
+    MatTooltipModule,
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
@@ -245,6 +247,41 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
           a.modelId.localeCompare(b.modelId),
       ),
   );
+
+  readonly minOptionalChatMoves = 20;
+  optionalChatSummary = computed(() => {
+    const rows = this.talkRows();
+    const samples = rows.flatMap(({ modelId, optionalChat }) =>
+      optionalChat ? [{ modelId, ...optionalChat }] : [],
+    );
+    const qualified = samples
+      .filter(({ moves }) => moves >= this.minOptionalChatMoves)
+      .sort(
+        (a, b) => b.messages * a.moves - a.messages * b.moves || a.modelId.localeCompare(b.modelId),
+      );
+    const qualifyingCount = qualified.length;
+    if (qualifyingCount < 2) {
+      return {
+        kind: 'sparse' as const,
+        qualifyingCount,
+        modelCount: rows.length,
+        moves: samples.reduce((total, sample) => total + sample.moves, 0),
+      };
+    }
+
+    const most = qualified[0];
+    const least = qualified[qualifyingCount - 1];
+    if (most.messages * least.moves === least.messages * most.moves) {
+      return {
+        kind: 'equal' as const,
+        qualifyingCount,
+        rate: most.messages / most.moves,
+        moves: qualified.reduce((total, sample) => total + sample.moves, 0),
+        messages: qualified.reduce((total, sample) => total + sample.messages, 0),
+      };
+    }
+    return { kind: 'contrast' as const, most, least };
+  });
 
   readonly cacheExplanation =
     'All attempts with usage in finished, non-bye games; hit rate = cached / prompt tokens, savings use current catalog read prices; incomplete counters or unknown prices are n/a.';
@@ -497,50 +534,22 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
     return value == null ? 'n/a' : formatNumber(value, 'en-US', '1.2-2');
   }
 
-  /** Share of moves with a message; n/a without moves in that chat mode. */
-  /**
-   * "Resigned while not losing" for a model: "1 of 2" over its resignations with an evaluation, "n/a" when
-   * none of them was evaluated, "–" without resignations.
-   */
-  formatNotLosing(row: AnalyticsComparisonModel): string {
-    if ((row.resignations ?? 0) === 0) {
-      return '–';
-    }
-    const evaluated = row.resignationsEvaluated ?? 0;
-    return evaluated === 0 ? 'n/a' : `${row.resignationsWhileNotLosing ?? 0} of ${evaluated}`;
-  }
-
-  /** Note under "not losing" when some resignations had no evaluation, e.g. "1 not evaluated". */
-  notEvaluatedNote(row: AnalyticsComparisonModel): string {
-    const missing = (row.resignations ?? 0) - (row.resignationsEvaluated ?? 0);
-    return missing > 0 ? `${missing} not evaluated` : '';
+  /** Resignations whose final position had no evaluation. */
+  unevaluatedResignations(row: AnalyticsComparisonModel): number {
+    return (row.resignations ?? 0) - (row.resignationsEvaluated ?? 0);
   }
 
   /** Resignations per game played, e.g. "2 (10%)". */
-  formatResignations(row: AnalyticsComparisonModel): string {
-    const resignations = row.resignations ?? 0;
+  formatResignations(row: AnalyticsComparisonModel): string | null {
+    const resignations = row.resignations;
+    if (resignations == null) return null;
     return resignations === 0 || row.gamesPlayed === 0
       ? `${resignations}`
       : `${resignations} (${this.percent(resignations / row.gamesPlayed)})`;
   }
 
-  formatTalkRate(talk: AnalyticsTalkativeness | null | undefined): string {
-    return !talk || talk.moves === 0 || talk.talkRate == null ? 'n/a' : this.percent(talk.talkRate);
-  }
-
-  /** "12 of 40 moves"; empty without moves in that chat mode. */
-  talkSample(talk: AnalyticsTalkativeness | null | undefined): string {
-    if (!talk || talk.moves === 0) {
-      return '';
-    }
-    return `${talk.messages} of ${talk.moves} ${talk.moves === 1 ? 'move' : 'moves'}`;
-  }
-
-  /** Average message length in characters; n/a without messages. */
-  formatMessageLength(talk: AnalyticsTalkativeness | null | undefined): string {
-    return talk?.averageMessageLength == null
-      ? 'n/a'
-      : `${formatNumber(talk.averageMessageLength, 'en-US', '1.0-0')} chars`;
+  formatTalkRate(talk: AnalyticsTalkativeness | undefined): string | null {
+    return !talk?.moves || talk.talkRate == null ? null : this.percent(talk.talkRate);
   }
 
   formatMs(value: number | null): string {

@@ -1117,7 +1117,134 @@ describe('AnalyticsDashboard', () => {
     expect(component.formatPerGame(undefined)).toBe('n/a');
   });
 
-  it('lists talkativeness per chat mode, most talkative first, with n/a for modes without moves', () => {
+  it('leads Behaviour with the highest and lowest qualifying Optional chat rates and both samples', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.quiet', {
+        optionalChat: { moves: 64, messages: 1, talkRate: 1 / 64 },
+        mandatoryChat: { moves: 64, messages: 64, talkRate: 1 },
+      }),
+      comparisonRow('model.chatty', {
+        optionalChat: { moves: 64, messages: 64, talkRate: 1 },
+        mandatoryChat: { moves: 64, messages: 0, talkRate: 0 },
+      }),
+      comparisonRow('model.small-sample', {
+        optionalChat: { moves: 19, messages: 0, talkRate: 0 },
+      }),
+    ]);
+
+    const intro = element.querySelector('.tab-intro');
+    expect(intro?.textContent).toContain('model.chatty sent messages on 64 of 64 moves');
+    expect(intro?.textContent).toContain('model.quiet on 1 of 64 moves');
+    expect(intro?.textContent).toContain('20 moves per model');
+    expect(intro?.textContent).not.toContain('model.small-sample');
+  });
+
+  it('reports the Optional-chat sample when just one model reaches the minimum', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.at-minimum', {
+        optionalChat: { moves: 20, messages: 20, talkRate: 1 },
+      }),
+      comparisonRow('model.below-minimum', {
+        optionalChat: { moves: 19, messages: 0, talkRate: 0 },
+        mandatoryChat: { moves: 24, messages: 22, talkRate: 22 / 24 },
+      }),
+      comparisonRow('model.mandatory-only', {
+        mandatoryChat: { moves: 24, messages: 24, talkRate: 1 },
+      }),
+    ]);
+
+    const intro = element.querySelector('.tab-intro');
+    expect(intro?.textContent).toContain('Not enough Optional-chat moves yet to compare models.');
+    expect(intro?.textContent).toContain('39 Optional-chat moves total');
+    expect(intro?.textContent).toContain('1 of 3 models reached 20 moves');
+  });
+
+  it.each([
+    [0, 'on no move'],
+    [0.5, 'on the same share of moves (50.0%)'],
+    [1, 'on every move'],
+  ])('shows agreement when qualifying Optional chat rates tie at %s', async (rate, wording) => {
+    const element = await renderBehaviour([
+      comparisonRow('model.first', {
+        optionalChat: { moves: 20, messages: 20 * rate, talkRate: rate },
+      }),
+      comparisonRow('model.second', {
+        optionalChat: { moves: 40, messages: 40 * rate, talkRate: rate },
+      }),
+      comparisonRow('model.below-minimum', {
+        optionalChat: { moves: 19, messages: 1, talkRate: 1 / 19 },
+      }),
+    ]);
+
+    const intro = element.querySelector('.tab-intro')?.textContent.replace(/\s+/g, ' ');
+    expect(intro).toContain(`All 2 qualifying models talked ${wording}`);
+    expect(intro).toContain(`${60 * rate} of 60 moves total`);
+  });
+
+  it('leads with a quiet empty state when there are no recorded chat moves', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.chat-off', {
+        optionalChat: { moves: 0, messages: 0 },
+        mandatoryChat: { moves: 0, messages: 0 },
+        wonByResignation: 1,
+      }),
+      comparisonRow('model.legacy'),
+    ]);
+
+    expect(element.querySelector('.tab-intro')?.textContent).toContain(
+      'No model moves with chat Optional or Mandatory in this scope.',
+    );
+    expect(element.querySelector('.talk-table tbody')).toBeNull();
+    expect(element.querySelector('.resign-table tbody')?.textContent).toContain('model.chat-off');
+  });
+
+  it('gives missing Behaviour metrics accessible dashes and preserves reported zeros', async () => {
+    const element = await renderBehaviour([
+      comparisonRow('model.quiet', {
+        optionalChat: { moves: 24, messages: 0, talkRate: 0 },
+        resignations: 1,
+        resignationsEvaluated: 0,
+        wonByResignation: 0,
+      }),
+      comparisonRow('model.winner', {
+        mandatoryChat: { moves: 20, messages: 20, talkRate: 1, averageMessageLength: 0 },
+        resignations: 0,
+        wonByResignation: 1,
+      }),
+      comparisonRow('model.evaluated', {
+        resignations: 1,
+        resignationsEvaluated: 1,
+        resignationsWhileNotLosing: 0,
+      }),
+    ]);
+
+    const talkCells = element.querySelectorAll('.talk-table tbody tr:first-child td');
+    const resignationRows = element.querySelectorAll<HTMLTableRowElement>('.resign-table tbody tr');
+    const unevaluated = Array.from(resignationRows).find((row) =>
+      row.textContent.includes('model.quiet'),
+    )!;
+    const winner = resignationRows[2];
+    const missing = [
+      [talkCells[2], 'No messages in this chat mode'],
+      [talkCells[3], 'No recorded moves in this chat mode'],
+      [unevaluated.cells[2], 'No evaluated resignations'],
+      [winner.cells[2], 'No resignations'],
+    ] as const;
+    for (const [cell, label] of missing) {
+      expect(cell.querySelector('[aria-hidden="true"]')?.textContent).toBe('—');
+      expect(cell.querySelector('.cdk-visually-hidden')?.textContent).toBe(label);
+    }
+    expect(element.querySelectorAll('.behaviour-legend')).toHaveLength(1);
+    expect(talkCells[1].textContent).toContain('0.0%');
+    expect(
+      element.querySelector('.talk-table tbody tr:last-child td:last-child')?.textContent,
+    ).toContain('0 chars');
+    expect(winner.cells[1].textContent).toMatch(/^\s*0\s+of 5 games/);
+    expect(unevaluated.cells[3].textContent?.trim()).toBe('0');
+    expect(element.querySelector('.resign-table tbody')?.textContent).toContain('0 of 1');
+  });
+
+  it('lists talkativeness per chat mode, most talkative first', () => {
     const component = createDashboard();
     component.comparison.set({
       windowDays: 30,
@@ -1155,16 +1282,11 @@ describe('AnalyticsDashboard', () => {
 
     const [chatty, quiet, mandatoryOnly] = rows;
     expect(component.formatTalkRate(chatty.optionalChat)).toBe('100.0%');
-    expect(component.talkSample(chatty.optionalChat)).toBe('38 of 38 moves');
-    expect(component.formatMessageLength(chatty.optionalChat)).toBe('87 chars');
     expect(component.formatTalkRate(chatty.mandatoryChat)).toBe('95.0%');
     expect(component.formatTalkRate(quiet.optionalChat)).toBe('0.0%');
-    expect(component.formatMessageLength(quiet.optionalChat)).toBe('n/a');
-    expect(component.formatTalkRate(quiet.mandatoryChat)).toBe('n/a');
-    expect(component.talkSample(quiet.mandatoryChat)).toBe('');
-    expect(component.formatTalkRate(mandatoryOnly.optionalChat)).toBe('n/a');
-    expect(component.talkSample({ moves: 1, messages: 1, talkRate: 1 })).toBe('1 of 1 move');
-    expect(component.formatTalkRate(undefined)).toBe('n/a');
+    expect(component.formatTalkRate(quiet.mandatoryChat)).toBeNull();
+    expect(component.formatTalkRate(mandatoryOnly.optionalChat)).toBeNull();
+    expect(component.formatTalkRate(undefined)).toBeNull();
   });
 
   it('lists caching metrics, reported zeros and n/a for legacy or incomplete usage', () => {
@@ -1261,13 +1383,10 @@ describe('AnalyticsDashboard', () => {
     ]);
     const [quitter, unevaluated, winner] = rows;
     expect(component.formatResignations(quitter)).toBe('3 (75.0%)');
-    expect(component.formatNotLosing(quitter)).toBe('1 of 2');
-    expect(component.notEvaluatedNote(quitter)).toBe('1 not evaluated');
-    expect(component.formatNotLosing(unevaluated)).toBe('n/a');
-    expect(component.notEvaluatedNote(unevaluated)).toBe('1 not evaluated');
+    expect(component.unevaluatedResignations(quitter)).toBe(1);
+    expect(component.unevaluatedResignations(unevaluated)).toBe(1);
     expect(component.formatResignations(winner)).toBe('0');
-    expect(component.formatNotLosing(winner)).toBe('–');
-    expect(component.notEvaluatedNote(winner)).toBe('');
+    expect(component.unevaluatedResignations(winner)).toBe(0);
   });
 
   it('explains resignations and "not losing" in one line', () => {
@@ -1397,6 +1516,13 @@ function comparisonReport(minGames = 0): AnalyticsComparisonResponse {
     gamesCount: 3,
     models: [comparisonRow('model.sample')],
   };
+}
+
+async function renderBehaviour(models: AnalyticsComparisonModel[]) {
+  const { harness } = await renderDashboard('?tab=behaviour', {
+    comparison: of({ ...comparisonReport(), models }),
+  });
+  return harness.routeNativeElement!;
 }
 
 async function renderDashboard(

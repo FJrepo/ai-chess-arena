@@ -524,9 +524,9 @@ Comparison API rows carry `conversion` with `evaluatedGames`, `winningPositionsR
 
 Tone grouping/filtering is deferred to the banter bench. The current tournament setting cannot accurately label historical moves after live changes; this feature adds no per-move tone backfill.
 
-The analytics page's *Talkativeness* table shows, per model and for chat *Optional* and *Mandatory* separately, the share of its moves that came with a non-empty message (*Talk rate*; with *Mandatory* this is a compliance rate, with *Optional* the model's own choice) and the average message length in characters.
+The **Behaviour** tab leads with the highest and lowest *Optional* chat rates in the current filters. Each model needs at least **20 Optional-chat moves** to qualify. The comparison shows the number of moves with a message out of the total moves for each model. When all eligible models have the same rate, the summary reports the shared rate and their combined counts. With fewer than two eligible models, it reports the Optional-chat move total and how many models reached the minimum among those with recorded chat moves. With no recorded chat moves, it shows an empty state.
 
-Like the other tables it covers model moves in finished games (byes, human moves and overrides excluded); moves made with chat *Off* are left out, and a mode without moves shows "n/a".
+The *Talkativeness* table shows the share of each model's moves with a non-empty message and the average message length in characters for both chat modes. *Optional* measures the model's choice to talk. *Mandatory* measures compliance. Like the other tables, it covers model moves in finished games (byes, human moves and overrides excluded) and leaves out moves made with chat *Off*. A dash marks an unavailable value, such as when a mode has no moves or when there are no messages to measure for average length. Reported zeros are displayed as zeros.
 
 A move counts as talking when a chat message was stored for the same game, move number and colour; a ply stored twice (possible in databases from before V8) counts once.
 
@@ -550,7 +550,7 @@ The *Resignations* table lists per model how often it resigned (and the share of
 
 Not losing means the resigning side still had at least 35% winning chances (on the move-quality win-probability model) in the position it gave up, which is the position after the last move played, as evaluated by Stockfish: roughly level or better.
 
-Resignations without that evaluation are counted but not judged ("n/a", "1 not evaluated").
+Resignations without that evaluation still count toward the total. The judgement column shows a dash if there are no evaluated resignations, with a note counting any resignations without an evaluation.
 
 Same scope as the other tables: finished, non-bye games; human sides are left out.
 
