@@ -151,11 +151,22 @@ public class GameResource {
     @POST
     @Path("/{id}/start")
     public Response startGame(@PathParam("id") UUID id, @Context UriInfo uriInfo) {
-        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(
-                uriInfo.getRequestUri().getRawQuery(), "queueIfFull", semicolonIsQueryDelimiter)));
+        String query = uriInfo.getRequestUri().getRawQuery();
+        return startGame(id, parseQueueIfFull(queryValuesIgnoringCase(query, "queueIfFull", semicolonIsQueryDelimiter)),
+                parseAcknowledgement(queryValuesIgnoringCase(query, "acknowledgeUncertainRequest",
+                        semicolonIsQueryDelimiter)));
     }
 
     Response startGame(UUID id, boolean queueIfFull) {
+        return startGame(id, queueIfFull, null);
+    }
+
+    /**
+     * {@code acknowledgeUncertainRequest=<uncertainRequestSentAt>} states that spend for exactly that unresolved model
+     * request was checked; it is the only way to resume such a game (409 otherwise, 409 when there is nothing to
+     * acknowledge or another request is unresolved now).
+     */
+    Response startGame(UUID id, boolean queueIfFull, java.time.Instant acknowledgedRequest) {
         Game game = gameRepository.findById(id);
         if (game == null) return Response.status(404).build();
         if (game.tournament != null
@@ -165,8 +176,24 @@ public class GameResource {
         if (!hasConfiguredPlayer(game, true) || !hasConfiguredPlayer(game, false)) {
             throw new IllegalArgumentException("Both players must be set");
         }
+        if (acknowledgedRequest != null) {
+            return Response.ok(gameEngineService.startGame(id, queueIfFull, acknowledgedRequest)).build();
+        }
         return Response.ok(queueIfFull ? gameEngineService.startGame(id, true) : gameEngineService.startGame(id))
                 .build();
+    }
+
+    static java.time.Instant parseAcknowledgement(List<String> values) {
+        if (values == null) return null;
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("acknowledgeUncertainRequest must be given at most once");
+        }
+        try {
+            return java.time.Instant.parse(values.getFirst());
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new IllegalArgumentException(
+                    "acknowledgeUncertainRequest must be the game's uncertainRequestSentAt timestamp");
+        }
     }
 
     /**

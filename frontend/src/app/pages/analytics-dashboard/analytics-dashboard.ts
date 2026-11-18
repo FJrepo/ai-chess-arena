@@ -323,6 +323,61 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
       ),
   );
 
+  /**
+   * Models with a resignation between models on either side, most opponents talked out first, then most
+   * times talked out themselves.
+   */
+  persuasionRows = computed(() =>
+    (this.comparison()?.models ?? [])
+      .flatMap((row) => (row.persuasion ? [{ modelId: row.modelId, ...row.persuasion }] : []))
+      .filter(
+        (row) =>
+          row.asPersuaderMindGames.resignations +
+            row.asPersuaderOtherLevels.resignations +
+            row.asPersuaded.resignations >
+          0,
+      )
+      .sort(
+        (a, b) =>
+          b.asPersuaderMindGames.talkedOut +
+            b.asPersuaderOtherLevels.talkedOut -
+            (a.asPersuaderMindGames.talkedOut + a.asPersuaderOtherLevels.talkedOut) ||
+          b.asPersuaded.talkedOut - a.asPersuaded.talkedOut ||
+          a.modelId.localeCompare(b.modelId),
+      ),
+  );
+
+  /** The persuasion definition with the backend's threshold, window and sample minimum. */
+  persuasionExplanation = computed(() => {
+    const rules = this.comparison()?.persuasionRules;
+    if (!rules) return null;
+    const moves = rules.messageWindowMoves === 1 ? 'move' : 'moves';
+    return (
+      `Talked out of the game: in a finished model-vs-model game, the resigning model was not lost by Stockfish's evaluation of the position it gave up (better than ${this.formatPawns(rules.lostThresholdCp)} pawns from its own view, no forced mate against it) ` +
+      `and its opponent sent at least one chat message on its last ${rules.messageWindowMoves} ${moves} before the resignation. ` +
+      `Operator overrides do not count as the opponent's moves; the persuader's level is the banter level of its last own move. Counts are of evaluated resignations; fewer than ${rules.lowSampleResignations} is a low sample.`
+    );
+  });
+
+  /**
+   * Whether a filter beyond the analysis window narrows the comparison report: minimum games (as applied
+   * by the loaded report), tournament, legal move hints or comparison effort.
+   */
+  comparisonFiltersActive(): boolean {
+    return (
+      (this.comparison()?.minGames ?? 0) > 0 ||
+      this.selectedTournamentId !== '' ||
+      this.selectedLegalMoveHints !== 'all' ||
+      this.selectedReasoningEffort !== ''
+    );
+  }
+
+  /** Centipawns as signed pawns with a typographic minus, e.g. "−2.00". */
+  formatPawns(cp: number): string {
+    const pawns = Math.abs(cp / 100).toFixed(2);
+    return cp < 0 ? `−${pawns}` : `+${pawns}`;
+  }
+
   resignationsExplicitlyZero = computed(() =>
     this.comparison()?.models.every(
       ({ resignations, wonByResignation }) => resignations === 0 && wonByResignation === 0,

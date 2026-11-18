@@ -110,28 +110,92 @@ class OpenRouterServiceChatTest {
 
     @Test
     void authAndCreditFailuresAreFatal() throws IOException {
-        assertFailure(401, "{\"error\":{\"message\":\"No auth credentials found\"}}", ProviderOutcome.FATAL,
+        assertFailure(401, "{\"error\":{\"code\":401,\"message\":\"No auth credentials found\"}}", ProviderOutcome.FATAL,
                 "OpenRouter rejected the API key (HTTP 401): No auth credentials found");
-        assertFailure(402, "{\"error\":{\"message\":\"Insufficient credits\"}}", ProviderOutcome.FATAL,
+        assertFailure(402, "{\"error\":{\"code\":402,\"message\":\"Insufficient credits\"}}", ProviderOutcome.FATAL,
                 "OpenRouter account has insufficient credits (HTTP 402): Insufficient credits");
-        assertFailure(404, "not json", ProviderOutcome.FATAL, "Model not found on OpenRouter (HTTP 404)");
+        assertFailure(404, "{\"error\":{\"code\":404,\"message\":\"No such model\"}}", ProviderOutcome.FATAL,
+                "Model not found on OpenRouter (HTTP 404): No such model");
+    }
+
+    /** Rule B: only a complete error document with a status from the non-billable allowlist is a plain failure. */
+    @Test
+    void errorAnswersThatDoNotProveNothingWasChargedAreDeliveryUncertain() throws IOException {
+        String document = "{\"error\":{\"code\":500,\"message\":\"Something happened\"}}";
+        for (var answer : List.of(
+                java.util.Map.entry(404, "not json"),
+                java.util.Map.entry(429, "{}"),
+                java.util.Map.entry(429, "{\"error\":{}}"),
+                java.util.Map.entry(503, "{\"error\":{\"message\":\"no code\"}}"),
+                java.util.Map.entry(503, "{\"error\":{\"code\":503}}"),
+                java.util.Map.entry(503, document + " trailing garbage"),
+                java.util.Map.entry(503, document + " {\"second\":1}"),
+                java.util.Map.entry(500, ""),
+                java.util.Map.entry(503, "<html>bad gateway</html>"),
+                java.util.Map.entry(408, document),
+                java.util.Map.entry(418, document),
+                java.util.Map.entry(524, document))) {
+            stopServer();
+            LlmResponse response = chat(serviceAnswering(answer.getKey(), answer.getValue()));
+            assertTrue(response.isProviderFailure(), "HTTP " + answer.getKey());
+            assertTrue(response.deliveryUncertain(), "HTTP " + answer.getKey() + " " + answer.getValue());
+        }
+        for (int status : OpenRouterService.NON_BILLABLE_STATUSES) {
+            stopServer();
+            LlmResponse response = chat(serviceAnswering(status, document));
+            assertTrue(response.isProviderFailure(), "HTTP " + status);
+            assertFalse(response.deliveryUncertain(), "HTTP " + status);
+        }
+        assertEquals(java.util.Set.of(400, 401, 402, 403, 404, 413, 422, 429, 500, 502, 503, 504),
+                OpenRouterService.NON_BILLABLE_STATUSES);
     }
 
     @Test
     void rateLimitsAndServerErrorsAreRetryable() throws IOException {
-        assertFailure(429, "{}", ProviderOutcome.RETRYABLE, "OpenRouter rate limit reached (HTTP 429)");
-        assertFailure(500, "", ProviderOutcome.RETRYABLE, "OpenRouter server error (HTTP 500)");
-        assertFailure(503, "{\"error\":{\"message\":\"upstream down\"}}", ProviderOutcome.RETRYABLE,
+        assertFailure(429, "{\"error\":{\"code\":429,\"message\":\"Rate limited\"}}", ProviderOutcome.RETRYABLE,
+                "OpenRouter rate limit reached (HTTP 429): Rate limited");
+        assertFailure(500, "{\"error\":{\"code\":500,\"message\":\"Internal\"}}", ProviderOutcome.RETRYABLE,
+                "OpenRouter server error (HTTP 500): Internal");
+        assertFailure(503, "{\"error\":{\"code\":503,\"message\":\"upstream down\"}}", ProviderOutcome.RETRYABLE,
                 "OpenRouter server error (HTTP 503): upstream down");
     }
 
     @Test
-    void malformedOrChoicelessSuccessBodiesAreRetryable() throws IOException {
-        assertFailure(200, "<html>gateway</html>", ProviderOutcome.RETRYABLE, "OpenRouter returned a malformed response");
-        assertFailure(200, "{\"choices\":[]}", ProviderOutcome.RETRYABLE, "OpenRouter returned a response without choices");
-        assertFailure(200, "{\"choices\":[{}]}", ProviderOutcome.RETRYABLE, "OpenRouter returned a malformed choice");
-        assertFailure(200, "{\"error\":{\"message\":\"Provider returned error\",\"code\":502}}", ProviderOutcome.RETRYABLE,
+    void everySuccessStatusWithoutAValidCompletionIsDeliveryUncertain() throws IOException {
+        assertUncertain(200, "<html>gateway</html>", "OpenRouter returned a malformed response");
+        assertUncertain(200, "{\"choices\":[]}", "OpenRouter returned a response without choices");
+        assertUncertain(200, "{\"choices\":[{}]}", "OpenRouter returned a malformed choice");
+        assertUncertain(200, "{\"error\":{\"message\":\"Provider returned error\",\"code\":502}}",
                 "OpenRouter upstream error: Provider returned error");
+    }
+
+    @Test
+    void anErrorInsideASuccessfulAnswerIsDeliveryUncertainAndKeepsItsUsage() throws IOException {
+        String usage = ",\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"cost\":0.002}}";
+        for (String choice : List.of(
+                "{\"message\":{\"content\":\"{\\\"move\\\":\\\"e\"},\"finish_reason\":\"error\","
+                        + "\"error\":{\"code\":502,\"message\":\"Upstream stopped\"}}",
+                "{\"message\":{\"content\":\"{\\\"move\\\":\\\"e4\\\"}\"},\"finish_reason\":\"error\"}",
+                "{\"message\":{\"content\":\"partial\"},\"error\":{\"code\":500,\"message\":\"Stopped\"}}")) {
+            stopServer();
+            LlmResponse response = chat(serviceAnswering(200, "{\"choices\":[" + choice + "]" + usage));
+            assertTrue(response.isProviderFailure(), choice);
+            assertTrue(response.deliveryUncertain(), choice);
+            assertNull(response.content());
+            assertEquals(0.002, response.costUsd(), "usage is preserved");
+            assertEquals(3, response.completionTokens());
+        }
+        // A valid completion followed by more content is not a valid answer either.
+        stopServer();
+        LlmResponse trailing = chat(serviceAnswering(200,
+                "{\"choices\":[{\"message\":{\"content\":\"e4\"}}]} {\"choices\":[]}"));
+        assertTrue(trailing.deliveryUncertain());
+    }
+
+    private void assertUncertain(int status, String body, String detail) throws IOException {
+        assertFailure(status, body, ProviderOutcome.RETRYABLE, detail);
+        stopServer();
+        assertTrue(chat(serviceAnswering(status, body)).deliveryUncertain(), body);
     }
 
     @Test
@@ -147,6 +211,100 @@ class OpenRouterServiceChatTest {
         assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
         assertTrue(response.errorMessage().startsWith("Could not reach OpenRouter"), response.errorMessage());
         assertFalse(response.timedOut());
+        assertFalse(response.deliveryUncertain(), "a refused connection never delivered the request");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void aConnectionLostAfterTheRequestWasSentIsDeliveryUncertain(boolean truncatedAnswer) throws Exception {
+        try (ServerSocket socket = new ServerSocket(0, 0, InetAddress.getLoopbackAddress())) {
+            Thread provider = Thread.startVirtualThread(() -> {
+                try (var connection = socket.accept()) {
+                    readRequest(connection.getInputStream());
+                    requests.incrementAndGet();
+                    if (truncatedAnswer) {
+                        OutputStream out = connection.getOutputStream();
+                        out.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n"
+                                + "{\"choices\":[").getBytes(StandardCharsets.US_ASCII));
+                        out.flush();
+                    }
+                } catch (IOException ignored) {
+                    // The client sees the dropped connection.
+                }
+            });
+            OpenRouterService service = service("http://127.0.0.1:" + socket.getLocalPort());
+
+            LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                    in(Duration.ofSeconds(10)), 100);
+            provider.join(5_000);
+
+            assertEquals(1, requests.get());
+            assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
+            assertTrue(response.deliveryUncertain(), response.errorMessage());
+            assertFalse(response.timedOut());
+        }
+    }
+
+    @Test
+    void aTimeoutWhileTheClientStillHoldsTheBodyIsPossiblyCharged() throws Exception {
+        // The client took the final body buffer but has not completed the publisher (HTTP/2 can already have sent
+        // END_STREAM at this point): OpenRouter may have the whole request.
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            for (boolean timedTurn : List.of(true, false)) {
+                OpenRouterService service = service("http://127.0.0.1:9");
+                service.chatSender = (request, handler) -> holdAfterFinalBuffer(request, release);
+                service.requestSafetyCap = Duration.ofMillis(300);
+
+                LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                        timedTurn ? in(Duration.ofMillis(200)) : null, 100);
+
+                assertEquals(timedTurn ? ProviderOutcome.TIMEOUT : ProviderOutcome.RETRYABLE, response.outcome());
+                assertTrue(response.deliveryUncertain(), "timed turn: " + timedTurn);
+            }
+        } finally {
+            release.countDown();
+        }
+    }
+
+    static java.util.concurrent.CompletableFuture<java.net.http.HttpResponse<String>> holdAfterFinalBuffer(
+            java.net.http.HttpRequest request, java.util.concurrent.CountDownLatch release) {
+        Thread.startVirtualThread(() -> request.bodyPublisher().orElseThrow().subscribe(
+                new java.util.concurrent.Flow.Subscriber<java.nio.ByteBuffer>() {
+                    @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+                        subscription.request(1);
+                    }
+
+                    @Override public void onNext(java.nio.ByteBuffer item) {
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+
+                    @Override public void onError(Throwable throwable) { }
+
+                    @Override public void onComplete() { }
+                }));
+        return new java.util.concurrent.CompletableFuture<>();
+    }
+
+    /** Reads one HTTP/1.1 request with a Content-Length body. */
+    private static void readRequest(java.io.InputStream in) throws IOException {
+        StringBuilder head = new StringBuilder();
+        while (!head.toString().endsWith("\r\n\r\n")) {
+            int b = in.read();
+            if (b < 0) throw new IOException("request ended early");
+            head.append((char) b);
+        }
+        int length = 0;
+        for (String line : head.toString().split("\r\n")) {
+            if (line.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:")) {
+                length = Integer.parseInt(line.substring(15).trim());
+            }
+        }
+        in.readNBytes(length);
     }
 
     @Test
@@ -170,6 +328,8 @@ class OpenRouterServiceChatTest {
         assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
         assertTrue(response.timedOut());
         assertFalse(response.isProviderFailure());
+        // No headers yet, but the request had reached the server: it may be charged.
+        assertTrue(response.deliveryUncertain());
     }
 
     @Test
@@ -182,9 +342,13 @@ class OpenRouterServiceChatTest {
                 in(Duration.ofMillis(700)), 100);
         long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
+        // The model's timeout; the answer had started, so its cost is unknown (possibly charged).
         assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
         assertTrue(response.timedOut());
         assertFalse(response.isProviderFailure());
+        assertTrue(response.deliveryUncertain());
+        assertEquals("No complete answer within the move time; the request may have been charged",
+                response.errorMessage());
         assertTrue(elapsedMs >= 650 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
     }
 
@@ -212,7 +376,8 @@ class OpenRouterServiceChatTest {
         assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
         assertFalse(response.timedOut());
         assertTrue(response.isProviderFailure());
-        assertEquals("OpenRouter request did not finish within the safety limit of 600 ms", response.errorMessage());
+        assertEquals("OpenRouter started the answer, but it did not complete in time", response.errorMessage());
+        assertTrue(response.deliveryUncertain());
         assertTrue(elapsedMs >= 550 && elapsedMs < 1_800, "elapsed " + elapsedMs + " ms");
     }
 
@@ -237,12 +402,13 @@ class OpenRouterServiceChatTest {
 
         assertEquals(ProviderOutcome.RETRYABLE, response.outcome());
         assertFalse(response.timedOut());
+        assertTrue(response.deliveryUncertain(), "the request was sent, so it may be charged");
     }
 
     @Test
-    void errorStatusWithAStalledBodyKeepsTheProviderClassificationInsteadOfATimeout() throws IOException {
+    void errorStatusWithAStalledBodyIsAnIncompleteAnswerNotATimeout() throws IOException {
         // Status and headers arrive at once, the error body would take about 3 s.
-        String errorBody = "{\"error\":{\"message\":\"upstream down\"}}";
+        String errorBody = "{\"error\":{\"code\":503,\"message\":\"upstream down\"}}";
         for (int status : new int[] {503, 429}) {
             stopServer();
             OpenRouterService service = serviceStreaming(status, errorBody, 10, 300);
@@ -253,6 +419,7 @@ class OpenRouterServiceChatTest {
             assertEquals(ProviderOutcome.RETRYABLE, response.outcome(), "HTTP " + status);
             assertEquals(status, response.httpStatus());
             assertFalse(response.timedOut());
+            assertTrue(response.deliveryUncertain(), "an incomplete error response proves nothing");
             assertTrue(response.isProviderFailure());
         }
 
@@ -260,8 +427,10 @@ class OpenRouterServiceChatTest {
         OpenRouterService service = serviceStreaming(401, errorBody, 10, 300);
         LlmResponse unauthorized = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
                 in(Duration.ofMillis(500)), 100);
-        assertEquals(ProviderOutcome.FATAL, unauthorized.outcome());
-        assertEquals("OpenRouter rejected the API key (HTTP 401)", unauthorized.errorMessage());
+        assertTrue(unauthorized.deliveryUncertain());
+        assertFalse(unauthorized.timedOut());
+        assertEquals("OpenRouter rejected the API key (HTTP 401); the error response was incomplete",
+                unauthorized.errorMessage());
     }
 
     @Test
@@ -276,6 +445,7 @@ class OpenRouterServiceChatTest {
         long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
         assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
+        assertTrue(response.deliveryUncertain(), "the answer had started");
         assertTrue(elapsedMs >= 550 && elapsedMs < 1_000, "elapsed " + elapsedMs + " ms");
     }
 
@@ -320,6 +490,8 @@ class OpenRouterServiceChatTest {
 
         assertEquals(ProviderOutcome.TIMEOUT, response.outcome());
         assertTrue(response.timedOut());
+        assertTrue(response.deliveryUncertain(), "late, not used, possibly charged");
+        assertNull(response.content());
     }
 
     /**

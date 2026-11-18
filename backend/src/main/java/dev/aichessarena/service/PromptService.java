@@ -316,8 +316,30 @@ public class PromptService {
       case MANDATORY -> CHAT_REQUIRED_VERSION_SUFFIX;
     };
     String suffix = resignationOffered ? chatSuffix + RESIGN_VERSION_SUFFIX : chatSuffix;
-    return banterLevel != null && chatMode != ChatMode.OFF
-        ? suffix + "-banter-" + banterLevel.name().toLowerCase(java.util.Locale.ROOT).replace('_', '-') : suffix;
+    return banterLevel != null && chatMode != ChatMode.OFF ? suffix + banterVersionSuffix(banterLevel) : suffix;
+  }
+
+  private static String banterVersionSuffix(BanterLevel banterLevel) {
+    return "-banter-" + banterLevel.name().toLowerCase(java.util.Locale.ROOT).replace('_', '-');
+  }
+
+  /**
+   * The tone a stored prompt version was built with, e.g. MIND_GAMES for {@code v2-resign-banter-mind-games}; null
+   * for versions without a tone (chat OFF, no tone set, legacy templates, humans and overrides).
+   */
+  public static BanterLevel banterLevelOf(String promptVersion) {
+    if (promptVersion == null) {
+      return null;
+    }
+    for (BanterLevel level : BanterLevel.values()) {
+      String marker = banterVersionSuffix(level);
+      int index = promptVersion.indexOf(marker);
+      int end = index + marker.length();
+      if (index >= 0 && (end == promptVersion.length() || promptVersion.charAt(end) == '-')) {
+        return level;
+      }
+    }
+    return null;
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,

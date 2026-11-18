@@ -118,6 +118,38 @@ export interface AnalyticsComparisonModel {
   resignationsWhileNotLosing?: number;
   /** Games the model won because its opponent resigned. */
   wonByResignation?: number;
+  /** Persuasion in model-vs-model resignations (see AnalyticsPersuasionRules). Absent before 2.0. */
+  persuasion?: AnalyticsPersuasion;
+}
+
+/** Resignations in one persuasion view and how many counted as "talked out of the game". */
+export interface AnalyticsPersuasionCount {
+  resignations: number;
+  /** Of those, resignations whose position Stockfish had evaluated (the denominator shown). */
+  evaluated: number;
+  talkedOut: number;
+  /** Fewer evaluated resignations than AnalyticsPersuasionRules.lowSampleResignations. */
+  lowSample: boolean;
+}
+
+/**
+ * As persuader: games the opponent resigned, split by the tone of the model's own last move (Mind games or
+ * any other level). As persuaded: games the model resigned.
+ */
+export interface AnalyticsPersuasion {
+  asPersuaderMindGames: AnalyticsPersuasionCount;
+  asPersuaderOtherLevels: AnalyticsPersuasionCount;
+  asPersuaded: AnalyticsPersuasionCount;
+}
+
+/**
+ * "Talked out of the game": the resigner was not lost (better than lostThresholdCp centipawns from its
+ * view, no forced mate against it) and the opponent sent a message on one of its last messageWindowMoves moves.
+ */
+export interface AnalyticsPersuasionRules {
+  lostThresholdCp: number;
+  messageWindowMoves: number;
+  lowSampleResignations: number;
 }
 
 /** Of a model's moves in one chat mode, how many came with a non-empty message. */
@@ -136,6 +168,8 @@ export interface AnalyticsComparisonResponse {
   minGames: number;
   gamesCount: number;
   models: AnalyticsComparisonModel[];
+  /** Absent before 2.0. */
+  persuasionRules?: AnalyticsPersuasionRules;
 }
 
 export interface AnalyticsHealthResponse {

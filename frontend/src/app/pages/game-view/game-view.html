@@ -7,6 +7,7 @@
     [truncationEffort]="truncationEffort()"
     [saving]="savingLimit() || !gameActionsAvailable()"
     (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
+    (spendCheckedResume)="resumeAfterSpendCheck($event)"
   />
 
   @if (g.status === 'PAUSED' && g.resumeRequestedAt) {
@@ -443,7 +444,7 @@
         <button mat-raised-button [disabled]="!gameActionsAvailable()" (click)="pauseGame()">
           <mat-icon>pause</mat-icon> Pause
         </button>
-      } @else if (g.status === 'PAUSED' && !g.resumeRequestedAt) {
+      } @else if (g.status === 'PAUSED' && !g.resumeRequestedAt && !g.uncertainRequest) {
         <button
           mat-raised-button
           color="primary"

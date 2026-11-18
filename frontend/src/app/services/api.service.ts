@@ -246,6 +246,18 @@ export class ApiService {
     return this.http.post<Game>(`${this.baseUrl}/games/${id}/start`, {});
   }
 
+  /**
+   * Resumes a game paused for a spend check, stating that spend was checked for exactly the unconfirmed request
+   * identified by `requestSentAt` (the game's `uncertainRequestSentAt`). A newer request answers HTTP 409.
+   */
+  resumeAfterSpendCheck(id: string, requestSentAt: string): Observable<Game> {
+    return this.http.post<Game>(
+      `${this.baseUrl}/games/${id}/start`,
+      {},
+      { params: { acknowledgeUncertainRequest: requestSentAt } },
+    );
+  }
+
   cancelResumeRequest(id: string, statusRevision: number): Observable<Game> {
     return this.http.delete<Game>(`${this.baseUrl}/games/${id}/resume-request`, {
       params: { statusRevision },

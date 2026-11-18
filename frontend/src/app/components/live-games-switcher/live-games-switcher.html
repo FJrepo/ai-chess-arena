@@ -46,6 +46,9 @@
           }
         }
       </span>
+      @if (game.status === 'PAUSED' && game.statusDetail) {
+        <span class="reason" [title]="game.statusDetail">{{ game.statusDetail }}</span>
+      }
     </a>
   }
 </mat-menu>

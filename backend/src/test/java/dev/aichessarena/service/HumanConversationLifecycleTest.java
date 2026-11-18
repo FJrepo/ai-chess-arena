@@ -193,7 +193,8 @@ class HumanConversationLifecycleTest {
         };
         private final GameLifecycleService lifecycle = new GameLifecycleService() {
             @Override
-            GameDto markGameStarted(UUID id, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop) {
+            GameDto markGameStarted(UUID id, boolean automatic, boolean queueIfFull, BooleanSupplier claimLoop,
+                                    UUID runOwner, java.time.Instant acknowledgedRequest) {
                 assertTrue(claimLoop.getAsBoolean());
                 game.status = Game.GameStatus.IN_PROGRESS;
                 return DtoMapper.toDto(game, false);
@@ -221,7 +222,7 @@ class HumanConversationLifecycleTest {
 
             @Override
             public void recordHumanMove(UUID id, int number, String color, String san, String fen,
-                                        String player, String message, String expectedFen) {
+                                        String player, String message, String expectedFen, UUID nextOwner) {
                 assertEquals(game.currentFen, expectedFen);
                 save(number, color, san, fen);
             }

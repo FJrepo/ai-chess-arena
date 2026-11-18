@@ -636,6 +636,36 @@ describe('GameView', () => {
     );
   });
 
+  it('acknowledges exactly the displayed request and refreshes when it has changed', () => {
+    const resumeAfterSpendCheck = vi.fn(() =>
+      throwError(() => ({
+        status: 409,
+        error: { error: 'The unconfirmed model request has changed; refresh and check spend' },
+      })),
+    );
+    const getGame = vi.fn(() => EMPTY);
+    const { component, snackbar } = createComponent({ api: { resumeAfterSpendCheck, getGame } });
+    (component as any).gameId = 'g-1';
+    component.game.set(
+      gameFixture({
+        status: 'PAUSED',
+        uncertainRequest: true,
+        uncertainRequestSentAt: '2026-11-18T10:00:00.123456Z',
+      }),
+    );
+    const reads = getGame.mock.calls.length;
+
+    component.resumeAfterSpendCheck('2026-11-18T10:00:00.123456Z');
+
+    expect(resumeAfterSpendCheck).toHaveBeenCalledWith('g-1', '2026-11-18T10:00:00.123456Z');
+    expect(snackbar.open).toHaveBeenCalledWith(
+      'The unconfirmed model request has changed; refresh and check spend',
+      'Dismiss',
+      expect.any(Object),
+    );
+    expect(getGame.mock.calls.length).toBe(reads + 1);
+  });
+
   it('keeps the pause reason from status updates and clears it on resume', () => {
     const { component } = createComponent();
     component.game.set({
@@ -972,6 +1002,33 @@ describe('GameView', () => {
 
     expect(component.attempts().map((attempt) => attempt.outcome)).toEqual(['TRUNCATED']);
     expect(component.truncationPauseLimit()).toBe(4096);
+  });
+
+  it('reads the snapshot when a pause holds the game for a spend check', () => {
+    const readsAfterPause = (detail: string) => {
+      TestBed.resetTestingModule();
+      const getGame = vi.fn(() =>
+        of(gameFixture({ status: 'PAUSED', statusRevision: 2, uncertainRequest: true })),
+      );
+      const { component } = createComponent({ api: { getGame } });
+      (component as any).gameId = 'g-1';
+      component.game.set(gameFixture({ status: 'IN_PROGRESS' }));
+      const before = getGame.mock.calls.length;
+      component.handleWsMessage({
+        type: 'gameStatus',
+        gameId: 'g-1',
+        status: 'PAUSED',
+        detail,
+        statusRevision: 2,
+      });
+      return getGame.mock.calls.length - before;
+    };
+
+    const ordinary = readsAfterPause('OpenRouter rate limit reached (HTTP 429)');
+    const spendCheck = readsAfterPause(
+      'A model request (m, White, move 3) has no recorded answer. Check spend, then resume.',
+    );
+    expect(spendCheck).toBe(ordinary + 1);
   });
 
   it('names the rejected move in the live retry text', () => {
@@ -1885,6 +1942,43 @@ describe('GameView', () => {
     retired.next(gameWith({ statusRevision: 8, status: 'IN_PROGRESS' }));
     expect(component.game()?.status).toBe('PAUSED');
     expect(component.game()?.statusRevision).toBe(0);
+    component.ngOnDestroy();
+  });
+
+  it('acknowledges the request shown at the click even if a newer one arrives during the key check', () => {
+    const { component, gameLoad, messages, api } = createSpectator(false);
+    const callbacks: Array<() => void> = [];
+    const resumeAfterSpendCheck = vi.fn(() => EMPTY);
+    Object.assign(api, { resumeAfterSpendCheck });
+    Object.assign(component, {
+      connection: {
+        withKey: (action: () => void, isCurrent: () => boolean) =>
+          callbacks.push(() => {
+            if (isCurrent()) action();
+          }),
+      },
+    });
+    component.ngOnInit();
+    messages.next({ type: 'subscribed', gameId: 'g-1', revision: 25, streamId: 'first' });
+    gameLoad.next(
+      gameWith({
+        liveRevision: 25,
+        status: 'PAUSED',
+        streamId: 'first',
+        uncertainRequest: true,
+        uncertainRequestSentAt: '2026-11-18T10:00:00.000001Z',
+      }),
+    );
+    const shown = component.game()!.uncertainRequestSentAt!;
+
+    component.resumeAfterSpendCheck(shown);
+    // A live update swaps in a newer unconfirmed request while the key check is still running.
+    component.game.update((game) =>
+      game ? { ...game, uncertainRequestSentAt: '2026-11-18T10:05:00.000002Z' } : game,
+    );
+    callbacks[0]();
+
+    expect(resumeAfterSpendCheck).toHaveBeenCalledWith('g-1', '2026-11-18T10:00:00.000001Z');
     component.ngOnDestroy();
   });
 

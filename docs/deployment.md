@@ -45,6 +45,12 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## Durable runs migration (V32)
+
+Back up the database before upgrading and recreate the backend and frontend together. Flyway `V32__durable_runs.sql` adds a game loop's ownership token and lease and the record of a model request in flight. The previous version recorded no requests, so the migration pauses games it left in progress with **Paused by the upgrade to durable runs: a model request may have been in flight. Check spend, then resume.**, and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Check spend, then resume the runs and games. Moves, attempts, results and spend are retained. Restore the pre-upgrade backup to roll back the schema.
+
+From then on a restart or upgrade no longer pauses everything: see [Restarts](how-it-works.md#restarts). Games whose request was never sent resume, auto-runs keep running and serve queued resumes, and only games with a request in flight pause for inspection. The backend does not wait for outstanding answers when it stops, so each game with a request out at that moment needs a spend check. This remains a single-backend deployment: run one backend against a database.
+
 ## Stockfish ladder migration (V31)
 
 Back up the database and recreate the backend and frontend together. Flyway `V31__stockfish_ladder.sql` adds benchmark definitions, paired games, and storage for resolved model IDs on benchmark attempts. Benchmark requests use the existing unique tournament creation UUID. Existing games and settings are retained without a backfill. Restore the pre-upgrade backup to roll back the schema.
@@ -93,7 +99,7 @@ Rebuild/recreate both backend and frontend to deploy the setting, prompt variant
 
 Back up before upgrading. Flyway `V20__tournament_auto_run.sql` runs on backend startup and adds tournament run state (`OFF` for every existing tournament), concurrency (default 2), optional budget (null/no cap), and pause reason. Existing game positions, attempts, results and spend remain unchanged; no historical backfill is needed. No bundled third-party software changes.
 
-Rebuild/recreate both backend and frontend to deploy the scheduler, API and bracket controls. Previously running auto-runs pause on every backend restart with **Backend restarted**; interrupted games are paused by GameRecovery. Resume the run from the tournament page, then resume its paused games explicitly. A 10-second safety tick recovers missed scheduling notifications. This remains the single-backend deployment model: row locks serialize starts, but game-loop ownership and startup recovery belong to that backend JVM.
+Rebuild/recreate both backend and frontend to deploy the scheduler, API and bracket controls. Until 2.0, running auto-runs paused on every backend restart with **Backend restarted** and interrupted games were paused by GameRecovery; since 2.0 (V32) they continue, see [Restarts](how-it-works.md#restarts). A 10-second safety tick recovers missed scheduling notifications. This remains the single-backend deployment model: row locks serialize starts, but game-loop ownership and startup recovery belong to that backend JVM.
 
 Budget checks use reported tournament spend before each model request and after each recorded attempt. Terminal answers complete and advance before their attempt pauses unfinished games at the cap, including resignation and eligible stored-evaluation adjudication; cancellation remains final. Deploy this fix by rebuilding/recreating both application services. No additional migration or backfill is needed; existing persisted games remain unchanged, including any terminal positions paused by an older version, which still need manual resume after raising/removing the cap. In-flight answers can still add spend after the cap pauses a run. See [Auto-run](how-it-works.md#auto-run) for manual-play boundaries, human games, concurrency reductions and the API contract. Restore the pre-upgrade database backup when rolling back; older versions do not enforce run controls.
 
@@ -451,8 +457,8 @@ FROM moves GROUP BY game_id, move_number, color HAVING COUNT(*) > 1;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_moves_game_ply ON moves (game_id, move_number, color);
 ```
 
-### Games show "Paused because the server restarted"
-Game loops do not survive a backend restart. Games that were in progress are paused at startup with this reason; resume them from the game view.
+### Games show "A model request … was in flight during a backend restart"
+Game loops do not survive a backend restart. A game whose model request was out when the backend stopped is paused with this reason, because the provider may already have charged it. Check the spend for that model on OpenRouter, then choose **Spend checked, resume** in the game view's pause banner (API: `POST /api/games/{id}/start?acknowledgeUncertainRequest=<uncertainRequestSentAt>`); a plain resume is refused with HTTP 409 until then. Games without a request in flight resume on their own (see [Restarts](how-it-works.md#restarts)). Games paused by an older version show "Paused because the server restarted"; resume them as before.
 
 
 ### GHCR pull fails

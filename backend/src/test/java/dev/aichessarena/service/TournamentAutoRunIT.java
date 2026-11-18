@@ -1122,15 +1122,18 @@ class TournamentAutoRunIT {
     }
 
     @Test
-    void restartPausesRunningRunsAndGamesAndDoesNotResumeWaitingGames() {
+    void restartKeepsRunningRunsAndPausesOnlyGamesWithARequestInFlight() {
         UUID id = seed(GameStatus.IN_PROGRESS, GameStatus.WAITING);
         configure(id, "{}", true);
-        recovery.onStart(null);
-        assertEquals(AutoRunStatus.PAUSED, runStatus(id));
-        assertEquals("Backend restarted", runReason(id));
-        assertEquals(GameStatus.PAUSED, status(gameIds(id).getFirst()));
+        UUID interrupted = gameIds(id).getFirst();
+        QuarkusTransaction.requiringNew().run(() -> games.findById(interrupted).requestSentAt = Instant.now());
+        recovery.recover(List.of(interrupted), GameLifecycleService.Interruption.RESTART);
+        assertEquals(AutoRunStatus.RUNNING, runStatus(id));
+        assertNull(runReason(id));
+        assertEquals(GameStatus.PAUSED, status(interrupted));
+        assertTrue(snapshot(interrupted).statusDetail().contains("was in flight during a backend restart"));
         runs.schedule(id);
-        assertTrue(starts.isEmpty());
+        assertEquals(List.of(gameIds(id).getLast()), starts, "the run continues with the next waiting game");
     }
 
     @Test
