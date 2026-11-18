@@ -181,19 +181,15 @@ dt,
   gap: var(--app-space-3) var(--app-space-4);
 }
 
+.model-ids-field {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
 .settings-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-
-  > * {
-    grid-column: span 2;
-  }
-
-  .limit-field {
-    grid-column: span 3;
-  }
-
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   mat-slide-toggle {
-    align-self: center;
+    grid-column: 1 / -1;
   }
 }
 
@@ -362,4 +358,37 @@ td.num,
 .game-result a,
 .saved-table a {
   text-underline-offset: var(--app-space-half);
+}
+
+.game-result .game-outcome {
+  display: inline-block;
+  padding-inline: var(--app-space-2);
+  border-radius: var(--app-surface-radius-md);
+  font-weight: 500;
+
+  &[data-outcome='Win'],
+  &[data-outcome='Win by forfeit'] {
+    color: var(--app-success-text);
+    background: var(--app-success-fill);
+  }
+
+  &[data-outcome='Draw'] {
+    color: var(--mat-sys-on-surface-variant);
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  &[data-outcome='Loss'],
+  &[data-outcome='Forfeit loss'] {
+    color: var(--mat-sys-error);
+  }
+
+  &[data-outcome='Live'] {
+    color: var(--app-accent-info);
+    background: var(--app-info-fill);
+  }
+
+  &[data-outcome='Paused'] {
+    color: var(--app-warning-text);
+    background: var(--app-warning-fill);
+  }
 }

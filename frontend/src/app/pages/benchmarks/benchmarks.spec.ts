@@ -109,6 +109,16 @@ function fillCreateForm(component: Benchmarks, budget = '1') {
   component.budget = budget;
 }
 
+const spendCases = [
+  { amount: 0.000049, total: '<$0.01', game: '<$0.0001' },
+  { amount: 0.004321, total: '<$0.01', game: '$0.0043' },
+  { amount: 0.00999, total: '<$0.01', game: '$0.01' },
+  { amount: 0.0001, total: '<$0.01', game: '$0.0001' },
+  { amount: 0.01, total: '$0.01', game: '$0.01' },
+  { amount: 0, total: '$0.00', game: '$0.00' },
+  { amount: null, total: '', game: '' },
+];
+
 describe('Benchmarks', () => {
   beforeEach(() => sessionStorage.clear());
   afterEach(() => sessionStorage.clear());
@@ -300,7 +310,6 @@ describe('Benchmarks', () => {
     const page: HTMLElement = fixture.nativeElement;
     expect(page.textContent).toContain('Performance against this Stockfish setup');
     expect(page.textContent).toContain('1 / 1');
-    expect(page.textContent).toContain('No scored games');
     expect(page.textContent).toContain('Incomplete');
     expect(page.textContent).toContain('$1.01');
     expect(page.querySelector('a[href="/games/white-game"]')?.textContent?.trim()).toBe('Win');
@@ -321,16 +330,96 @@ describe('Benchmarks', () => {
     expect(cells.slice(0, 5)).toEqual(['1 / 1', '1 / 2', '1', '0', '0']);
   });
 
-  it('names game links with the opening, model color, and Stockfish level', () => {
+  it('names game links with the opening, model ID and color, and Stockfish level', () => {
     const { fixture } = setup(run.run.id);
     fixture.detectChanges();
     const page: HTMLElement = fixture.nativeElement;
     expect(page.querySelector('a[href="/games/white-game"]')?.getAttribute('aria-label')).toBe(
-      'Win, French Winawer, model as White, Stockfish level 1500',
+      'Win, French Winawer, fixture/model as White, Stockfish level 1500',
     );
     expect(page.querySelector('a[href="/games/black-game"]')?.getAttribute('aria-label')).toBe(
-      'Paused, French Winawer, model as Black, Stockfish level 1500',
+      'Paused, French Winawer, fixture/model as Black, Stockfish level 1500',
     );
+  });
+
+  it.each([
+    ['model', '.overview-table tbody td:last-child'],
+    ['run', '.run-facts dd'],
+    ['game', 'td:has(a[href="/games/white-game"]) + td'],
+  ])('distinguishes tiny, zero, and unknown %s spend', (scope, selector) => {
+    const { fixture, component } = setup(run.run.id);
+    const page: HTMLElement = fixture.nativeElement;
+    const displayed = spendCases.map(({ amount }) => {
+      const report = structuredClone(run);
+      const model = report.models[0];
+      for (const item of [report, model, model.pairs[0].games[0]]) {
+        Object.assign(item, { spendUsd: amount });
+      }
+      component.report.set(report);
+      fixture.detectChanges();
+      const spend = page.querySelector(selector)?.textContent;
+      return scope === 'run' ? spend?.split('/')[0].trim() : spend?.trim();
+    });
+
+    expect(displayed).toEqual(
+      spendCases.map((entry) => (scope === 'game' ? entry.game : entry.total)),
+    );
+  });
+
+  it('shows one empty marker and its accessible text in an unscored split cell', () => {
+    const { fixture } = setup(run.run.id);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const cell = page.querySelectorAll('.split-table tbody td')[1];
+    const accessibleText = cell.querySelector('.cdk-visually-hidden');
+    expect(accessibleText?.textContent).toBe('No scored games');
+    expect(accessibleText?.closest('[aria-hidden="true"]')).toBeNull();
+    expect(cell.querySelector('[aria-hidden="true"]')?.textContent).toBe('—');
+    expect(cell.textContent.trim()).toMatch(/^No scored games\s*—$/);
+  });
+
+  it('shows an unplayed game as plain Waiting text with a dash for spend', () => {
+    const { fixture, component } = setup(run.run.id);
+    const report = structuredClone(run);
+    Object.assign(report.models[0].pairs[0].games[1], {
+      status: 'WAITING',
+      statusDetail: null,
+      spendUsd: 0,
+    });
+    component.report.set(report);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const result = page.querySelectorAll('.opening-table tbody .game-result')[1];
+    expect(result?.textContent.trim()).toBe('Waiting');
+    expect(result?.querySelector('a')).toBeNull();
+    expect(result?.nextElementSibling?.textContent.trim()).toBe('—');
+  });
+
+  it('leaves the Pair column blank when both games have a scored result', () => {
+    const { fixture, component } = setup(run.run.id);
+    const report = structuredClone(run);
+    const pair = report.models[0].pairs[0];
+    pair.complete = true;
+    Object.assign(pair.games[1], { status: 'COMPLETED', result: 'DRAW', statusDetail: null });
+    component.report.set(report);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('.opening-table tbody td:last-child')?.textContent.trim()).toBe('');
+  });
+
+  it('shows the game resume hint only when a game is paused', () => {
+    const { fixture, component } = setup(run.run.id);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const hint = 'Open a paused game and choose Resume';
+    expect(page.querySelector('.run-management')?.textContent).toContain(hint);
+
+    const report = structuredClone(run);
+    report.models[0].pairs[0].games[1].status = 'WAITING';
+    component.report.set(report);
+    fixture.detectChanges();
+    expect(page.querySelector('.run-management')?.textContent).toContain('Resume run');
+    expect(page.querySelector('.run-management')?.textContent).not.toContain(hint);
   });
 
   it('preserves the report during a refresh error and resumes with updated limits', () => {

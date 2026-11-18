@@ -112,25 +112,35 @@
 
         <form class="create-form" (ngSubmit)="create()">
           <div class="form-grid">
-            <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
               <mat-label>Run name</mat-label>
               <input matInput name="name" maxlength="120" [(ngModel)]="name" />
             </mat-form-field>
-            <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-form-field
+              class="model-ids-field"
+              appearance="outline"
+              floatLabel="always"
+              subscriptSizing="dynamic"
+            >
               <mat-label>OpenRouter model IDs</mat-label>
-              <textarea matInput name="models" rows="2" [(ngModel)]="modelsText"></textarea>
+              <textarea matInput name="models" rows="4" [(ngModel)]="modelsText"></textarea>
               <mat-hint>One provider/model ID per line, up to eight.</mat-hint>
+            </mat-form-field>
+            <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
+              <mat-label>Budget (USD)</mat-label>
+              <input matInput name="budget" inputmode="decimal" [(ngModel)]="budget" />
+              <mat-hint>The run pauses when it reaches this budget.</mat-hint>
             </mat-form-field>
           </div>
 
           <fieldset>
             <legend>Stockfish levels</legend>
             <div class="form-grid">
-              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Level A</mat-label>
                 <input matInput name="lower" type="number" [(ngModel)]="lowerStrength" />
               </mat-form-field>
-              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Level B</mat-label>
                 <input matInput name="higher" type="number" [(ngModel)]="higherStrength" />
               </mat-form-field>
@@ -151,17 +161,12 @@
           <fieldset>
             <legend>Run settings</legend>
             <div class="form-grid settings-grid">
-              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="limit-field">
-                <mat-label>Budget (USD)</mat-label>
-                <input matInput name="budget" inputmode="decimal" [(ngModel)]="budget" />
-                <mat-hint>The run pauses when it reaches this budget.</mat-hint>
-              </mat-form-field>
-              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="limit-field">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Concurrent games</mat-label>
                 <input matInput name="concurrency" type="number" [(ngModel)]="concurrency" />
                 <mat-hint>1–8 games at a time.</mat-hint>
               </mat-form-field>
-              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Reasoning effort</mat-label>
                 <mat-select name="effort" [(ngModel)]="reasoningEffort">
                   <mat-option value="default">Model default</mat-option>
@@ -170,7 +175,7 @@
                   }
                 </mat-select>
               </mat-form-field>
-              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+              <mat-form-field appearance="outline" floatLabel="always" subscriptSizing="dynamic">
                 <mat-label>Chat mode</mat-label>
                 <mat-select name="chat" [(ngModel)]="chatMode">
                   <mat-option value="OFF">Off</mat-option>
@@ -286,7 +291,7 @@
                   {{ model.incompletePairs }} / {{ model.pairs.length }}
                 </td>
                 <td class="num secondary">
-                  {{ model.spendUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
+                  {{ formatSpend(model.spendUsd) }}
                 </td>
               </tr>
             }
@@ -346,7 +351,7 @@
                           *ngTemplateOutlet="scoreValue; context: { $implicit: score }"
                         />
                       </span>
-                      @if (score) {
+                      @if (score && score.scoredGames) {
                         <span class="cell-note secondary num">
                           {{ score.wins }} – {{ score.draws }} – {{ score.losses }}
                         </span>
@@ -373,7 +378,7 @@
         <div>
           <dt>Spend / budget</dt>
           <dd class="num">
-            {{ data.spendUsd | currency: 'USD' : 'symbol' : '1.2-2' }} /
+            {{ formatSpend(data.spendUsd) }} /
             {{ data.budgetUsd | currency: 'USD' : 'symbol' : '1.2-2' }}
           </dd>
         </div>
@@ -477,21 +482,31 @@
                       <td class="num">{{ pair.targetStrength }}</td>
                       @for (color of data.definition.modelColors; track color) {
                         @if (pairGame(pair, color); as game) {
+                          @let label = gameLabel(game);
+                          @let unplayed = game.status === 'WAITING' && !game.result;
                           <td class="game-result">
-                            <a
-                              [routerLink]="['/games', game.id]"
-                              [attr.aria-label]="
-                                gameLabel(game) +
-                                ', ' +
-                                opening +
-                                ', model as ' +
-                                (game.color | titlecase) +
-                                ', Stockfish level ' +
-                                pair.targetStrength
-                              "
-                            >
-                              {{ gameLabel(game) }}
-                            </a>
+                            @if (game.id && !unplayed) {
+                              <a
+                                class="game-outcome"
+                                [attr.data-outcome]="label"
+                                [routerLink]="['/games', game.id]"
+                                [attr.aria-label]="
+                                  label +
+                                  ', ' +
+                                  opening +
+                                  ', ' +
+                                  model.modelId +
+                                  ' as ' +
+                                  (game.color | titlecase) +
+                                  ', Stockfish level ' +
+                                  pair.targetStrength
+                                "
+                              >
+                                {{ label }}
+                              </a>
+                            } @else {
+                              <span class="secondary">{{ label }}</span>
+                            }
                             @if (game.statusDetail || game.reason) {
                               <small class="cell-note secondary">{{
                                 game.statusDetail || reasonLabel(game.reason)
@@ -499,7 +514,7 @@
                             }
                           </td>
                           <td class="num secondary">
-                            {{ game.spendUsd | currency: 'USD' : 'symbol' : '1.2-4' }}
+                            {{ unplayed ? '—' : formatSpend(game.spendUsd, 4) }}
                           </td>
                         } @else {
                           <td colspan="2" class="secondary">
@@ -508,7 +523,7 @@
                           </td>
                         }
                       }
-                      <td class="secondary">{{ pair.complete ? 'Complete' : 'Incomplete' }}</td>
+                      <td class="secondary">{{ pair.complete ? '' : 'Incomplete' }}</td>
                     </tr>
                   }
                 </tbody>
