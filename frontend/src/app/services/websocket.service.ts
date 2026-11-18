@@ -7,6 +7,8 @@ import { WsMessage, WsOutgoingMessage } from '../models/tournament.model';
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private messages$ = new Subject<WsMessage>();
+  private readonly liveGames$ = new Subject<void>();
+  private watchingLiveGames = false;
   private reconnected$ = new Subject<void>();
   private hasConnectedBefore = false;
   private revisionProtocol = false;
@@ -36,6 +38,7 @@ export class WebSocketService {
     socket.onopen = () => {
       if (this.ws !== socket) return;
       this.connectionWarningVisible = false;
+      if (this.watchingLiveGames) this.send({ type: 'watchLiveGames' });
       if (this.currentGameId) {
         this.sendSubscription(this.currentGameId);
       }
@@ -50,6 +53,10 @@ export class WebSocketService {
       if (this.ws !== socket) return;
       try {
         const raw: unknown = JSON.parse(event.data);
+        if (raw && typeof raw === 'object' && 'type' in raw && raw.type === 'liveGamesChanged') {
+          this.liveGames$.next();
+          return;
+        }
         if (isWsMessage(raw)) {
           if (
             raw.gameId === this.currentGameId &&
@@ -86,7 +93,7 @@ export class WebSocketService {
 
     socket.onerror = () => {
       if (this.ws !== socket) return;
-      if (!this.connectionWarningVisible) {
+      if (this.currentGameId && !this.connectionWarningVisible) {
         this.connectionWarningVisible = true;
         this.snackBar.open('Live updates were interrupted. Reconnecting...', 'Dismiss', {
           duration: 4000,
@@ -149,7 +156,18 @@ export class WebSocketService {
     return this.messages$.pipe(filter((msg) => msg.gameId === gameId || !msg.gameId));
   }
 
-  private send(data: WsOutgoingMessage): void {
+  watchLiveGames(): void {
+    if (this.watchingLiveGames) return;
+    this.watchingLiveGames = true;
+    this.send({ type: 'watchLiveGames' });
+    this.connect();
+  }
+
+  liveGamesChanges(): Observable<void> {
+    return this.liveGames$.asObservable();
+  }
+
+  private send(data: WsOutgoingMessage | { type: 'watchLiveGames' }): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     }

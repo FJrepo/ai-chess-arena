@@ -4,11 +4,19 @@ import { Component, OnInit, signal } from '@angular/core';
 import { RouterOutlet, RouterLink } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
+import { LiveGamesSwitcher } from './components/live-games-switcher/live-games-switcher';
 import { MatIconModule } from '@angular/material/icon';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, MatToolbarModule, MatButtonModule, MatIconModule],
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    MatToolbarModule,
+    MatButtonModule,
+    MatIconModule,
+    LiveGamesSwitcher,
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
