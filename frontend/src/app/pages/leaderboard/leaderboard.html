@@ -24,9 +24,14 @@
               </div>
             </div>
             <dl class="leader-stats">
-              <div>
+              <div class="leader-elo">
                 <dt>Elo</dt>
-                <dd class="num">{{ leader.rating }}</dd>
+                <dd>
+                  <span class="num">{{ leader.rating }}</span>
+                  @if (leader.provisional) {
+                    <span class="badge provisional">Provisional</span>
+                  }
+                </dd>
               </div>
               <div>
                 <dt>W–D–L</dt>
@@ -71,9 +76,11 @@
           first 30 rated games, then 16. Finished model-vs-model games count: checkmate,
           resignation, adjudication and draws (½ point), plus forfeits as losses when enabled. Byes,
           cancelled games, human games and unfinished games are excluded. Results replay by
-          completion time; fewer than {{ provisionalGames }} rated games is provisional. Aliases (~)
-          stay separate. Disabling forfeits recalculates ratings and counts using over-the-board
-          results only.
+          completion time. Aliases (~) stay separate. Disabling forfeits recalculates ratings and
+          counts using over-the-board results only.
+          @if (data && data.models.length) {
+            See the table legend for the provisional rating cutoff.
+          }
         </p>
       </details>
 
@@ -163,7 +170,9 @@
                         viewBox="0 0 100 28"
                         role="img"
                         [attr.aria-label]="
-                          row.displayName + ': recent ratings ending at ' + row.rating
+                          row.ratingHistory.length === 1
+                            ? 'One rated game: ' + row.ratingHistory[0].rating
+                            : row.displayName + ': recent ratings ending at ' + row.rating
                         "
                       >
                         @if (row.ratingHistory.length === 1) {
@@ -173,7 +182,8 @@
                         }
                       </svg>
                     } @else {
-                      —
+                      <span aria-hidden="true">—</span>
+                      <span class="cdk-visually-hidden">No rating history</span>
                     }
                   </td>
                 </tr>
