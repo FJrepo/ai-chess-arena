@@ -469,7 +469,10 @@
 }
 
 .persuasion-table {
+  // Fixed columns keep the layout stable between empty and filled tables; the font-relative
+  // minimum width lets enlarged text scroll inside the table wrapper instead of overlapping.
   table-layout: fixed;
+  min-width: 70em;
 
   .persuasion-model-column {
     width: 22%;
