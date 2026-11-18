@@ -369,7 +369,7 @@ public class TournamentResource {
                 // Report the accepted values for blank and unknown strings alike.
             }
         }
-        throw new IllegalArgumentException("banterLevel must be POLITE, PLAYFUL, SPICY or null");
+        throw new IllegalArgumentException("banterLevel must be POLITE, PLAYFUL, SPICY, MIND_GAMES or null");
     }
 
     private Tournament.DrawPolicy parseDrawPolicy(String value) {

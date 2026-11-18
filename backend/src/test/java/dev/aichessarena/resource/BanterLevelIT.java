@@ -45,7 +45,7 @@ class BanterLevelIT {
     @Test
     void eachToneRoundTripsWithEveryChatModeIncludingOff() {
         for (String mode : new String[] {"OPTIONAL", "MANDATORY", "OFF"}) {
-            for (String level : new String[] {"POLITE", "PLAYFUL", "SPICY"}) {
+            for (String level : new String[] {"POLITE", "PLAYFUL", "SPICY", "MIND_GAMES"}) {
                 String id = create(",\"chatMode\":\"" + mode + "\",\"banterLevel\":\" "
                         + level.toLowerCase(java.util.Locale.ROOT) + " \"", level);
                 assertEquals(level, stored(id));
@@ -65,6 +65,7 @@ class BanterLevelIT {
         update(id, "{\"banterLevel\":null}", null);
         assertNull(stored(id));
         update(id, "{\"banterLevel\":\"PLAYFUL\"}", "PLAYFUL");
+        update(id, "{\"banterLevel\":\"MIND_GAMES\"}", "MIND_GAMES");
         assertEquals("PLAYFUL", stored(id));
     }
 
@@ -92,11 +93,16 @@ class BanterLevelIT {
                 .body("banterChatModes.SPICY.OFF.version", equalTo("v2-silent"))
                 .body("resignationBanterChatModes.SPICY.MANDATORY.version",
                         equalTo("v2-chat-required-resign-banter-spicy"))
-                .body("resignationBanterChatModes.SPICY.MANDATORY.template", containsString("no slurs"));
+                .body("resignationBanterChatModes.SPICY.MANDATORY.template", containsString("no slurs"))
+                .body("banterChatModes.MIND_GAMES.OFF.version", equalTo("v2-silent"))
+                .body("resignationBanterChatModes.MIND_GAMES.MANDATORY.version",
+                        equalTo("v2-chat-required-resign-banter-mind-games"))
+                .body("resignationBanterChatModes.MIND_GAMES.MANDATORY.template",
+                        containsString("try to persuade your opponent to resign"));
     }
 
     @Test
-    void migrationV21LeavesExistingTournamentsAndPromptsUnchangedAndConstrainsNewValues() throws SQLException {
+    void banterMigrationsPreserveExistingRowsAndConstrainNewValues() throws SQLException {
         String database = "banter_migration_" + UUID.randomUUID().toString().replace("-", "");
         try (Connection admin = DriverManager.getConnection(jdbcUrl, username, password);
              Statement statement = admin.createStatement()) {
@@ -138,6 +144,26 @@ class BanterLevelIT {
                 for (String level : new String[] {"POLITE", "PLAYFUL", "SPICY"}) {
                     statement.execute("UPDATE tournaments SET banter_level = '" + level + "' WHERE name = 'Fresh'");
                 }
+                assertThrows(SQLException.class,
+                        () -> statement.execute("UPDATE tournaments SET banter_level = 'LOUD'"));
+            }
+
+            flyway(url, "28").migrate();
+            try (Connection connection = DriverManager.getConnection(url, username, password);
+                 Statement statement = connection.createStatement()) {
+                assertThrows(SQLException.class,
+                        () -> statement.execute("UPDATE tournaments SET banter_level = 'MIND_GAMES'"));
+            }
+            flyway(url, "29").migrate();
+            try (Connection connection = DriverManager.getConnection(url, username, password);
+                 Statement statement = connection.createStatement()) {
+                try (var rows = statement.executeQuery("SELECT banter_level FROM tournaments ORDER BY name")) {
+                    rows.next();
+                    assertNull(rows.getString(1));
+                    rows.next();
+                    assertEquals("SPICY", rows.getString(1));
+                }
+                statement.execute("UPDATE tournaments SET banter_level = 'MIND_GAMES' WHERE name = 'Fresh'");
                 assertThrows(SQLException.class,
                         () -> statement.execute("UPDATE tournaments SET banter_level = 'LOUD'"));
             }

@@ -304,6 +304,8 @@ public class PromptService {
       case POLITE -> "Keep your messages friendly, respectful and sporting.";
       case PLAYFUL -> "Use light, good-natured teasing about the chess game while staying friendly and civil.";
       case SPICY -> "Use bold trash talk about the chess game while staying civil: no slurs, harassment or real-world insults.";
+      case MIND_GAMES -> "Use chess threats, pressure or bluffs about the position to try to persuade your opponent "
+          + "to resign when the rules allow it. Stay civil.";
     };
   }
 
@@ -315,7 +317,7 @@ public class PromptService {
     };
     String suffix = resignationOffered ? chatSuffix + RESIGN_VERSION_SUFFIX : chatSuffix;
     return banterLevel != null && chatMode != ChatMode.OFF
-        ? suffix + "-banter-" + banterLevel.name().toLowerCase(java.util.Locale.ROOT) : suffix;
+        ? suffix + "-banter-" + banterLevel.name().toLowerCase(java.util.Locale.ROOT).replace('_', '-') : suffix;
   }
 
   public String buildTurnPrompt(String pgn, String fen, String asciiBoard,

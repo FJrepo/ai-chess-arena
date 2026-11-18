@@ -8,7 +8,7 @@ export const DEFAULT_MOVE_TIMEOUT_SECONDS: number | null = null;
 
 /** OFF: models stay silent. OPTIONAL: models may send a message. MANDATORY: models are asked for one every move. */
 export type ChatMode = 'OFF' | 'OPTIONAL' | 'MANDATORY';
-export type BanterLevel = 'POLITE' | 'PLAYFUL' | 'SPICY';
+export type BanterLevel = 'POLITE' | 'PLAYFUL' | 'SPICY' | 'MIND_GAMES';
 
 export type BracketDrawMode = 'ORDER' | 'RANDOM';
 export type OpeningMode = 'STANDARD' | 'RANDOM_BOOK' | 'FIXED';

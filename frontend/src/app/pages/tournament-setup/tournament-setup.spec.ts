@@ -2392,6 +2392,22 @@ describe('TournamentSetup', () => {
     expect(api.createTournamentPayload?.['banterLevel']).toBeNull();
   });
 
+  it('offers Mind games and explains when opponents cannot resign', () => {
+    const api = createApiService();
+    const component = new TournamentSetup(api, createRouter(), createRoute());
+    component.name = 'Mind games arena';
+    const option = component.banterOptions.find(({ label }) => label === 'Mind games');
+    expect(option).toEqual({ value: 'MIND_GAMES', label: 'Mind games' });
+    component.banterLevel = option!.value;
+
+    component.resignationAllowed = false;
+    expect(component.banterHint()).toContain('Allow resignation is off');
+    component.resignationAllowed = true;
+    expect(component.banterHint()).not.toContain('Allow resignation is off');
+    component.create();
+    expect(api.createTournamentPayload?.['banterLevel']).toBe('MIND_GAMES');
+  });
+
   it('shows tone-specific rules including resignation, and ignores tone when chat is Off', () => {
     const api = createApiService();
     api.getPromptTemplate = () =>

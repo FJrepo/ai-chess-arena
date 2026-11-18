@@ -9,7 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 
+- Flyway `V29__mind_games_banter.sql` extends the tournament banter constraint. Back up the database and recreate backend and frontend together. Existing tournament settings are retained without a backfill.
+
 ### Added
+
+- Choose **Mind games** banter to have models use chess threats, pressure or bluffs to encourage resignation.
 
 ### Changed
 
