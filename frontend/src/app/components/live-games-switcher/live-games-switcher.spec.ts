@@ -1,12 +1,184 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { Subject, of } from 'rxjs';
-import type { LiveGamesSnapshot } from '../../models/live-games.model';
+import { type Observable, Subject, of } from 'rxjs';
+import type { LiveGameSummary, LiveGamesSnapshot } from '../../models/live-games.model';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
 import { LiveGamesSwitcher } from './live-games-switcher';
 
+// Accessible name as assistive technology reads it here: aria-label, then aria-labelledby, then the
+// text of descendants that are not hidden with aria-hidden.
+function accessibleName(element: Element): string {
+  const label = element.getAttribute('aria-label');
+  if (label) return label.trim();
+  const labelledBy = element.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    return labelledBy
+      .split(/\s+/)
+      .map((id) => element.ownerDocument.getElementById(id))
+      .map((node) => (node ? accessibleName(node) : ''))
+      .join(' ')
+      .trim();
+  }
+  const parts: string[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? '');
+      return;
+    }
+    if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return;
+    node.childNodes.forEach((child) => {
+      walk(child);
+      if (child instanceof Element) parts.push(' ');
+    });
+  };
+  walk(element);
+  return parts.join('').replace(/\s+/g, ' ').trim();
+}
+
 describe('LiveGamesSwitcher', () => {
+  const runningGame = { id: 'running', status: 'IN_PROGRESS', practice: false } as const;
+  const pausedGame = { id: 'paused', status: 'PAUSED', practice: true } as const;
+
+  function renderSwitcher(getLiveGames: () => Observable<LiveGamesSnapshot>) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: { getLiveGames } },
+        {
+          provide: WebSocketService,
+          useValue: { liveGamesChanges: () => new Subject<void>(), watchLiveGames: vi.fn() },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(LiveGamesSwitcher);
+    fixture.detectChanges();
+    const trigger = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    return { fixture, trigger };
+  }
+
+  function openMenu(snapshot: LiveGamesSnapshot): HTMLElement {
+    const { fixture, trigger } = renderSwitcher(() => of(snapshot));
+    trigger.click();
+    fixture.detectChanges();
+    return document.querySelector<HTMLElement>('[role="menu"]')!;
+  }
+
+  function renderTrigger() {
+    const snapshots = new Subject<LiveGamesSnapshot>();
+    const { fixture, trigger } = renderSwitcher(() => snapshots);
+    return {
+      trigger,
+      showGames(...active: LiveGameSummary[]) {
+        snapshots.next({
+          active,
+          lastFinished: { id: 'finished', status: 'FORFEIT', practice: false },
+        });
+        fixture.detectChanges();
+      },
+    };
+  }
+
+  it('shows the decorative lamp only while a game is running', () => {
+    const { trigger, showGames } = renderTrigger();
+    const lamp = () => trigger.querySelector('.live-lamp');
+    expect(lamp()).toBeNull();
+    showGames(runningGame, pausedGame);
+    expect(lamp()?.getAttribute('aria-hidden')).toBe('true');
+    showGames(pausedGame);
+    expect(lamp()).toBeNull();
+  });
+
+  it('gates the lamp animation behind a no-preference motion query', () => {
+    renderTrigger();
+    const rules = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules]);
+    const lampAnimates = (rule: CSSRule): boolean =>
+      rule.type === CSSRule.STYLE_RULE &&
+      (rule as CSSStyleRule).selectorText.includes('.live-lamp') &&
+      Boolean((rule as CSSStyleRule).style.getPropertyValue('animation'));
+
+    expect(rules.some(lampAnimates)).toBe(false);
+    expect(
+      rules.some(
+        (rule) =>
+          rule.type === CSSRule.MEDIA_RULE &&
+          (rule as CSSMediaRule).media.mediaText === '(prefers-reduced-motion: no-preference)' &&
+          [...(rule as CSSMediaRule).cssRules].some(lampAnimates),
+      ),
+    ).toBe(true);
+  });
+
+  it('shows the decorative attention marker only while a game is paused', () => {
+    const { trigger, showGames } = renderTrigger();
+    const marker = () => trigger.querySelector('.attention-marker');
+    expect(marker()).toBeNull();
+    showGames(pausedGame);
+    expect(marker()?.getAttribute('aria-hidden')).toBe('true');
+    showGames(runningGame);
+    expect(marker()).toBeNull();
+  });
+
+  it('names the trigger with the running and attention counts once loaded', () => {
+    const { trigger, showGames } = renderTrigger();
+    expect(accessibleName(trigger)).toBe('Live games');
+    showGames(runningGame, pausedGame, { ...pausedGame, id: 'another-pause' });
+    expect(accessibleName(trigger)).toBe('Live games, 1 running, 2 need attention');
+    showGames();
+    expect(accessibleName(trigger)).toBe('Live games, 0 running, 0 need attention');
+  });
+
+  it('includes the game state and visible markers in each accessible menu item name', () => {
+    const panel = openMenu({
+      active: [
+        { id: 'running', status: 'IN_PROGRESS', tournamentName: 'Club Rapid', practice: false },
+        {
+          id: 'paused',
+          status: 'PAUSED',
+          practice: true,
+          whitePlayerName: 'Light',
+          blackPlayerName: 'Dark',
+        },
+      ],
+      lastFinished: { id: 'finished', status: 'FORFEIT', practice: false },
+    });
+    const labels = [...panel.querySelectorAll('.section-label[aria-hidden="true"]')];
+    const items = [...panel.querySelectorAll('[role="menuitem"]')];
+    expect.soft(accessibleName(panel)).toBe('Live games');
+    expect
+      .soft(labels.map((label) => label.textContent?.trim()))
+      .toEqual(['Running', 'Paused', 'Last finished']);
+    expect(items.map((item) => accessibleName(item))).toEqual([
+      'White vs Black Running Club Rapid',
+      'Light vs Dark Paused Practice Needs attention',
+      'White vs Black Last finished Game',
+    ]);
+  });
+
+  it('wraps long matchups with a two-line clamp', () => {
+    const white = 'Atlas Experimental Reasoning Edition 2026 Extended Context';
+    const black = 'Kestrel Grandmaster Research Preview 405B Tournament Build';
+    const panel = openMenu({
+      active: [
+        {
+          id: 'long-names',
+          status: 'IN_PROGRESS',
+          practice: false,
+          whitePlayerName: white,
+          blackPlayerName: black,
+        },
+      ],
+    });
+    const matchup = panel.querySelector('.matchup')!;
+
+    expect(accessibleName(panel.querySelector('[role="menuitem"]')!)).toContain(
+      `${white} vs ${black}`,
+    );
+    expect(getComputedStyle(matchup).getPropertyValue('-webkit-line-clamp')).toBe('2');
+    for (const name of matchup.querySelectorAll('.player')) {
+      expect(getComputedStyle(name).whiteSpace).not.toBe('nowrap');
+    }
+  });
+
   it('counts running games, preserves menu order and refreshes after a live change during an in-flight read', () => {
     vi.useFakeTimers();
     const first = new Subject<LiveGamesSnapshot>();

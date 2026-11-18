@@ -1,4 +1,7 @@
 .app-toolbar {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) max-content minmax(max-content, 1fr);
+  column-gap: var(--app-space-4);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -10,6 +13,7 @@
 .brand {
   display: inline-flex;
   align-items: center;
+  justify-self: start;
   gap: 12px;
   cursor: pointer;
   text-decoration: none;
@@ -47,21 +51,45 @@
   letter-spacing: 0.005em;
 }
 
-.spacer {
-  flex: 1 1 auto;
-}
-
-.theme-toggle {
-  margin-right: 6px;
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: var(--app-space-half);
 }
 
 .toolbar-link {
+  --mat-button-text-with-icon-horizontal-padding: var(--app-space-3);
   border-radius: 999px;
-  margin-right: 4px;
 }
 
 .toolbar-cta {
+  --mat-button-outlined-horizontal-padding: var(--app-space-4);
   border-radius: 999px;
+}
+
+@media (max-width: 110rem) {
+  .app-toolbar {
+    column-gap: var(--app-space-2);
+  }
+
+  .toolbar-actions {
+    gap: var(--app-space-1);
+
+    :is(.toolbar-link, .toolbar-cta) {
+      min-inline-size: auto;
+      padding-inline: var(--app-space-1);
+      font-size: var(--app-text-secondary-size);
+
+      > mat-icon {
+        display: none;
+      }
+    }
+
+    .toolbar-cta {
+      padding-inline: var(--app-space-2);
+    }
+  }
 }
 
 .app-content {
