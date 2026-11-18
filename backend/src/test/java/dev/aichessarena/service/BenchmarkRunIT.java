@@ -43,6 +43,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -146,6 +147,30 @@ class BenchmarkRunIT {
             submit.call().then().statusCode(200).body("run.id", equalTo(first.<String>path("run.id")));
             assertEquals(1, schedules.get());
             assertEquals(32, gameIds(benchmarks.getFirst()).size());
+        }
+    }
+
+    @Test
+    void runTimestampsAreUtcInstantsAlsoInANonUtcJvmZone() {
+        TimeZone original = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Vienna"));
+        try {
+            Instant before = Instant.now().minusSeconds(1);
+            UUID id = create(REQUEST);
+            Instant after = Instant.now().plusSeconds(1);
+            String single = given().get("/api/benchmarks/{id}", id).then().statusCode(200)
+                    .extract().path("run.createdAt");
+            String listed = given().get("/api/benchmarks").then().statusCode(200)
+                    .extract().path("find { it.id == '%s' }.createdAt".formatted(id));
+            for (String createdAt : List.of(single, listed)) {
+                assertNotNull(createdAt);
+                assertTrue(createdAt.endsWith("Z"), "benchmark createdAt has no UTC offset: " + createdAt);
+                Instant instant = Instant.parse(createdAt);
+                assertTrue(!instant.isBefore(before) && !instant.isAfter(after),
+                        "benchmark createdAt " + instant + " outside " + before + " .. " + after);
+            }
+        } finally {
+            TimeZone.setDefault(original);
         }
     }
 
