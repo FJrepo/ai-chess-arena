@@ -111,7 +111,7 @@ export class AnalyticsDashboard implements OnInit, OnDestroy {
   readonly talkExplanation =
     "Talk rate is the share of a model's moves in finished games that came with a non-empty message: with chat Optional it is the model's own choice, with chat Mandatory it shows how often it complied. Average length is in characters per message; moves made with chat Off are left out.";
   readonly conversionExplanation =
-    'Games reaching ≥90% winning chances: converted = won (including adjudication), thrown away = drawn/lost; n/a = no evaluation data.';
+    'Model sides reaching ≥90% winning chances: converted = won (including adjudication), thrown away = drawn/lost; n/a = no evaluation data.';
   conversionRows = computed(() => this.comparisonRows());
 
   conversionCount(value: number | null | undefined): string {

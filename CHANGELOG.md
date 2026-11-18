@@ -20,10 +20,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Tournament setup aligns model names (up to two lines), prices and context, moves focus through participant entry and shows one next-step hint. The tournament list keeps search visible, folds away filters and shows running game activity.
 - Open live games from the bracket’s running count, download PGN, CSV or JSON from one Export menu, and use quieter Review actions for finished games.
+- Play quality spells out average centipawn loss, marks lower values as better, and shows sample sizes under model names, distinguishing unreported samples from zero.
 - Concurrent requests for the same analytics filters share one load. Results are reused for 30 seconds, and engine health reads only the data it uses.
 - The Cost & reliability tab leads with spend and match count, shows latency in seconds and highlights when most models have too little data for the Trust Index. Jump links take you to Spend, Prompt caching and Reliability without adding browser-history entries.
-- Tournament setup aligns model names (up to two lines), prices and context, moves focus through participant entry and shows one next-step hint. The tournament list keeps search visible, folds away filters and shows running game activity.
+- Leaderboard leads with the top model’s Elo, record and rated games, labels a provisional leader, and explains provisional status in the table legend. Rating rules are available in a disclosure. Recent form shows a dot for a single result and gives screen readers clear labels for single results and missing history.
 
 ### Fixed
 
