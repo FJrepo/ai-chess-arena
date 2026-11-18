@@ -68,6 +68,30 @@
   border-radius: 999px;
 }
 
+@media (max-width: 110rem) {
+  .app-toolbar {
+    column-gap: var(--app-space-2);
+  }
+
+  .toolbar-actions {
+    gap: var(--app-space-1);
+
+    :is(.toolbar-link, .toolbar-cta) {
+      min-inline-size: auto;
+      padding-inline: var(--app-space-1);
+      font-size: var(--app-text-secondary-size);
+
+      > mat-icon {
+        display: none;
+      }
+    }
+
+    .toolbar-cta {
+      padding-inline: var(--app-space-2);
+    }
+  }
+}
+
 .app-content {
   padding: 20px 24px 28px;
   max-width: 1720px;

@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { Subject, of } from 'rxjs';
-import type { LiveGamesSnapshot } from '../../models/live-games.model';
+import { type Observable, Subject, of } from 'rxjs';
+import type { LiveGameSummary, LiveGamesSnapshot } from '../../models/live-games.model';
 import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
 import { LiveGamesSwitcher } from './live-games-switcher';
@@ -37,11 +37,14 @@ function accessibleName(element: Element): string {
 }
 
 describe('LiveGamesSwitcher', () => {
-  function openMenu(snapshot: LiveGamesSnapshot): HTMLElement {
+  const runningGame = { id: 'running', status: 'IN_PROGRESS', practice: false } as const;
+  const pausedGame = { id: 'paused', status: 'PAUSED', practice: true } as const;
+
+  function renderSwitcher(getLiveGames: () => Observable<LiveGamesSnapshot>) {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: ApiService, useValue: { getLiveGames: () => of(snapshot) } },
+        { provide: ApiService, useValue: { getLiveGames } },
         {
           provide: WebSocketService,
           useValue: { liveGamesChanges: () => new Subject<void>(), watchLiveGames: vi.fn() },
@@ -51,10 +54,78 @@ describe('LiveGamesSwitcher', () => {
     const fixture = TestBed.createComponent(LiveGamesSwitcher);
     fixture.detectChanges();
     const trigger = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    return { fixture, trigger };
+  }
+
+  function openMenu(snapshot: LiveGamesSnapshot): HTMLElement {
+    const { fixture, trigger } = renderSwitcher(() => of(snapshot));
     trigger.click();
     fixture.detectChanges();
     return document.querySelector<HTMLElement>('[role="menu"]')!;
   }
+
+  function renderTrigger() {
+    const snapshots = new Subject<LiveGamesSnapshot>();
+    const { fixture, trigger } = renderSwitcher(() => snapshots);
+    return {
+      trigger,
+      showGames(...active: LiveGameSummary[]) {
+        snapshots.next({
+          active,
+          lastFinished: { id: 'finished', status: 'FORFEIT', practice: false },
+        });
+        fixture.detectChanges();
+      },
+    };
+  }
+
+  it('shows the decorative lamp only while a game is running', () => {
+    const { trigger, showGames } = renderTrigger();
+    const lamp = () => trigger.querySelector('.live-lamp');
+    expect(lamp()).toBeNull();
+    showGames(runningGame, pausedGame);
+    expect(lamp()?.getAttribute('aria-hidden')).toBe('true');
+    showGames(pausedGame);
+    expect(lamp()).toBeNull();
+  });
+
+  it('gates the lamp animation behind a no-preference motion query', () => {
+    renderTrigger();
+    const rules = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules]);
+    const lampAnimates = (rule: CSSRule): boolean =>
+      rule.type === CSSRule.STYLE_RULE &&
+      (rule as CSSStyleRule).selectorText.includes('.live-lamp') &&
+      Boolean((rule as CSSStyleRule).style.getPropertyValue('animation'));
+
+    expect(rules.some(lampAnimates)).toBe(false);
+    expect(
+      rules.some(
+        (rule) =>
+          rule.type === CSSRule.MEDIA_RULE &&
+          (rule as CSSMediaRule).media.mediaText === '(prefers-reduced-motion: no-preference)' &&
+          [...(rule as CSSMediaRule).cssRules].some(lampAnimates),
+      ),
+    ).toBe(true);
+  });
+
+  it('shows the decorative attention marker only while a game is paused', () => {
+    const { trigger, showGames } = renderTrigger();
+    const marker = () => trigger.querySelector('.attention-marker');
+    expect(marker()).toBeNull();
+    showGames(pausedGame);
+    expect(marker()?.getAttribute('aria-hidden')).toBe('true');
+    showGames(runningGame);
+    expect(marker()).toBeNull();
+  });
+
+  it('names the trigger with the running and attention counts once loaded', () => {
+    const { trigger, showGames } = renderTrigger();
+    expect(accessibleName(trigger)).toBe('Live games');
+    showGames(runningGame, pausedGame, { ...pausedGame, id: 'another-pause' });
+    expect(accessibleName(trigger)).toBe('Live games, 1 running, 2 need attention');
+    showGames();
+    expect(accessibleName(trigger)).toBe('Live games, 0 running, 0 need attention');
+  });
 
   it('includes the game state and visible markers in each accessible menu item name', () => {
     const panel = openMenu({

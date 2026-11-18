@@ -18,6 +18,41 @@
   --mat-button-outlined-outline-color: transparent;
 }
 
+.trigger-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+
+.live-lamp,
+.attention-marker {
+  inline-size: var(--app-space-2);
+  block-size: var(--app-space-2);
+}
+
+.live-lamp {
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--app-live-lamp);
+  box-shadow: 0 0 var(--app-space-1) var(--app-live-glow);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .live-lamp {
+    animation: live-lamp-pulse 2.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes live-lamp-pulse {
+    to {
+      box-shadow: 0 0 var(--app-space-2) var(--app-space-half) var(--app-live-glow);
+    }
+  }
+}
+
+.attention-marker {
+  background: var(--app-warning-text);
+  rotate: 45deg;
+}
+
 .section-label,
 .menu-note {
   padding: var(--app-space-1) var(--app-space-4);
@@ -106,13 +141,11 @@
   background: var(--mat-sys-surface-container-highest);
 }
 
-// The pause reason of a paused game: up to two quiet lines under its details, so its closing
-// instruction (such as "Check spend, then resume.") stays visible; full text on hover.
+// The pause reason wraps in full, so its closing instruction (such as
+// "Check spend, then resume.") is never clipped.
 .reason {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
+  display: block;
+  overflow-wrap: anywhere;
   font-size: var(--app-text-secondary-size);
   color: var(--mat-sys-on-surface-variant);
 }

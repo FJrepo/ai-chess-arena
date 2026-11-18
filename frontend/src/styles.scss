@@ -14,6 +14,7 @@
   --app-row-hover: color-mix(in srgb, var(--mat-sys-on-surface) 6%, var(--mat-sys-surface));
   --app-card-border: var(--mat-sys-outline-variant);
   --app-divider: var(--mat-sys-outline-variant);
+  --app-live-glow: color-mix(in srgb, var(--app-live-lamp) 55%, transparent);
   --app-info-fill: color-mix(in srgb, var(--app-accent-info) 7%, var(--app-card-bg));
   --app-info-border: color-mix(in srgb, var(--app-accent-info) 45%, var(--app-divider));
   --app-quality-inaccuracy: var(--mat-sys-tertiary);
@@ -70,7 +71,7 @@ html {
   --app-text-secondary-size: 0.8125rem;
   --app-table-heading-size: 0.78125rem;
   --app-table-heading-tracking: 0.04em;
-  --app-live-games-menu-width: 30rem;
+  --app-live-games-menu-width: 24rem;
   --app-model-price-width: 5.75rem;
   --app-model-context-width: 4rem;
   --app-model-option-height: 2.75rem;
@@ -98,6 +99,7 @@ html {
   --app-success-text: #{map.get(mat.$green-palette, 30)};
   --app-success-border: #{map.get(mat.$green-palette, 40)};
   --app-success-fill: color-mix(in srgb, var(--app-success-border) 8%, transparent);
+  --app-live-lamp: #{map.get(mat.$green-palette, 40)};
   --app-warning-text: #{map.get(mat.$orange-palette, 30)};
   --app-warning-border: #{map.get(mat.$orange-palette, 40)};
   --app-warning-fill: color-mix(in srgb, var(--app-warning-border) 7%, transparent);
@@ -182,6 +184,7 @@ body.dark-theme {
   );
   --app-success-border: color-mix(in srgb, var(--app-success-text) 60%, transparent);
   --app-success-fill: color-mix(in srgb, var(--app-success-text) 14%, transparent);
+  --app-live-lamp: #{map.get(mat.$green-palette, 80)};
   --app-warning-text: #{map.get(mat.$orange-palette, 80)};
   --app-warning-border: color-mix(in srgb, var(--app-warning-text) 60%, transparent);
   --app-warning-fill: color-mix(in srgb, var(--app-warning-text) 10%, transparent);

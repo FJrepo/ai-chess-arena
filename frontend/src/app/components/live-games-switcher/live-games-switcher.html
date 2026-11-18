@@ -1,20 +1,33 @@
+@let live = snapshot();
+@let attention = live ? live.active.filter((game) => game.status === 'PAUSED').length : 0;
 <button
   mat-stroked-button
   class="trigger"
   [class.has-live-games]="running()"
-  [class.no-live-games]="snapshot() && !running()"
+  [class.no-live-games]="live && !running()"
+  [attr.aria-label]="
+    live ? 'Live games, ' + running() + ' running, ' + attention + ' need attention' : null
+  "
   [matMenuTriggerFor]="menu"
 >
-  <span>
-    Live games
-    @if (snapshot()) {
-      (<span class="num">{{ running() }}</span
-      >)
+  <span class="trigger-label">
+    @if (running() > 0) {
+      <span class="live-lamp" aria-hidden="true"></span>
+    }
+    <span>
+      Live games
+      @if (live) {
+        (<span class="num">{{ running() }}</span
+        >)
+      }
+    </span>
+    @if (attention > 0) {
+      <span class="attention-marker" aria-hidden="true"></span>
     }
   </span>
   <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
 </button>
-<mat-menu #menu="matMenu" class="live-games-menu" aria-label="Live games">
+<mat-menu #menu="matMenu" class="live-games-menu" xPosition="before" aria-label="Live games">
   @if (unavailable()) {
     <div class="menu-note" role="status">Live games unavailable</div>
   } @else if (!snapshot()) {
