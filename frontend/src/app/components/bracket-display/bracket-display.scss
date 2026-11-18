@@ -410,10 +410,18 @@ $warning: mat.$orange-palette;
   color: var(--bracket-trophy);
 }
 
+.champion-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .champion-name {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  // Unbroken winner names wrap inside the champion card.
+  max-width: 100%;
+  min-width: 0;
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.3;
