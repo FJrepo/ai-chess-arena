@@ -14,6 +14,10 @@
   background: var(--mat-sys-primary-container);
 }
 
+.trigger.no-live-games {
+  --mat-button-outlined-outline-color: transparent;
+}
+
 .section-label,
 .menu-note {
   padding: var(--app-space-1) var(--app-space-4);
@@ -49,16 +53,20 @@
 }
 
 .matchup {
-  display: flex;
-  gap: var(--app-space-1);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .versus {
   color: var(--mat-sys-on-surface-variant);
 }
 
-.player,
 .event {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -70,10 +78,6 @@
   gap: var(--app-space-2);
   font-size: var(--app-text-secondary-size);
   color: var(--mat-sys-on-surface-variant);
-}
-
-.event {
-  flex: 1;
 }
 
 .game-details > :not(.event) {

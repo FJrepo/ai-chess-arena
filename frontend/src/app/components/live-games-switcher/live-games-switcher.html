@@ -2,6 +2,7 @@
   mat-stroked-button
   class="trigger"
   [class.has-live-games]="running()"
+  [class.no-live-games]="snapshot() && !running()"
   [matMenuTriggerFor]="menu"
 >
   <span>
@@ -43,12 +44,10 @@
     >
       <span class="matchup" [title]="white + ' vs ' + black">
         <span class="player">{{ white }}</span>
-        <span class="versus">&ngsp;vs&ngsp;</span>
+        &ngsp;<span class="versus">vs</span>&ngsp;
         <span class="player">{{ black }}</span>
       </span>
-      @if (game.status !== 'PAUSED') {
-        <span class="cdk-visually-hidden">{{ state }}&ngsp;</span>
-      }
+      <span class="cdk-visually-hidden">{{ state }}&ngsp;</span>
       <span class="game-details">
         @if (game.practice) {
           <span class="event"><span class="state-marker practice">Practice</span></span>

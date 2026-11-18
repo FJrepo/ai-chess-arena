@@ -6,15 +6,38 @@ import { ApiService } from '../../services/api.service';
 import { WebSocketService } from '../../services/websocket.service';
 import { LiveGamesSwitcher } from './live-games-switcher';
 
+// Accessible name as assistive technology reads it here: aria-label, then aria-labelledby, then the
+// text of descendants that are not hidden with aria-hidden.
+function accessibleName(element: Element): string {
+  const label = element.getAttribute('aria-label');
+  if (label) return label.trim();
+  const labelledBy = element.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    return labelledBy
+      .split(/\s+/)
+      .map((id) => element.ownerDocument.getElementById(id))
+      .map((node) => (node ? accessibleName(node) : ''))
+      .join(' ')
+      .trim();
+  }
+  const parts: string[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? '');
+      return;
+    }
+    if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return;
+    node.childNodes.forEach((child) => {
+      walk(child);
+      if (child instanceof Element) parts.push(' ');
+    });
+  };
+  walk(element);
+  return parts.join('').replace(/\s+/g, ' ').trim();
+}
+
 describe('LiveGamesSwitcher', () => {
-  it('names the menu and keeps the state text in the menu items', () => {
-    const snapshot: LiveGamesSnapshot = {
-      active: [
-        { id: 'practice', status: 'IN_PROGRESS', practice: true },
-        { id: 'paused', status: 'PAUSED', practice: false },
-      ],
-      lastFinished: { id: 'finished', status: 'FORFEIT', practice: false },
-    };
+  function openMenu(snapshot: LiveGamesSnapshot): HTMLElement {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -27,19 +50,62 @@ describe('LiveGamesSwitcher', () => {
     });
     const fixture = TestBed.createComponent(LiveGamesSwitcher);
     fixture.detectChanges();
-    fixture.nativeElement.querySelector('button').click();
+    const trigger = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    trigger.click();
     fixture.detectChanges();
+    return document.querySelector<HTMLElement>('[role="menu"]')!;
+  }
 
-    const panel = document.querySelector('[role="menu"]')!;
+  it('includes the game state and visible markers in each accessible menu item name', () => {
+    const panel = openMenu({
+      active: [
+        { id: 'running', status: 'IN_PROGRESS', tournamentName: 'Club Rapid', practice: false },
+        {
+          id: 'paused',
+          status: 'PAUSED',
+          practice: true,
+          whitePlayerName: 'Light',
+          blackPlayerName: 'Dark',
+        },
+      ],
+      lastFinished: { id: 'finished', status: 'FORFEIT', practice: false },
+    });
     const labels = [...panel.querySelectorAll('.section-label[aria-hidden="true"]')];
     const items = [...panel.querySelectorAll('[role="menuitem"]')];
-    expect.soft(panel.getAttribute('aria-label')).toBe('Live games');
+    expect.soft(accessibleName(panel)).toBe('Live games');
     expect
       .soft(labels.map((label) => label.textContent?.trim()))
       .toEqual(['Running', 'Paused', 'Last finished']);
-    expect.soft(items[0].textContent).toMatch(/Running\s+Practice/);
-    expect.soft(items[1].textContent).toContain('Needs attention');
-    expect(items[2].textContent).toContain('Last finished');
+    expect(items.map((item) => accessibleName(item))).toEqual([
+      'White vs Black Running Club Rapid',
+      'Light vs Dark Paused Practice Needs attention',
+      'White vs Black Last finished Game',
+    ]);
+  });
+
+  it('wraps long matchups with a two-line clamp', () => {
+    const white = 'Atlas Experimental Reasoning Edition 2026 Extended Context';
+    const black = 'Kestrel Grandmaster Research Preview 405B Tournament Build';
+    const panel = openMenu({
+      active: [
+        {
+          id: 'long-names',
+          status: 'IN_PROGRESS',
+          practice: false,
+          whitePlayerName: white,
+          blackPlayerName: black,
+        },
+      ],
+    });
+    const matchup = panel.querySelector('.matchup')!;
+
+    expect(accessibleName(panel.querySelector('[role="menuitem"]')!)).toContain(
+      `${white} vs ${black}`,
+    );
+    expect(getComputedStyle(matchup).getPropertyValue('-webkit-line-clamp')).toBe('2');
+    for (const name of matchup.querySelectorAll('.player')) {
+      expect(getComputedStyle(name).whiteSpace).not.toBe('nowrap');
+    }
   });
 
   it('counts running games, preserves menu order and refreshes after a live change during an in-flight read', () => {
