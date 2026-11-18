@@ -49,6 +49,12 @@
   &:is(:focus-visible, .cdk-keyboard-focused) {
     outline: var(--app-rule-width) solid var(--app-accent-info);
     outline-offset: calc(-1 * var(--app-focus-offset));
+
+    // Keyboard focus reveals the whole matchup that the two-line clamp shortens.
+    .matchup {
+      display: block;
+      overflow: visible;
+    }
   }
 }
 
