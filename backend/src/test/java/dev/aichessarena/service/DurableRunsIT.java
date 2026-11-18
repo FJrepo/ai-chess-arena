@@ -971,6 +971,58 @@ class DurableRunsIT {
     }
 
     @Test
+    void aTimeoutBeforeTheBodyPublisherCompletesIsNeverSentTwiceAfterARestart() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.WAITING);
+        QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 1);
+        UUID gameId = gameIds(tournamentId).getFirst();
+        AtomicInteger posts = new AtomicInteger();
+        CountDownLatch release = new CountDownLatch(1);
+        OpenRouterService router = new OpenRouterService();
+        router.baseUrl = "http://127.0.0.1:9";
+        router.keyStore = dev.aichessarena.config.OpenRouterKeyStoreFixture.keys("test-key",
+                java.nio.file.Path.of("target/test-keys"));
+        router.objectMapper = new ObjectMapper();
+        router.defaultTemperature = 0.7;
+        router.defaultMaxTokens = 100;
+        // The final body buffer is taken, the publisher not completed yet, when the move time runs out.
+        router.chatSender = (request, handler) -> {
+            posts.incrementAndGet();
+            return OpenRouterServiceChatTest.holdAfterFinalBuffer(request, release);
+        };
+        QuarkusMock.installMockForType(router, OpenRouterService.class);
+        GameLifecycleService real = ClientProxy.unwrap(lifecycle);
+        try {
+            engine.startGame(gameId);
+            // The backend stops before the forfeit commits.
+            QuarkusMock.installMockForType(new GameLifecycleService() {
+                @Override public void forfeitTimeout(UUID id, String color, int seconds) {
+                    throw new IllegalStateException("Backend stopped");
+                }
+
+                @Override public void pauseEndingLoop(UUID id, String detail) {
+                    throw new IllegalStateException("Backend stopped");
+                }
+
+                @Override public void markGamePaused(UUID id) {
+                    throw new IllegalStateException("Backend stopped");
+                }
+            }, GameLifecycleService.class);
+            awaitGame(gameId, g -> outcomes(gameId).contains(Outcome.TIMEOUT));
+            awaitReleased(gameId);
+        } finally {
+            release.countDown();
+            QuarkusMock.installMockForType(real, GameLifecycleService.class);
+        }
+        assertNotNull(read(gameId).requestSentAt, "the timeout attempt does not settle the request");
+
+        recovery.recover(List.of(gameId), Interruption.RESTART);
+
+        assertEquals(GameStatus.PAUSED, read(gameId).status);
+        assertTrue(read(gameId).statusDetail.contains("was in flight during a backend restart"));
+        assertEquals(1, posts.get(), "exactly one POST");
+    }
+
+    @Test
     void theMoveTimeStartsOnlyAfterTheRequestIsAdmitted() throws Exception {
         UUID tournamentId = seedTournament(GameStatus.WAITING);
         QuarkusTransaction.requiringNew().run(() -> tournaments.findById(tournamentId).moveTimeoutSeconds = 1);

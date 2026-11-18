@@ -245,6 +245,51 @@ class OpenRouterServiceChatTest {
         }
     }
 
+    @Test
+    void aTimeoutWhileTheClientStillHoldsTheBodyIsPossiblyCharged() throws Exception {
+        // The client took the final body buffer but has not completed the publisher (HTTP/2 can already have sent
+        // END_STREAM at this point): OpenRouter may have the whole request.
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            for (boolean timedTurn : List.of(true, false)) {
+                OpenRouterService service = service("http://127.0.0.1:9");
+                service.chatSender = (request, handler) -> holdAfterFinalBuffer(request, release);
+                service.requestSafetyCap = Duration.ofMillis(300);
+
+                LlmResponse response = service.chat("model-a", List.of(new OpenRouterService.ChatMsg("user", "move")),
+                        timedTurn ? in(Duration.ofMillis(200)) : null, 100);
+
+                assertEquals(timedTurn ? ProviderOutcome.TIMEOUT : ProviderOutcome.RETRYABLE, response.outcome());
+                assertTrue(response.deliveryUncertain(), "timed turn: " + timedTurn);
+            }
+        } finally {
+            release.countDown();
+        }
+    }
+
+    static java.util.concurrent.CompletableFuture<java.net.http.HttpResponse<String>> holdAfterFinalBuffer(
+            java.net.http.HttpRequest request, java.util.concurrent.CountDownLatch release) {
+        Thread.startVirtualThread(() -> request.bodyPublisher().orElseThrow().subscribe(
+                new java.util.concurrent.Flow.Subscriber<java.nio.ByteBuffer>() {
+                    @Override public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+                        subscription.request(1);
+                    }
+
+                    @Override public void onNext(java.nio.ByteBuffer item) {
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+
+                    @Override public void onError(Throwable throwable) { }
+
+                    @Override public void onComplete() { }
+                }));
+        return new java.util.concurrent.CompletableFuture<>();
+    }
+
     /** Reads one HTTP/1.1 request with a Content-Length body. */
     private static void readRequest(java.io.InputStream in) throws IOException {
         StringBuilder head = new StringBuilder();

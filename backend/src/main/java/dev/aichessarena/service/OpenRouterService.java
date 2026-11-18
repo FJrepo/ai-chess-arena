@@ -22,9 +22,7 @@ import java.io.IOException;
 import java.net.ConnectException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
-import java.nio.ByteBuffer;
 import java.nio.channels.UnresolvedAddressException;
-import java.util.concurrent.Flow;
 import javax.net.ssl.SSLHandshakeException;
 import java.time.DateTimeException;
 import java.time.Duration;
@@ -159,6 +157,14 @@ public class OpenRouterService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
+    /** Sends a chat request; replaceable in tests to control exactly how far a request gets. */
+    @FunctionalInterface
+    interface ChatSender {
+        CompletableFuture<HttpResponse<String>> send(HttpRequest request, HttpResponse.BodyHandler<String> handler);
+    }
+
+    ChatSender chatSender = (request, handler) -> httpClient.sendAsync(request, handler);
+
     private volatile ModelsSnapshot modelsSnapshot = new ModelsSnapshot(null, 0, 0);
     private final AtomicBoolean modelsRefreshScheduled = new AtomicBoolean();
     /** Endpoint rejections override catalog hints until the backend process restarts. */
@@ -230,8 +236,10 @@ public class OpenRouterService {
         }
         // Known as soon as the status line and headers arrive, long before an error body may be complete.
         AtomicInteger responseStatus = new AtomicInteger();
-        // Set once the whole request body was handed to the connection: from then on OpenRouter may have received it.
-        AtomicBoolean bodyHandedOver = new AtomicBoolean();
+        // Set once the request is handed to the HTTP client. From then on any byte, up to the complete request, may
+        // reach OpenRouter (an HTTP/2 client can end the stream before the body publisher completes), so only a
+        // failure that provably precedes the connection (see notDelivered) leaves the request undelivered.
+        AtomicBoolean handedToClient = new AtomicBoolean();
         CompletableFuture<HttpResponse<String>> pending = null;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -276,14 +284,15 @@ public class OpenRouterService {
                     .uri(URI.create(baseUrl + "/chat/completions"))
                     .header("Authorization", "Bearer " + requestKey)
                     .header("Content-Type", "application/json")
-                    .POST(tracked(HttpRequest.BodyPublishers.ofString(jsonBody), bodyHandedOver))
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .timeout(Duration.ofNanos(sendBudgetNanos))
                     .build();
 
             // The completion time is taken when the last body byte has been read, before the future completes, so it
             // is known whenever the future is done and the deadline is judged by it, not by when the caller looks.
             AtomicReference<Long> completedAtNanos = new AtomicReference<>();
-            pending = httpClient.sendAsync(request, info -> {
+            handedToClient.set(true);
+            pending = chatSender.send(request, info -> {
                 responseStatus.set(info.statusCode());
                 return HttpResponse.BodySubscribers.mapping(HttpResponse.BodyHandlers.ofString().apply(info),
                         responseBody -> {
@@ -324,13 +333,13 @@ public class OpenRouterService {
         } catch (TimeoutException e) {
             pending.cancel(true);
             return deadlineExceeded(modelId, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos), cacheRejection,
-                    bodyHandedOver.get());
+                    handedToClient.get());
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() instanceof CompletionException && e.getCause().getCause() != null
                     ? e.getCause().getCause()
                     : e.getCause();
             return transportFailure(modelId, cause, limitedByMoveTime, responseStatus.get(), elapsedMs(startNanos),
-                    cacheRejection, bodyHandedOver.get());
+                    cacheRejection, handedToClient.get());
         } catch (InterruptedException e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -338,7 +347,7 @@ public class OpenRouterService {
             Thread.currentThread().interrupt();
             LlmResponse interrupted = LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
                     "OpenRouter request was interrupted", 0, null);
-            return bodyHandedOver.get() ? interrupted.withDeliveryUncertain() : interrupted;
+            return handedToClient.get() ? interrupted.withDeliveryUncertain() : interrupted;
         } catch (Exception e) {
             if (pending != null) {
                 pending.cancel(true);
@@ -346,7 +355,7 @@ public class OpenRouterService {
             LOG.error("OpenRouter API call failed");
             LlmResponse failed = LlmResponse.providerFailure(ProviderOutcome.FATAL, 0,
                     "OpenRouter request failed", 0, null);
-            return bodyHandedOver.get() ? failed.withDeliveryUncertain() : failed;
+            return handedToClient.get() ? failed.withDeliveryUncertain() : failed;
         }
     }
 
@@ -520,7 +529,7 @@ public class OpenRouterService {
 
     private LlmResponse transportFailure(String modelId, Throwable cause, boolean limitedByMoveTime,
                                          int responseStatus, long elapsed, CacheRejection cacheRejection,
-                                         boolean bodyHandedOver) {
+                                         boolean handedToClient) {
         if (cause instanceof HttpConnectTimeoutException) {
             LOG.warnf("Could not connect to OpenRouter for model %s", modelId);
             return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, 0,
@@ -529,10 +538,10 @@ public class OpenRouterService {
         if (cause instanceof HttpTimeoutException) {
             // No response headers within the wait: the same deadline as for the complete answer.
             return deadlineExceeded(modelId, limitedByMoveTime, responseStatus, elapsed, cacheRejection,
-                    bodyHandedOver && !notDelivered(cause));
+                    handedToClient && !notDelivered(cause));
         }
         if (cause instanceof IOException) {
-            if (responseStatus != 0 || (bodyHandedOver && !notDelivered(cause))) {
+            if (responseStatus != 0 || (handedToClient && !notDelivered(cause))) {
                 LOG.warnf("OpenRouter connection for model %s broke after the request was sent", modelId);
                 return LlmResponse.providerFailure(ProviderOutcome.RETRYABLE, responseStatus,
                         "The connection to OpenRouter broke after the request was sent", elapsed, null)
@@ -607,42 +616,6 @@ public class OpenRouterService {
             }
         }
         return false;
-    }
-
-    /** Reports when the whole body was handed to the connection; until then OpenRouter cannot have the request. */
-    private static HttpRequest.BodyPublisher tracked(HttpRequest.BodyPublisher body, AtomicBoolean handedOver) {
-        return new HttpRequest.BodyPublisher() {
-            @Override
-            public long contentLength() {
-                return body.contentLength();
-            }
-
-            @Override
-            public void subscribe(Flow.Subscriber<? super ByteBuffer> subscriber) {
-                body.subscribe(new Flow.Subscriber<>() {
-                    @Override
-                    public void onSubscribe(Flow.Subscription subscription) {
-                        subscriber.onSubscribe(subscription);
-                    }
-
-                    @Override
-                    public void onNext(ByteBuffer item) {
-                        subscriber.onNext(item);
-                    }
-
-                    @Override
-                    public void onError(Throwable throwable) {
-                        subscriber.onError(throwable);
-                    }
-
-                    @Override
-                    public void onComplete() {
-                        handedOver.set(true);
-                        subscriber.onComplete();
-                    }
-                });
-            }
-        };
     }
 
     /**
