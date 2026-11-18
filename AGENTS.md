@@ -120,6 +120,11 @@ A feature is done when all of the following are true:
 - `main` should remain releasable.
 - Semantic versioning: feature additions -> minor bump; fixes, docs, CI/release pipeline changes and hardening -> patch bump.
 - A tag needs a `## [X.Y.Z] - date` section in `CHANGELOG.md`; the release workflow builds the release notes from it and rejects tags without one.
+- Release highlights (the text between `## [X.Y.Z] - date` and the first `###`; it becomes "Highlights" in the GitHub release unchanged):
+  - one bold tagline with the release theme and a short sentence;
+  - 3–6 bullets, each `- <one emoji> **Feature name**: one sentence of user benefit` (no implementation details; those belong under Added/Changed);
+  - for releases with migrations, end with `> 💾 [Back up your database](docs/deployment.md#backups-and-rollback) before upgrading.`;
+  - one emoji per bullet, matching its topic; no emoji rows or decoration elsewhere.
 - Releases are immutable once published: everything attached to a release (assets) must be uploaded in the step that creates it.
 - A release is only considered complete when all of the following exist and are verified:
   - git tag
