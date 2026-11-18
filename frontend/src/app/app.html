@@ -15,40 +15,40 @@
     </svg>
     <span class="toolbar-title">AI Chess Arena</span>
   </a>
-  <span class="spacer"></span>
   <app-live-games-switcher />
-  <span class="spacer"></span>
-  <button
-    mat-icon-button
-    class="theme-toggle"
-    (click)="toggleTheme()"
-    [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
-  >
-    <mat-icon>{{ darkMode() ? 'light_mode' : 'dark_mode' }}</mat-icon>
-  </button>
-  <button mat-button class="toolbar-link" routerLink="/practice">
-    <mat-icon>sports_esports</mat-icon>
-    <span>Practice</span>
-  </button>
-  <button mat-button class="toolbar-link" routerLink="/benchmarks">
-    <span>Benchmarks</span>
-  </button>
-  <button mat-button class="toolbar-link" routerLink="/analytics">
-    <mat-icon>insights</mat-icon>
-    <span>Analytics</span>
-  </button>
-  <button mat-button class="toolbar-link" routerLink="/leaderboard">
-    <mat-icon>leaderboard</mat-icon>
-    <span>Leaderboard</span>
-  </button>
-  <button mat-button class="toolbar-link" routerLink="/system">
-    <mat-icon>monitor_heart</mat-icon>
-    <span>System</span>
-  </button>
-  <button mat-stroked-button class="toolbar-cta" routerLink="/tournaments/new">
-    <mat-icon>add_circle</mat-icon>
-    <span>New Tournament</span>
-  </button>
+  <div class="toolbar-actions">
+    <button
+      mat-icon-button
+      class="theme-toggle"
+      (click)="toggleTheme()"
+      [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+    >
+      <mat-icon>{{ darkMode() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+    </button>
+    <button mat-button class="toolbar-link" routerLink="/practice">
+      <mat-icon>sports_esports</mat-icon>
+      <span>Practice</span>
+    </button>
+    <button mat-button class="toolbar-link" routerLink="/benchmarks">
+      <span>Benchmarks</span>
+    </button>
+    <button mat-button class="toolbar-link" routerLink="/analytics">
+      <mat-icon>insights</mat-icon>
+      <span>Analytics</span>
+    </button>
+    <button mat-button class="toolbar-link" routerLink="/leaderboard">
+      <mat-icon>leaderboard</mat-icon>
+      <span>Leaderboard</span>
+    </button>
+    <button mat-button class="toolbar-link" routerLink="/system">
+      <mat-icon>monitor_heart</mat-icon>
+      <span>System</span>
+    </button>
+    <button mat-stroked-button class="toolbar-cta" routerLink="/tournaments/new">
+      <mat-icon>add_circle</mat-icon>
+      <span>New Tournament</span>
+    </button>
+  </div>
 </mat-toolbar>
 
 <div class="app-content">

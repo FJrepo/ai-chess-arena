@@ -2,12 +2,62 @@
   display: inline-flex;
 }
 
-.matchup,
-.game-details {
-  display: block;
+.trigger {
+  --mat-button-outlined-horizontal-padding: var(--app-space-4);
+  --mat-button-outlined-label-text-color: var(--mat-sys-on-surface-variant);
+  --mat-button-outlined-outline-color: var(--mat-sys-outline-variant);
 }
 
-.matchup,
+.trigger.has-live-games {
+  --mat-button-outlined-label-text-color: var(--mat-sys-on-primary-container);
+  --mat-button-outlined-outline-color: var(--mat-sys-primary);
+  background: var(--mat-sys-primary-container);
+}
+
+.section-label,
+.menu-note {
+  padding: var(--app-space-1) var(--app-space-4);
+  color: var(--mat-sys-on-surface-variant);
+  font-size: var(--app-text-secondary-size);
+}
+
+.section-label {
+  font-weight: 600;
+}
+
+.section-label:not(:first-child) {
+  margin-block-start: var(--app-space-1);
+  border-block-start: 1px solid var(--app-divider);
+  padding-block-start: var(--app-space-2);
+}
+
+.game-row.mat-mdc-menu-item {
+  --mat-menu-item-hover-state-layer-color: var(--app-row-hover);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding: var(--app-space-1) var(--app-space-4);
+  color: var(--mat-sys-on-surface);
+
+  &.finished {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &:is(:focus-visible, .cdk-keyboard-focused) {
+    outline: var(--app-rule-width) solid var(--app-accent-info);
+    outline-offset: calc(-1 * var(--app-focus-offset));
+  }
+}
+
+.matchup {
+  display: flex;
+  gap: var(--app-space-1);
+}
+
+.versus {
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.player,
 .event {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -22,16 +72,26 @@
   color: var(--mat-sys-on-surface-variant);
 }
 
+.event {
+  flex: 1;
+}
+
 .game-details > :not(.event) {
   flex-shrink: 0;
 }
 
+.state-marker {
+  display: inline-block;
+  padding-inline: var(--app-space-2);
+  border-radius: var(--mat-sys-corner-full);
+  font-weight: 500;
+}
+
 .attention {
+  background: var(--app-warning-fill);
   color: var(--app-warning-text);
 }
 
-.menu-note {
-  padding: var(--app-space-2) var(--app-space-4);
-  color: var(--mat-sys-on-surface-variant);
-  font-size: var(--app-text-secondary-size);
+.practice {
+  background: var(--mat-sys-surface-container-highest);
 }

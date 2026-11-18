@@ -7,6 +7,41 @@ import { WebSocketService } from '../../services/websocket.service';
 import { LiveGamesSwitcher } from './live-games-switcher';
 
 describe('LiveGamesSwitcher', () => {
+  it('names the menu and keeps the state text in the menu items', () => {
+    const snapshot: LiveGamesSnapshot = {
+      active: [
+        { id: 'practice', status: 'IN_PROGRESS', practice: true },
+        { id: 'paused', status: 'PAUSED', practice: false },
+      ],
+      lastFinished: { id: 'finished', status: 'FORFEIT', practice: false },
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: ApiService, useValue: { getLiveGames: () => of(snapshot) } },
+        {
+          provide: WebSocketService,
+          useValue: { liveGamesChanges: () => new Subject<void>(), watchLiveGames: vi.fn() },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(LiveGamesSwitcher);
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('button').click();
+    fixture.detectChanges();
+
+    const panel = document.querySelector('[role="menu"]')!;
+    const labels = [...panel.querySelectorAll('.section-label[aria-hidden="true"]')];
+    const items = [...panel.querySelectorAll('[role="menuitem"]')];
+    expect.soft(panel.getAttribute('aria-label')).toBe('Live games');
+    expect
+      .soft(labels.map((label) => label.textContent?.trim()))
+      .toEqual(['Running', 'Paused', 'Last finished']);
+    expect.soft(items[0].textContent).toMatch(/Running\s+Practice/);
+    expect.soft(items[1].textContent).toContain('Needs attention');
+    expect(items[2].textContent).toContain('Last finished');
+  });
+
   it('counts running games, preserves menu order and refreshes after a live change during an in-flight read', () => {
     vi.useFakeTimers();
     const first = new Subject<LiveGamesSnapshot>();

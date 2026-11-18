@@ -1,12 +1,19 @@
-<button mat-stroked-button [matMenuTriggerFor]="menu">
-  @if (snapshot()) {
-    Live games ({{ running() }})
-  } @else {
+<button
+  mat-stroked-button
+  class="trigger"
+  [class.has-live-games]="running()"
+  [matMenuTriggerFor]="menu"
+>
+  <span>
     Live games
-  }
+    @if (snapshot()) {
+      (<span class="num">{{ running() }}</span
+      >)
+    }
+  </span>
   <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
 </button>
-<mat-menu #menu="matMenu" class="live-games-menu">
+<mat-menu #menu="matMenu" class="live-games-menu" aria-label="Live games">
   @if (unavailable()) {
     <div class="menu-note" role="status">Live games unavailable</div>
   } @else if (!snapshot()) {
@@ -16,20 +23,43 @@
   }
 
   @for (game of rows(); track game.id) {
-    <a mat-menu-item [attr.data-live-game-id]="game.id" [routerLink]="['/games', game.id]">
-      <span
-        class="matchup"
-        [title]="(game.whitePlayerName ?? 'White') + ' vs ' + (game.blackPlayerName ?? 'Black')"
-      >
-        {{ game.whitePlayerName ?? 'White' }} vs {{ game.blackPlayerName ?? 'Black' }}
+    @let state =
+      game.status === 'IN_PROGRESS'
+        ? 'Running'
+        : game.status === 'PAUSED'
+          ? 'Paused'
+          : 'Last finished';
+    @let white = game.whitePlayerName ?? 'White';
+    @let black = game.blackPlayerName ?? 'Black';
+    @if ($first || game.status !== rows()[$index - 1].status) {
+      <div class="section-label" aria-hidden="true">{{ state }}</div>
+    }
+    <a
+      mat-menu-item
+      class="game-row"
+      [class.finished]="game.status === 'COMPLETED' || game.status === 'FORFEIT'"
+      [attr.data-live-game-id]="game.id"
+      [routerLink]="['/games', game.id]"
+    >
+      <span class="matchup" [title]="white + ' vs ' + black">
+        <span class="player">{{ white }}</span>
+        <span class="versus">&ngsp;vs&ngsp;</span>
+        <span class="player">{{ black }}</span>
       </span>
+      @if (game.status !== 'PAUSED') {
+        <span class="cdk-visually-hidden">{{ state }}&ngsp;</span>
+      }
       <span class="game-details">
-        <span class="event" [title]="game.tournamentName ?? ''">
-          {{ game.practice ? 'Practice' : (game.tournamentName ?? 'Game') }}
-        </span>
+        @if (game.practice) {
+          <span class="event"><span class="state-marker practice">Practice</span></span>
+        } @else {
+          <span class="event" [title]="game.tournamentName ?? ''">
+            {{ game.tournamentName ?? 'Game' }}
+          </span>
+        }
         @switch (game.status) {
           @case ('PAUSED') {
-            <span class="attention">Needs attention</span>
+            <span class="state-marker attention">Needs attention</span>
           }
           @case ('IN_PROGRESS') {
             @if (game.moveNumber; as number) {
@@ -40,9 +70,6 @@
             @if (score(game); as label) {
               <span title="Evaluation from White’s perspective" class="num">{{ label }}</span>
             }
-          }
-          @default {
-            <span>Last finished</span>
           }
         }
       </span>
