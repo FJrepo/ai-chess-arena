@@ -67,11 +67,12 @@ public final class DtoMapper {
     }
 
     public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity) {
-        return toDto(g, includeMoves, runCapacity, null, null);
+        return toDto(g, includeMoves, runCapacity, null, null, null);
     }
 
     public static GameDto toDto(Game g, boolean includeMoves, GameDto.RunCapacity runCapacity,
-                                List<MoveAttemptDto> attempts, String streamId) {
+                                List<MoveAttemptDto> attempts, String streamId,
+                                List<GameConfigurationRevisionDto> configurationHistory) {
         List<MoveDto> moves = List.of();
         GameQualitySummaryDto qualitySummary = null;
         ResignationDto resignation = null;
@@ -120,7 +121,7 @@ public final class DtoMapper {
                 g.turnStartedAt, g.turnDeadlineAt,
                 g.turnChatMode != null ? g.turnChatMode.name() : null,
                 g.turnBanterLevel != null ? g.turnBanterLevel.name() : null,
-                attempts, streamId
+                attempts, streamId, g.startingConfiguration, configurationHistory
         );
     }
 
@@ -171,7 +172,8 @@ public final class DtoMapper {
         int sign = "WHITE".equals(color) ? 1 : -1;
         return new AdjudicationDto(color, WinAdjudication.WINDOW_PLIES,
                 last.evaluationCp != null ? sign * last.evaluationCp : null,
-                last.evaluationMate != null ? Math.abs(last.evaluationMate) : null);
+                last.evaluationMate != null ? Math.abs(last.evaluationMate) : null,
+                game.adjudicationConfigurationRevision);
     }
 
     public static MoveAttemptDto toDto(MoveAttempt a) {
@@ -180,7 +182,7 @@ public final class DtoMapper {
                 a.promptTokens, a.completionTokens, a.reasoningTokens, a.costUsd, a.responseTimeMs,
                 a.finishReason, a.errorMessage, a.createdAt, apiValue(a.reasoningEffort),
                 a.effectiveMaxOutputTokens, a.modelMaxCompletionTokens, a.cachedPromptTokens, a.cacheWriteTokens,
-                a.turnStatusRevision
+                a.turnStatusRevision, a.configurationRevision
         );
     }
 

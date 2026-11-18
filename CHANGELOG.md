@@ -9,7 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Upgrade notes
 
+- Flyway `V26__game_configuration_history.sql` adds game-start settings and model-attempt configuration revisions. Back up the database and recreate backend and frontend together. Older starting settings and revisions are unknown.
+
 ### Added
+
+- Review a game’s starting settings, see which configuration each model attempt used, and compare the first game’s start with a rematch draft.
 
 ### Changed
 

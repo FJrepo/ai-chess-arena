@@ -3031,11 +3031,12 @@ describe('GameView adjudication and missed mate updates', () => {
         resultReason: 'ADJUDICATION',
         statusRevision: 3,
         liveRevision: 2,
-        adjudication: { color: 'WHITE', plies: 10, evaluationMate: 4 },
+        adjudication: { color: 'WHITE', plies: 10, evaluationMate: 4, configurationRevision: 2 },
       }),
     );
     expect(getGame).toHaveBeenCalledTimes(2);
     expect(component.game()?.adjudication?.evaluationMate).toBe(4);
+    expect(component.game()?.adjudication?.configurationRevision).toBe(2);
     component.ngOnDestroy();
   });
 

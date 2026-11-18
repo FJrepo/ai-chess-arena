@@ -272,10 +272,10 @@ class AdjudicationIT {
                 return new LlmResponse("{\"move\":\"Be7\"}", 10, 5, 0.01, 1, "", false, null);
             }
         }, OpenRouterService.class);
-        // Control asynchronous evaluation: the rule must read stored scores rather than waiting on an engine future.
+        // Leave the callback pending. The turn wrapper stores the score before the next turn's adjudication check.
         QuarkusMock.installMockForType(new StockfishService() {
             @Override public CompletableFuture<EvalResult> evaluate(String fen, int depth) {
-                return CompletableFuture.completedFuture(new EvalResult(1230, null));
+                return new CompletableFuture<>();
             }
         }, StockfishService.class);
         GameTurnService realTurns = ClientProxy.unwrap(turns);
@@ -291,6 +291,11 @@ class AdjudicationIT {
         engine.startGame(id);
         if (enabled) {
             awaitCompleted(id);
+            given().get("/api/games/{id}", id).then().statusCode(200)
+                    .body("attempts[0].configurationRevision", org.hamcrest.Matchers.equalTo(1))
+                    .body("configurationHistory[0].settings.adjudicationEnabled", org.hamcrest.Matchers.equalTo(false))
+                    .body("adjudication.configurationRevision", org.hamcrest.Matchers.equalTo(2))
+                    .body("configurationHistory[1].settings.adjudicationEnabled", org.hamcrest.Matchers.equalTo(true));
         } else {
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(15).toNanos();
             while (System.nanoTime() < deadline && (status(id) != Game.GameStatus.PAUSED || engine.isRunning(id))) {

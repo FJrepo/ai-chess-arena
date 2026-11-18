@@ -1,6 +1,8 @@
 package dev.aichessarena.service;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -23,6 +25,7 @@ import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -47,6 +50,12 @@ class GameLoopFreshStateIT {
     private static final int CHANGED_MAX_RETRIES = 5;
 
     @Inject
+    GameLifecycleService lifecycle;
+
+    @Inject
+    GameConfigurationHistory configurations;
+
+    @Inject
     GameEngineService gameEngineService;
 
     @Inject
@@ -66,6 +75,7 @@ class GameLoopFreshStateIT {
         UUID[] ids = QuarkusTransaction.requiringNew().call(() -> {
             Tournament tournament = new Tournament();
             tournament.name = "Fresh state " + UUID.randomUUID();
+            tournament.reasoningEffort = ReasoningEffort.MEDIUM;
             tournamentRepository.persist(tournament);
             TournamentParticipant white = participant(tournament, "White", "test/white");
             TournamentParticipant black = participant(tournament, "Black", "test/black");
@@ -134,7 +144,7 @@ class GameLoopFreshStateIT {
                     "prompt hash" + label));
             // White follows the tournament's new level, Black's override wins over it.
             boolean white = turn % 2 == 0;
-            ReasoningEffort expectedEffort = !changed ? null : white ? ReasoningEffort.LOW : ReasoningEffort.HIGH;
+            ReasoningEffort expectedEffort = !changed ? ReasoningEffort.MEDIUM : white ? ReasoningEffort.HIGH : ReasoningEffort.LOW;
             ReasoningEffort sentEffort = model.efforts.get(turn);
             checks.add(() -> assertEquals(expectedEffort, request.reasoningEffort(), "requested effort" + label));
             checks.add(() -> assertEquals(expectedEffort, sentEffort, "effort sent" + label));
@@ -153,13 +163,51 @@ class GameLoopFreshStateIT {
                         + (attempt.reasoningEffort != null ? attempt.reasoningEffort.apiValue() : "-"))
                 .toList());
         assertEquals(List.of(
-                "ACCEPTED WHITE 1 -", "ACCEPTED BLACK 1 -", "ACCEPTED WHITE 2 -",
-                "ACCEPTED BLACK 2 high", "ACCEPTED WHITE 3 low", "ACCEPTED BLACK 3 high",
-                "PROVIDER_FATAL WHITE 4 low"), recorded);
-        assertEquals("low", given().when().get("/api/games/{id}", ids[1].toString())
-                .then().statusCode(200).extract().path("whiteReasoningEffort"));
-        assertEquals("high", given().when().get("/api/games/{id}/attempts", ids[1].toString())
-                .then().statusCode(200).extract().path("[3].reasoningEffort"));
+                "ACCEPTED WHITE 1 medium", "ACCEPTED BLACK 1 medium", "ILLEGAL_MOVE WHITE 2 medium",
+                "ACCEPTED WHITE 2 medium",
+                "ACCEPTED BLACK 2 low", "ACCEPTED WHITE 3 high", "ACCEPTED BLACK 3 low",
+                "PROVIDER_FATAL WHITE 4 high"), recorded);
+        given().when().get("/api/games/{id}", ids[1]).then().statusCode(200)
+                .body("whiteReasoningEffort", equalTo("high"))
+                .body("startingConfiguration.reasoningEffort", equalTo("medium"))
+                .body("configurationHistory.revision", equalTo(List.of(1, 2, 3)))
+                .body("configurationHistory[0].settings.reasoningEffort", equalTo("medium"))
+                .body("configurationHistory[1].settings.reasoningEffort", equalTo("high"))
+                .body("configurationHistory[1].settings.black.requestedReasoningEffort", equalTo("low"))
+                .body("configurationHistory[2].settings.banterLevel", equalTo("SPICY"))
+                .body("attempts.configurationRevision", equalTo(List.of(1, 1, 1, 1, 2, 3, 3, 3)));
+        given().when().get("/api/games/{id}/attempts", ids[1]).then().statusCode(200)
+                .body("[2].reasoningEffort", equalTo("medium"))
+                .body("[2].configurationRevision", equalTo(1))
+                .body("[3].reasoningEffort", equalTo("medium"))
+                .body("[3].configurationRevision", equalTo(1))
+                .body("[3].attemptNumber", equalTo(2))
+                .body("[4].reasoningEffort", equalTo("low"))
+                .body("[4].configurationRevision", equalTo(2));
+        given().when().get("/api/tournaments/{id}", ids[0]).then().statusCode(200)
+                .body("reasoningEffort", equalTo("high"))
+                .body("games[0].startingConfiguration.reasoningEffort", equalTo("medium"));
+
+        QuarkusTransaction.requiringNew().run(() -> gameRepository.deleteById(ids[1]));
+        assertTrue(QuarkusTransaction.requiringNew().call(() -> configurations.read(ids[1]).isEmpty()));
+        assertTrue(QuarkusTransaction.requiringNew().call(() -> moveAttemptRepository.findByGameId(ids[1]).isEmpty()));
+    }
+
+    @Test
+    void resumingALegacyGameDoesNotInventStartingSettings() {
+        UUID id = QuarkusTransaction.requiringNew().call(() -> {
+            Game game = new Game();
+            game.status = GameStatus.PAUSED;
+            game.startedAt = LocalDateTime.now().minusDays(1);
+            gameRepository.persist(game);
+            return game.id;
+        });
+
+        lifecycle.markGameStarted(id);
+
+        given().when().get("/api/games/{id}", id).then().statusCode(200)
+                .body("startingConfiguration", nullValue())
+                .body("configurationHistory.size()", equalTo(0));
     }
 
     private static TournamentParticipant participant(Tournament tournament, String name, String modelId) {
@@ -218,6 +266,7 @@ class GameLoopFreshStateIT {
     private static final class ScriptedModel extends OpenRouterService {
         private final UUID tournamentId;
         private final UUID blackParticipantId;
+        private boolean retryPending;
         final List<String> systemPrompts = Collections.synchronizedList(new ArrayList<>());
         final List<String> prompts = Collections.synchronizedList(new ArrayList<>());
         final List<Integer> maxOutputTokens = Collections.synchronizedList(new ArrayList<>());
@@ -231,6 +280,11 @@ class GameLoopFreshStateIT {
         @Override
         public LlmResponse chat(String modelId, List<ChatMsg> messages, AnswerDeadline answerDeadline,
                                 int maxOutputTokens, ReasoningEffort reasoningEffort) {
+            if (retryPending) {
+                retryPending = false;
+                assertEquals(ReasoningEffort.MEDIUM, reasoningEffort);
+                return answer(SETTINGS_CHANGED_DURING_TURN);
+            }
             int turn = prompts.size();
             prompts.add(messages.getLast().content());
             systemPrompts.add(messages.getFirst().content());
@@ -239,15 +293,17 @@ class GameLoopFreshStateIT {
             if (turn == SETTINGS_CHANGED_DURING_TURN) {
                 given().contentType("application/json")
                         .body(("{\"chatMode\":\"MANDATORY\",\"maxOutputTokens\":%d,\"maxRetries\":%d,"
-                                + "\"reasoningEffort\":\"LOW\"}")
+                                + "\"reasoningEffort\":\"HIGH\"}")
                                 .formatted(CHANGED_MAX_OUTPUT_TOKENS, CHANGED_MAX_RETRIES))
                         .when().put("/api/tournaments/{id}", tournamentId.toString())
                         .then().statusCode(200);
                 given().contentType("application/json")
-                        .body("{\"reasoningEffort\":\"high\"}")
+                        .body("{\"reasoningEffort\":\"low\"}")
                         .when().put("/api/tournaments/{id}/participants/{pid}", tournamentId.toString(),
                                 blackParticipantId.toString())
                         .then().statusCode(200);
+                retryPending = true;
+                return new LlmResponse("{\"move\":\"Ke8\"}", 8, 3, null, 1, null, false, null);
             }
             if (turn == 3) {
                 // Change tone alone while a request is in flight: this request retains its original prompt.
@@ -257,6 +313,10 @@ class GameLoopFreshStateIT {
             if (turn >= SCRIPT.size()) {
                 return LlmResponse.providerFailure(ProviderOutcome.FATAL, 402, "Script finished", 1, null);
             }
+            return answer(turn);
+        }
+
+        private LlmResponse answer(int turn) {
             String answer = "{\"move\":\"%s\",\"message\":\"Move %d\"}".formatted(SCRIPT.get(turn), turn + 1);
             return new LlmResponse(answer, 10, 5, COST_PER_ANSWER, 1, answer, false, null);
         }

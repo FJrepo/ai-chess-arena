@@ -96,6 +96,10 @@ public class MoveAttempt extends PanacheEntityBase {
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt = LocalDateTime.now();
 
+    /** The immutable configured settings read for the model turn, when known. */
+    @Column(name = "configuration_revision")
+    public Integer configurationRevision;
+
     /** The status revision that owned the model turn, before a possible pause, resume or cancellation. */
     @Column(name = "turn_status_revision")
     public Long turnStatusRevision;

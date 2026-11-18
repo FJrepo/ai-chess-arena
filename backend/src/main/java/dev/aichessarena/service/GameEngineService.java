@@ -57,6 +57,9 @@ public class GameEngineService {
     GameConversationService gameConversationService;
 
     @Inject
+    GameConfigurationHistory configurations;
+
+    @Inject
     TransactionSynchronizationRegistry transactionRegistry;
 
     /**
@@ -366,7 +369,8 @@ public class GameEngineService {
                     // Read with the game this turn, so a changed tournament level or participant override applies now.
                     game.requestedReasoningEffort(sideToMove),
                     game.tournament != null ? game.tournament.banterLevel : null,
-                    game.statusRevision
+                    game.statusRevision,
+                    configurations == null ? null : configurations.capture(game)
             ));
 
             if (turnResult.isTerminal() || turnResult.pausedGame()) {

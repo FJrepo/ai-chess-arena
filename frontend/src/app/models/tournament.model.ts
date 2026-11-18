@@ -104,6 +104,44 @@ export interface Participant {
   reasoningEffort?: ReasoningEffort | null;
 }
 
+export interface GameConfigurationPlayer {
+  playerName?: string | null;
+  modelId?: string | null;
+  controlType: Participant['controlType'];
+  reasoningEffortOverride?: ReasoningEffort | null;
+  requestedReasoningEffort?: ReasoningEffort | null;
+  instructionsHash?: string | null;
+  systemPromptHash?: string | null;
+}
+
+export interface GameConfiguration {
+  format?: string | null;
+  drawPolicy?: Tournament['drawPolicy'] | null;
+  matchupBestOf?: number | null;
+  finalsBestOf?: number | null;
+  openingMode?: OpeningMode | null;
+  configuredOpeningId?: string | null;
+  gameOpeningId?: string | null;
+  moveTimeoutSeconds?: number | null;
+  maxRetries: number;
+  maxOutputTokens: number;
+  chatMode: ChatMode;
+  banterLevel?: BanterLevel | null;
+  resignationAllowed: boolean;
+  adjudicationEnabled: boolean;
+  legalMoveHints: boolean;
+  reasoningEffort?: ReasoningEffort | null;
+  sharedInstructionsHash?: string | null;
+  defaultSystemPromptHash?: string | null;
+  white: GameConfigurationPlayer | null;
+  black: GameConfigurationPlayer | null;
+}
+
+export interface GameConfigurationRevision {
+  revision: number;
+  settings: GameConfiguration;
+}
+
 export interface Game {
   /** Immutable opening snapshot; absent for STANDARD and pre-feature games. */
   openingId?: string | null;
@@ -158,6 +196,7 @@ export interface Game {
     plies: number;
     evaluationCp?: number | null;
     evaluationMate?: number | null;
+    configurationRevision?: number | null;
   } | null;
   /**
    * Grows with every status change (start, pause, game over); status-change updates carry it too, so an older
@@ -172,6 +211,8 @@ export interface Game {
   turnChatMode?: ChatMode | null;
   turnBanterLevel?: BanterLevel | null;
   attempts?: MoveAttempt[] | null;
+  startingConfiguration?: GameConfiguration | null;
+  configurationHistory?: GameConfigurationRevision[];
   /**
    * The reasoning effort each side asks for (participant override, else the tournament's); null or absent for
    * the model default and human sides. The backend sends the nearest level the model supports.
@@ -287,6 +328,7 @@ export interface MoveAttempt {
   modelId: string | null;
   /** The status revision of the model turn that made this attempt. */
   turnStatusRevision?: number | null;
+  configurationRevision?: number | null;
   outcome: MoveAttemptOutcome;
   proposedMove: string | null;
   promptTokens: number | null;

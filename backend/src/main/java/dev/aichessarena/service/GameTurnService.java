@@ -3,6 +3,7 @@ package dev.aichessarena.service;
 import com.github.bhlangonijr.chesslib.Board;
 import dev.aichessarena.entity.BanterLevel;
 import dev.aichessarena.entity.ChatMode;
+import dev.aichessarena.entity.GameConfiguration;
 import dev.aichessarena.entity.MoveAttempt.Outcome;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Tournament;
@@ -127,6 +128,7 @@ public class GameTurnService {
             broadcastTurnTiming(request.gameId(), request.totalCostUsd(), request.sideToMove(), timing.startedAt(),
                     timing.deadlineAt(), request.tournamentChatMode(), request.tournamentBanterLevel());
         }
+        var attemptContext = new AttemptContext(effort, timing.configurationRevision());
         OpenRouterService.AnswerDeadline turnDeadline = null;
 
         int maxAttempts = Math.clamp(request.maxRetries(), Tournament.MIN_MOVE_ATTEMPTS, Tournament.MAX_MOVE_ATTEMPTS);
@@ -154,7 +156,7 @@ public class GameTurnService {
                 if (action == Action.PAUSE_PROVIDER) {
                     // Attribute an unrecorded marker rejection to the request that actually triggered it.
                     if (providerProblem.cacheRejectionAttempt() != 0) {
-                        recordAttempt(request, effort, providerProblem.cacheRejectionAttempt(), Outcome.PROVIDER_RETRYABLE,
+                        recordAttempt(request, attemptContext, providerProblem.cacheRejectionAttempt(), Outcome.PROVIDER_RETRYABLE,
                                 null, providerProblem.detail(), null);
                     }
                     return pauseForProvider(request, providerProblem.detail());
@@ -182,7 +184,7 @@ public class GameTurnService {
                         request.gameId(), request.modelId(), llmResponse.outcome(), detail);
                 Outcome outcome = llmResponse.outcome() == OpenRouterService.ProviderOutcome.FATAL
                         ? Outcome.PROVIDER_FATAL : Outcome.PROVIDER_RETRYABLE;
-                recordAttempt(request, effort, attempt, outcome, null, detail, llmResponse);
+                recordAttempt(request, attemptContext, attempt, outcome, null, detail, llmResponse);
                 Long delayMs = outcome == Outcome.PROVIDER_RETRYABLE && providerFailures < providerRetryBackoffMs.length
                         ? providerRetryBackoffMs[providerFailures] : null;
                 Action action = TurnPolicy.afterProviderFailure(outcome,
@@ -207,7 +209,7 @@ public class GameTurnService {
                         "OpenRouter rejected cache control (HTTP " + llmResponse.cacheRejectionStatus() + ")", attempt);
             }
             if (llmResponse.timedOut()) {
-                return handleResponseTimeout(request, effort, attempt, llmResponse, providerProblem);
+                return handleResponseTimeout(request, attemptContext, attempt, llmResponse, providerProblem);
             }
 
             ModelAnswer answer = assessModelAnswer(request, llmResponse, mayResign);
@@ -216,15 +218,15 @@ public class GameTurnService {
             switch (action) {
                 case ACCEPT -> {
                     if (answer.outcome() == Outcome.RESIGNED) {
-                        return resign(request, effort, attempt, answer.parsed(), llmResponse);
+                        return resign(request, attemptContext, attempt, answer.parsed(), llmResponse);
                     }
-                    return recordAcceptedMove(request, effort, attempt, answer.parsed(), answer.move(), llmResponse);
+                    return recordAcceptedMove(request, attemptContext, attempt, answer.parsed(), answer.move(), llmResponse);
                 }
                 case PAUSE_TRUNCATED -> {
-                    return pauseForTruncation(request, effort, attempt, answer.proposedMove(), llmResponse);
+                    return pauseForTruncation(request, attemptContext, attempt, answer.proposedMove(), llmResponse);
                 }
                 case RETRY_MODEL, FORFEIT_INVALID_MOVES -> recordRejectedAnswer(
-                        request, effort, attempt, maxAttempts, answer, llmResponse, action == Action.RETRY_MODEL);
+                        request, attemptContext, attempt, maxAttempts, answer, llmResponse, action == Action.RETRY_MODEL);
                 default -> throw new IllegalStateException("Unexpected action after assessing a model answer: " + action);
             }
             if (action == Action.FORFEIT_INVALID_MOVES) {
@@ -244,7 +246,7 @@ public class GameTurnService {
 
     private record ProviderProblem(String detail, int cacheRejectionAttempt) {}
 
-    private TurnResult handleResponseTimeout(TurnRequest request, ReasoningEffort effort, int attempt,
+    private TurnResult handleResponseTimeout(TurnRequest request, AttemptContext attemptContext, int attempt,
                                              OpenRouterService.LlmResponse response, ProviderProblem providerProblem) {
         Integer timeoutSeconds = request.moveTimeoutSeconds();
         Action action = TurnPolicy.afterModelResponse(Outcome.TIMEOUT, 0, providerProblem != null, timeoutSeconds != null);
@@ -252,10 +254,10 @@ public class GameTurnService {
             String detail = providerProblem != null
                     ? "Move time ran out after OpenRouter problems earlier in this turn (" + providerProblem.detail() + ")"
                     : "The OpenRouter request timed out although the tournament has no move time limit";
-            recordAttempt(request, effort, attempt, Outcome.PROVIDER_RETRYABLE, null, detail, response);
+            recordAttempt(request, attemptContext, attempt, Outcome.PROVIDER_RETRYABLE, null, detail, response);
             return pauseForProvider(request, detail);
         }
-        recordAttempt(request, effort, attempt, Outcome.TIMEOUT, null, "No answer within the move time", response);
+        recordAttempt(request, attemptContext, attempt, Outcome.TIMEOUT, null, "No answer within the move time", response);
         LOG.warnf("Game %s: %s timed out while generating move", request.gameId(), request.modelId());
         gameLifecycleService.forfeitTimeout(request.gameId(), request.sideToMove(), timeoutSeconds);
         return TurnResult.terminal();
@@ -295,7 +297,7 @@ public class GameTurnService {
         }
     }
 
-    private void recordRejectedAnswer(TurnRequest request, ReasoningEffort effort, int attempt, int maxAttempts,
+    private void recordRejectedAnswer(TurnRequest request, AttemptContext attemptContext, int attempt, int maxAttempts,
                                       ModelAnswer answer, OpenRouterService.LlmResponse response, boolean retry) {
         String proposedMove = answer.proposedMove();
         String detail;
@@ -331,7 +333,7 @@ public class GameTurnService {
             default -> throw new IllegalArgumentException("Expected an invalid model answer, got " + answer.outcome());
         }
 
-        recordAttempt(request, effort, attempt, answer.outcome(), proposedMove, detail, response);
+        recordAttempt(request, attemptContext, attempt, answer.outcome(), proposedMove, detail, response);
         broadcastRetry(request.gameId(), request.sideToMove(), attempt, retryReason, answer.outcome(), proposedMove);
         if (retry) {
             if (response.content() != null) {
@@ -342,7 +344,7 @@ public class GameTurnService {
         }
     }
 
-    private TurnResult recordAcceptedMove(TurnRequest request, ReasoningEffort effort, int attempt,
+    private TurnResult recordAcceptedMove(TurnRequest request, AttemptContext attemptContext, int attempt,
                                           ResponseParserService.ParseResult parseResult, ChessService.ValidMoveResult moveResult,
                                           OpenRouterService.LlmResponse llmResponse) {
         request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
@@ -373,7 +375,7 @@ public class GameTurnService {
             LOG.warnf("Game %s: discarding %s move %s: %s",
                     request.gameId(), request.sideToMove(), parseResult.move(), e.getMessage());
             // The move transaction has rolled back; keep the paid answer and its cost (added once, here).
-            recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
+            recordAttempt(request, attemptContext, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
             return TurnResult.stopped();
         }
         // Attempt recording can pause the run and stop its loop at the budget cap. Finalize the
@@ -385,7 +387,7 @@ public class GameTurnService {
         } else {
             terminal = gameLifecycleService.adjudicateIfEligible(request.gameId(), moveResult.fen());
         }
-        recordAttempt(request, effort, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
+        recordAttempt(request, attemptContext, attempt, Outcome.ACCEPTED, parseResult.move(), null, llmResponse);
         return terminal ? TurnResult.terminal() : TurnResult.recorded(moveResult.san(), message);
     }
 
@@ -401,7 +403,7 @@ public class GameTurnService {
      * with chat OFF). The answer is recorded as RESIGNED, with any move sent along as the ignored proposal; if the game
      * changed meanwhile it is recorded as DISCARDED instead, like a move that could not be played.
      */
-    private TurnResult resign(TurnRequest request, ReasoningEffort effort, int attempt, ResponseParserService.ParseResult parseResult,
+    private TurnResult resign(TurnRequest request, AttemptContext attemptContext, int attempt, ResponseParserService.ParseResult parseResult,
                               OpenRouterService.LlmResponse llmResponse) {
         request.history().add(new OpenRouterService.ChatMsg("assistant", llmResponse.content()));
         ChatMode chatMode = request.chatMode() != null ? request.chatMode() : ChatMode.OPTIONAL;
@@ -420,14 +422,14 @@ public class GameTurnService {
             ));
         } catch (GameStateConflictException e) {
             LOG.warnf("Game %s: discarding %s resignation: %s", request.gameId(), request.sideToMove(), e.getMessage());
-            recordAttempt(request, effort, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
+            recordAttempt(request, attemptContext, attempt, Outcome.DISCARDED, parseResult.move(), e.getMessage(), llmResponse);
             return TurnResult.stopped();
         }
-        recordAttempt(request, effort, attempt, Outcome.RESIGNED, parseResult.move(), null, llmResponse);
+        recordAttempt(request, attemptContext, attempt, Outcome.RESIGNED, parseResult.move(), null, llmResponse);
         return TurnResult.terminal();
     }
 
-    private TurnResult pauseForTruncation(TurnRequest request, ReasoningEffort effort, int attempt,
+    private TurnResult pauseForTruncation(TurnRequest request, AttemptContext attemptContext, int attempt,
                                           String proposedMove, OpenRouterService.LlmResponse response) {
         boolean reasoned = response.reasoningTokens() != null && response.reasoningTokens() > 0;
         String reasoning = reasoned ? " (%d of them reasoning)".formatted(response.reasoningTokens()) : "";
@@ -452,7 +454,7 @@ public class GameTurnService {
                 .formatted(request.playerName() != null ? request.playerName() : request.modelId(),
                         limit, reasoning, remedy);
         LOG.warnf("Game %s: %s", request.gameId(), detail);
-        recordAttempt(request, effort, attempt, Outcome.TRUNCATED, proposedMove, detail, response);
+        recordAttempt(request, attemptContext, attempt, Outcome.TRUNCATED, proposedMove, detail, response);
         gameLifecycleService.pauseWithReason(request.gameId(), detail);
         return TurnResult.paused();
     }
@@ -476,12 +478,15 @@ public class GameTurnService {
                 .formatted(base, effort.apiValue(), player);
     }
 
-    private void recordAttempt(TurnRequest request, ReasoningEffort effort, int attempt, Outcome outcome,
+    private record AttemptContext(ReasoningEffort effort, Integer configurationRevision) {}
+
+    private void recordAttempt(TurnRequest request, AttemptContext attemptContext, int attempt, Outcome outcome,
                                String proposedMove, String errorMessage, OpenRouterService.LlmResponse response) {
         try {
             moveAttemptService.record(new MoveAttemptService.AttemptRecord(
                     request.gameId(), request.moveNumber(), request.sideToMove(), attempt, request.modelId(),
-                    outcome, proposedMove, errorMessage, response, effort, request.statusRevision()));
+                    outcome, proposedMove, errorMessage, response, attemptContext.effort(), request.statusRevision(),
+                    attemptContext.configurationRevision()));
         } catch (RuntimeException e) {
             // The attempt is committed in its own transaction; a failed commit must not interrupt the game.
             LOG.warnf(e, "Game %s: could not record %s attempt", request.gameId(), outcome);
@@ -596,7 +601,8 @@ public class GameTurnService {
             // model default. playTurn maps it to a level the model supports before sending it.
             ReasoningEffort reasoningEffort,
             BanterLevel tournamentBanterLevel,
-            Long statusRevision
+            Long statusRevision,
+            GameConfiguration configuration
     ) {
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,
                            List<String> legalMoves, String modelId, String playerName, String opponentName,
@@ -608,7 +614,7 @@ public class GameTurnService {
             this(gameId, pgn, fen, board, sideToMove, moveNumber, legalMoves, modelId, playerName, opponentName,
                     history, lastMoveSan, lastMessage, isFirstMove, maxRetries, moveTimeoutSeconds, promptVersion,
                     promptHash, totalCostUsd, shouldContinue, maxOutputTokens, chatMode, tournamentChatMode,
-                    resignationAllowed, reasoningEffort, banterLevel, null);
+                    resignationAllowed, reasoningEffort, banterLevel, null, null);
         }
         /** Compatibility for callers without banter metadata. */
         public TurnRequest(UUID gameId, String pgn, String fen, Board board, String sideToMove, int moveNumber,

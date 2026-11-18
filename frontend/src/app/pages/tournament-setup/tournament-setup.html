@@ -831,7 +831,7 @@
                 <thead>
                   <tr>
                     <th scope="col">Setting</th>
-                    <th scope="col">Original</th>
+                    <th scope="col">Source now</th>
                     <th scope="col">New tournament</th>
                   </tr>
                 </thead>
@@ -845,6 +845,38 @@
                   }
                 </tbody>
               </table>
+            }
+            @if (rematchStartingGame(); as firstGame) {
+              <details>
+                <summary>Compare with the first game’s starting settings</summary>
+                @if (firstGame.startingConfiguration) {
+                  @let historicalChanges = rematchHistoricalChanges(firstGame);
+                  @if (historicalChanges.length) {
+                    <table class="rematch-diff" aria-label="Changes from the first game’s start">
+                      <thead>
+                        <tr>
+                          <th scope="col">Setting</th>
+                          <th scope="col">At first game start</th>
+                          <th scope="col">New tournament</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (change of historicalChanges; track change.setting) {
+                          <tr>
+                            <th scope="row">{{ change.setting }}</th>
+                            <td>{{ change.before }}</td>
+                            <td>{{ change.after }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  } @else {
+                    <p class="caption">The draft matches the recorded play settings.</p>
+                  }
+                } @else {
+                  <p class="caption">Starting settings are unknown for this game.</p>
+                }
+              </details>
             }
             @if (rematchWarnings().length) {
               <div

@@ -34,6 +34,8 @@ import { ApiService, PromptTemplateResponse } from '../../services/api.service';
 import {
   BracketDrawMode,
   ChatMode,
+  Game,
+  GameConfigurationPlayer,
   BanterLevel,
   Opening,
   OpeningMode,
@@ -44,6 +46,7 @@ import { OpenRouterModelOption } from '../../models/openrouter.model';
 import { ProviderLogoComponent } from '../../components/provider-logo/provider-logo';
 import { ModelPicker } from '../../components/model-picker/model-picker';
 import { ModelDetails } from '../../components/model-details/model-details';
+import { configurationDifferences } from '../../utils/game-configuration';
 import { handoffFocus } from './focus-handoff';
 import {
   REASONING_EFFORT_HINT,
@@ -274,6 +277,13 @@ Your opponent is %s (%s).`;
 
   readonly sourceId = signal<string | null>(null);
   readonly rematchSource = signal<Tournament | null>(null);
+  readonly rematchStartingGame = computed(() => {
+    const games = this.rematchSource()?.games.filter((game) => game.startedAt) ?? [];
+    return games.sort(
+      (left, right) =>
+        left.startedAt!.localeCompare(right.startedAt!) || left.id.localeCompare(right.id),
+    )[0];
+  });
   readonly rematchLoadError = signal<string | null>(null);
   readonly rematchAcknowledged = signal(false);
   readonly rematchConcurrency = signal<number | null>(2);
@@ -560,7 +570,16 @@ Your opponent is %s (%s).`;
         const ordered = [...source.participants].sort((a, b) => a.seed - b.seed);
         this.participants.set(
           ordered.map(
-            ({ playerName, controlType, modelId, customInstructions, seed, reasoningEffort }) => ({
+            ({
+              id,
+              playerName,
+              controlType,
+              modelId,
+              customInstructions,
+              seed,
+              reasoningEffort,
+            }) => ({
+              id,
               playerName,
               controlType,
               modelId,
@@ -712,6 +731,49 @@ Your opponent is %s (%s).`;
       }
     }
     return changes;
+  }
+
+  rematchHistoricalChanges(game: Game) {
+    const starting = game.startingConfiguration;
+    if (!starting) return [];
+    const draftPlayer = (id: string | null | undefined): GameConfigurationPlayer | null => {
+      const player = id
+        ? this.participants().find((participant) => participant.id === id)
+        : undefined;
+      if (!player) return null;
+      return {
+        playerName: player.playerName,
+        modelId: player.modelId,
+        controlType: player.controlType ?? 'AI',
+        reasoningEffortOverride: player.reasoningEffort,
+        requestedReasoningEffort:
+          player.controlType === 'HUMAN' ? null : (player.reasoningEffort ?? this.reasoningEffort),
+      };
+    };
+    return configurationDifferences(
+      starting,
+      {
+        ...starting,
+        format: 'SINGLE_ELIMINATION',
+        drawPolicy: this.drawPolicy,
+        matchupBestOf: this.matchupBestOf,
+        finalsBestOf: this.finalsBestOf,
+        openingMode: this.openingMode(),
+        configuredOpeningId: this.openingMode() === 'FIXED' ? this.openingId() : null,
+        moveTimeoutSeconds: this.limitMoveTime ? this.moveTimeout : null,
+        maxRetries: this.maxRetries() ?? starting.maxRetries,
+        maxOutputTokens: this.maxOutputTokens ?? starting.maxOutputTokens,
+        chatMode: this.chatMode,
+        banterLevel: this.banterLevel,
+        resignationAllowed: this.resignationAllowed,
+        adjudicationEnabled: this.adjudicationEnabled,
+        legalMoveHints: this.legalMoveHints,
+        reasoningEffort: this.reasoningEffort,
+        white: draftPlayer(game.whiteParticipantId),
+        black: draftPlayer(game.blackParticipantId),
+      },
+      false,
+    );
   }
 
   ngAfterViewInit(): void {
@@ -960,6 +1022,7 @@ Your opponent is %s (%s).`;
     this.participants.update((list) => {
       const previous = editing === null ? undefined : list[editing];
       const participant: SetupParticipant = {
+        ...(previous?.id ? { id: previous.id } : {}),
         playerName: this.newPlayerName.trim(),
         controlType: this.newControlType,
         modelId: this.newControlType === 'AI' ? this.newModelId : null,

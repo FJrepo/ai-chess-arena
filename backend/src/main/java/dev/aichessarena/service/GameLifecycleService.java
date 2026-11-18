@@ -68,6 +68,9 @@ public class GameLifecycleService {
     @Inject
     TournamentRunScheduler runScheduler;
 
+    @Inject
+    GameConfigurationHistory configurations;
+
     /**
      * Starts a WAITING or PAUSED game under the tournament and game row locks, or records a queued resume.
      *
@@ -102,6 +105,10 @@ public class GameLifecycleService {
             if (automatic) return null;
             throw new GameStateConflictException("The previous game loop is still running; try again shortly");
         }
+        boolean capturedStart = configurations != null && game.status == GameStatus.WAITING && game.startedAt == null;
+        if (capturedStart) {
+            game.startingConfiguration = configurations.capture(game);
+        }
         game.status = GameStatus.IN_PROGRESS;
         game.resumeRequestedAt = null;
         game.startedAt = game.startedAt != null ? game.startedAt : LocalDateTime.now();
@@ -109,6 +116,9 @@ public class GameLifecycleService {
         game.statusRevision++;
         gameRepository.persist(game);
         announceStatus(game, null, null);
+        if (capturedStart && liveUpdates != null) {
+            liveUpdates.changed(game, liveUpdates.change("gameDetailsChanged", gameId));
+        }
         return DtoMapper.toDto(game, false);
     }
 
@@ -237,6 +247,10 @@ public class GameLifecycleService {
         if (game == null || isTerminal(game) || isTournamentCancelled(game)) {
             return;
         }
+        completeLockedGame(game, endInfo);
+    }
+
+    private void completeLockedGame(Game game, ChessService.GameEndInfo endInfo) {
         game.status = GameStatus.COMPLETED;
         game.resumeRequestedAt = null;
         game.result = GameResult.valueOf(endInfo.result());
@@ -271,7 +285,10 @@ public class GameLifecycleService {
         if (winner == null) {
             return false;
         }
-        completeGame(gameId, new ChessService.GameEndInfo(winner + "_WINS", "ADJUDICATION"));
+        if (configurations != null) {
+            game.adjudicationConfigurationRevision = configurations.recordRevision(gameId, configurations.capture(game)).number();
+        }
+        completeLockedGame(game, new ChessService.GameEndInfo(winner + "_WINS", "ADJUDICATION"));
         return true;
     }
 

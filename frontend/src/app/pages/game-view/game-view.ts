@@ -1,3 +1,4 @@
+import { GameConfigurationHistory } from '../../components/game-configuration-history/game-configuration-history';
 import { OpenRouterAccess } from '../../services/openrouter-access';
 import { BoardThemeService } from '../../services/board-theme.service';
 import { MatMenuModule } from '@angular/material/menu';
@@ -115,6 +116,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
     GameInfoBar,
     QueuedResume,
     AdvantageBar,
+    GameConfigurationHistory,
   ],
   templateUrl: './game-view.html',
   styleUrl: './game-view.scss',
