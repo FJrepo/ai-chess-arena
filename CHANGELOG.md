@@ -33,7 +33,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- Centre the Live games switcher in the header, show running and paused status with green and amber indicators, and make matchups easier to scan in a narrower menu.
+- Centre the Live games switcher in the header, show running and paused status with green and amber indicators, and group matchups into bright Running, warm Paused and muted Last finished cards.
 - The attempts limit is called `maxAttempts` throughout the API, matching the *Max attempts per move* label.
 - Tournament creation through the API generates the bracket unless `generateBracket` is false, like the setup page.
 - Resuming a paused game while the tournament run's slots are full queues it by default for API clients too.

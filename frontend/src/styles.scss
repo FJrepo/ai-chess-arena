@@ -15,6 +15,13 @@
   --app-card-border: var(--mat-sys-outline-variant);
   --app-divider: var(--mat-sys-outline-variant);
   --app-live-glow: color-mix(in srgb, var(--app-live-lamp) 55%, transparent);
+  --app-live-games-panel-bg: var(--mat-sys-surface-bright);
+  --app-live-games-attention-bg: color-mix(
+    in srgb,
+    var(--app-warning-text) 8%,
+    var(--app-live-games-paused-bg)
+  );
+  --app-live-games-row-divider: color-mix(in srgb, var(--app-divider) 70%, var(--mat-sys-outline));
   --app-info-fill: color-mix(in srgb, var(--app-accent-info) 7%, var(--app-card-bg));
   --app-info-border: color-mix(in srgb, var(--app-accent-info) 45%, var(--app-divider));
   --app-quality-inaccuracy: var(--mat-sys-tertiary);
@@ -91,6 +98,13 @@ html {
   --app-hero-bar: #6f9152;
   --app-hero-glow: color-mix(in srgb, var(--mat-sys-primary) 16%, transparent);
   --app-card-bg: var(--mat-sys-surface-container-low);
+  --app-live-games-running-bg: var(--mat-sys-surface-container-lowest);
+  --app-live-games-paused-bg: #f7f3e9;
+  --app-live-games-finished-bg: color-mix(
+    in srgb,
+    var(--mat-sys-on-surface) 6%,
+    var(--app-live-games-running-bg)
+  );
 
   --app-card-shadow:
     0 1px 2px color-mix(in srgb, var(--mat-sys-shadow) 6%, transparent),
@@ -176,6 +190,17 @@ body.dark-theme {
   --app-hero-glow: color-mix(in srgb, var(--mat-sys-primary) 5%, transparent);
   --app-table-zebra: color-mix(in srgb, #ffffff 3%, transparent);
   --app-card-bg: var(--mat-sys-surface-container);
+  --app-live-games-running-bg: color-mix(
+    in srgb,
+    var(--mat-sys-on-surface) 4%,
+    var(--app-live-games-panel-bg)
+  );
+  --app-live-games-paused-bg: #4a463f;
+  --app-live-games-finished-bg: color-mix(
+    in srgb,
+    var(--mat-sys-surface-container-highest) 65%,
+    var(--app-live-games-panel-bg)
+  );
   --app-card-shadow: none;
   --app-success-text: color-mix(
     in srgb,
@@ -514,9 +539,15 @@ $board-themes: (
 }
 
 .mat-mdc-menu-panel.live-games-menu {
-  --mat-menu-container-color: var(--mat-sys-surface-container-high);
-  --mat-menu-container-elevation-shadow: var(--mat-sys-level3);
-  border: 1px solid var(--app-card-border);
+  --app-live-games-group-gap: var(--app-space-2);
+  --mat-menu-container-color: var(--app-live-games-panel-bg);
+  --mat-menu-container-elevation-shadow: var(--mat-sys-level5);
+  --mat-menu-container-shape: var(--app-surface-radius-md);
+  border: 1px solid var(--mat-sys-outline);
   max-width: min(var(--app-live-games-menu-width), 90vw);
   width: var(--app-live-games-menu-width);
+
+  > .mat-mdc-menu-content {
+    padding: var(--app-live-games-group-gap) var(--app-space-1);
+  }
 }

@@ -22,7 +22,7 @@
       }
     </span>
     @if (attention > 0) {
-      <span class="attention-marker" aria-hidden="true"></span>
+      <span class="attention-marker" aria-hidden="true">!</span>
     }
   </span>
   <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
@@ -46,12 +46,20 @@
     @let white = game.whitePlayerName ?? 'White';
     @let black = game.blackPlayerName ?? 'Black';
     @if ($first || game.status !== rows()[$index - 1].status) {
-      <div class="section-label" aria-hidden="true">{{ state }}</div>
+      <div
+        class="section-label"
+        [class.paused]="state === 'Paused'"
+        [class.finished]="state === 'Last finished'"
+        aria-hidden="true"
+      >
+        {{ state }}
+      </div>
     }
     <a
       mat-menu-item
       class="game-row"
-      [class.finished]="game.status === 'COMPLETED' || game.status === 'FORFEIT'"
+      [class.paused]="state === 'Paused'"
+      [class.finished]="state === 'Last finished'"
       [attr.data-live-game-id]="game.id"
       [routerLink]="['/games', game.id]"
     >
