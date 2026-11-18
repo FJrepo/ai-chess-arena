@@ -150,14 +150,37 @@ describe('AnalyticsDashboard', () => {
       minGames: 0,
       legalMoveHints: false,
     });
-    const quality = harness.routeNativeElement!.querySelector('.quality-table')!;
+    const element = harness.routeNativeElement!;
+    expect(element.textContent).toContain('Legal move hints');
+    expect(element.textContent).toContain('Comparison effort');
+    const quality = element.querySelector('.quality-table')!;
     const columns = Array.from(quality.querySelectorAll('th')).map((cell) =>
-      cell.textContent?.trim(),
+      cell.textContent?.replace(/\s+/g, ' ').trim(),
     );
-    expect(columns.slice(1, 3)).toEqual(['ACPL', 'Reasoning tokens / accepted move']);
+    expect(columns).toEqual([
+      'Model',
+      'Avg. centipawn loss ↓ lower is better',
+      'Reasoning tokens / accepted move',
+      'Blunders / game',
+      '?? Blunders',
+      '? Mistakes',
+      '?! Inaccuracies',
+      'Judged moves',
+    ]);
+    const header = quality.querySelector('thead th:nth-child(2)')!;
+    expect(header.classList.contains('num')).toBe(true);
+    expect(header.getAttribute('aria-sort')).toBe('ascending');
+    const descriptionId = header.getAttribute('aria-describedby');
+    expect(header.querySelector(`[id="${descriptionId}"]`)?.textContent?.trim()).toBe(
+      'lower is better',
+    );
+    expect(header.querySelector('span[aria-hidden="true"]')?.textContent).toBe('↓');
     const unjudged = quality.querySelector('tbody tr:nth-child(2)');
     expect(unjudged?.querySelector('td:nth-child(2)')?.textContent).toBe('n/a');
     expect(unjudged?.querySelector('td:nth-child(3)')?.textContent).toContain('n/a');
+    expect(unjudged?.querySelector('td:nth-child(3) .table-note')?.textContent).toBe(
+      '0/1 reported',
+    );
     expect(quality.querySelector('tbody td')?.textContent).toContain('Medium');
     expect(quality.querySelector('tbody td:nth-child(3)')?.firstChild?.textContent?.trim()).toBe(
       '0',
@@ -165,6 +188,91 @@ describe('AnalyticsDashboard', () => {
     expect(quality.querySelector('tbody td:nth-child(3) .table-note')?.textContent).toBe(
       '8/10 reported',
     );
+  });
+
+  it('shows the judged sample with effort below each model in Move Quality', async () => {
+    const cases = [
+      {
+        modelId: 'model.single-game',
+        overrides: { analyzedGames: 1, analyzedMoves: 12, averageCentipawnLoss: 30 },
+        note: '1 game judged',
+      },
+      {
+        modelId: 'model.many-games',
+        overrides: { analyzedGames: 18, analyzedMoves: 412, averageCentipawnLoss: 33 },
+        note: '18 games judged',
+      },
+      {
+        modelId: 'model.moves-only',
+        overrides: { analyzedMoves: 1, averageCentipawnLoss: 40 },
+        note: '1 move judged',
+      },
+      {
+        modelId: 'model.many-moves',
+        overrides: { analyzedMoves: 28, averageCentipawnLoss: 45 },
+        note: '28 moves judged',
+      },
+      {
+        modelId: 'model.zero',
+        overrides: {
+          analyzedGames: 0,
+          analyzedMoves: 0,
+          blunders: 0,
+          mistakes: 0,
+          inaccuracies: 0,
+          reasoning: { effort: 'xhigh', reportedMoves: 0, modelMoves: 1 },
+        } satisfies Partial<AnalyticsComparisonModel>,
+        note: 'no judged games · Extra high',
+      },
+      {
+        modelId: 'model.zero-moves',
+        overrides: {
+          analyzedMoves: 0,
+          reasoning: { effort: 'mixed', reportedMoves: 0, modelMoves: 1 },
+        } satisfies Partial<AnalyticsComparisonModel>,
+        note: 'no judged games · Mixed effort',
+      },
+      {
+        modelId: 'model.missing',
+        overrides: {
+          reasoning: { effort: 'default', reportedMoves: 0, modelMoves: 1 },
+        } satisfies Partial<AnalyticsComparisonModel>,
+        note: 'sample not reported · No explicit effort',
+      },
+    ];
+    const { harness } = await renderDashboard('?tab=quality', {
+      comparison: of({
+        windowDays: 30,
+        tournamentId: null,
+        minGames: 0,
+        gamesCount: 24,
+        models: cases.map(({ modelId, overrides }) => comparisonRow(modelId, overrides)),
+      }),
+    });
+
+    const table = harness.routeNativeElement!.querySelector('.quality-table')!;
+    const models = Array.from(table.querySelectorAll('tbody .model-id'));
+    expect(models).toHaveLength(cases.length);
+    for (const { modelId, note } of cases) {
+      const model = models.find((cell) => cell.textContent === modelId);
+      const sample = model?.nextElementSibling;
+      expect(sample?.classList.contains('table-note')).toBe(true);
+      expect(sample?.textContent?.replace(/\s+/g, ' ').trim()).toBe(note);
+    }
+
+    // Counters the API did not report read n/a, never an observed zero.
+    const missingRow = models.find((cell) => cell.textContent === 'model.missing')!.closest('tr')!;
+    const counters = Array.from(missingRow.querySelectorAll('td.num'))
+      .slice(-4)
+      .map((cell) => cell.textContent?.trim());
+    expect(counters).toEqual(['n/a', 'n/a', 'n/a', 'n/a']);
+    // Reported zeros stay zeros.
+    const zeroRow = models.find((cell) => cell.textContent === 'model.zero')!.closest('tr')!;
+    expect(
+      Array.from(zeroRow.querySelectorAll('td.num'))
+        .slice(-4)
+        .map((cell) => cell.textContent?.trim()),
+    ).toEqual(['0', '0', '0', '0']);
   });
 
   it('updates the tab query parameter with replaceUrl and keeps other parameters', async () => {
@@ -878,6 +986,7 @@ describe('AnalyticsDashboard', () => {
         }),
         comparisonRow('model.unknown'),
         comparisonRow('model.zero', {
+          gamesPlayed: 1,
           conversion: {
             evaluatedGames: 1,
             winningPositionsReached: 0,
@@ -887,6 +996,7 @@ describe('AnalyticsDashboard', () => {
             missedMates: 0,
           },
         }),
+        comparisonRow('model.unevaluated', { conversion: { evaluatedGames: 0 } }),
       ],
     };
     TestBed.configureTestingModule({
@@ -918,8 +1028,8 @@ describe('AnalyticsDashboard', () => {
     expect(table?.textContent).toContain('Adjudicated wins');
     const rows = Array.from(table?.querySelectorAll('tbody tr') ?? []);
     const converted = rows.find((row) => row.textContent?.includes('model.converted'));
-    expect(converted?.querySelector('.table-note')?.textContent).toContain(
-      '2 of 3 games evaluated',
+    expect(converted?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      '2 of 3 sides evaluated',
     );
     expect(
       Array.from(converted?.querySelectorAll('td.num') ?? []).map((cell) =>
@@ -927,17 +1037,27 @@ describe('AnalyticsDashboard', () => {
       ),
     ).toEqual(['2', '1', '1', '1', '4']);
     const unknown = rows.find((row) => row.textContent?.includes('model.unknown'));
+    expect(unknown?.querySelector('.col-model')?.children).toHaveLength(2);
+    expect(unknown?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      'sample not reported',
+    );
     expect(
-      Array.from(unknown?.querySelectorAll('td.num') ?? []).every(
-        (cell) => cell.textContent?.trim() === 'n/a',
-      ),
-    ).toBe(true);
+      Array.from(unknown?.querySelectorAll('td.num') ?? [], (cell) => cell.textContent?.trim()),
+    ).toEqual(['n/a', 'n/a', 'n/a', 'n/a', 'n/a']);
     const zero = rows.find((row) => row.textContent?.includes('model.zero'));
+    expect(zero?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      '1 of 1 side evaluated',
+    );
     expect(
       Array.from(zero?.querySelectorAll('td.num') ?? []).every(
         (cell) => cell.textContent?.trim() === '0',
       ),
     ).toBe(true);
+    const unevaluated = rows.find((row) => row.textContent?.includes('model.unevaluated'));
+    expect(unevaluated?.querySelector('.col-model')?.children).toHaveLength(2);
+    expect(unevaluated?.querySelector('.model-id + .judged-sample')?.textContent?.trim()).toBe(
+      'no judged games',
+    );
     expect(element.querySelector('.conversion-table-card .table-footnote')?.textContent).toContain(
       '≥90%',
     );
