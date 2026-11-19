@@ -9,7 +9,7 @@ import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.TypedQuery;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,7 +29,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
     }
 
     /** Request telemetry in the comparison window, without loading response bodies. */
-    public List<ReasoningAttempt> findReasoningAttempts(LocalDateTime cutoff, UUID tournamentId,
+    public List<ReasoningAttempt> findReasoningAttempts(Instant cutoff, UUID tournamentId,
                                                         Boolean legalMoveHints) {
         String condition = GameRepository.hintsJoin(legalMoveHints)
                 + " where g.status in :reasoningStatuses and g.completedAt >= :cutoff and g.benchmarkPairId is null"
@@ -91,7 +91,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
     public record ResolvedModel(String alias, String modelId) {}
 
     /** Lightweight usage projection for every outcome, without loading raw responses. */
-    public List<AttemptUsage> findUsageInWindow(LocalDateTime cutoff, UUID tournamentId) {
+    public List<AttemptUsage> findUsageInWindow(Instant cutoff, UUID tournamentId) {
         TypedQuery<Object[]> query = getEntityManager().createQuery(
                 "select a.game.id, a.modelId, a.promptTokens, a.cachedPromptTokens, a.cacheWriteTokens, a.color "
                         + "from MoveAttempt a where (a.promptTokens is not null or a.completionTokens is not null "
@@ -116,7 +116,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
      * Cost of the attempts that did not become a move, per game and model, for the games in an analytics window
      * (see {@link GameRepository#findInWindow}). Accepted attempts are left out: their cost is on the move.
      */
-    public List<RejectedAttemptCost> findRejectedCostsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+    public List<RejectedAttemptCost> findRejectedCostsInWindow(Instant cutoff, UUID tournamentId) {
         return rejectedCosts(
                 " and " + GameRepository.windowPredicate("a.game")
                         + GameRepository.tournamentPredicate("a.game", tournamentId),
@@ -148,7 +148,7 @@ public class MoveAttemptRepository implements PanacheRepositoryBase<MoveAttempt,
      * the RESIGNED attempts and the model's own failures (see {@link Outcome#isModelFailure()}). A resigned turn has
      * no move, so its failed attempts are not counted as retries anywhere else.
      */
-    public List<ResignationTurnAttempt> findResignationTurnAttemptsInWindow(LocalDateTime cutoff, UUID tournamentId) {
+    public List<ResignationTurnAttempt> findResignationTurnAttemptsInWindow(Instant cutoff, UUID tournamentId) {
         List<Outcome> outcomes = new java.util.ArrayList<>();
         for (Outcome outcome : Outcome.values()) {
             if (outcome == Outcome.RESIGNED || outcome.isModelFailure()) {

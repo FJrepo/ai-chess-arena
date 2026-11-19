@@ -1,6 +1,6 @@
 package dev.aichessarena.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record ChatMessageDto(
@@ -9,5 +9,5 @@ public record ChatMessageDto(
         String senderModel,
         String senderColor,
         String message,
-        LocalDateTime createdAt
+        Instant createdAt
 ) {}

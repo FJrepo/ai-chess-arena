@@ -1,7 +1,7 @@
 package dev.aichessarena.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record MoveAttemptDto(
@@ -19,7 +19,7 @@ public record MoveAttemptDto(
         Long responseTimeMs,
         String finishReason,
         String errorMessage,
-        LocalDateTime createdAt,
+        Instant createdAt,
         // The reasoning effort sent with this attempt (lower case); null when none was sent.
         String reasoningEffort,
         Integer effectiveMaxOutputTokens,

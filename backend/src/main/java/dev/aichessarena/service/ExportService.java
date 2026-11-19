@@ -11,6 +11,7 @@ import dev.aichessarena.repository.ExportRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,8 +25,15 @@ import java.util.stream.Collectors;
 /** Read-only portable exports, independent of analytics aggregation and provider configuration. */
 @ApplicationScoped
 public class ExportService {
-    /** JSON export contract version: 2 since settings.maxRetries became settings.maxAttempts (2.0). */
-    static final int SCHEMA_VERSION = 2;
+    /**
+     * JSON export contract version: 2 since settings.maxRetries became settings.maxAttempts (2.0); 3 since every
+     * timestamp carries an explicit UTC offset (2.0.1).
+     */
+    static final int SCHEMA_VERSION = 3;
+
+    /** PGN Date: the UTC calendar date, whatever the server's time zone. */
+    private static final DateTimeFormatter PGN_DATE =
+            DateTimeFormatter.ofPattern("yyyy.MM.dd").withZone(ZoneOffset.UTC);
 
     @Inject
     ExportRepository repository;
@@ -69,7 +77,7 @@ public class ExportService {
         tag(out, "Event", game.tournament == null ? "AI Chess Arena" : game.tournament.name);
         tag(out, "Site", "AI Chess Arena");
         var date = game.startedAt != null ? game.startedAt : game.createdAt;
-        tag(out, "Date", date == null ? "????.??.??" : date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd")));
+        tag(out, "Date", date == null ? "????.??.??" : PGN_DATE.format(date));
         tag(out, "Round", round(game, openingSize));
         tag(out, "White", game.whitePlayerName);
         tag(out, "Black", game.blackPlayerName);

@@ -269,7 +269,7 @@ class ExportIT {
                 .header("Content-Type", containsString("application/json"))
                 .header("Content-Type", containsString("charset=utf-8"))
                 .header("Content-Disposition", equalTo("attachment; filename=\"tournament-" + f.tournamentId + ".json\""))
-                .body("schemaVersion", equalTo(2))
+                .body("schemaVersion", equalTo(3))
                 .body("id", equalTo(f.tournamentId.toString()))
                 .body("settings.maxAttempts", equalTo(3))
                 .body("settings.reasoningEffort", equalTo("low"))

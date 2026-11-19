@@ -7,6 +7,7 @@ import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.ReasoningEffort;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Timestamps;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.TournamentRepository;
@@ -23,7 +24,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -156,7 +156,7 @@ public class TournamentResource {
         if (req.drawPolicy() != null) t.drawPolicy = parseDrawPolicy(req.drawPolicy());
         // null (omitted) keeps the current level, "default" clears it; applies from the next turn of running games.
         if (req.reasoningEffort() != null) t.reasoningEffort = parseTournamentReasoningEffort(req.reasoningEffort());
-        t.updatedAt = LocalDateTime.now();
+        t.updatedAt = Timestamps.now();
         tournamentRepository.persist(t);
         return Response.ok(DtoMapper.toDto(t)).build();
     }

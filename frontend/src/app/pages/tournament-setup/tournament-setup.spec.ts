@@ -89,7 +89,7 @@ describe('TournamentSetup', () => {
     const firstGame = {
       ...source.games[0],
       id: 'first-game',
-      startedAt: '2026-11-18T10:00:00',
+      startedAt: '2026-11-18T10:00:00Z',
       whiteParticipantId: 'old-p1',
       blackParticipantId: 'old-p2',
       startingConfiguration: {
@@ -119,7 +119,7 @@ describe('TournamentSetup', () => {
       },
     } as Tournament['games'][number];
     source.games = [
-      { ...firstGame, id: 'later-game', startedAt: '2026-11-18T10:01:00' },
+      { ...firstGame, id: 'later-game', startedAt: '2026-11-18T10:01:00Z' },
       firstGame,
     ];
     api.getTournament = () => of(source);
@@ -147,10 +147,36 @@ describe('TournamentSetup', () => {
     });
   });
 
+  it('takes the earliest started game by instant when fractional seconds differ', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.games = [
+      { ...source.games[0], id: 'fraction', startedAt: '2026-11-18T10:00:00.5Z' },
+      { ...source.games[0], id: 'whole', startedAt: '2026-11-18T10:00:00Z' },
+    ];
+    api.getTournament = () => of(source);
+    const fixture = await renderSetup(api, 'old');
+
+    expect(fixture.componentInstance.rematchStartingGame()?.id).toBe('whole');
+  });
+
+  it('ignores games with an unreadable start time when choosing the first game', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.games = [
+      { ...source.games[0], id: 'invalid', startedAt: '2026-02-30T12:00:00Z' },
+      { ...source.games[0], id: 'valid', startedAt: '2026-11-18T10:00:00Z' },
+    ];
+    api.getTournament = () => of(source);
+    const fixture = await renderSetup(api, 'old');
+
+    expect(fixture.componentInstance.rematchStartingGame()?.id).toBe('valid');
+  });
+
   it('says when the first game predates configuration history', async () => {
     const api = createApiService();
     const source = rematchSource();
-    source.games = [{ ...source.games[0], startedAt: '2026-11-18T10:00:00' }];
+    source.games = [{ ...source.games[0], startedAt: '2026-11-18T10:00:00Z' }];
     api.getTournament = () => of(source);
     const fixture = await renderSetup(api, 'old');
 

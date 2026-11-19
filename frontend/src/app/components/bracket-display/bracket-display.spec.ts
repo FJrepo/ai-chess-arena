@@ -26,6 +26,21 @@ describe('BracketDisplay', () => {
     expect(component.getResultText(card)).toContain('White wins');
   });
 
+  it('orders same-numbered series games by instant, not by text', () => {
+    const component = new BracketDisplay();
+    const finished = {
+      seriesId: 'series-final',
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+    } as const;
+    component.games = [
+      game('later', 'Final', 0, { ...finished, createdAt: '2026-11-18T10:00:00.5Z' }),
+      game('earlier', 'Final', 0, { ...finished, createdAt: '2026-11-18T10:00:00Z' }),
+    ];
+
+    expect(component.rounds()[0].games[0].currentGame.id).toBe('later');
+  });
+
   it('orders larger rounds before smaller rounds', () => {
     const component = new BracketDisplay();
 

@@ -3,7 +3,6 @@ package dev.aichessarena.dto;
 import dev.aichessarena.entity.GameConfiguration;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,9 +33,9 @@ public record GameDto(
         int seriesGameNumber,
         int seriesBestOf,
         BigDecimal totalCostUsd,
-        LocalDateTime createdAt,
-        LocalDateTime startedAt,
-        LocalDateTime completedAt,
+        Instant createdAt,
+        Instant startedAt,
+        Instant completedAt,
         List<MoveDto> moves,
         List<ChatMessageDto> chatMessages,
         /** Per-side move quality; only with the moves (single game), otherwise null. */

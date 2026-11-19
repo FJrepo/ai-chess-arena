@@ -6,6 +6,7 @@ import dev.aichessarena.entity.BracketDrawMode;
 import dev.aichessarena.entity.Game;
 import dev.aichessarena.entity.OpeningMode;
 import dev.aichessarena.entity.ReasoningEffort;
+import dev.aichessarena.entity.Timestamps;
 import dev.aichessarena.entity.Tournament;
 import dev.aichessarena.entity.TournamentParticipant;
 import dev.aichessarena.repository.GameRepository;
@@ -22,7 +23,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -105,7 +105,7 @@ public class TournamentService {
         tournament.status = Tournament.TournamentStatus.CANCELLED;
         tournament.autoRunStatus = Tournament.AutoRunStatus.OFF;
         tournament.autoRunPauseReason = null;
-        tournament.updatedAt = LocalDateTime.now();
+        tournament.updatedAt = Timestamps.now();
         for (Game game : gameRepository.findByTournamentId(tournamentId)) {
             gameLifecycleService.cancelGame(game.id);
         }
@@ -247,7 +247,7 @@ public class TournamentService {
             throw new IllegalArgumentException("Human participants have no reasoning effort");
         }
         participant.reasoningEffort = effort;
-        tournament.updatedAt = LocalDateTime.now();
+        tournament.updatedAt = Timestamps.now();
         return participant;
     }
 

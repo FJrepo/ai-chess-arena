@@ -18,7 +18,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -58,12 +58,12 @@ class LeaderboardIT {
             // No date window: this result must still count, even in a cancelled tournament.
             first.status = Tournament.TournamentStatus.CANCELLED;
             Game old = game(first, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS,
-                    LocalDateTime.of(2000, 1, 1, 12, 0));
+                    Instant.parse("2000-01-01T12:00:00Z"));
             old.resultReason = Game.ResultReason.ADJUDICATION;
             recordEffort(old, ReasoningEffort.LOW);
             Tournament second = tournament(false);
             Game forfeit = game(second, Game.GameStatus.FORFEIT, Game.GameResult.WHITE_FORFEIT,
-                    LocalDateTime.of(2000, 1, 2, 12, 0));
+                    Instant.parse("2000-01-02T12:00:00Z"));
             forfeit.resultReason = Game.ResultReason.TIMEOUT;
             recordEffort(forfeit, ReasoningEffort.HIGH);
             Game pending = game(second, Game.GameStatus.PAUSED, null, null);
@@ -96,7 +96,7 @@ class LeaderboardIT {
         assertEquals(Boolean.TRUE, value(response, alpha, "provisional"));
         assertEquals(2, value(response, alpha, "ratingHistory.size()"));
         assertEquals("mixed", value(response, alpha, "reasoningEffort"));
-        assertEquals("2000-01-02T12:00:00", value(response, alpha, "lastPlayed"));
+        assertEquals("2000-01-02T12:00:00Z", value(response, alpha, "lastPlayed"));
     }
 
     @Test
@@ -143,7 +143,7 @@ class LeaderboardIT {
         assertEquals(0, value(response, alpha, "forfeits"));
         assertEquals(1, value(response, alpha, "ratingHistory.size()"));
         assertEquals("low", value(response, alpha, "reasoningEffort"));
-        assertEquals("2000-01-01T12:00:00", value(response, alpha, "lastPlayed"));
+        assertEquals("2000-01-01T12:00:00Z", value(response, alpha, "lastPlayed"));
     }
 
     @ParameterizedTest
@@ -162,11 +162,11 @@ class LeaderboardIT {
             Tournament tournament = tournaments.findById(tournamentIds.getFirst());
             for (Game.GameStatus status : List.of(Game.GameStatus.CANCELLED, Game.GameStatus.WAITING,
                     Game.GameStatus.IN_PROGRESS, Game.GameStatus.PAUSED)) {
-                game(tournament, status, Game.GameResult.WHITE_WINS, LocalDateTime.now());
+                game(tournament, status, Game.GameResult.WHITE_WINS, Instant.now());
             }
-            Game bye = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS, LocalDateTime.now());
+            Game bye = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS, Instant.now());
             bye.blackPlayerName = "BYE";
-            Game human = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS, LocalDateTime.now());
+            Game human = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS, Instant.now());
             TournamentParticipant participant = new TournamentParticipant();
             participant.tournament = tournament;
             participant.playerName = "Human";
@@ -174,7 +174,7 @@ class LeaderboardIT {
             participants.persist(participant);
             human.blackParticipant = participant;
             // Stale model id on a human side must not bypass the scope rule.
-            Game missingModel = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.DRAW, LocalDateTime.now());
+            Game missingModel = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.DRAW, Instant.now());
             missingModel.blackModelId = null;
             game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.DRAW, null);
         });
@@ -189,7 +189,7 @@ class LeaderboardIT {
             pending.status = Game.GameStatus.COMPLETED;
             pending.result = Game.GameResult.BLACK_WINS;
             pending.resultReason = Game.ResultReason.RESIGNATION;
-            pending.completedAt = LocalDateTime.of(2000, 1, 3, 12, 0);
+            pending.completedAt = Instant.parse("2000-01-03T12:00:00Z");
         });
         assertEquals(3, value(leaderboard(true), alpha, "games"));
         assertEquals(3, value(leaderboard(true), alpha, "ratingHistory.size()"));
@@ -202,7 +202,7 @@ class LeaderboardIT {
             Tournament tournament = tournament();
             for (int i = 0; i < 5000; i++) {
                 Game game = game(tournament, Game.GameStatus.COMPLETED, Game.GameResult.WHITE_WINS,
-                        LocalDateTime.of(2001, 1, 1, 0, 0).plusSeconds(i));
+                        Instant.parse("2001-01-01T00:00:00Z").plusSeconds(i));
                 game.whiteModelId = prefix + (i % 100);
                 game.blackModelId = prefix + ((i + 1) % 100);
             }
@@ -256,7 +256,7 @@ class LeaderboardIT {
     }
 
     private Game game(Tournament tournament, Game.GameStatus status, Game.GameResult result,
-                      LocalDateTime completedAt) {
+                      Instant completedAt) {
         Game game = new Game();
         game.tournament = tournament;
         game.whiteModelId = alpha;

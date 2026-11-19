@@ -15,7 +15,7 @@ const base: BenchmarkSummary = {
   id: 'base',
   name: 'Ladder fixture',
   status: 'FINISHED',
-  createdAt: '2026-01-01T15:00:00',
+  createdAt: '2026-01-01T15:00:00Z',
   pauseReason: null,
   rerunOf: null,
 };

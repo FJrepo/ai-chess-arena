@@ -5,7 +5,7 @@ import dev.aichessarena.entity.MoveAttempt.Outcome;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -59,15 +59,15 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
         parameters.map().forEach(query::setParameter);
         return query.getResultList().stream()
                 .map(row -> new ReasoningPly((UUID) row[0], (String) row[1], (String) row[2], (Integer) row[3],
-                        (Integer) row[4], (Boolean) row[5], (Boolean) row[6], (LocalDateTime) row[7], (UUID) row[8]))
+                        (Integer) row[4], (Boolean) row[5], (Boolean) row[6], (Instant) row[7], (UUID) row[8]))
                 .toList();
     }
 
     public record ReasoningPly(UUID gameId, String color, String modelId, int moveNumber, int retryCount,
-                               boolean book, boolean override, LocalDateTime createdAt, UUID id) {}
+                               boolean book, boolean override, Instant createdAt, UUID id) {}
 
     /** Moves of the games in an analytics window (see {@link GameRepository#findInWindow}). */
-    public List<Move> findInWindow(LocalDateTime cutoff, UUID tournamentId) {
+    public List<Move> findInWindow(Instant cutoff, UUID tournamentId) {
         return list(
                 "from Move m where " + GameRepository.windowPredicate("m.game")
                         + GameRepository.tournamentPredicate("m.game", tournamentId),

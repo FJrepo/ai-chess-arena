@@ -73,6 +73,19 @@ function storedMove(moveNumber: number, color: 'WHITE' | 'BLACK', san: string, f
   };
 }
 
+/** Runs Date in another local zone (Node applies TZ changes immediately); returns the restore step. */
+function useTimeZone(zone: string): () => void {
+  const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process
+    ?.env;
+  if (!env) throw new Error('time zone tests need the Node test runner');
+  const previous = env['TZ'];
+  env['TZ'] = zone;
+  return () => {
+    if (previous === undefined) delete env['TZ'];
+    else env['TZ'] = previous;
+  };
+}
+
 function liveMove(
   moveNumber: number,
   color: 'WHITE' | 'BLACK',
@@ -401,6 +414,66 @@ describe('GameView', () => {
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('.opening-label')?.textContent,
     ).toContain('C60 · Ruy Lopez');
+  });
+
+  it('shows UTC feed timestamps in the browser time zone', async () => {
+    const restoreTimeZone = useTimeZone('Europe/Vienna');
+    try {
+      TestBed.configureTestingModule({
+        imports: [GameView],
+        providers: [
+          { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+          provideRouter([]),
+          {
+            provide: ActivatedRoute,
+            useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+          },
+          {
+            provide: ApiService,
+            useValue: {
+              getGame: () =>
+                of(
+                  gameWith({
+                    status: 'PAUSED',
+                    startedAt: '2026-11-18T23:05:00Z',
+                    moves: [
+                      {
+                        ...storedMove(1, 'WHITE', 'e4', AFTER_E4),
+                        createdAt: '2026-11-18T23:15:24.540714Z',
+                      },
+                    ],
+                  }),
+                ),
+              getGameAttempts: () => of([]),
+              getSystemStatus: () => EMPTY,
+              getModels: () => of({ data: [] }),
+            },
+          },
+          {
+            provide: WebSocketService,
+            useValue: {
+              connect: vi.fn(),
+              subscribeToGame: vi.fn(),
+              unsubscribeFromGame: vi.fn(),
+              getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
+              reconnected: () => EMPTY,
+            },
+          },
+        ],
+      });
+      const fixture = TestBed.createComponent(GameView);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const times = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll('.timeline-time'),
+        (time) => time.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+      // Vienna is UTC+1 in November: the move at 23:15 UTC shows 12:15 AM, the start at 23:05 UTC 12:05 AM.
+      expect(times).toEqual(['12:15 AM', '12:05 AM']);
+      fixture.destroy();
+    } finally {
+      restoreTimeZone();
+    }
   });
 
   it('brings the final ply back into view on Last move even when it is still selected', () => {
@@ -1856,14 +1929,14 @@ describe('GameView', () => {
     const started = '2026-10-25T01:00:00Z';
     const prior = attemptFixture({
       turnStatusRevision: 4,
-      createdAt: '2026-10-25T02:00:00',
+      createdAt: '2026-10-25T02:00:00Z',
       attemptNumber: 3,
       errorMessage: 'Previous turn',
       proposedMove: 'Qxh7',
     });
     const current = attemptFixture({
       turnStatusRevision: 6,
-      createdAt: '2026-10-25T02:00:01',
+      createdAt: '2026-10-25T02:00:01Z',
       errorMessage: 'Bad move',
       proposedMove: 'Qxh8',
     });
@@ -1889,7 +1962,7 @@ describe('GameView', () => {
         {
           type: 'committedAttempt',
           gameId: 'g-1',
-          attempt: { ...prior, id: 'late', createdAt: '2026-10-25T02:01:00' },
+          attempt: { ...prior, id: 'late', createdAt: '2026-10-25T02:01:00Z' },
         },
         state,
       ),
@@ -2067,7 +2140,7 @@ describe('GameView', () => {
       statusRevision: 9,
       status: 'PAUSED',
       streamId: 'first',
-      resumeRequestedAt: '2026-11-17T23:00:00',
+      resumeRequestedAt: '2026-11-17T23:00:00Z',
     });
     gameLoad.next(queued);
     component.resumeGame();
@@ -2145,7 +2218,7 @@ describe('GameView', () => {
     Object.assign(api, { getTournament: () => of({ moveTimeoutSeconds: 30 }) });
     component.ngOnInit();
     messages.next({ type: 'subscriptionUnavailable', gameId: 'g-1' });
-    gameLoad.next(gameWith({ tournamentId: 't-1', startedAt: '2026-01-01T00:00:00' }));
+    gameLoad.next(gameWith({ tournamentId: 't-1', startedAt: '2026-01-01T00:00:00Z' }));
     expect(component.activeColor()).toBe('WHITE');
     expect(component.moveTimerSeconds()).toBeNull();
     expect(component.displayedChatMode()).toBeNull();

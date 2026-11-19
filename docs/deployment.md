@@ -45,6 +45,15 @@ Deletion flags the owning loop before eviction and prevents a concurrent human-t
 
 For native runs, export these variables in the backend process environment. For containers, pass them through an operator-owned Compose override under `services.backend.environment`; adding them only to the root `.env` does not forward them to the backend. Deploy this change by rebuilding/recreating the backend; configuration changes require recreating it with the new environment. No frontend rebuild, migration, backfill or bundled-software update is needed. Existing persisted moves, attempts, counters and spend stay unchanged. Restarts/resumes and prompt-affecting settings changes start a fresh cache prefix; model minimum lengths, expiry and routing still determine actual hits.
 
+## UTC timestamps migration (V34)
+
+Back up the database before upgrading, upgrade while no games are running, and recreate the backend and frontend together. Flyway `V34__utc_timestamps.sql` converts the remaining `timestamp without time zone` columns (`tournaments.created_at`/`updated_at`, `games.created_at`/`started_at`/`completed_at`, `moves.created_at`, `chat_messages.created_at` and `move_attempts.created_at`) to `timestamptz`, reading each stored value as UTC. With its session in UTC, PostgreSQL changes only the column types and rewrites no table. Only the small partial index `idx_practice_games_created` is rebuilt. The migration holds short exclusive table locks during backend startup. From then on the backend stores and returns absolute instants, and the API sends them with an explicit offset (`2026-11-18T23:15:24.540714Z`); see [Timestamps and time zones](how-it-works.md#timestamps-and-time-zones). Run nothing before V34. Restore the pre-upgrade backup to roll back the schema.
+
+Earlier versions stored the backend's local wall-clock time without a zone:
+
+- **Docker installs** need nothing: the backend container and the PostgreSQL container run in UTC, so V34 converts their values exactly. This assumes you did not set `TZ` or `-Duser.timezone` for the backend.
+- **Source installs** whose backend ran in a non-UTC JVM zone (for example `mvn quarkus:dev` on a machine set to CET) will see older timestamps shifted by that zone's offset; rows written after the upgrade are correct. You can accept the shift: times from before the upgrade display shifted, and chronological views and the leaderboard's rating order can be off by up to that offset across the upgrade. Or restore the pre-upgrade backup and ask for help in a [GitHub issue](https://github.com/FJrepo/ai-chess-arena/issues).
+
 ## Durable runs migration (V32)
 
 Back up the database before upgrading and recreate the backend and frontend together. Flyway `V32__durable_runs.sql` adds a game loop's ownership token and lease and the record of a model request in flight. The previous version recorded no requests, so the migration pauses games it left in progress with **Paused by the upgrade to durable runs: a model request may have been in flight. Check spend, then resume.**, and pauses running auto-runs with **Backend restarted**, as a 1.x restart did. Check spend, then resume the runs and games. Moves, attempts, results and spend are retained. Restore the pre-upgrade backup to roll back the schema.
@@ -329,6 +338,10 @@ docker compose -f "$compose_file" logs --tail=120 backend
 ```
 
 Flyway migrations run automatically on backend startup.
+
+### Upgrading from 2.0.0 to 2.0.1
+
+Flyway applies V34 ([UTC timestamps](#utc-timestamps-migration-v34)) with short exclusive locks at startup and no table rewrite; only one small index is rebuilt. Back up first, upgrade while no games are running, and recreate backend and frontend together. Source installs that ran the backend outside UTC should read that section first: their older timestamps appear shifted. API clients that parse timestamps now receive an explicit UTC offset; the JSON export reports `schemaVersion: 3`.
 
 ### Upgrading from 1.9 to 2.0
 

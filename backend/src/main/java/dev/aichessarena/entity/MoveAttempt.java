@@ -14,7 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /** One model attempt at a ply, including failed ones (illegal move, unparseable, truncated, provider errors). */
@@ -97,7 +97,7 @@ public class MoveAttempt extends PanacheEntityBase {
     public String rawResponse;
 
     @Column(name = "created_at", nullable = false)
-    public LocalDateTime createdAt = LocalDateTime.now();
+    public Instant createdAt = Timestamps.now();
 
     /** The immutable configured settings read for the model turn, when known. */
     @Column(name = "configuration_revision")

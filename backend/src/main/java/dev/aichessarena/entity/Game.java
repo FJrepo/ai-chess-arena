@@ -4,7 +4,6 @@ import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -204,13 +203,13 @@ public class Game extends PanacheEntityBase {
     public BigDecimal totalCostUsd = BigDecimal.ZERO;
 
     @Column(name = "created_at", nullable = false)
-    public LocalDateTime createdAt = LocalDateTime.now();
+    public Instant createdAt = Timestamps.now();
 
     @Column(name = "started_at")
-    public LocalDateTime startedAt;
+    public Instant startedAt;
 
     @Column(name = "completed_at")
-    public LocalDateTime completedAt;
+    public Instant completedAt;
 
     /** Play order: White and Black share a move number, and "WHITE" sorts after "BLACK", hence color DESC. */
     @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)

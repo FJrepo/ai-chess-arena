@@ -3,7 +3,7 @@ package dev.aichessarena.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -83,5 +83,5 @@ public class Move extends PanacheEntityBase {
     public ChatMode chatMode;
 
     @Column(name = "created_at", nullable = false)
-    public LocalDateTime createdAt = LocalDateTime.now();
+    public Instant createdAt = Timestamps.now();
 }

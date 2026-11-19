@@ -11,7 +11,8 @@ import dev.aichessarena.service.MoveQualityClassifier.Exclusion;
 import dev.aichessarena.service.MoveQualityClassifier.GameSummary;
 import dev.aichessarena.service.MoveQualityClassifier.Judgement;
 import dev.aichessarena.service.MoveQualityClassifier.MoveQuality;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -268,7 +269,7 @@ class MoveQualityClassifierTest {
         Move anotherDuplicate = move(2, "WHITE", "Nf3", "fen", 0, null);
         List<Move> moves = List.of(before, duplicateBefore, missed, duplicateMissed, anotherDuplicate);
         for (int i = 0; i < moves.size(); i++) {
-            moves.get(i).createdAt = LocalDateTime.of(2026, 1, 1, 0, 0).plusSeconds(i);
+            moves.get(i).createdAt = Instant.parse("2026-01-01T00:00:00Z").plusSeconds(i);
         }
 
         List<MoveQuality> qualities = MoveQualityClassifier.analyze(moves);
@@ -347,7 +348,7 @@ class MoveQualityClassifierTest {
         move.fen = fen;
         move.evaluationCp = cp;
         move.evaluationMate = mate;
-        move.createdAt = LocalDateTime.of(2026, 1, 1, 12, 0).plusMinutes(number);
+        move.createdAt = Instant.parse("2026-01-01T12:00:00Z").plus(number, ChronoUnit.MINUTES);
         return move;
     }
 }

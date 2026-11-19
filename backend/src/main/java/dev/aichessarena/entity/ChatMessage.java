@@ -2,7 +2,7 @@ package dev.aichessarena.entity;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -30,5 +30,5 @@ public class ChatMessage extends PanacheEntityBase {
     public String message;
 
     @Column(name = "created_at", nullable = false)
-    public LocalDateTime createdAt = LocalDateTime.now();
+    public Instant createdAt = Timestamps.now();
 }

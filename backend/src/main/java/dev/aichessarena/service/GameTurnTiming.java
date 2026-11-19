@@ -2,6 +2,7 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.entity.ChatMode;
 import dev.aichessarena.entity.Game;
+import dev.aichessarena.entity.Timestamps;
 import dev.aichessarena.repository.GameRepository;
 import dev.aichessarena.repository.MoveRepository;
 import dev.aichessarena.websocket.GameWebSocket;
@@ -38,7 +39,7 @@ class GameTurnTiming {
 
     record TurnTimes(Instant startedAt, Instant deadlineAt, Integer configurationRevision) {
         static TurnTimes start(Integer timeoutSeconds) {
-            Instant startedAt = Instant.now();
+            Instant startedAt = Timestamps.now();
             return new TurnTimes(startedAt, timeoutSeconds == null ? null : startedAt.plusSeconds(timeoutSeconds), null);
         }
     }

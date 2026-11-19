@@ -1,6 +1,7 @@
 package dev.aichessarena.service;
 
 import dev.aichessarena.config.SecretFileConfigInterceptor;
+import dev.aichessarena.entity.Timestamps;
 import io.smallrye.config.ConfigValue;
 import io.smallrye.config.SmallRyeConfig;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -80,7 +81,7 @@ public class OpenRouterKeyStore {
 
     synchronized void checked(String key, String result) {
         validatedFingerprint = Pkce.challenge(key);
-        lastValidatedAt = Instant.now();
+        lastValidatedAt = Timestamps.now();
         validation = result;
     }
 

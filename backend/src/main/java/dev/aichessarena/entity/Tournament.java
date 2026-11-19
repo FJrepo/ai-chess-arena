@@ -3,7 +3,7 @@ package dev.aichessarena.entity;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -145,10 +145,10 @@ public class Tournament extends PanacheEntityBase {
     public BracketDrawMode creationDrawMode;
 
     @Column(name = "created_at", nullable = false)
-    public LocalDateTime createdAt = LocalDateTime.now();
+    public Instant createdAt = Timestamps.now();
 
     @Column(name = "updated_at", nullable = false)
-    public LocalDateTime updatedAt = LocalDateTime.now();
+    public Instant updatedAt = Timestamps.now();
 
     // Locking refreshes this row only. Participant writers refresh their own row under the tournament
     // lock; cascading REFRESH through an already loaded participant can re-enter this tournament's load.

@@ -11,7 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.LockModeType;
 import jakarta.transaction.Status;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -86,7 +86,7 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
      *
      * @param tournamentId restricts the window to one tournament, or {@code null} for all tournaments
      */
-    public List<Game> findInWindow(LocalDateTime cutoff, UUID tournamentId, Boolean legalMoveHints) {
+    public List<Game> findInWindow(Instant cutoff, UUID tournamentId, Boolean legalMoveHints) {
         String where = windowPredicate("g") + tournamentPredicate("g", tournamentId);
         Parameters parameters = windowParameters(cutoff, tournamentId);
         if (legalMoveHints == null) {
@@ -123,7 +123,7 @@ public class GameRepository implements PanacheRepositoryBase<Game, UUID> {
         return tournamentId == null ? "" : " and " + game + ".tournament.id = :tournamentId";
     }
 
-    public static Parameters windowParameters(LocalDateTime cutoff, UUID tournamentId) {
+    public static Parameters windowParameters(Instant cutoff, UUID tournamentId) {
         Parameters parameters = Parameters.with("cutoff", cutoff).and("terminalStatuses", TERMINAL_STATUSES);
         return tournamentId == null ? parameters : parameters.and("tournamentId", tournamentId);
     }

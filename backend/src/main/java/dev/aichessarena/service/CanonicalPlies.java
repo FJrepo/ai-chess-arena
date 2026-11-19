@@ -2,7 +2,7 @@ package dev.aichessarena.service;
 
 import dev.aichessarena.entity.Move;
 import dev.aichessarena.repository.MoveRepository.ReasoningPly;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -19,7 +19,7 @@ public final class CanonicalPlies {
     private static final Comparator<ReasoningPly> FIRST_STORED_REASONING =
             storedOrder(ReasoningPly::createdAt, ReasoningPly::id);
 
-    private static <T> Comparator<T> storedOrder(Function<T, LocalDateTime> createdAt, Function<T, UUID> id) {
+    private static <T> Comparator<T> storedOrder(Function<T, Instant> createdAt, Function<T, UUID> id) {
         return Comparator.comparing(createdAt, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(id, Comparator.nullsLast(Comparator.naturalOrder()));
     }

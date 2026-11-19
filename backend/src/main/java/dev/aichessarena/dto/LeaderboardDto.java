@@ -1,6 +1,6 @@
 package dev.aichessarena.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,12 +16,12 @@ public record LeaderboardDto(boolean includeForfeits, long gamesCount, List<Mode
             long draws,
             long losses,
             long forfeits,
-            LocalDateTime lastPlayed,
+            Instant lastPlayed,
             boolean provisional,
             boolean alias,
             List<HistoryPoint> ratingHistory,
             String reasoningEffort
     ) {}
 
-    public record HistoryPoint(UUID gameId, LocalDateTime completedAt, int rating) {}
+    public record HistoryPoint(UUID gameId, Instant completedAt, int rating) {}
 }
