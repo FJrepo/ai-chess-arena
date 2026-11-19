@@ -7,9 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-19
+
+**Correct local times everywhere**: times show in your own time zone again, and paused games get a calmer marker.
+
+- 🕐 **Correct times**: the game feed, chat, lists, leaderboard and exports no longer show times shifted by your offset from UTC.
+- 🟠 **Calm attention dot**: a small amber dot replaces the exclamation mark on Live games, and it stays visible in high-contrast mode.
+
+> 💾 [Back up your database](docs/deployment.md#backups-and-rollback) before upgrading. V34 converts timestamp columns; see the upgrade notes below.
+
 ### Upgrade notes
 
-- Flyway `V34__utc_timestamps.sql` converts the creation, start, completion and update times of tournaments, games, moves, chat messages and attempts to `timestamptz`, reading stored values as UTC. It changes only column types (no table rewrite; one small index is rebuilt) and takes short exclusive locks at startup. Back up the database, upgrade while no games are running and recreate backend and frontend together; rolling back requires restoring that backup. Docker installs convert correctly. A source install whose backend ran in another JVM time zone shows older times shifted by that offset (accept it, or restore the backup and open an issue); see [UTC timestamps migration (V34)](docs/deployment.md#utc-timestamps-migration-v34).
+- Flyway `V34__utc_timestamps.sql` converts the creation, start, completion and update times of tournaments, games, moves, chat messages and attempts to `timestamptz`, reading stored values as UTC. It changes only column types (no table rewrite; one small index is rebuilt) and holds `ACCESS EXCLUSIVE` locks on those tables until it commits at startup. Pause auto-runs, wait until no games run, stop the old backend and back up the database, then recreate backend and frontend together; rolling back requires restoring that backup. Docker installs convert correctly. A source install whose backend ran in another JVM time zone shows older times shifted by that offset (accept it, or restore the backup and open an issue); see [UTC timestamps migration (V34)](docs/deployment.md#utc-timestamps-migration-v34).
 - API timestamps now carry an explicit UTC offset: `createdAt`, `startedAt`, `completedAt`, `updatedAt`, leaderboard `lastPlayed` and history `completedAt` change from `2026-11-18T23:15:24.540714` to `2026-11-18T23:15:24.540714Z`, in game, move, chat, attempt, tournament, benchmark and leaderboard responses and in the JSON export, which now reports `schemaVersion: 3`. The PGN `Date` tag is the UTC date.
 
 ### Changed
