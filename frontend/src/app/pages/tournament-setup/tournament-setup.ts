@@ -18,7 +18,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { compareInstants } from '../../utils/instant';
+import { compareInstants, isInstant } from '../../utils/instant';
 import { newRequestId } from '../../utils/request-id';
 import { canonicalBudget, isBudgetDecimal } from '../../utils/tournament-budget';
 import { FormsModule } from '@angular/forms';
@@ -292,7 +292,7 @@ Your opponent is %s (%s).`;
   readonly sourceId = signal<string | null>(null);
   readonly rematchSource = signal<Tournament | null>(null);
   readonly rematchStartingGame = computed(() => {
-    const games = this.rematchSource()?.games.filter((game) => game.startedAt) ?? [];
+    const games = this.rematchSource()?.games.filter((game) => isInstant(game.startedAt)) ?? [];
     return games.sort(
       (left, right) =>
         compareInstants(left.startedAt, right.startedAt) || left.id.localeCompare(right.id),
