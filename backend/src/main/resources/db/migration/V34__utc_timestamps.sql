@@ -3,7 +3,8 @@
 -- backend in another JVM time zone stored that zone's wall-clock time instead: see the 2.0.1 upgrade notes.
 --
 -- timestamp -> timestamptz reads values in the session time zone. With the session in UTC, PostgreSQL (12+) only
--- changes the column type: no table rewrite or index rebuild, so the ACCESS EXCLUSIVE locks are held only briefly.
+-- changes the column type and rewrites no table, so the ACCESS EXCLUSIVE locks are held briefly. The one index keyed
+-- on a converted column, the small partial index idx_practice_games_created, is rebuilt.
 -- SET LOCAL ends with this migration's transaction.
 SET LOCAL TIME ZONE 'UTC';
 

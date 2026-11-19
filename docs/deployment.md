@@ -47,47 +47,12 @@ For native runs, export these variables in the backend process environment. For 
 
 ## UTC timestamps migration (V34)
 
-Back up the database before upgrading, upgrade while no games are running, and recreate the backend and frontend together. Flyway `V34__utc_timestamps.sql` converts the remaining `timestamp without time zone` columns (`tournaments.created_at`/`updated_at`, `games.created_at`/`started_at`/`completed_at`, `moves.created_at`, `chat_messages.created_at` and `move_attempts.created_at`) to `timestamptz`, reading each stored value as UTC. With its session in UTC, PostgreSQL changes only the column types: no table is rewritten, and only the small practice-games index on `games.created_at` is rebuilt. The migration takes short exclusive table locks during backend startup. From then on the backend stores and returns absolute instants, and the API sends them with an explicit offset (`2026-11-18T23:15:24.540714Z`); see [Timestamps and time zones](how-it-works.md#timestamps-and-time-zones). Restore the pre-upgrade backup to roll back the schema.
+Back up the database before upgrading, upgrade while no games are running, and recreate the backend and frontend together. Flyway `V34__utc_timestamps.sql` converts the remaining `timestamp without time zone` columns (`tournaments.created_at`/`updated_at`, `games.created_at`/`started_at`/`completed_at`, `moves.created_at`, `chat_messages.created_at` and `move_attempts.created_at`) to `timestamptz`, reading each stored value as UTC. With its session in UTC, PostgreSQL changes only the column types and rewrites no table. Only the small partial index `idx_practice_games_created` is rebuilt. The migration holds short exclusive table locks during backend startup. From then on the backend stores and returns absolute instants, and the API sends them with an explicit offset (`2026-11-18T23:15:24.540714Z`); see [Timestamps and time zones](how-it-works.md#timestamps-and-time-zones). Run nothing before V34. Restore the pre-upgrade backup to roll back the schema.
 
-Earlier versions stored the backend's local wall-clock time without a zone. **Docker installs** run the backend in UTC, so V34 converts their values exactly. No action is needed unless you set `TZ` or `-Duser.timezone` for the backend container. A **source install** that ran the backend outside UTC (for example `mvn quarkus:dev` on a machine set to CET) stored that zone's wall-clock time. After V34, its existing rows appear shifted by that offset; rows written after the upgrade are correct. Accepting the shift is safe: it only moves the displayed times of older rows and changes which of them fall inside an analytics date window. Ordering is unaffected.
+Earlier versions stored the backend's local wall-clock time without a zone:
 
-**Optional correction for source installs.** Restoring the backup or accepting the shift is the safe choice whenever you are unsure. Otherwise:
-
-1. Run the correction only on a database at V33 (`SELECT max(version::int) FROM flyway_schema_history WHERE success;` returns `33`), with the old backend stopped, and only once. Running it before V32 would let V32 write new local values afterwards.
-2. Establish both zones. The JVM zone applies to values the backend wrote. Values PostgreSQL filled in itself are in that session's zone: the JVM zone for statements sent through the backend, including V32 setting `tournaments.updated_at` of running auto-runs to `NOW()`; the server's `TimeZone` (UTC in the Docker PostgreSQL image) for rows inserted with another client without a timestamp. Shift only values written in the JVM zone. If you cannot tell them apart, restore the backup or accept the shift.
-3. List rows in the repeated hour at the end of daylight saving time. Their naive values are ambiguous; PostgreSQL picks one offset, so these rows can stay off by an hour after the correction. Replace `Europe/Vienna` with the backend's zone:
-
-```sql
-WITH v(col, id, ts) AS (
-  SELECT 'tournaments.created_at', id::text, created_at FROM tournaments UNION ALL
-  SELECT 'tournaments.updated_at', id::text, updated_at FROM tournaments UNION ALL
-  SELECT 'games.created_at', id::text, created_at FROM games UNION ALL
-  SELECT 'games.started_at', id::text, started_at FROM games UNION ALL
-  SELECT 'games.completed_at', id::text, completed_at FROM games UNION ALL
-  SELECT 'moves.created_at', id::text, created_at FROM moves UNION ALL
-  SELECT 'chat_messages.created_at', id::text, created_at FROM chat_messages UNION ALL
-  SELECT 'move_attempts.created_at', id::text, created_at FROM move_attempts)
-SELECT col, id, ts FROM v
-WHERE ((ts AT TIME ZONE 'Europe/Vienna') + interval '1 hour') AT TIME ZONE 'Europe/Vienna' = ts
-   OR ((ts AT TIME ZONE 'Europe/Vienna') - interval '1 hour') AT TIME ZONE 'Europe/Vienna' = ts;
-```
-
-4. Rewrite the JVM-written values as UTC wall-clock time, which V34 then reads correctly (same zone replacement):
-
-```sql
-BEGIN;
-UPDATE tournaments SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC',
-                       updated_at = (updated_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
-UPDATE games SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC',
-                 started_at = (started_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC',
-                 completed_at = (completed_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
-UPDATE moves SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
-UPDATE chat_messages SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
-UPDATE move_attempts SET created_at = (created_at AT TIME ZONE 'Europe/Vienna') AT TIME ZONE 'UTC';
-COMMIT;
-```
-
-Then start the new version. A database written by both a UTC and a non-UTC backend cannot be corrected per row this way.
+- **Docker installs** need nothing: the backend container and the PostgreSQL container run in UTC, so V34 converts their values exactly. This assumes you did not set `TZ` or `-Duser.timezone` for the backend.
+- **Source installs** whose backend ran in a non-UTC JVM zone (for example `mvn quarkus:dev` on a machine set to CET) will see older timestamps shifted by that zone's offset; rows written after the upgrade are correct. You can accept the shift: times from before the upgrade display shifted, and chronological views and the leaderboard's rating order can be off by up to that offset across the upgrade. Or restore the pre-upgrade backup and ask for help in a [GitHub issue](https://github.com/FJrepo/ai-chess-arena/issues).
 
 ## Durable runs migration (V32)
 
@@ -376,7 +341,7 @@ Flyway migrations run automatically on backend startup.
 
 ### Upgrading from 2.0.0 to 2.0.1
 
-Flyway applies V34 ([UTC timestamps](#utc-timestamps-migration-v34)) with short exclusive locks at startup and no table rewrite. Back up first, upgrade while no games are running, and recreate backend and frontend together. Source installs that ran the backend outside UTC should read that section before starting the new version. API clients that parse timestamps now receive an explicit UTC offset; the JSON export reports `schemaVersion: 3`.
+Flyway applies V34 ([UTC timestamps](#utc-timestamps-migration-v34)) with short exclusive locks at startup and no table rewrite; only one small index is rebuilt. Back up first, upgrade while no games are running, and recreate backend and frontend together. Source installs that ran the backend outside UTC should read that section first: their older timestamps appear shifted. API clients that parse timestamps now receive an explicit UTC offset; the JSON export reports `schemaVersion: 3`.
 
 ### Upgrading from 1.9 to 2.0
 
