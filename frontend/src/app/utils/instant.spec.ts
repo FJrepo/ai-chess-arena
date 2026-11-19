@@ -30,6 +30,21 @@ describe('compareInstants', () => {
     expect(compareInstants('2026-11-19T00:15:24+01:00', '2026-11-18T23:15:24.1Z')).toBeLessThan(0);
   });
 
+  it('treats impossible dates and times as missing instead of normalizing them', () => {
+    for (const invalid of [
+      '2026-02-30T12:00:00Z',
+      '2026-13-01T12:00:00Z',
+      '2026-11-18T24:00:00.1Z',
+      '2026-11-18T23:60:00Z',
+      '2026-11-18T23:15:60Z',
+      '2026-11-18T23:15:24+24:00',
+    ]) {
+      expect(compareInstants(invalid, null)).toBe(0);
+      expect(compareInstants(invalid, '2000-01-01T00:00:00Z')).toBeLessThan(0);
+    }
+    expect(compareInstants('2028-02-29T12:00:00Z', null)).toBeGreaterThan(0);
+  });
+
   it('sorts missing or unreadable values first', () => {
     expect(compareInstants(null, '2026-11-18T23:15:24Z')).toBeLessThan(0);
     expect(compareInstants('2026-11-18T23:15:24Z', 'not a time')).toBeGreaterThan(0);

@@ -160,6 +160,19 @@ describe('TournamentSetup', () => {
     expect(fixture.componentInstance.rematchStartingGame()?.id).toBe('whole');
   });
 
+  it('ignores games with an unreadable start time when choosing the first game', async () => {
+    const api = createApiService();
+    const source = rematchSource();
+    source.games = [
+      { ...source.games[0], id: 'invalid', startedAt: '2026-02-30T12:00:00Z' },
+      { ...source.games[0], id: 'valid', startedAt: '2026-11-18T10:00:00Z' },
+    ];
+    api.getTournament = () => of(source);
+    const fixture = await renderSetup(api, 'old');
+
+    expect(fixture.componentInstance.rematchStartingGame()?.id).toBe('valid');
+  });
+
   it('says when the first game predates configuration history', async () => {
     const api = createApiService();
     const source = rematchSource();
