@@ -1,16 +1,57 @@
-# AI Chess Arena
+<p align="center"><img src="frontend/public/logo.svg" width="84" alt="AI Chess Arena logo"></p>
 
-Let large language models play chess against each other — in brackets, live, with trash talk.
+<h1 align="center">AI Chess Arena</h1>
 
-[![CI](https://github.com/FJrepo/ai-chess-arena/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FJrepo/ai-chess-arena/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/FJrepo/ai-chess-arena)](https://github.com/FJrepo/ai-chess-arena/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center"><strong>Let large language models play chess against each other — in brackets, live, with trash talk.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/FJrepo/ai-chess-arena/actions/workflows/ci.yml"><img src="https://github.com/FJrepo/ai-chess-arena/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/FJrepo/ai-chess-arena/releases"><img src="https://img.shields.io/github/v/release/FJrepo/ai-chess-arena" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="docs/how-it-works.md">How it works</a> ·
+  <a href="docs/benchmarks.md">Benchmark guide</a> ·
+  <a href="docs/deployment.md">Deployment</a> ·
+  <a href="https://github.com/FJrepo/ai-chess-arena/releases">Releases</a>
+</p>
 
 Run single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. Pick the participants, watch every move and message, join as a human player, and compare results, reliability and reported cost.
 
-![Finished Stockfish ladder with model scores by level and color](docs/screenshots/benchmark-results.png)
+<p align="center">
+  <img src="docs/screenshots/live-game-board-chat.png" alt="Live game with the board, move list, game feed and green live indicator">
+  <br>
+  <sub>Screenshots use fictional models and example data.</sub>
+</p>
 
-Screenshots use fictional models and example data.
+## Quick start
+
+**Requirements:** Docker Desktop on macOS/Windows (including Apple Silicon) or Docker Engine 28+ with Compose on Linux, plus an OpenRouter account for model play.
+
+```bash
+mkdir chess-arena
+cd chess-arena
+base=https://github.com/FJrepo/ai-chess-arena/releases/latest/download
+curl -fLO "$base/docker-compose.yml"
+curl -fLO "$base/env.example"
+install -m 600 env.example .env
+docker compose up -d --wait
+```
+
+Open **http://localhost:4200**, choose **Connect OpenRouter** in System, then create a tournament. You can browse without connecting. Database credentials are generated on first start; upgrades must keep the existing `DB_PASSWORD` in `.env`.
+
+<details>
+<summary>Windows, pinned versions, source checkout and network access</summary>
+
+- **Windows:** use the [PowerShell variant](docs/deployment.md#windows-powershell).
+- **Pin a version:** replace `latest/download` with `download/vX.Y.Z`.
+- **Contributors:** see the [source-checkout setup](docs/deployment.md#run-from-a-source-checkout) using `make setup` and `docker-compose.prod.yml`.
+- **Network:** everything binds to loopback. See the [deployment guide](docs/deployment.md) for ports, host names, upgrades, backups, troubleshooting and the [manual environment route](docs/deployment.md#secrets).
+
+</details>
 
 ## Why this exists
 
@@ -18,68 +59,53 @@ Screenshots use fictional models and example data.
 
 As a side note, it is a **benchmaxxing smell test**: legality checks, retries and forfeits offer an informal second look at model claims. Small brackets and one narrow skill cannot establish whether benchmark gains generalize.
 
-| Benchmark comparison | Live game |
-|:---:|:---:|
-| ![Controlled rerun with score changes and changed outcomes](docs/screenshots/benchmark-comparison.png) | ![Live game with the board, moves, game feed, chat and green live indicator](docs/screenshots/live-game-board-chat.png) |
-| **Tournament bracket** | **Play quality** |
-| ![Finished knockout bracket with best-of-three series and a champion](docs/screenshots/tournament-bracket.png) | ![Play quality analytics with move errors and conversion by model](docs/screenshots/analytics-move-quality.png) |
-
 ## Features
 
-- **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** pit models against each other in brackets and best-of series.
-- **[Stockfish ladder](docs/how-it-works.md#stockfish-ladder):** compare models against the same Stockfish setup across paired openings and colors.
-- **[Auto-run](docs/how-it-works.md#auto-run):** run tournaments with concurrent games, budget controls and pause/resume.
-- **[Live games and chat](docs/how-it-works.md#live-settings):** watch every move, follow the trash talk and review earlier positions.
-- **[Move quality](docs/how-it-works.md#move-quality):** spot blunders, mistakes and missed mates with Stockfish evaluation.
-- **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker) and [reasoning effort](docs/how-it-works.md#reasoning-effort):** compare models, prices and capabilities, then choose how hard they think.
-- **[Analytics](docs/how-it-works.md#analytics-and-reliability) and [leaderboard](docs/how-it-works.md#leaderboard):** compare results, reliability, costs and Elo across tournaments.
-- **[Export](docs/how-it-works.md#export):** download annotated games and tournament data as PGN, CSV or JSON.
-- **[Practice](docs/how-it-works.md#play-from-here)** lets you take over a finished position against its original model or play Stockfish locally.
-- **[Human play](docs/how-it-works.md#choosing-participants-and-model-picker):** join a tournament yourself and challenge the models.
+- [Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies): pit models against each other in brackets and best-of series.
+- [Stockfish ladder](docs/how-it-works.md#stockfish-ladder): compare models against the same Stockfish setup across paired openings and colors.
+- [Auto-run](docs/how-it-works.md#auto-run): run tournaments with concurrent games, budget controls and pause/resume.
+- [Live games and chat](docs/how-it-works.md#live-settings): watch every move, follow the trash talk and review earlier positions.
+- [Move quality](docs/how-it-works.md#move-quality): spot blunders, mistakes and missed mates with Stockfish evaluation.
+- [Model picker](docs/how-it-works.md#choosing-participants-and-model-picker) and [reasoning effort](docs/how-it-works.md#reasoning-effort): compare models, prices and capabilities, then choose how hard they think.
+- [Analytics](docs/how-it-works.md#analytics-and-reliability) and [leaderboard](docs/how-it-works.md#leaderboard): compare results, reliability, costs and Elo across tournaments.
+- [Export](docs/how-it-works.md#export): download annotated games and tournament data as PGN, CSV or JSON.
+- [Practice](docs/how-it-works.md#play-from-here): take over a finished position against its original model or play Stockfish locally.
+- [Human play](docs/how-it-works.md#choosing-participants-and-model-picker): join a tournament yourself and challenge the models.
 
 …and more: cost preview, openings, adjudication, resignation, cancellation, resumable games and custom instructions — see [How it works](docs/how-it-works.md).
 
-## Quick start
+## Screenshots
 
-You need Docker Desktop on macOS/Windows (including Apple Silicon), or Docker Engine 28+ with Compose on Linux, and an OpenRouter account for model play.
+<p><img src="docs/screenshots/benchmark-results.png" alt="Stockfish ladder results with scores, wins, draws, losses and spend by model"><br><sub><b>Stockfish ladder</b>: same openings, both colors, pinned engine.</sub></p>
 
-```bash
-mkdir chess-arena
-cd chess-arena
-curl -fL -o docker-compose.yml https://github.com/FJrepo/ai-chess-arena/releases/latest/download/docker-compose.yml
-curl -fL -o env.example https://github.com/FJrepo/ai-chess-arena/releases/latest/download/env.example
-install -m 600 env.example .env
-```
+<p><img src="docs/screenshots/benchmark-comparison.png" alt="Controlled rerun with the changed setting and score and cost changes per model"><br><sub><b>Rerun and compare</b>: what one changed setting did to scores and cost.</sub></p>
 
-Start without editing `.env`. Database credentials are generated automatically; upgrades must keep their existing `DB_PASSWORD`.
+<p><img src="docs/screenshots/tournament-bracket.png" alt="Finished knockout bracket with best-of-three series and a champion"><br><sub><b>Tournament bracket</b>: best-of series up to a champion.</sub></p>
 
-```bash
-docker compose up -d --wait
-```
-
-Open **http://localhost:4200**, choose **Connect OpenRouter** in System, then create a tournament and start playing. You can browse without connecting. See [connecting OpenRouter](docs/how-it-works.md#connecting-openrouter) and the [manual environment route](docs/deployment.md#secrets).
-
-Windows: use the [PowerShell variant](docs/deployment.md#windows-powershell).
-
-Pin a version: replace `latest/download` with `download/vX.Y.Z`.
-
-Contributors: see the [source-checkout setup](docs/deployment.md#run-from-a-source-checkout) using `make setup` and `docker-compose.prod.yml`.
-
-Everything binds to loopback. See the [deployment guide](docs/deployment.md) for ports, host names, upgrades, backups and troubleshooting.
+<p><img src="docs/screenshots/analytics-move-quality.png" alt="Move quality table with centipawn loss, blunders, mistakes and inaccuracies by model"><br><sub><b>Play quality</b>: blunders and centipawn loss by model.</sub></p>
 
 ## How it works
 
-Models receive the current position, recent conversation and, with legal move hints on, the legal moves. Answers are checked for legality. A model forfeits if it uses up its attempts and normally if it misses its move deadline. Provider problems can pause play; an unresolved model request requires a spend check before resuming.
+- Models get the position, recent conversation and, with hints on, the legal moves. Every answer is checked against the rules.
+- A model loses if it uses up its attempts or, normally, if it runs out of time. Provider trouble can trigger a retry or a pause; if a request may have been charged and its outcome is unknown, check your OpenRouter spend before resuming.
+- Built for one person using a desktop browser on **localhost**; shared networks and the public internet are not supported. See [scope and limitations](docs/how-it-works.md#scope-and-interpretation).
 
-[Conversation history](docs/how-it-works.md#prompt-caching) survives human turns; deleting or finishing a game clears its retained history, with periodic cleanup as a safety net.
+See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions. Not sure what to test? The [benchmark guide](docs/benchmarks.md) maps questions to settings.
 
-See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions.
+## Stack
 
-Not sure what to test? The [benchmark guide](docs/benchmarks.md) maps questions to settings.
-
-Built for **one operator on localhost**, with browser claiming for key management and no user accounts, on desktop browsers. Read the [supported scope and limitations](docs/how-it-works.md#scope-and-interpretation) before changing network access.
+- **Backend:** Quarkus 3.40 LTS on Java 25 (REST, WebSockets Next, Hibernate ORM Panache, Flyway, virtual threads)
+- **Frontend:** Angular 21.2 with Angular Material
+- **Database:** PostgreSQL 17
+- **Engine:** Stockfish 19, bundled for `amd64` and `arm64` (optional)
+- **Models:** OpenRouter chat models
 
 ## Development
+
+<a id="repository-layout"></a>
+
+<details>
+<summary>Source build, running without Docker, tests and repository layout</summary>
 
 **Source build with Docker:**
 
@@ -114,30 +140,17 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py' # offline installer an
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
-## Stack
-
-| Part | Technology |
-|---|---|
-| Backend | Quarkus 3.40 LTS on Java 25 — REST, WebSockets Next, Hibernate ORM Panache, Flyway; game loops on virtual threads |
-| Frontend | Angular 21.2 with Angular Material, standalone components, CSS chessboard |
-| Database | PostgreSQL 17 |
-| Models | OpenRouter chat models (text output) |
-| Evaluation | Stockfish 19 (bundled in the backend image, `amd64` or `arm64` universal binary; the app runs without it) |
-
-## Repository layout
-
 | Path | Contents |
 |---|---|
 | `backend/` | Quarkus API, game engine, OpenRouter and Stockfish integration, Flyway migrations |
 | `frontend/` | Angular application |
 | `docker-compose.yml` | Local source-build stack |
 | `docker-compose.prod.yml` | Released-image stack |
-| `docs/deployment.md` | Deployment, upgrade and troubleshooting guide |
-| `docs/how-it-works.md` | Detailed tournament rules, model settings, analytics and API conventions |
+| `docs/` | [Deployment](docs/deployment.md), [how it works](docs/how-it-works.md) and the [benchmark guide](docs/benchmarks.md) |
 
-## Releases
+</details>
 
-Releases use `vX.Y.Z`. Deploy a pinned version; `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases), [CHANGELOG.md](CHANGELOG.md) and the [release publishing notes](docs/deployment.md#release-publishing-notes) for CI gates, images, setup assets and verification.
+<a id="releases"></a>Releases use `vX.Y.Z`; deploy a pinned version, `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases), [CHANGELOG.md](CHANGELOG.md) and the [release publishing notes](docs/deployment.md#release-publishing-notes).
 
 ## Credits
 
@@ -149,4 +162,4 @@ Move quality is judged using the win-probability model Lichess uses; see the [de
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0-or-later) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LOGO-LICENSES.md](LOGO-LICENSES.md).
+MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0-or-later) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [logo and icon notes](docs/logo-and-icons.md).

@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- The README front page leads with the live game and the quick start, shows larger screenshot crops, and moves the logo and icon licensing notes to [docs/logo-and-icons.md](docs/logo-and-icons.md), so GitHub detects a single MIT licence.
+
 ## [2.0.1] - 2026-11-19
 
 **Correct local times everywhere**: times show in your own time zone again, and paused games get a calmer marker.
