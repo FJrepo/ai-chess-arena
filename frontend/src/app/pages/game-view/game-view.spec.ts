@@ -194,6 +194,10 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
   };
 }
 
+// The Moves | Feed choice is remembered in browser storage; start every test from the default.
+beforeEach(() => localStorage.removeItem('gameRecordView'));
+afterEach(() => localStorage.removeItem('gameRecordView'));
+
 describe('GameView', () => {
   it('shows a move detail once for a committed live occurrence without another HTTP request', () => {
     const { component, gameLoad, messages, getGame, api, snackbar } = createSpectator();
@@ -370,7 +374,7 @@ describe('GameView', () => {
     component.moves.set([
       { ...storedMove(1, 'WHITE', 'e4', AFTER_E4), isBook: true, modelId: null },
     ]);
-    const event = component.timelineEvents().find((entry) => entry.type === 'move');
+    const event = component.feedEvents().find((entry) => entry.type === 'move');
     expect(event?.detail).toBe('Book move');
     expect(event?.quality).toBeNull();
     expect(event?.attemptSummary).toBeNull();
@@ -462,6 +466,7 @@ describe('GameView', () => {
         ],
       });
       const fixture = TestBed.createComponent(GameView);
+      fixture.componentInstance.selectRecordView('feed');
       fixture.detectChanges();
       await fixture.whenStable();
       const times = Array.from(
@@ -593,7 +598,7 @@ describe('GameView', () => {
     expect(component.lastMove()).toBeNull();
   });
 
-  it('keeps chat out of the feed by default and can opt it back in', () => {
+  it('builds the feed without chat messages, which have their own column', () => {
     const { component } = createComponent();
     component.game.set({
       id: 'g-1',
@@ -653,28 +658,14 @@ describe('GameView', () => {
       },
     ]);
 
-    const timelineEvents = component.timelineEvents();
     const defaultFeedEvents = component.feedEvents();
 
-    expect(timelineEvents.map((event) => event.type)).toEqual(['result', 'chat', 'move', 'start']);
     expect(defaultFeedEvents.map((event) => event.type)).toEqual(['result', 'move', 'start']);
     expect(defaultFeedEvents[1].detail).toBe('Alpha');
     expect(defaultFeedEvents[1].attemptSummary).toBe('1 retry');
     expect(defaultFeedEvents[0].attemptSummary).toBeNull();
     expect(defaultFeedEvents[2].attemptSummary).toBeNull();
     expect(defaultFeedEvents[2].label).toBe('Game Started');
-
-    component.includeChatInFeed.set(true);
-
-    const chatEnabledFeedEvents = component.feedEvents();
-
-    expect(chatEnabledFeedEvents.map((event) => event.type)).toEqual([
-      'result',
-      'chat',
-      'move',
-      'start',
-    ]);
-    expect(chatEnabledFeedEvents[1].detail).toContain('Alpha: Good luck.');
   });
 
   it('shows a snackbar when pausing the game fails', () => {
@@ -2571,10 +2562,10 @@ describe('GameView', () => {
     expect(component.moves()[1].evaluationCp).toBe(338);
     expect(component.moves()[1].quality?.judgement).toBe('BLUNDER');
     expect(component.game()?.qualitySummary?.black.blunders).toBe(1);
-    const feedMove = component.timelineEvents().find((event) => event.label === 'Black played e5');
+    const feedMove = component.feedEvents().find((event) => event.label === 'Black played e5');
     expect(feedMove?.quality?.badge.glyph).toBe('??');
     expect(feedMove?.quality?.tooltip).toBe('Blunder: winning chances 74% → 22% (−6.2)');
-    const whiteMove = component.timelineEvents().find((event) => event.label === 'White played e4');
+    const whiteMove = component.feedEvents().find((event) => event.label === 'White played e4');
     expect(whiteMove?.quality).toBeNull();
     component.ngOnDestroy();
   });
@@ -3497,5 +3488,216 @@ describe('GameView cancellation', () => {
     expect(component.game()?.status).toBe('CANCELLED');
     expect(component.game()?.result).toBeNull();
     component.ngOnDestroy();
+  });
+});
+
+describe('GameView columns: Moves | Feed box, board, chat', () => {
+  const VIEW_KEY = 'gameRecordView';
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function renderGame(overrides: Partial<Game> = {}) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        provideRouter([]),
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () =>
+              of(
+                gameWith({
+                  status: 'PAUSED',
+                  liveRevision: 0,
+                  attempts: [],
+                  moves: [
+                    storedMove(1, 'WHITE', 'e4', AFTER_E4),
+                    storedMove(1, 'BLACK', 'e5', AFTER_E5),
+                  ],
+                  chatMessages: [
+                    {
+                      id: 'c-1',
+                      moveNumber: 1,
+                      senderModel: 'model-a',
+                      senderColor: 'WHITE',
+                      message: 'Good luck, Beta.',
+                      createdAt: '2026-03-06T10:02:01Z',
+                    },
+                  ],
+                  ...overrides,
+                }),
+              ),
+            getSystemStatus: () => EMPTY,
+            getGameAttempts: () => of([]),
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
+            reconnected: () => EMPTY,
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function viewButtons(element: HTMLElement) {
+    const group = element.querySelector<HTMLElement>('.record-card [role="radiogroup"]')!;
+    const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('button[role="radio"]'));
+    return { group, buttons };
+  }
+
+  function checked(element: HTMLElement) {
+    return viewButtons(element)
+      .buttons.filter((button) => button.getAttribute('aria-checked') === 'true')
+      .map((button) => button.textContent?.trim());
+  }
+
+  function press(target: HTMLElement, key: 'ArrowRight' | 'ArrowLeft') {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'keyCode', { get: () => (key === 'ArrowRight' ? 39 : 37) });
+    target.dispatchEvent(event);
+  }
+
+  it('shows Moves by default and switches to Feed by click and by arrow keys', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const { group, buttons } = viewButtons(element);
+      expect(group.getAttribute('aria-label')).toBeTruthy();
+      expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Moves', 'Feed']);
+      expect(checked(element)).toEqual(['Moves']);
+      expect(element.querySelector('.record-card .move-list-scroll')).not.toBeNull();
+      expect(element.querySelector('.record-card .timeline-event')).toBeNull();
+
+      buttons[1].click();
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Feed']);
+      expect(element.querySelector('.record-card .move-list-scroll')).toBeNull();
+      expect(element.querySelectorAll('.record-card .timeline-event').length).toBeGreaterThan(0);
+
+      press(viewButtons(element).buttons[1], 'ArrowLeft');
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Moves']);
+      expect(document.activeElement).toBe(viewButtons(element).buttons[0]);
+      expect(element.querySelector('.record-card .move-list-scroll')).not.toBeNull();
+
+      press(viewButtons(element).buttons[0], 'ArrowRight');
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Feed']);
+      expect(element.querySelector('.record-card .timeline-event')).not.toBeNull();
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('remembers the chosen view for the next visit', () => {
+    const first = renderGame();
+    viewButtons(first.nativeElement).buttons[1].click();
+    first.detectChanges();
+    expect(localStorage.getItem(VIEW_KEY)).toBe('feed');
+    first.destroy();
+    TestBed.resetTestingModule();
+
+    const second = renderGame();
+    try {
+      expect(checked(second.nativeElement)).toEqual(['Feed']);
+      expect(second.nativeElement.querySelector('.record-card .timeline-event')).not.toBeNull();
+    } finally {
+      second.destroy();
+    }
+  });
+
+  it('ignores an unknown saved view and keeps working when storage throws', () => {
+    localStorage.setItem(VIEW_KEY, 'something-else');
+    const unknown = renderGame();
+    expect(checked(unknown.nativeElement)).toEqual(['Moves']);
+    unknown.destroy();
+    TestBed.resetTestingModule();
+
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      expect(checked(element)).toEqual(['Moves']);
+      viewButtons(element).buttons[1].click();
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Feed']);
+      expect(element.querySelector('.record-card .timeline-event')).not.toBeNull();
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('keeps chat out of the feed and drops the include-chat toggle', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      viewButtons(element).buttons[1].click();
+      fixture.detectChanges();
+      const feed = element.querySelector<HTMLElement>('.record-card')!;
+      expect(feed.textContent).toContain('White played e4');
+      expect(feed.textContent).not.toContain('Good luck, Beta.');
+      expect(element.querySelector('mat-slide-toggle')).toBeNull();
+      expect(element.textContent).not.toContain('Include chat');
+      expect(fixture.componentInstance.feedEvents().map((event) => event.type)).not.toContain(
+        'chat',
+      );
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('places the Moves | Feed box, the board and the chat side by side in that order', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const layout = element.querySelector<HTMLElement>('.game-layout')!;
+      expect(Array.from(layout.children, (child) => child.className.split(' ')[0])).toEqual([
+        'record-column',
+        'board-section',
+        'chat-column',
+      ]);
+      expect(element.querySelectorAll('app-chat-panel')).toHaveLength(1);
+      const chat = layout.querySelector<HTMLElement>('.chat-column app-chat-panel')!;
+      expect(chat.textContent).toContain('Good luck, Beta.');
+      expect(chat.textContent).toContain('Newest first');
+      expect(layout.querySelector('.board-section app-chessboard')).not.toBeNull();
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('still navigates the board when a move in the Moves view is clicked', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const e4 = Array.from(element.querySelectorAll<HTMLElement>('.record-card .move')).find(
+        (move) => move.textContent?.includes('e4'),
+      )!;
+      e4.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(fixture.componentInstance.currentFen()).toBe(AFTER_E4);
+      expect(e4.classList).toContain('active');
+    } finally {
+      fixture.destroy();
+    }
   });
 });

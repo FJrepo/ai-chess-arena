@@ -1,29 +1,14 @@
-// Sizes to its content; the host caps the height (100% of a sized host, or
+// The list only: the game view's Moves | Feed box supplies the card and the heading.
+// Sizes to its content; the host caps the height (a sized flex parent, or
 // --move-list-max-height) and the list scrolls inside.
 // --move-cell-min fits the longest SAN (7 characters, e.g. `exd8=Q+`) plus a retry badge and a
 // quality annotation, so a notation cell never shrinks below its content and runs into the next move.
 :host {
   --move-cell-min: 8rem;
 
-  display: block;
-}
-
-.move-list-card {
-  max-height: 100%;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-
-  mat-card-title {
-    font-size: var(--mat-sys-title-medium-size);
-    line-height: var(--mat-sys-title-medium-line-height);
-  }
-
-  mat-card-content {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    padding-bottom: 12px;
-  }
 }
 
 .move-list-scroll {
@@ -118,7 +103,7 @@
   color: var(--mat-sys-on-surface-variant);
 }
 
-.move-list-card.compact {
+:host(.compact) {
   height: 100%;
 
   .move-list-scroll {

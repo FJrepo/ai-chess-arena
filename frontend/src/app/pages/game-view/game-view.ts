@@ -14,7 +14,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { ApiService } from '../../services/api.service';
 import { downloadBlob } from '../../utils/download';
 import { WebSocketService } from '../../services/websocket.service';
@@ -74,12 +74,12 @@ import {
 
 type TimelineEvent = {
   id: string;
-  type: 'start' | 'move' | 'attempts' | 'chat' | 'result';
+  type: 'start' | 'move' | 'attempts' | 'result';
   label: string;
   detail: string;
   /** Failed or cut-off answers for the ply, shown as their own line; null when there were none. */
   attemptSummary: string | null;
-  tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
+  tone: 'neutral' | 'move' | 'warning' | 'success';
   /** ?! / ? / ?? annotation of a move judged an error, with its tooltip; null otherwise. */
   quality: { badge: QualityBadge; tooltip: string | null } | null;
   icon: string;
@@ -90,6 +90,21 @@ type TimelineEvent = {
 };
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/** What the box left of the board shows: the move list or the game feed. */
+export type RecordView = 'moves' | 'feed';
+
+/** Browser storage key for the chosen record view. */
+const RECORD_VIEW_KEY = 'gameRecordView';
+
+function savedRecordView(): RecordView {
+  try {
+    return localStorage.getItem(RECORD_VIEW_KEY) === 'feed' ? 'feed' : 'moves';
+  } catch {
+    // Restricted storage: start on the move list.
+    return 'moves';
+  }
+}
 
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
@@ -112,7 +127,7 @@ const SPEND_CHECK_SENTENCE = 'Check spend, then resume.';
     MatInputModule,
     MatExpansionModule,
     MatSnackBarModule,
-    MatSlideToggleModule,
+    MatButtonToggleModule,
     DatePipe,
     RouterLink,
     ChessboardComponent,
@@ -236,7 +251,8 @@ export class GameView implements OnInit, OnDestroy {
   retryInfo = signal<string | null>(null);
   stockfishAvailable = signal(true);
   stockfishReason = signal<string | null>(null);
-  includeChatInFeed = signal(false);
+  /** Moves or Feed in the box left of the board; remembered per browser. */
+  readonly recordView = signal<RecordView>(savedRecordView());
   humanMoveSubmitting = signal(false);
   readonly gameActionsAvailable = signal(true);
   pendingPromotion = signal<{ from: string; to: string } | null>(null);
@@ -394,10 +410,10 @@ export class GameView implements OnInit, OnDestroy {
 
   whiteMaterialEdge = computed(() => Math.max(0, this.capturedMaterial().materialDelta));
   blackMaterialEdge = computed(() => Math.max(0, -this.capturedMaterial().materialDelta));
-  timelineEvents = computed<TimelineEvent[]>(() => {
+  /** Game feed, newest first: start, moves, unplayed plies and the result. Chat has its own column. */
+  feedEvents = computed<TimelineEvent[]>(() => {
     const events: TimelineEvent[] = [];
     const moves = this.moves();
-    const chats = this.chatMessages();
     const game = this.game();
     const attemptsByPly = notableAttemptsByPly(this.attempts());
 
@@ -470,23 +486,6 @@ export class GameView implements OnInit, OnDestroy {
       });
     });
 
-    chats.forEach((message) => {
-      const relatedMoveIndex = this.findTimelineMoveIndex(message.moveNumber, message.senderColor);
-      events.push({
-        id: `chat-${message.id || `${message.moveNumber}-${message.senderColor}-${message.createdAt}`}`,
-        type: 'chat',
-        quality: null,
-        label: `${message.senderColor === 'WHITE' ? 'White' : 'Black'} chat`,
-        detail: `${this.timelinePlayerName(message.senderColor, message.senderModel)}: ${message.message}`,
-        tone: 'chat',
-        icon: 'chat',
-        attemptSummary: null,
-        createdAtMs: Date.parse(message.createdAt),
-        createdAtLabel: message.createdAt,
-        moveIndex: relatedMoveIndex,
-      });
-    });
-
     if (game && isFinishedStatus(game.status)) {
       const resignedColor = resigningColor(game);
       const resultLabel = resignedColor
@@ -528,9 +527,6 @@ export class GameView implements OnInit, OnDestroy {
       .filter((event) => !Number.isNaN(event.createdAtMs))
       .sort((left, right) => right.createdAtMs - left.createdAtMs);
   });
-  feedEvents = computed(() =>
-    this.timelineEvents().filter((event) => this.includeChatInFeed() || event.type !== 'chat'),
-  );
 
   constructor(
     private route: ActivatedRoute,
@@ -1194,6 +1190,15 @@ export class GameView implements OnInit, OnDestroy {
     this.currentMoveIndex.set(index);
   }
 
+  selectRecordView(view: RecordView) {
+    this.recordView.set(view);
+    try {
+      localStorage.setItem(RECORD_VIEW_KEY, view);
+    } catch {
+      // The choice still applies for this visit when storage is unavailable.
+    }
+  }
+
   goToTimelineEvent(event: TimelineEvent) {
     if (event.moveIndex != null) {
       this.goToMove(event.moveIndex);
@@ -1612,19 +1617,6 @@ export class GameView implements OnInit, OnDestroy {
         this.snackbar.open('Could not export game. Please try again.', 'OK', { duration: 5000 });
       },
     });
-  }
-
-  private findTimelineMoveIndex(
-    moveNumber: number,
-    color: 'WHITE' | 'BLACK' | string,
-  ): number | null {
-    const normalizedColor = color === 'WHITE' || color === 'BLACK' ? color : null;
-    const moves = this.moves();
-    const index = moves.findIndex(
-      (move) =>
-        move.moveNumber === moveNumber && (!normalizedColor || move.color === normalizedColor),
-    );
-    return index >= 0 ? index : null;
   }
 
   private timelinePlayerName(color: 'WHITE' | 'BLACK', fallbackModel: string | null): string {

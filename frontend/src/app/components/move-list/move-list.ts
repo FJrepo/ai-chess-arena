@@ -11,7 +11,6 @@ import {
   OnChanges,
   SimpleChanges,
 } from '@angular/core';
-import { MatCardModule } from '@angular/material/card';
 import { Move } from '../../models/tournament.model';
 import {
   QualityBadge,
@@ -30,7 +29,7 @@ interface MovePair {
 
 @Component({
   selector: 'app-move-list',
-  imports: [MatCardModule],
+  host: { '[class.compact]': 'compact' },
   templateUrl: './move-list.html',
   styleUrl: './move-list.scss',
 })
