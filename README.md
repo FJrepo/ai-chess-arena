@@ -59,43 +59,46 @@ Open **http://localhost:4200**, choose **Connect OpenRouter** in System, then cr
 
 As a side note, it is a **benchmaxxing smell test**: legality checks, retries and forfeits offer an informal second look at model claims. Small brackets and one narrow skill cannot establish whether benchmark gains generalize.
 
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="docs/screenshots/benchmark-results.png" alt="Finished Stockfish ladder with model scores by level and color"><br><sub><b>Stockfish ladder</b>: scores by level and color</sub></td>
-    <td width="50%" valign="top"><img src="docs/screenshots/benchmark-comparison.png" alt="Controlled rerun with score and cost changes per model"><br><sub><b>Rerun and compare</b>: what one changed setting did</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="docs/screenshots/tournament-bracket.png" alt="Finished knockout bracket with best-of-three series and a champion"><br><sub><b>Tournament bracket</b>: best-of series up to a champion</sub></td>
-    <td width="50%" valign="top"><img src="docs/screenshots/analytics-move-quality.png" alt="Play quality analytics with centipawn loss, blunders and mistakes by model"><br><sub><b>Play quality</b>: blunders and centipawn loss by model</sub></td>
-  </tr>
-</table>
-
 ## Features
 
-- **[Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies):** pit models against each other in brackets and best-of series.
-- **[Stockfish ladder](docs/how-it-works.md#stockfish-ladder):** compare models against the same Stockfish setup across paired openings and colors.
-- **[Auto-run](docs/how-it-works.md#auto-run):** run tournaments with concurrent games, budget controls and pause/resume.
-- **[Live games and chat](docs/how-it-works.md#live-settings):** watch every move, follow the trash talk and review earlier positions.
-- **[Move quality](docs/how-it-works.md#move-quality):** spot blunders, mistakes and missed mates with Stockfish evaluation.
-- **[Model picker](docs/how-it-works.md#choosing-participants-and-model-picker) and [reasoning effort](docs/how-it-works.md#reasoning-effort):** compare models, prices and capabilities, then choose how hard they think.
-- **[Analytics](docs/how-it-works.md#analytics-and-reliability) and [leaderboard](docs/how-it-works.md#leaderboard):** compare results, reliability, costs and Elo across tournaments.
-- **[Export](docs/how-it-works.md#export):** download annotated games and tournament data as PGN, CSV or JSON.
-- **[Practice](docs/how-it-works.md#play-from-here)** lets you take over a finished position against its original model or play Stockfish locally.
-- **[Human play](docs/how-it-works.md#choosing-participants-and-model-picker):** join a tournament yourself and challenge the models.
+- [Tournaments](docs/how-it-works.md#tournament-formats-and-draw-policies): pit models against each other in brackets and best-of series.
+- [Stockfish ladder](docs/how-it-works.md#stockfish-ladder): compare models against the same Stockfish setup across paired openings and colors.
+- [Auto-run](docs/how-it-works.md#auto-run): run tournaments with concurrent games, budget controls and pause/resume.
+- [Live games and chat](docs/how-it-works.md#live-settings): watch every move, follow the trash talk and review earlier positions.
+- [Move quality](docs/how-it-works.md#move-quality): spot blunders, mistakes and missed mates with Stockfish evaluation.
+- [Model picker](docs/how-it-works.md#choosing-participants-and-model-picker) and [reasoning effort](docs/how-it-works.md#reasoning-effort): compare models, prices and capabilities, then choose how hard they think.
+- [Analytics](docs/how-it-works.md#analytics-and-reliability) and [leaderboard](docs/how-it-works.md#leaderboard): compare results, reliability, costs and Elo across tournaments.
+- [Export](docs/how-it-works.md#export): download annotated games and tournament data as PGN, CSV or JSON.
+- [Practice](docs/how-it-works.md#play-from-here): take over a finished position against its original model or play Stockfish locally.
+- [Human play](docs/how-it-works.md#choosing-participants-and-model-picker): join a tournament yourself and challenge the models.
 
 …and more: cost preview, openings, adjudication, resignation, cancellation, resumable games and custom instructions — see [How it works](docs/how-it-works.md).
 
+## Screenshots
+
+<p><img src="docs/screenshots/benchmark-results.png" alt="Stockfish ladder results with scores, wins, draws, losses and spend by model"><br><sub><b>Stockfish ladder</b>: same openings, both colors, pinned engine.</sub></p>
+
+<p><img src="docs/screenshots/benchmark-comparison.png" alt="Controlled rerun with the changed setting and score and cost changes per model"><br><sub><b>Rerun and compare</b>: what one changed setting did to scores and cost.</sub></p>
+
+<p><img src="docs/screenshots/tournament-bracket.png" alt="Finished knockout bracket with best-of-three series and a champion"><br><sub><b>Tournament bracket</b>: best-of series up to a champion.</sub></p>
+
+<p><img src="docs/screenshots/analytics-move-quality.png" alt="Move quality table with centipawn loss, blunders, mistakes and inaccuracies by model"><br><sub><b>Play quality</b>: blunders and centipawn loss by model.</sub></p>
+
 ## How it works
 
-- Models receive the current position, recent conversation and, with legal move hints on, the legal moves. Answers are checked for legality.
-- A model forfeits if it uses up its attempts and normally if it misses its move deadline. Provider problems can pause play; an unresolved model request requires a spend check before resuming.
-- Built for **one operator on localhost**, with browser claiming for key management and no user accounts, on desktop browsers. Read the [supported scope and limitations](docs/how-it-works.md#scope-and-interpretation) before changing network access.
+- Models get the position, recent chat and, with hints on, the legal moves. Every answer is checked against the rules.
+- A model loses the game when it runs out of attempts or misses its move deadline. Provider problems pause play; after a possibly charged request, you check the spend before resuming.
+- It is built for **one person on their own computer**: no user accounts, desktop browsers, everything on localhost. Read the [scope and limitations](docs/how-it-works.md#scope-and-interpretation) before opening it to a network.
 
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions. Not sure what to test? The [benchmark guide](docs/benchmarks.md) maps questions to settings.
 
 ## Stack
 
-Quarkus 3.40 LTS on Java 25 (REST, WebSockets Next, Hibernate ORM Panache, Flyway, virtual threads) · Angular 21.2 with Angular Material · PostgreSQL 17 · OpenRouter chat models · Stockfish 19, bundled in the backend image for `amd64` and `arm64` (the app runs without it).
+- **Backend:** Quarkus 3.40 LTS on Java 25 (REST, WebSockets Next, Hibernate ORM Panache, Flyway, virtual threads)
+- **Frontend:** Angular 21.2 with Angular Material
+- **Database:** PostgreSQL 17
+- **Engine:** Stockfish 19, bundled for `amd64` and `arm64` (optional)
+- **Models:** OpenRouter chat models
 
 ## Development
 
@@ -159,4 +162,4 @@ Move quality is judged using the win-probability model Lichess uses; see the [de
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0-or-later) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LOGO-LICENSES.md](LOGO-LICENSES.md).
+MIT — see [LICENSE](LICENSE). Bundled third-party components (including Stockfish, GPL-3.0-or-later) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [logo and icon notes](docs/logo-and-icons.md).
