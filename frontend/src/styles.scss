@@ -36,6 +36,8 @@
   --mat-focus-indicator-display: block;
   --mat-focus-indicator-border-color: var(--app-accent-info);
   --mat-focus-indicator-border-width: var(--app-rule-width);
+  --app-segmented-selected-bg: var(--mat-sys-primary);
+  --app-segmented-selected-text: var(--mat-sys-on-primary);
 }
 
 html {
@@ -89,6 +91,11 @@ html {
   --app-focus-offset: 2px;
   --app-board-swatch-size: 14px;
   --app-board-control-size: 40px;
+  --app-segmented-height: 36px;
+  --app-game-record-min-width: 21.5rem;
+  --app-game-chat-min-width: 18rem;
+  --app-game-record-stacked-max-height: min(32rem, 70dvh);
+  --app-game-chat-stacked-max-height: min(24rem, 50dvh);
   --app-banner-gap: 10px;
   --app-banner-padding: 10px 12px;
   --app-banner-radius: 12px;

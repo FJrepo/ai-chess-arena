@@ -86,8 +86,8 @@
   --board-chrome-v: 384px;
   --board-max: 680px;
   // Moves | Feed column minimum: two full notation cells (see the move list's --move-cell-min).
-  --record-col-min: 21.5rem;
-  --chat-col-min: 18rem;
+  --record-col-min: var(--app-game-record-min-width);
+  --chat-col-min: var(--app-game-chat-min-width);
   // Width needed next to the board: both side columns at their minimum, page padding, evaluation
   // bar, column gaps and a scrollbar.
   --board-side-reserve: calc(var(--record-col-min) + var(--chat-col-min) + 152px);
@@ -102,6 +102,8 @@
     minmax(var(--record-col-min), 1fr)
     max-content
     minmax(var(--chat-col-min), 1fr);
+  // DOM and focus order is board, Moves | Feed, chat (the stacked order); wide screens place
+  // the Moves | Feed box left of the board.
   grid-template-areas: 'record board chat';
   gap: var(--app-space-4);
   margin-top: var(--app-space-3);
@@ -151,8 +153,12 @@
   }
 }
 
+// The selected view gets the primary fill and Material's check, so it does not rely on a tint.
 .record-toggle {
-  --mat-button-toggle-height: 36px;
+  --mat-button-toggle-height: var(--app-segmented-height);
+  --mat-button-toggle-selected-state-background-color: var(--app-segmented-selected-bg);
+  --mat-button-toggle-selected-state-text-color: var(--app-segmented-selected-text);
+  --mat-pseudo-checkbox-minimal-selected-checkmark-color: var(--app-segmented-selected-text);
 }
 
 // The list fades out at the bottom edge so a cut-off entry reads as "scroll for more".
@@ -331,7 +337,10 @@ app-advantage-bar {
   text-transform: uppercase;
 }
 
+// Inline-size containment: the board sets the block's width, and a long tray of captured pieces
+// wraps inside it instead of widening the centre column.
 .capture-strip {
+  contain: inline-size;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -494,10 +503,10 @@ app-advantage-bar {
   }
 
   .record-card {
-    max-height: min(32rem, 70dvh);
+    max-height: var(--app-game-record-stacked-max-height);
   }
 
   .chat-column app-chat-panel {
-    --chat-panel-max-height: min(24rem, 50dvh);
+    --chat-panel-max-height: var(--app-game-chat-stacked-max-height);
   }
 }

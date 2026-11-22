@@ -88,84 +88,6 @@
   </div>
 
   <div class="game-layout">
-    <div class="record-column">
-      <mat-card class="record-card">
-        <mat-card-header>
-          <mat-button-toggle-group
-            class="record-toggle"
-            aria-label="Show moves or game feed"
-            [hideSingleSelectionIndicator]="true"
-            [value]="recordView()"
-            (change)="selectRecordView($event.value)"
-          >
-            <mat-button-toggle value="moves">Moves</mat-button-toggle>
-            <mat-button-toggle value="feed">Feed</mat-button-toggle>
-          </mat-button-toggle-group>
-        </mat-card-header>
-        <mat-card-content>
-          @if (recordView() === 'moves') {
-            <app-move-list
-              role="region"
-              aria-label="Moves"
-              [moves]="moves()"
-              [currentIndex]="currentMoveIndex()"
-              [compact]="false"
-              (moveSelected)="goToMove($event)"
-            />
-          } @else {
-            <div class="timeline-scroll" role="region" aria-label="Game feed">
-              @for (event of feedEvents(); track event.id) {
-                <button
-                  type="button"
-                  class="timeline-event"
-                  [class.clickable]="event.moveIndex !== null"
-                  [class.move-event]="event.tone === 'move'"
-                  [class.warning-event]="event.tone === 'warning'"
-                  [class.success-event]="event.tone === 'success'"
-                  (click)="goToTimelineEvent(event)"
-                >
-                  <span class="timeline-icon">
-                    <mat-icon>{{ event.icon }}</mat-icon>
-                  </span>
-                  <span class="timeline-copy">
-                    <span class="timeline-label">
-                      <span>{{ event.label }}</span>
-                      @if (event.bongcloud) {
-                        <mat-icon
-                          class="move-detail-badge"
-                          aria-hidden="false"
-                          role="img"
-                          aria-label="Bongcloud"
-                          title="Bongcloud"
-                          >cloud</mat-icon
-                        >
-                      }
-                      @if (event.quality; as q) {
-                        <span
-                          class="quality-badge"
-                          [class]="'quality-' + q.badge.tone"
-                          [attr.title]="q.tooltip"
-                          [attr.aria-label]="q.tooltip"
-                          >{{ q.badge.glyph }}</span
-                        >
-                      }
-                    </span>
-                    <span class="timeline-detail">{{ event.detail }}</span>
-                    @if (event.attemptSummary) {
-                      <span class="feed-attempts">{{ event.attemptSummary }}</span>
-                    }
-                  </span>
-                  <span class="timeline-time">{{ event.createdAtLabel | date: 'shortTime' }}</span>
-                </button>
-              } @empty {
-                <div class="timeline-empty">No events yet</div>
-              }
-            </div>
-          }
-        </mat-card-content>
-      </mat-card>
-    </div>
-
     <div class="board-section">
       <div class="board-frame">
         <div class="capture-strip top">
@@ -381,6 +303,83 @@
           }
         </div>
       </div>
+    </div>
+
+    <div class="record-column">
+      <mat-card class="record-card">
+        <mat-card-header>
+          <mat-button-toggle-group
+            class="record-toggle"
+            aria-label="Show moves or game feed"
+            [value]="recordView()"
+            (change)="selectRecordView($event.value)"
+          >
+            <mat-button-toggle value="moves">Moves</mat-button-toggle>
+            <mat-button-toggle value="feed">Feed</mat-button-toggle>
+          </mat-button-toggle-group>
+        </mat-card-header>
+        <mat-card-content>
+          @if (recordView() === 'moves') {
+            <app-move-list
+              role="region"
+              aria-label="Moves"
+              [moves]="moves()"
+              [currentIndex]="currentMoveIndex()"
+              [compact]="false"
+              (moveSelected)="goToMove($event)"
+            />
+          } @else {
+            <div class="timeline-scroll" role="region" aria-label="Game feed">
+              @for (event of feedEvents(); track event.id) {
+                <button
+                  type="button"
+                  class="timeline-event"
+                  [class.clickable]="event.moveIndex !== null"
+                  [class.move-event]="event.tone === 'move'"
+                  [class.warning-event]="event.tone === 'warning'"
+                  [class.success-event]="event.tone === 'success'"
+                  (click)="goToTimelineEvent(event)"
+                >
+                  <span class="timeline-icon">
+                    <mat-icon>{{ event.icon }}</mat-icon>
+                  </span>
+                  <span class="timeline-copy">
+                    <span class="timeline-label">
+                      <span>{{ event.label }}</span>
+                      @if (event.bongcloud) {
+                        <mat-icon
+                          class="move-detail-badge"
+                          aria-hidden="false"
+                          role="img"
+                          aria-label="Bongcloud"
+                          title="Bongcloud"
+                          >cloud</mat-icon
+                        >
+                      }
+                      @if (event.quality; as q) {
+                        <span
+                          class="quality-badge"
+                          [class]="'quality-' + q.badge.tone"
+                          [attr.title]="q.tooltip"
+                          [attr.aria-label]="q.tooltip"
+                          >{{ q.badge.glyph }}</span
+                        >
+                      }
+                    </span>
+                    <span class="timeline-detail">{{ event.detail }}</span>
+                    @if (event.attemptSummary) {
+                      <span class="feed-attempts">{{ event.attemptSummary }}</span>
+                    }
+                  </span>
+                  <span class="timeline-time">{{ event.createdAtLabel | date: 'shortTime' }}</span>
+                </button>
+              } @empty {
+                <div class="timeline-empty">No events yet</div>
+              }
+            </div>
+          }
+        </mat-card-content>
+      </mat-card>
     </div>
 
     <div class="chat-column">

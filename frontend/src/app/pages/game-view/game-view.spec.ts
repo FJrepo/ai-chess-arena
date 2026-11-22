@@ -3664,21 +3664,73 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
     }
   });
 
-  it('places the Moves | Feed box, the board and the chat side by side in that order', () => {
+  it('renders board, Moves | Feed box and chat in reading order inside the column grid', () => {
     const fixture = renderGame();
     const element: HTMLElement = fixture.nativeElement;
     try {
       const layout = element.querySelector<HTMLElement>('.game-layout')!;
-      expect(Array.from(layout.children, (child) => child.className.split(' ')[0])).toEqual([
-        'record-column',
-        'board-section',
-        'chat-column',
-      ]);
+      const columns = Array.from(layout.children) as HTMLElement[];
+      // DOM (and focus) order: board first, so the stacked layout reads and tabs top to bottom;
+      // grid areas put the Moves | Feed box left of the board on wide screens.
+      expect(columns).toHaveLength(3);
+      expect(columns[0].classList.contains('board-section')).toBe(true);
+      expect(columns[1].classList.contains('record-column')).toBe(true);
+      expect(columns[2].classList.contains('chat-column')).toBe(true);
+      expect(columns[0].querySelector('app-chessboard')).not.toBeNull();
+      expect(columns[1].querySelector('.record-card [role="radiogroup"]')).not.toBeNull();
+      expect(columns[1].querySelector('app-chat-panel')).toBeNull();
+
       expect(element.querySelectorAll('app-chat-panel')).toHaveLength(1);
-      const chat = layout.querySelector<HTMLElement>('.chat-column app-chat-panel')!;
+      const chat = columns[2].querySelector<HTMLElement>('app-chat-panel')!;
       expect(chat.textContent).toContain('Good luck, Beta.');
       expect(chat.textContent).toContain('Newest first');
-      expect(layout.querySelector('.board-section app-chessboard')).not.toBeNull();
+
+      // jsdom's default 1024 px window is in the stacked range: the stacked grid shows the
+      // columns in DOM order, so reading and focus order match what is on screen.
+      expect(window.innerWidth).toBeLessThan(1200);
+      const style = getComputedStyle(layout);
+      expect(style.display).toBe('grid');
+      expect(style.gridTemplateAreas.replace(/["\s]+/g, ' ').trim()).toBe('board record chat');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('marks the selected view with a check, not only a tint', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const selected = () =>
+        Array.from(
+          element.querySelectorAll<HTMLElement>('.record-card .mat-button-toggle-checked'),
+          (toggle) => ({
+            label: toggle.textContent?.trim(),
+            check: toggle.querySelector('.mat-pseudo-checkbox') !== null,
+          }),
+        );
+      expect(selected()).toEqual([{ label: 'Moves', check: true }]);
+      viewButtons(element).buttons[1].click();
+      fixture.detectChanges();
+      expect(selected()).toEqual([{ label: 'Feed', check: true }]);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('lets capture trays wrap within the board width instead of widening the centre column', () => {
+    const bareKings = '4k3/8/8/8/8/8/8/3K4 b - - 0 60';
+    const fixture = renderGame({
+      currentFen: bareKings,
+      moves: [storedMove(60, 'WHITE', 'Kd1', bareKings)],
+    });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const strips = Array.from(element.querySelectorAll<HTMLElement>('.capture-strip'));
+      expect(strips).toHaveLength(2);
+      expect(strips[0].querySelectorAll('img.captured-piece')).toHaveLength(15);
+      for (const strip of strips) {
+        expect(getComputedStyle(strip).contain).toBe('inline-size');
+      }
     } finally {
       fixture.destroy();
     }
