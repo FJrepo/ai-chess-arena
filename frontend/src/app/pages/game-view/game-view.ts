@@ -43,7 +43,7 @@ import {
 } from '../../models/tournament.model';
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
-import { ChatPanel } from '../../components/chat-panel/chat-panel';
+import { ChatMoveSelection, ChatPanel } from '../../components/chat-panel/chat-panel';
 import { QueuedResume } from '../../components/queued-resume/queued-resume';
 import {
   GameInfoBar,
@@ -113,6 +113,9 @@ function savedRecordView(): RecordView {
     return 'moves';
   }
 }
+
+/** Space between the sticky toolbar and the board when a chat link scrolls it into view. */
+const BOARD_REVEAL_GAP = 12;
 
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
@@ -1209,18 +1212,33 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   /**
-   * A chat message's move link: show that position and, when the board is scrolled out of sight
-   * (the stacked layout), bring it into view without animating for reduced-motion users.
+   * A chat message's move link shows that position. From a pointer it also brings the board into
+   * view when its squares are hidden; from the keyboard, focus and scroll stay in the chat (the
+   * panel announces the position), so the next key press does not fight a page jump.
    */
-  showChatMove(index: number) {
-    this.goToMove(index);
-    const board = this.boardSection?.nativeElement;
-    if (!board) return;
-    const view = board.ownerDocument.defaultView;
-    const rect = board.getBoundingClientRect();
-    if (!view || (rect.bottom > 0 && rect.top < view.innerHeight)) return;
+  showChatMove(selection: ChatMoveSelection) {
+    this.goToMove(selection.index);
+    if (selection.pointer) this.revealBoard();
+  }
+
+  /** Scrolls the board below the sticky toolbar when less than half of its squares are visible. */
+  private revealBoard() {
+    const section = this.boardSection?.nativeElement;
+    const squares = section?.querySelector('app-chessboard');
+    const view = section?.ownerDocument.defaultView;
+    if (!section || !squares || !view) return;
+    const toolbar = section.ownerDocument.querySelector('.app-toolbar')?.getBoundingClientRect();
+    // What the sticky toolbar covers now (it scrolls away with its container far down the page),
+    // and its height, which it covers again once it sticks at the scroll target.
+    const covered = Math.max(0, toolbar?.bottom ?? 0);
+    const board = squares.getBoundingClientRect();
+    const visible = Math.min(board.bottom, view.innerHeight) - Math.max(board.top, covered);
+    if (visible >= board.height / 2) return;
     const reduceMotion = view.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    board.scrollIntoView?.({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    view.scrollBy({
+      top: section.getBoundingClientRect().top - (toolbar?.height ?? 0) - BOARD_REVEAL_GAP,
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
   }
 
   selectRecordView(view: RecordView) {

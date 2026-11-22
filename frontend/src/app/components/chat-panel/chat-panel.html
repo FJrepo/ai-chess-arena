@@ -9,7 +9,7 @@
     </mat-card-subtitle>
   </mat-card-header>
   <mat-card-content>
-    <div class="chat-scroll" tabindex="0" role="region" [attr.aria-labelledby]="titleId">
+    <div #scroll class="chat-scroll" tabindex="0" role="region" [attr.aria-labelledby]="titleId">
       @for (row of rows(); track row.key) {
         @let msg = row.msg;
         <div
@@ -34,7 +34,7 @@
                 [attr.aria-label]="moveLabel(msg)"
                 (focus)="onLinkFocus(row.key)"
                 (keydown)="onLinkKeydown($event)"
-                (click)="moveSelected.emit(index)"
+                (click)="selectMove(index, msg, $event)"
               >
                 move {{ msg.moveNumber }}
               </button>
@@ -48,5 +48,6 @@
         <div class="empty-chat">{{ emptyText() }}</div>
       }
     </div>
+    <span class="cdk-visually-hidden" role="status" aria-live="polite">{{ announcement() }}</span>
   </mat-card-content>
 </mat-card>

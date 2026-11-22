@@ -1,9 +1,25 @@
-import { Component, EventEmitter, Input, Output, computed, signal } from '@angular/core';
+import {
+  AfterViewChecked,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  Output,
+  ViewChild,
+  computed,
+  signal,
+} from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { BanterLevel, ChatMessage, ChatMode } from '../../models/tournament.model';
 import { plyKey } from '../../utils/move-attempts';
 
 let nextTitleId = 0;
+
+/** A chat move link was used: the move-list index, and whether a pointer (not a key) activated it. */
+export interface ChatMoveSelection {
+  index: number;
+  pointer: boolean;
+}
 
 const CHAT_MODE_LABELS: Record<ChatMode, string> = {
   OFF: 'Chat off',
@@ -17,8 +33,9 @@ const CHAT_MODE_LABELS: Record<ChatMode, string> = {
   templateUrl: './chat-panel.html',
   styleUrl: './chat-panel.scss',
 })
-export class ChatPanel {
+export class ChatPanel implements AfterViewChecked {
   @Input() set messages(value: ChatMessage[]) {
+    this.anchorFocusedLink();
     this._messages.set(value);
   }
   @Input() whitePlayerName: string | null = null;
@@ -36,8 +53,13 @@ export class ChatPanel {
   @Input() set moveIndexByPly(value: ReadonlyMap<string, number> | null | undefined) {
     this._moveIndexByPly.set(value ?? new Map());
   }
-  /** The move-list index of the ply a message was sent with, when its move number is selected. */
-  @Output() moveSelected = new EventEmitter<number>();
+  /** The ply a message was sent with, when its move number is selected. */
+  @Output() moveSelected = new EventEmitter<ChatMoveSelection>();
+  @ViewChild('scroll') private scroll?: ElementRef<HTMLElement>;
+  /** A focused move link and its offset in the transcript before a live update re-rendered it. */
+  private anchor: { element: HTMLElement; offset: number } | null = null;
+  /** Polite live-region text naming the position a move link just showed. */
+  readonly announcement = signal('');
 
   /** Names the scrollable transcript after the card title. */
   readonly titleId = `chat-panel-title-${nextTitleId++}`;
@@ -94,12 +116,52 @@ export class ChatPanel {
     return this._moveIndexByPly().get(plyKey(msg.moveNumber, msg.senderColor));
   }
 
+  selectMove(index: number, msg: ChatMessage, event: MouseEvent): void {
+    this.announcement.set(
+      `Showing the board after ${msg.senderColor === 'WHITE' ? 'White' : 'Black'}'s move ${msg.moveNumber}`,
+    );
+    // Enter or Space on a button fires a click with detail 0; a pointer click counts its presses.
+    this.moveSelected.emit({ index, pointer: event.detail > 0 });
+  }
+
+  /** Keeps a focused move link where it was when a live message is inserted above it. */
+  ngAfterViewChecked(): void {
+    const anchor = this.anchor;
+    const scroll = this.scroll?.nativeElement;
+    this.anchor = null;
+    if (!anchor || !scroll || scroll.ownerDocument.activeElement !== anchor.element) return;
+    const shift =
+      anchor.element.getBoundingClientRect().top -
+      scroll.getBoundingClientRect().top -
+      anchor.offset;
+    if (shift) scroll.scrollTop += shift;
+  }
+
+  private anchorFocusedLink(): void {
+    const scroll = this.scroll?.nativeElement;
+    const active = scroll?.ownerDocument.activeElement;
+    if (
+      !scroll ||
+      !(active instanceof HTMLElement) ||
+      active === scroll ||
+      !scroll.contains(active)
+    ) {
+      return;
+    }
+    this.anchor = {
+      element: active,
+      offset: active.getBoundingClientRect().top - scroll.getBoundingClientRect().top,
+    };
+  }
+
   onLinkFocus(key: string): void {
     this.focusedLink.set(key);
   }
 
   /** Up/Down (or Left/Right) move between move links, Home/End to the newest/oldest; Enter or Space activates. */
   onLinkKeydown(event: KeyboardEvent): void {
+    // Modified arrows are browser shortcuts (Alt+Left is Back); leave them alone.
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const link = event.target as HTMLElement;
     const links = Array.from(
       link.closest('.chat-scroll')?.querySelectorAll<HTMLElement>('button.msg-move') ?? [],

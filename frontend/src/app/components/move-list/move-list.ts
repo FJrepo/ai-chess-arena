@@ -104,6 +104,8 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
 
   /** Left/Right step one ply, Up/Down one move (same column), Home/End to the first/last ply. */
   onKeydown(event: KeyboardEvent) {
+    // Modified arrows are browser shortcuts (Alt+Left is Back); leave them alone.
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const button = (event.target as HTMLElement).closest<HTMLElement>('.move');
     const last = this._moves().length - 1;
     if (!button || last < 0) return;

@@ -3752,34 +3752,61 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
     }
   });
 
-  it('brings an off-screen board into view for a chat move link, respecting reduced motion', () => {
+  it('scrolls hidden board squares into view for a pointer chat link, but not from the keyboard', () => {
     const fixture = renderGame();
     const element: HTMLElement = fixture.nativeElement;
-    const board = element.querySelector<HTMLElement>('.board-section')!;
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(board, 'scrollIntoView', { value: scrollIntoView, configurable: true });
-    const rect = vi.spyOn(board, 'getBoundingClientRect');
+    // A sticky toolbar 64 px tall covers the top of jsdom's 768 px window.
+    const toolbar = document.createElement('div');
+    toolbar.className = 'app-toolbar';
+    document.body.prepend(toolbar);
+    const toolbarRect = vi
+      .spyOn(toolbar, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 1024, 64));
+    const section = element.querySelector<HTMLElement>('.board-section')!;
+    const squares = element.querySelector<HTMLElement>('app-chessboard')!;
+    const sectionRect = vi.spyOn(section, 'getBoundingClientRect');
+    const squaresRect = vi.spyOn(squares, 'getBoundingClientRect');
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
     const link = () => element.querySelector<HTMLButtonElement>('.chat-column button.msg-move')!;
+    const pointer = () =>
+      link().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
     try {
-      // Visible (jsdom's window is 768 px tall): only the position changes.
-      rect.mockReturnValue(new DOMRect(0, 100, 500, 500));
-      link().click();
+      // Squares visible below the toolbar: only the position changes.
+      sectionRect.mockReturnValue(new DOMRect(0, 80, 500, 600));
+      squaresRect.mockReturnValue(new DOMRect(0, 130, 500, 500));
+      pointer();
       fixture.detectChanges();
       expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
-      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollBy).not.toHaveBeenCalled();
 
-      // Scrolled away above the viewport (stacked layout, reading the chat).
-      rect.mockReturnValue(new DOMRect(0, -1400, 500, 700));
-      link().click();
-      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', behavior: 'smooth' });
+      // The bottom capture strip still shows, but every square is above or under the toolbar.
+      sectionRect.mockReturnValue(new DOMRect(0, -520, 500, 640)); // bottom 120
+      squaresRect.mockReturnValue(new DOMRect(0, -470, 500, 500)); // bottom 30
+      fixture.componentInstance.currentMoveIndex.set(-1);
+      link().click(); // keyboard activation (detail 0): focus and scroll stay in the chat
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(scrollBy).not.toHaveBeenCalled();
+
+      pointer();
+      // The section's top lands just below the toolbar.
+      expect(scrollBy).toHaveBeenLastCalledWith({ top: -520 - 64 - 12, behavior: 'smooth' });
+
+      // Far down the page the toolbar has scrolled away with its container, but it sticks again
+      // once the page scrolls up: the target still leaves room for its full height.
+      toolbarRect.mockReturnValue(new DOMRect(0, -500, 1024, 64));
+      pointer();
+      expect(scrollBy).toHaveBeenLastCalledWith({ top: -520 - 64 - 12, behavior: 'smooth' });
+      toolbarRect.mockReturnValue(new DOMRect(0, 0, 1024, 64));
 
       const matchMedia = vi.fn(() => ({ matches: true }));
       Object.defineProperty(window, 'matchMedia', { value: matchMedia, configurable: true });
-      link().click();
+      pointer();
       expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
-      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', behavior: 'auto' });
+      expect(scrollBy).toHaveBeenLastCalledWith({ top: -520 - 64 - 12, behavior: 'auto' });
     } finally {
       delete (window as { matchMedia?: unknown }).matchMedia;
+      scrollBy.mockRestore();
+      toolbar.remove();
       fixture.destroy();
     }
   });

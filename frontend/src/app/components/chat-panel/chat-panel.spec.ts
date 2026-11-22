@@ -118,7 +118,10 @@ describe('ChatPanel', () => {
     expect(black.getAttribute('aria-label')).toBe("Show the board after Black's move 1");
     black.click();
     rows[2].querySelector<HTMLButtonElement>('button.msg-move')!.click();
-    expect(selected.mock.calls).toEqual([[1], [0]]);
+    expect(selected.mock.calls).toEqual([
+      [{ index: 1, pointer: false }],
+      [{ index: 0, pointer: false }],
+    ]);
   });
 
   function key(target: Element, name: string) {
@@ -158,7 +161,7 @@ describe('ChatPanel', () => {
     expect(document.activeElement).toBe(link);
     expect(link.getAttribute('aria-label')).toBe("Show the board after White's move 1");
     link.click();
-    expect(selected).toHaveBeenCalledExactlyOnceWith(0);
+    expect(selected).toHaveBeenCalledExactlyOnceWith({ index: 0, pointer: false });
   });
 
   it('keeps legacy messages without an id apart, even with equal text', () => {
@@ -198,5 +201,70 @@ describe('ChatPanel', () => {
     expect(document.activeElement).toBe(links()[0]);
     expect(stops()).toEqual(['0', '-1', '-1']);
     expect(selected).not.toHaveBeenCalled();
+  });
+
+  it('tells pointer from keyboard activation and announces the position politely', () => {
+    const { fixture, selected, element } = renderLinked([message('a', 1, 'WHITE')]);
+    const link = element.querySelector<HTMLButtonElement>('button.msg-move')!;
+    const status = () => element.querySelector('[role="status"]');
+    expect(status()?.getAttribute('aria-live')).toBe('polite');
+    expect(status()?.textContent?.trim()).toBe('');
+
+    // Enter or Space on a button fires a click with detail 0.
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    fixture.detectChanges();
+    expect(selected).toHaveBeenLastCalledWith({ index: 0, pointer: false });
+    expect(status()?.textContent?.trim()).toBe("Showing the board after White's move 1");
+
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(selected).toHaveBeenLastCalledWith({ index: 0, pointer: true });
+  });
+
+  it('keeps a focused move link in place when a live message is added above it', () => {
+    const first = message('a', 1, 'WHITE');
+    const { fixture, element } = renderLinked([first]);
+    const scroll = element.querySelector<HTMLElement>('.chat-scroll')!;
+    const link = element.querySelector<HTMLButtonElement>('button.msg-move')!;
+    let linkTop = 50;
+    vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 100));
+    vi.spyOn(link, 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(250, linkTop, 50, 16),
+    );
+    link.focus();
+
+    fixture.componentRef.setInput('messages', [first, message('b', 1, 'BLACK')]);
+    linkTop = 130; // the new two-line message above pushed the link below the transcript's edge
+    fixture.detectChanges();
+    expect(document.activeElement).toBe(link);
+    expect(scroll.scrollTop).toBe(80);
+
+    // Without focus in the transcript a live message leaves the scroll position alone.
+    link.blur();
+    scroll.scrollTop = 0;
+    fixture.componentRef.setInput('messages', [
+      first,
+      message('b', 1, 'BLACK'),
+      message('c', 2, 'WHITE'),
+    ]);
+    linkTop = 200;
+    fixture.detectChanges();
+    expect(scroll.scrollTop).toBe(0);
+  });
+
+  it('leaves modified arrow keys (browser shortcuts) to the browser', () => {
+    const { element } = renderLinked([message('a', 1, 'WHITE'), message('b', 1, 'BLACK')]);
+    const links = Array.from(element.querySelectorAll<HTMLButtonElement>('button.msg-move'));
+    links[0].focus();
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        [modifier]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      links[0].dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(links[0]);
+    }
   });
 });

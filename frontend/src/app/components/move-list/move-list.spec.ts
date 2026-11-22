@@ -335,4 +335,20 @@ describe('MoveListComponent roving focus', () => {
       rects.mockRestore();
     }
   });
+
+  it('leaves modified arrow keys (Alt+Left is browser Back) to the browser', () => {
+    const { buttons } = renderList(4, 1);
+    buttons()[1].focus();
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', {
+        key: 'ArrowLeft',
+        [modifier]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      buttons()[1].dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(buttons()[1]);
+    }
+  });
 });
