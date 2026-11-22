@@ -114,7 +114,7 @@ function savedRecordView(): RecordView {
   }
 }
 
-/** Space between the sticky toolbar and the board when a chat link scrolls it into view. */
+/** Space between the sticky toolbar and the first rank when a chat link scrolls the board into view. */
 const BOARD_REVEAL_GAP = 12;
 
 /** Backend default for a tournament's output-token limit. */
@@ -1221,24 +1221,40 @@ export class GameView implements OnInit, OnDestroy {
     if (selection.pointer) this.revealBoard();
   }
 
-  /** Scrolls the board below the sticky toolbar when less than half of its squares are visible. */
+  /**
+   * Scrolls the board's first rank just below the sticky toolbar when less than half of its squares
+   * are visible in the visual viewport (pinch zoom shows only part of the layout viewport).
+   */
   private revealBoard() {
-    const section = this.boardSection?.nativeElement;
-    const squares = section?.querySelector('app-chessboard');
-    const view = section?.ownerDocument.defaultView;
-    if (!section || !squares || !view) return;
-    const toolbar = section.ownerDocument.querySelector('.app-toolbar')?.getBoundingClientRect();
-    // What the sticky toolbar covers now (it scrolls away with its container far down the page),
-    // and its height, which it covers again once it sticks at the scroll target.
-    const covered = Math.max(0, toolbar?.bottom ?? 0);
-    const board = squares.getBoundingClientRect();
-    const visible = Math.min(board.bottom, view.innerHeight) - Math.max(board.top, covered);
-    if (visible >= board.height / 2) return;
+    const host = this.boardSection?.nativeElement.querySelector<HTMLElement>('app-chessboard');
+    const squares = host?.querySelectorAll<HTMLElement>('.square');
+    const doc = host?.ownerDocument;
+    const view = doc?.defaultView;
+    if (!host || !squares?.length || !doc || !view) return;
+    // The squares grid only (first to last square), without the rank and file labels.
+    const first = squares[0].getBoundingClientRect();
+    const last = squares[squares.length - 1].getBoundingClientRect();
+    const grid = {
+      top: Math.min(first.top, last.top),
+      bottom: Math.max(first.bottom, last.bottom),
+      left: Math.min(first.left, last.left),
+      right: Math.max(first.right, last.right),
+    };
+    const toolbar = doc.querySelector('.app-toolbar')?.getBoundingClientRect();
+    const viewport = view.visualViewport;
+    const viewTop = viewport?.offsetTop ?? 0;
+    const viewLeft = viewport?.offsetLeft ?? 0;
+    // The toolbar covers the window top only while it sticks (far down the page it has scrolled away).
+    const visibleTop = Math.max(viewTop, toolbar?.bottom ?? 0);
+    const visibleBottom = viewTop + (viewport?.height ?? view.innerHeight);
+    const visibleRight = viewLeft + (viewport?.width ?? view.innerWidth);
+    const height = Math.min(grid.bottom, visibleBottom) - Math.max(grid.top, visibleTop);
+    const width = Math.min(grid.right, visibleRight) - Math.max(grid.left, viewLeft);
+    if (height >= (grid.bottom - grid.top) / 2 && width >= (grid.right - grid.left) / 2) return;
+    // It sticks again at the target, so leave room for its full height.
+    host.style.scrollMarginTop = `${(toolbar?.height ?? 0) + BOARD_REVEAL_GAP}px`;
     const reduceMotion = view.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    view.scrollBy({
-      top: section.getBoundingClientRect().top - (toolbar?.height ?? 0) - BOARD_REVEAL_GAP,
-      behavior: reduceMotion ? 'auto' : 'smooth',
-    });
+    host.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 
   selectRecordView(view: RecordView) {

@@ -3762,50 +3762,93 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
     const toolbarRect = vi
       .spyOn(toolbar, 'getBoundingClientRect')
       .mockReturnValue(new DOMRect(0, 0, 1024, 64));
-    const section = element.querySelector<HTMLElement>('.board-section')!;
-    const squares = element.querySelector<HTMLElement>('app-chessboard')!;
-    const sectionRect = vi.spyOn(section, 'getBoundingClientRect');
-    const squaresRect = vi.spyOn(squares, 'getBoundingClientRect');
-    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    const host = element.querySelector<HTMLElement>('app-chessboard')!;
+    const squares = host.querySelectorAll<HTMLElement>('.square');
+    expect(squares).toHaveLength(64);
+    // Only the squares count: the host also holds the file-label row below the last rank.
+    let ranksTop = 130;
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, ranksTop, 500, 524),
+    );
+    vi.spyOn(squares[0], 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, ranksTop, 62, 62),
+    );
+    vi.spyOn(squares[63], 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(438, ranksTop + 438, 62, 62),
+    );
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(host, 'scrollIntoView', { value: scrollIntoView, configurable: true });
     const link = () => element.querySelector<HTMLButtonElement>('.chat-column button.msg-move')!;
     const pointer = () =>
       link().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
     try {
-      // Squares visible below the toolbar: only the position changes.
-      sectionRect.mockReturnValue(new DOMRect(0, 80, 500, 600));
-      squaresRect.mockReturnValue(new DOMRect(0, 130, 500, 500));
+      // Squares 130–630 below the toolbar: only the position changes.
       pointer();
       fixture.detectChanges();
       expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
-      expect(scrollBy).not.toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
 
-      // The bottom capture strip still shows, but every square is above or under the toolbar.
-      sectionRect.mockReturnValue(new DOMRect(0, -520, 500, 640)); // bottom 120
-      squaresRect.mockReturnValue(new DOMRect(0, -470, 500, 500)); // bottom 30
-      fixture.componentInstance.currentMoveIndex.set(-1);
+      // Squares end 30 px into the window, under the toolbar (the capture strip below shows).
+      ranksTop = -470;
       link().click(); // keyboard activation (detail 0): focus and scroll stay in the chat
-      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
-      expect(scrollBy).not.toHaveBeenCalled();
-
+      expect(scrollIntoView).not.toHaveBeenCalled();
       pointer();
-      // The section's top lands just below the toolbar.
-      expect(scrollBy).toHaveBeenLastCalledWith({ top: -520 - 64 - 12, behavior: 'smooth' });
+      expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({
+        block: 'start',
+        behavior: 'smooth',
+      });
+      // The first rank lands just below the toolbar.
+      expect(host.style.scrollMarginTop).toBe('76px');
+
+      // Board above the window: the 24 px file-label row below the last rank shows under the
+      // toolbar. Counting it, 270 of 524 px (over half) would look visible; the squares alone show
+      // 246 of 500 px, under half, so the board is revealed.
+      scrollIntoView.mockClear();
+      ranksTop = -190;
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
 
       // Far down the page the toolbar has scrolled away with its container, but it sticks again
-      // once the page scrolls up: the target still leaves room for its full height.
+      // once the page scrolls up: the margin still leaves room for its full height.
+      scrollIntoView.mockClear();
+      host.style.scrollMarginTop = '';
+      ranksTop = -470;
       toolbarRect.mockReturnValue(new DOMRect(0, -500, 1024, 64));
       pointer();
-      expect(scrollBy).toHaveBeenLastCalledWith({ top: -520 - 64 - 12, behavior: 'smooth' });
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+      expect(host.style.scrollMarginTop).toBe('76px');
       toolbarRect.mockReturnValue(new DOMRect(0, 0, 1024, 64));
 
+      // Pinch zoom: the squares are inside the layout viewport but outside the magnified visual one.
+      scrollIntoView.mockClear();
+      ranksTop = 130;
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 400, height: 300 },
+        configurable: true,
+      });
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // Pinch zoom panned sideways onto the chat column: in range vertically, off to the left.
+      scrollIntoView.mockClear();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 100, height: 300, offsetLeft: 600, width: 400 },
+        configurable: true,
+      });
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+      delete (window as { visualViewport?: unknown }).visualViewport;
+
+      scrollIntoView.mockClear();
+      ranksTop = -470;
       const matchMedia = vi.fn(() => ({ matches: true }));
       Object.defineProperty(window, 'matchMedia', { value: matchMedia, configurable: true });
       pointer();
       expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
-      expect(scrollBy).toHaveBeenLastCalledWith({ top: -520 - 64 - 12, behavior: 'auto' });
+      expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'start', behavior: 'auto' });
     } finally {
       delete (window as { matchMedia?: unknown }).matchMedia;
-      scrollBy.mockRestore();
+      delete (window as { visualViewport?: unknown }).visualViewport;
       toolbar.remove();
       fixture.destroy();
     }
