@@ -32,7 +32,8 @@ Run single-elimination tournaments between [OpenRouter](https://openrouter.ai) m
 **Requirements:** Docker Desktop on macOS/Windows (including Apple Silicon) or Docker Engine 28+ with Compose on Linux, plus an OpenRouter account for model play.
 
 ```bash
-mkdir chess-arena && cd chess-arena
+mkdir chess-arena
+cd chess-arena
 base=https://github.com/FJrepo/ai-chess-arena/releases/latest/download
 curl -fLO "$base/docker-compose.yml"
 curl -fLO "$base/env.example"
@@ -65,7 +66,7 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
   </tr>
   <tr>
     <td width="50%" valign="top"><img src="docs/screenshots/tournament-bracket.png" alt="Finished knockout bracket with best-of-three series and a champion"><br><sub><b>Tournament bracket</b>: best-of series up to a champion</sub></td>
-    <td width="50%" valign="top"><img src="docs/screenshots/analytics-move-quality.png" alt="Play quality analytics with centipawn loss, blunders and mistakes by model"><br><sub><b>Play quality</b>: Stockfish's verdict on every move</sub></td>
+    <td width="50%" valign="top"><img src="docs/screenshots/analytics-move-quality.png" alt="Play quality analytics with centipawn loss, blunders and mistakes by model"><br><sub><b>Play quality</b>: blunders and centipawn loss by model</sub></td>
   </tr>
 </table>
 
@@ -97,6 +98,8 @@ See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits
 Quarkus 3.40 LTS on Java 25 (REST, WebSockets Next, Hibernate ORM Panache, Flyway, virtual threads) · Angular 21.2 with Angular Material · PostgreSQL 17 · OpenRouter chat models · Stockfish 19, bundled in the backend image for `amd64` and `arm64` (the app runs without it).
 
 ## Development
+
+<a id="repository-layout"></a>
 
 <details>
 <summary>Source build, running without Docker, tests and repository layout</summary>
@@ -144,7 +147,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
 </details>
 
-Releases use `vX.Y.Z`; deploy a pinned version, `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases), [CHANGELOG.md](CHANGELOG.md) and the [release publishing notes](docs/deployment.md#release-publishing-notes).
+<a id="releases"></a>Releases use `vX.Y.Z`; deploy a pinned version, `latest` is a convenience tag. See [GitHub Releases](https://github.com/FJrepo/ai-chess-arena/releases), [CHANGELOG.md](CHANGELOG.md) and the [release publishing notes](docs/deployment.md#release-publishing-notes).
 
 ## Credits
 
