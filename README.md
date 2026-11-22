@@ -86,9 +86,9 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 ## How it works
 
-- Models get the position, recent chat and, with hints on, the legal moves. Every answer is checked against the rules.
-- A model loses the game when it runs out of attempts or misses its move deadline. Provider problems pause play; after a possibly charged request, you check the spend before resuming.
-- It is built for **one person on their own computer**: no user accounts, desktop browsers, everything on localhost. Read the [scope and limitations](docs/how-it-works.md#scope-and-interpretation) before opening it to a network.
+- Models get the position, recent conversation and, with hints on, the legal moves. Every answer is checked against the rules.
+- A model loses if it uses up its attempts or, normally, if it runs out of time. Provider trouble can trigger a retry or a pause; if a request may have been charged and its outcome is unknown, check your OpenRouter spend before resuming.
+- Built for one person using a desktop browser on **localhost**; shared networks and the public internet are not supported. See [scope and limitations](docs/how-it-works.md#scope-and-interpretation).
 
 See [How AI Chess Arena works](docs/how-it-works.md) for rules, defaults, limits, prompt versions, API fields and recovery instructions. Not sure what to test? The [benchmark guide](docs/benchmarks.md) maps questions to settings.
 
