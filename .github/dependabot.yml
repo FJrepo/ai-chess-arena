@@ -39,6 +39,10 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # The Maven build image encodes the JDK in its tag suffix, which the rule above does not catch.
+      # Stay on the Java 25 LTS line used by CI and the runtime image.
+      - dependency-name: "maven"
+        versions: ["3.9-eclipse-temurin-26", "3.9-eclipse-temurin-27", "3.9-eclipse-temurin-28"]
     groups:
       base-images:
         patterns: ["*"]
