@@ -33,7 +33,9 @@ export class ChatPanel {
   }
 
   /** Index in the move list of each recorded ply, by `plyKey`; a message's move number links there. */
-  @Input() moveIndexByPly: ReadonlyMap<string, number> = new Map();
+  @Input() set moveIndexByPly(value: ReadonlyMap<string, number> | null | undefined) {
+    this._moveIndexByPly.set(value ?? new Map());
+  }
   /** The move-list index of the ply a message was sent with, when its move number is selected. */
   @Output() moveSelected = new EventEmitter<number>();
 
@@ -43,7 +45,31 @@ export class ChatPanel {
   readonly _banterLevel = signal<BanterLevel | null>(null);
   readonly _messages = signal<ChatMessage[]>([]);
   readonly _chatMode = signal<ChatMode | null>(null);
-  readonly displayedMessages = computed(() => [...this._messages()].reverse());
+  private readonly _moveIndexByPly = signal<ReadonlyMap<string, number>>(new Map());
+  /** The move link last focused; it keeps the links' single tab stop. */
+  private readonly focusedLink = signal<string | null>(null);
+
+  /**
+   * Messages newest first, each with a stable key: the message id, or for legacy messages without
+   * one its ply and time, numbered in arrival order when those repeat. Rows keep their DOM node
+   * (and focus) when a live message arrives.
+   */
+  readonly rows = computed(() => {
+    const seen = new Map<string, number>();
+    const rows = this._messages().map((msg) => {
+      const base = msg.id || `${msg.moveNumber}-${msg.senderColor}-${msg.createdAt}`;
+      const repeat = seen.get(base) ?? 0;
+      seen.set(base, repeat + 1);
+      return { msg, key: repeat ? `${base}#${repeat}` : base };
+    });
+    return rows.reverse();
+  });
+  /** Key of the one move link in the tab order: the last focused one, else the newest. */
+  readonly linkTabStop = computed(() => {
+    const linked = this.rows().filter((row) => this.moveIndex(row.msg) !== undefined);
+    const focused = this.focusedLink();
+    return linked.some((row) => row.key === focused) ? focused : (linked[0]?.key ?? null);
+  });
   readonly chatModeLabel = computed(() => {
     const mode = this._chatMode();
     if (!mode) return null;
@@ -65,7 +91,31 @@ export class ChatPanel {
 
   /** The move-list index of the ply the message was sent with; undefined when that ply is not recorded. */
   moveIndex(msg: ChatMessage): number | undefined {
-    return this.moveIndexByPly.get(plyKey(msg.moveNumber, msg.senderColor));
+    return this._moveIndexByPly().get(plyKey(msg.moveNumber, msg.senderColor));
+  }
+
+  onLinkFocus(key: string): void {
+    this.focusedLink.set(key);
+  }
+
+  /** Up/Down (or Left/Right) move between move links, Home/End to the newest/oldest; Enter or Space activates. */
+  onLinkKeydown(event: KeyboardEvent): void {
+    const link = event.target as HTMLElement;
+    const links = Array.from(
+      link.closest('.chat-scroll')?.querySelectorAll<HTMLElement>('button.msg-move') ?? [],
+    );
+    const at = links.indexOf(link);
+    const target = {
+      ArrowDown: at + 1,
+      ArrowRight: at + 1,
+      ArrowUp: at - 1,
+      ArrowLeft: at - 1,
+      Home: 0,
+      End: links.length - 1,
+    }[event.key];
+    if (target === undefined || at < 0) return;
+    event.preventDefault();
+    links[Math.max(0, Math.min(links.length - 1, target))].focus();
   }
 
   moveLabel(msg: ChatMessage): string {

@@ -3,7 +3,15 @@ import { OpenRouterAccess } from '../../services/openrouter-access';
 import { BoardThemeService } from '../../services/board-theme.service';
 import { MatMenuModule } from '@angular/material/menu';
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, OnDestroy, signal, computed, ViewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnInit,
+  OnDestroy,
+  signal,
+  computed,
+  ViewChild,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -243,6 +251,7 @@ export class GameView implements OnInit, OnDestroy {
     };
   });
   @ViewChild(MoveListComponent) private moveList?: MoveListComponent;
+  @ViewChild('boardSection') private boardSection?: ElementRef<HTMLElement>;
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -1197,6 +1206,21 @@ export class GameView implements OnInit, OnDestroy {
   goToMove(index: number) {
     this.moveList?.revealSelectedMove();
     this.currentMoveIndex.set(index);
+  }
+
+  /**
+   * A chat message's move link: show that position and, when the board is scrolled out of sight
+   * (the stacked layout), bring it into view without animating for reduced-motion users.
+   */
+  showChatMove(index: number) {
+    this.goToMove(index);
+    const board = this.boardSection?.nativeElement;
+    if (!board) return;
+    const view = board.ownerDocument.defaultView;
+    const rect = board.getBoundingClientRect();
+    if (!view || (rect.bottom > 0 && rect.top < view.innerHeight)) return;
+    const reduceMotion = view.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    board.scrollIntoView?.({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 
   selectRecordView(view: RecordView) {

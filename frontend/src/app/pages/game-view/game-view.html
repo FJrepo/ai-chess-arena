@@ -88,7 +88,7 @@
   </div>
 
   <div class="game-layout">
-    <div class="board-section">
+    <div class="board-section" #boardSection>
       <div class="board-frame">
         <div class="capture-strip top">
           <span class="capture-label">White captures</span>
@@ -390,7 +390,7 @@
         [chatMode]="displayedChatMode()"
         [banterLevel]="displayedBanterLevel()"
         [moveIndexByPly]="chatMoveIndexByPly()"
-        (moveSelected)="goToMove($event)"
+        (moveSelected)="showChatMove($event)"
       />
     </div>
   </div>

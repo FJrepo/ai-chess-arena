@@ -10,7 +10,8 @@
   </mat-card-header>
   <mat-card-content>
     <div class="chat-scroll" tabindex="0" role="region" [attr.aria-labelledby]="titleId">
-      @for (msg of displayedMessages(); track $index) {
+      @for (row of rows(); track row.key) {
+        @let msg = row.msg;
         <div
           class="chat-message"
           [class.white-msg]="msg.senderColor === 'WHITE'"
@@ -29,7 +30,10 @@
               <button
                 type="button"
                 class="msg-time msg-move"
+                [attr.tabindex]="row.key === linkTabStop() ? 0 : -1"
                 [attr.aria-label]="moveLabel(msg)"
+                (focus)="onLinkFocus(row.key)"
+                (keydown)="onLinkKeydown($event)"
                 (click)="moveSelected.emit(index)"
               >
                 move {{ msg.moveNumber }}

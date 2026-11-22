@@ -1,4 +1,10 @@
-<div class="move-list-scroll num" #scrollContainer>
+<div
+  class="move-list-scroll num"
+  #scrollContainer
+  tabindex="-1"
+  (keydown)="onKeydown($event)"
+  (focusout)="onFocusOut($event)"
+>
   @for (pair of movePairs(); track pair.number) {
     <div class="move-row">
       <span class="move-number">{{ pair.number }}.</span>
@@ -9,6 +15,9 @@
           [class.active]="currentIndex === pair.whiteIdx"
           [class.book-move]="pair.white.isBook"
           [attr.aria-current]="currentIndex === pair.whiteIdx ? 'step' : null"
+          [attr.tabindex]="tabIndexFor(pair.whiteIdx)"
+          [attr.data-ply]="pair.whiteIdx"
+          (focus)="focusedIndex = pair.whiteIdx"
           [attr.aria-label]="moveLabel(pair.white)"
           [attr.title]="tooltip(pair.white)"
           (click)="onMoveClick(pair.whiteIdx)"
@@ -37,6 +46,9 @@
           [class.active]="currentIndex === pair.blackIdx"
           [class.book-move]="pair.black.isBook"
           [attr.aria-current]="currentIndex === pair.blackIdx ? 'step' : null"
+          [attr.tabindex]="tabIndexFor(pair.blackIdx)"
+          [attr.data-ply]="pair.blackIdx"
+          (focus)="focusedIndex = pair.blackIdx"
           [attr.aria-label]="moveLabel(pair.black)"
           [attr.title]="tooltip(pair.black)"
           (click)="onMoveClick(pair.blackIdx)"

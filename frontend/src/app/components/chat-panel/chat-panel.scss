@@ -59,12 +59,16 @@
 .msg-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
+  gap: var(--app-space-2);
   margin-bottom: 4px;
 }
 
+// A long unbroken model name wraps instead of pushing the move number out of the transcript.
 .sender {
+  min-width: 0;
   font: var(--mat-sys-title-small);
+  overflow-wrap: anywhere;
 }
 
 .white-sender {
@@ -75,6 +79,8 @@
 }
 
 .msg-time {
+  flex: none;
+  white-space: nowrap;
   font-size: 0.8125rem;
   color: var(--mat-sys-on-surface-variant);
 }

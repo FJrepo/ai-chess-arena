@@ -120,4 +120,83 @@ describe('ChatPanel', () => {
     rows[2].querySelector<HTMLButtonElement>('button.msg-move')!.click();
     expect(selected.mock.calls).toEqual([[1], [0]]);
   });
+
+  function key(target: Element, name: string) {
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }),
+    );
+  }
+
+  function renderLinked(messages: ReturnType<typeof message>[]) {
+    TestBed.configureTestingModule({ imports: [ChatPanel] });
+    const fixture = TestBed.createComponent(ChatPanel);
+    fixture.componentRef.setInput('messages', messages);
+    fixture.componentRef.setInput(
+      'moveIndexByPly',
+      new Map([
+        ['1-WHITE', 0],
+        ['1-BLACK', 1],
+        ['2-WHITE', 2],
+      ]),
+    );
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    return { fixture, selected, element: fixture.nativeElement as HTMLElement };
+  }
+
+  it('keeps a focused move link on its own message when a live message arrives', () => {
+    const first = message('a', 1, 'WHITE');
+    const { fixture, selected, element } = renderLinked([first]);
+    const link = element.querySelector<HTMLButtonElement>('button.msg-move')!;
+    link.focus();
+    expect(document.activeElement).toBe(link);
+
+    fixture.componentRef.setInput('messages', [first, message('b', 1, 'BLACK')]);
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(link);
+    expect(link.getAttribute('aria-label')).toBe("Show the board after White's move 1");
+    link.click();
+    expect(selected).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('keeps legacy messages without an id apart, even with equal text', () => {
+    const legacy = { ...message('', 1, 'WHITE'), message: 'Same' };
+    const { fixture, element } = renderLinked([legacy, { ...legacy }]);
+    expect(element.querySelectorAll('.chat-message')).toHaveLength(2);
+    fixture.componentRef.setInput('messages', [legacy, { ...legacy }, message('c', 2, 'WHITE')]);
+    fixture.detectChanges();
+    expect(element.querySelectorAll('.chat-message')).toHaveLength(3);
+  });
+
+  it('gives the move links one tab stop and moves between them with the arrow keys', () => {
+    const { fixture, selected, element } = renderLinked([
+      message('a', 1, 'WHITE'),
+      message('b', 1, 'BLACK'),
+      message('c', 2, 'WHITE'),
+    ]);
+    const links = () => Array.from(element.querySelectorAll<HTMLButtonElement>('button.msg-move'));
+    const stops = () => {
+      fixture.detectChanges();
+      return links().map((link) => link.getAttribute('tabindex'));
+    };
+
+    expect(element.querySelector('.chat-scroll')?.getAttribute('tabindex')).toBe('0');
+    // Newest first: the newest message's link is the tab stop.
+    expect(stops()).toEqual(['0', '-1', '-1']);
+
+    links()[0].focus();
+    key(links()[0], 'ArrowDown');
+    expect(document.activeElement).toBe(links()[1]);
+    expect(stops()).toEqual(['-1', '0', '-1']);
+    key(links()[1], 'End');
+    expect(document.activeElement).toBe(links()[2]);
+    key(links()[2], 'ArrowUp');
+    expect(document.activeElement).toBe(links()[1]);
+    key(links()[1], 'Home');
+    expect(document.activeElement).toBe(links()[0]);
+    expect(stops()).toEqual(['0', '-1', '-1']);
+    expect(selected).not.toHaveBeenCalled();
+  });
 });

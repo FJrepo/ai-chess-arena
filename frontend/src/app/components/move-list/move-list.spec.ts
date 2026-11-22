@@ -247,3 +247,92 @@ describe('MoveListComponent keyboard access', () => {
     expect(selected).toHaveBeenCalledWith(2);
   });
 });
+
+describe('MoveListComponent roving focus', () => {
+  function renderList(count: number, currentIndex: number) {
+    const sans = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6'];
+    const moves = Array.from({ length: count }, (_, i) =>
+      move(Math.floor(i / 2) + 1, i % 2 ? 'BLACK' : 'WHITE', sans[i % sans.length]),
+    );
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', moves);
+    fixture.componentRef.setInput('currentIndex', currentIndex);
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const buttons = () => Array.from(element.querySelectorAll<HTMLButtonElement>('.move'));
+    const stops = () => buttons().map((button) => button.getAttribute('tabindex'));
+    return { fixture, element, buttons, stops, selected, moves };
+  }
+
+  function key(target: Element, name: string) {
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }),
+    );
+  }
+
+  it('has one tab stop, on the shown move (the first move before any is shown)', () => {
+    const { element, stops } = renderList(4, 2);
+    expect(stops()).toEqual(['-1', '-1', '0', '-1']);
+    // Firefox would add the scroll container as an extra stop; the moves already scroll it.
+    expect(element.querySelector('.move-list-scroll')?.getAttribute('tabindex')).toBe('-1');
+    TestBed.resetTestingModule();
+    expect(renderList(4, -1).stops()).toEqual(['0', '-1', '-1', '-1']);
+  });
+
+  it('moves focus by ply with Left/Right, by move with Up/Down and to the ends with Home/End', () => {
+    const { fixture, buttons, stops, selected } = renderList(6, 2);
+    const focused = () => (document.activeElement as HTMLElement).getAttribute('aria-label');
+    buttons()[2].focus();
+
+    key(buttons()[2], 'ArrowRight');
+    expect(focused()).toBe('2... Nc6');
+    key(document.activeElement!, 'ArrowUp');
+    expect(focused()).toBe('1... e5');
+    key(document.activeElement!, 'ArrowDown');
+    expect(focused()).toBe('2... Nc6');
+    key(document.activeElement!, 'ArrowLeft');
+    expect(focused()).toBe('2. Nf3');
+    key(document.activeElement!, 'End');
+    expect(focused()).toBe('3... a6');
+    key(document.activeElement!, 'ArrowRight');
+    expect(focused()).toBe('3... a6');
+    key(document.activeElement!, 'Home');
+    expect(focused()).toBe('1. e4');
+    fixture.detectChanges();
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
+    // Arrow keys only move focus; Enter or Space (native button activation) shows a position.
+    expect(selected).not.toHaveBeenCalled();
+  });
+
+  it('does not scroll a live ply into view while focus is inside the list', () => {
+    // The list shows 0–40 px; every move sits below it at 90–110 px, so revealing one scrolls.
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('move-list-scroll')
+          ? new DOMRect(0, 0, 100, 40)
+          : new DOMRect(0, 90, 100, 20);
+      });
+    try {
+      const { fixture, element, buttons, moves } = renderList(4, -1);
+      const list = element.querySelector<HTMLElement>('.move-list-scroll')!;
+      buttons()[0].focus();
+
+      fixture.componentRef.setInput('moves', [...moves, move(3, 'WHITE', 'Bb5')]);
+      fixture.componentRef.setInput('currentIndex', 4);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(0);
+      expect(document.activeElement).toBe(buttons()[0]);
+
+      // Focus elsewhere (following the game): the next shown ply is revealed again.
+      buttons()[0].blur();
+      fixture.componentRef.setInput('currentIndex', 3);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(70);
+    } finally {
+      rects.mockRestore();
+    }
+  });
+});

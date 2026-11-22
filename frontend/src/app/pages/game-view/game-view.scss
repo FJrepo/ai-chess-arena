@@ -488,9 +488,10 @@ app-advantage-bar {
 
 // Narrower than the three-column range: board first, then Moves | Feed, then chat, each with a
 // capped height that scrolls inside. Three columns need the reserve above plus the 340px board
-// minimum: 1124px at a 16px default font, 1296px at 20px. An em breakpoint scales with that
-// default font: 75em is 1200px at 16px and 1500px at 20px, and stays above the need from 12px up.
-@media (max-width: 74.99em) {
+// minimum and the board controls: about 1124px at a 16px default font and 1296px at 20px. The
+// em condition scales with that default font (75em is 1500px at 20px); the px condition keeps
+// 1200px as the floor, because the board minimum and controls do not shrink with smaller text.
+@media (max-width: 1199.98px), (max-width: 74.99em) {
   .game-layout {
     // Leave space for the page padding, evaluation bar and gap even on narrow phones.
     --board-size: clamp(0px, calc(100vw - 48px - 3.5rem), 560px);

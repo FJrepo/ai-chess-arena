@@ -3752,6 +3752,38 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
     }
   });
 
+  it('brings an off-screen board into view for a chat move link, respecting reduced motion', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    const board = element.querySelector<HTMLElement>('.board-section')!;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(board, 'scrollIntoView', { value: scrollIntoView, configurable: true });
+    const rect = vi.spyOn(board, 'getBoundingClientRect');
+    const link = () => element.querySelector<HTMLButtonElement>('.chat-column button.msg-move')!;
+    try {
+      // Visible (jsdom's window is 768 px tall): only the position changes.
+      rect.mockReturnValue(new DOMRect(0, 100, 500, 500));
+      link().click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      // Scrolled away above the viewport (stacked layout, reading the chat).
+      rect.mockReturnValue(new DOMRect(0, -1400, 500, 700));
+      link().click();
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', behavior: 'smooth' });
+
+      const matchMedia = vi.fn(() => ({ matches: true }));
+      Object.defineProperty(window, 'matchMedia', { value: matchMedia, configurable: true });
+      link().click();
+      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', behavior: 'auto' });
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+      fixture.destroy();
+    }
+  });
+
   it('still navigates the board when a move in the Moves view is clicked', () => {
     const fixture = renderGame();
     const element: HTMLElement = fixture.nativeElement;

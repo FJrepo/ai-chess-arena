@@ -44,6 +44,8 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
 
   private _moves = signal<Move[]>([]);
   private shouldScroll = false;
+  /** The move holding keyboard focus; null while focus is outside the list. */
+  focusedIndex: number | null = null;
 
   movePairs = computed<MovePair[]>(() => {
     const moves = this._moves();
@@ -72,6 +74,11 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
   ngAfterViewChecked() {
     if (!this.shouldScroll || !this.scrollContainer) return;
     const list = this.scrollContainer.nativeElement;
+    // A keyboard user is working in the list: a live ply must not scroll their focus out of sight.
+    if (list.contains(list.ownerDocument.activeElement)) {
+      this.shouldScroll = false;
+      return;
+    }
     const selected = list.querySelector<HTMLElement>('.move.active');
     if (!selected) return;
     this.shouldScroll = false;
@@ -83,6 +90,47 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
     } else if (move.bottom > viewport.bottom) {
       list.scrollTop += move.bottom - viewport.bottom;
     }
+  }
+
+  /**
+   * Roving tab stop: the focused move while focus is in the list, else the move shown on the board
+   * (the first move before any is shown).
+   */
+  tabIndexFor(index: number): 0 | -1 {
+    const count = this._moves().length;
+    const shown = this.currentIndex >= 0 && this.currentIndex < count ? this.currentIndex : 0;
+    return index === (this.focusedIndex ?? shown) ? 0 : -1;
+  }
+
+  /** Left/Right step one ply, Up/Down one move (same column), Home/End to the first/last ply. */
+  onKeydown(event: KeyboardEvent) {
+    const button = (event.target as HTMLElement).closest<HTMLElement>('.move');
+    const last = this._moves().length - 1;
+    if (!button || last < 0) return;
+    const at = Number(button.dataset['ply']);
+    const target = {
+      ArrowRight: at + 1,
+      ArrowLeft: at - 1,
+      ArrowDown: at + 2,
+      ArrowUp: at - 2,
+      Home: 0,
+      End: last,
+    }[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    // Up/Down stay in their column: past the first or last row they keep focus where it is.
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && (target < 0 || target > last)) {
+      return;
+    }
+    const next = Math.max(0, Math.min(last, target));
+    this.scrollContainer?.nativeElement
+      .querySelector<HTMLElement>(`.move[data-ply="${next}"]`)
+      ?.focus();
+  }
+
+  onFocusOut(event: FocusEvent) {
+    const list = this.scrollContainer?.nativeElement;
+    if (!list?.contains(event.relatedTarget as Node | null)) this.focusedIndex = null;
   }
 
   onMoveClick(index: number) {
