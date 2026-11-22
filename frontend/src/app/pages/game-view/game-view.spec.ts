@@ -3685,12 +3685,13 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
       expect(chat.textContent).toContain('Good luck, Beta.');
       expect(chat.textContent).toContain('Newest first');
 
-      // jsdom's default 1024 px window is in the stacked range: the stacked grid shows the
-      // columns in DOM order, so reading and focus order match what is on screen.
-      expect(window.innerWidth).toBeLessThan(1200);
-      const style = getComputedStyle(layout);
-      expect(style.display).toBe('grid');
-      expect(style.gridTemplateAreas.replace(/["\s]+/g, ' ').trim()).toBe('board record chat');
+      // jsdom evaluates the media queries against its fixed 1024 px window (the stacked range; a
+      // test cannot widen it): there the grid shows the columns in DOM order, one per row. The
+      // wide single-row arrangement is checked in a browser.
+      const rows = () => getComputedStyle(layout).gridTemplateAreas.match(/"[^"]*"/g);
+      expect(window.innerWidth).toBe(1024);
+      expect(getComputedStyle(layout).display).toBe('grid');
+      expect(rows()).toEqual(['"board"', '"record"', '"chat"']);
     } finally {
       fixture.destroy();
     }
@@ -3731,6 +3732,21 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
       for (const strip of strips) {
         expect(getComputedStyle(strip).contain).toBe('inline-size');
       }
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('shows the position of a chat message from its move number', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const button = element.querySelector<HTMLButtonElement>('.chat-column button.msg-move')!;
+      expect(button.textContent?.trim()).toBe('move 1');
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(fixture.componentInstance.currentFen()).toBe(AFTER_E4);
     } finally {
       fixture.destroy();
     }

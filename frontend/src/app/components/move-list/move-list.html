@@ -3,10 +3,13 @@
     <div class="move-row">
       <span class="move-number">{{ pair.number }}.</span>
       @if (pair.white) {
-        <span
+        <button
+          type="button"
           class="move white-move"
           [class.active]="currentIndex === pair.whiteIdx"
           [class.book-move]="pair.white.isBook"
+          [attr.aria-current]="currentIndex === pair.whiteIdx ? 'step' : null"
+          [attr.aria-label]="moveLabel(pair.white)"
           [attr.title]="tooltip(pair.white)"
           (click)="onMoveClick(pair.whiteIdx)"
         >
@@ -25,13 +28,16 @@
           @if (pair.white.retryCount > 0) {
             <span class="retry-badge" title="Retries">{{ pair.white.retryCount }}</span>
           }
-        </span>
+        </button>
       }
       @if (pair.black) {
-        <span
+        <button
+          type="button"
           class="move black-move"
           [class.active]="currentIndex === pair.blackIdx"
           [class.book-move]="pair.black.isBook"
+          [attr.aria-current]="currentIndex === pair.blackIdx ? 'step' : null"
+          [attr.aria-label]="moveLabel(pair.black)"
           [attr.title]="tooltip(pair.black)"
           (click)="onMoveClick(pair.blackIdx)"
         >
@@ -50,7 +56,7 @@
           @if (pair.black.retryCount > 0) {
             <span class="retry-badge" title="Retries">{{ pair.black.retryCount }}</span>
           }
-        </span>
+        </button>
       }
     </div>
   } @empty {

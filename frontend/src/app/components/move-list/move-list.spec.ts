@@ -206,3 +206,44 @@ describe('MoveListComponent quality annotations', () => {
     expect(cells[1].getAttribute('title')).toBe('Only legal move: not judged');
   });
 });
+
+describe('MoveListComponent keyboard access', () => {
+  it('renders each move as a native button named by its notation', () => {
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', [
+      move(1, 'WHITE', 'e4'),
+      move(1, 'BLACK', 'e5', {
+        judgement: 'MISTAKE',
+        centipawnLoss: 150,
+        winChanceBefore: 0.5,
+        winChanceAfter: 0.35,
+        excluded: null,
+      }),
+      { ...move(2, 'WHITE', 'Nf3'), isBook: true },
+    ]);
+    fixture.componentRef.setInput('currentIndex', 1);
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+
+    const buttons = Array.from(element.querySelectorAll<HTMLElement>('.move'));
+    expect(buttons.map((button) => button.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON']);
+    expect(buttons.map((button) => (button as HTMLButtonElement).type)).toEqual([
+      'button',
+      'button',
+      'button',
+    ]);
+    expect(buttons[0].getAttribute('aria-label')).toBe('1. e4');
+    expect(buttons[1].getAttribute('aria-label')).toBe('1... e5, mistake');
+    expect(buttons[2].getAttribute('aria-label')).toBe('2. Nf3, book move');
+    expect(buttons.map((button) => button.getAttribute('aria-current'))).toEqual([
+      null,
+      'step',
+      null,
+    ]);
+
+    buttons[2].click();
+    expect(selected).toHaveBeenCalledWith(2);
+  });
+});

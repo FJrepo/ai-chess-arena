@@ -30,6 +30,13 @@
   max-height: var(--chat-panel-max-height, 48vh);
   overflow-y: auto;
   padding-right: 4px;
+  border-radius: var(--app-space-2);
+
+  // Focusable so keyboard users can scroll the transcript (WebKit gives a scroller no tab stop).
+  &:focus-visible {
+    outline: var(--app-rule-width) solid var(--app-accent-info);
+    outline-offset: var(--app-focus-offset);
+  }
 }
 
 .chat-message {
@@ -70,6 +77,25 @@
 .msg-time {
   font-size: 0.8125rem;
   color: var(--mat-sys-on-surface-variant);
+}
+
+// The move number of a message whose ply is recorded: a link-styled button to that position.
+.msg-move {
+  padding: 0;
+  border: 0;
+  border-radius: var(--app-space-1);
+  background: none;
+  font-family: inherit;
+  line-height: inherit;
+  color: var(--app-accent-info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: var(--app-rule-width) solid var(--app-accent-info);
+    outline-offset: var(--app-focus-offset);
+  }
 }
 
 .msg-body {

@@ -103,6 +103,20 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
     return move.isBook ? null : missedMateTooltip(move.quality);
   }
 
+  /** Accessible name: notation as on a scoresheet ("12... cxd4") plus any annotations. */
+  moveLabel(move: Move): string {
+    const parts = [`${move.moveNumber}${move.color === 'WHITE' ? '.' : '...'} ${move.san}`];
+    if (move.isBook) parts.push('book move');
+    const badge = this.badge(move);
+    if (badge) parts.push(badge.label.toLowerCase());
+    const missedMate = this.missedMate(move);
+    if (missedMate) parts.push(missedMate.toLowerCase());
+    if (move.retryCount > 0) {
+      parts.push(`${move.retryCount} ${move.retryCount === 1 ? 'retry' : 'retries'}`);
+    }
+    return parts.join(', ');
+  }
+
   formatTime(ms: number | null): string {
     if (!ms) return '';
     return (ms / 1000).toFixed(1) + 's';

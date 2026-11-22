@@ -1,6 +1,6 @@
 <mat-card class="chat-card">
   <mat-card-header>
-    <mat-card-title>Chat</mat-card-title>
+    <mat-card-title [id]="titleId">Chat</mat-card-title>
     <mat-card-subtitle
       >Newest first
       @if (chatModeLabel(); as label) {
@@ -9,7 +9,7 @@
     </mat-card-subtitle>
   </mat-card-header>
   <mat-card-content>
-    <div class="chat-scroll">
+    <div class="chat-scroll" tabindex="0" role="region" [attr.aria-labelledby]="titleId">
       @for (msg of displayedMessages(); track $index) {
         <div
           class="chat-message"
@@ -24,7 +24,19 @@
             >
               {{ getPlayerName(msg) }}
             </span>
-            <span class="msg-time">move {{ msg.moveNumber }}</span>
+            @let index = moveIndex(msg);
+            @if (index !== undefined) {
+              <button
+                type="button"
+                class="msg-time msg-move"
+                [attr.aria-label]="moveLabel(msg)"
+                (click)="moveSelected.emit(index)"
+              >
+                move {{ msg.moveNumber }}
+              </button>
+            } @else {
+              <span class="msg-time">move {{ msg.moveNumber }}</span>
+            }
           </div>
           <div class="msg-body">{{ msg.message }}</div>
         </div>

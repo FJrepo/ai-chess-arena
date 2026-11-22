@@ -61,4 +61,63 @@ describe('ChatPanel', () => {
       '· Chat mandatory',
     );
   });
+
+  function message(id: string, moveNumber: number, senderColor: 'WHITE' | 'BLACK') {
+    return {
+      id,
+      moveNumber,
+      senderModel: 'model',
+      senderColor,
+      message: `Message ${id}`,
+      createdAt: '2026-03-06T10:02:00Z',
+    };
+  }
+
+  it('makes the transcript a named, focusable scroll region', () => {
+    TestBed.configureTestingModule({ imports: [ChatPanel] });
+    const fixture = TestBed.createComponent(ChatPanel);
+    fixture.componentRef.setInput('messages', [message('a', 1, 'WHITE')]);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const scroll = element.querySelector<HTMLElement>('.chat-scroll')!;
+
+    expect(scroll.getAttribute('tabindex')).toBe('0');
+    expect(scroll.getAttribute('role')).toBe('region');
+    const labelId = scroll.getAttribute('aria-labelledby')!;
+    expect(labelId).toBeTruthy();
+    expect(element.querySelector(`[id="${labelId}"]`)?.textContent?.trim()).toBe('Chat');
+  });
+
+  it('turns a move number into a button when that ply was played, and emits its index', () => {
+    TestBed.configureTestingModule({ imports: [ChatPanel] });
+    const fixture = TestBed.createComponent(ChatPanel);
+    fixture.componentRef.setInput('messages', [
+      message('a', 1, 'WHITE'),
+      message('b', 1, 'BLACK'),
+      message('c', 2, 'WHITE'),
+    ]);
+    fixture.componentRef.setInput(
+      'moveIndexByPly',
+      new Map([
+        ['1-WHITE', 0],
+        ['1-BLACK', 1],
+      ]),
+    );
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+
+    // Newest first: 2 (no recorded ply), then 1 Black, then 1 White.
+    const rows = Array.from(element.querySelectorAll<HTMLElement>('.chat-message'));
+    expect(rows[0].querySelector('button.msg-move')).toBeNull();
+    expect(rows[0].querySelector('.msg-time')?.textContent?.trim()).toBe('move 2');
+    const black = rows[1].querySelector<HTMLButtonElement>('button.msg-move')!;
+    expect(black.type).toBe('button');
+    expect(black.textContent?.trim()).toBe('move 1');
+    expect(black.getAttribute('aria-label')).toBe("Show the board after Black's move 1");
+    black.click();
+    rows[2].querySelector<HTMLButtonElement>('button.msg-move')!.click();
+    expect(selected.mock.calls).toEqual([[1], [0]]);
+  });
 });

@@ -389,6 +389,8 @@
         [blackPlayerName]="g.blackPlayerName"
         [chatMode]="displayedChatMode()"
         [banterLevel]="displayedBanterLevel()"
+        [moveIndexByPly]="chatMoveIndexByPly()"
+        (moveSelected)="goToMove($event)"
       />
     </div>
   </div>

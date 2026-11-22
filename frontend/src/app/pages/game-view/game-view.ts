@@ -410,6 +410,15 @@ export class GameView implements OnInit, OnDestroy {
 
   whiteMaterialEdge = computed(() => Math.max(0, this.capturedMaterial().materialDelta));
   blackMaterialEdge = computed(() => Math.max(0, -this.capturedMaterial().materialDelta));
+  /** Move-list index of each recorded ply (the canonical row when duplicates exist), for chat links. */
+  chatMoveIndexByPly = computed(() => {
+    const byPly = new Map<string, number>();
+    this.moves().forEach((move, index) => {
+      const key = plyKey(move.moveNumber, move.color);
+      if (!byPly.has(key) || move.isCanonical === true) byPly.set(key, index);
+    });
+    return byPly;
+  });
   /** Game feed, newest first: start, moves, unplayed plies and the result. Chat has its own column. */
   feedEvents = computed<TimelineEvent[]>(() => {
     const events: TimelineEvent[] = [];

@@ -1,6 +1,9 @@
-import { Component, Input, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output, computed, signal } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { BanterLevel, ChatMessage, ChatMode } from '../../models/tournament.model';
+import { plyKey } from '../../utils/move-attempts';
+
+let nextTitleId = 0;
 
 const CHAT_MODE_LABELS: Record<ChatMode, string> = {
   OFF: 'Chat off',
@@ -29,6 +32,14 @@ export class ChatPanel {
     this._banterLevel.set(value ?? null);
   }
 
+  /** Index in the move list of each recorded ply, by `plyKey`; a message's move number links there. */
+  @Input() moveIndexByPly: ReadonlyMap<string, number> = new Map();
+  /** The move-list index of the ply a message was sent with, when its move number is selected. */
+  @Output() moveSelected = new EventEmitter<number>();
+
+  /** Names the scrollable transcript after the card title. */
+  readonly titleId = `chat-panel-title-${nextTitleId++}`;
+
   readonly _banterLevel = signal<BanterLevel | null>(null);
   readonly _messages = signal<ChatMessage[]>([]);
   readonly _chatMode = signal<ChatMode | null>(null);
@@ -51,6 +62,15 @@ export class ChatPanel {
         return 'No messages yet. The trash talk will appear here.';
     }
   });
+
+  /** The move-list index of the ply the message was sent with; undefined when that ply is not recorded. */
+  moveIndex(msg: ChatMessage): number | undefined {
+    return this.moveIndexByPly.get(plyKey(msg.moveNumber, msg.senderColor));
+  }
+
+  moveLabel(msg: ChatMessage): string {
+    return `Show the board after ${msg.senderColor === 'WHITE' ? 'White' : 'Black'}'s move ${msg.moveNumber}`;
+  }
 
   getPlayerName(msg: ChatMessage): string {
     if (msg.senderColor === 'WHITE') return this.whitePlayerName || 'White';
