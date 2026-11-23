@@ -3491,6 +3491,13 @@ describe('GameView cancellation', () => {
   });
 });
 
+/** GameView's compiled component styles, whitespace collapsed. */
+function gameViewStyles(): string {
+  return ((GameView as unknown as { ɵcmp: { styles: string[] } }).ɵcmp.styles ?? [])
+    .join('\n')
+    .replace(/\s+/g, ' ');
+}
+
 describe('GameView columns: Moves | Feed box, board, chat', () => {
   const VIEW_KEY = 'gameRecordView';
 
@@ -3699,28 +3706,28 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
     }
   });
 
-  it('reserves the result line above the board only in finished games', () => {
-    const chrome = (fixture: ReturnType<typeof renderGame>) => {
+  it('assumes a typical header above the board until it is measured, with room for a result line', () => {
+    const fallback = (fixture: ReturnType<typeof renderGame>) => {
       const layout = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
         '.game-layout',
       )!;
-      const style = getComputedStyle(layout);
       return {
         finished: layout.classList.contains('has-result'),
-        result: style.getPropertyValue('--board-chrome-result').trim(),
-        total: style.getPropertyValue('--board-chrome-v').replace(/\s+/g, ' ').trim(),
+        measured: layout.style.getPropertyValue('--game-layout-top'),
+        top: getComputedStyle(layout)
+          .getPropertyValue('--board-layout-top-fallback')
+          .replace(/\s+/g, ' ')
+          .trim(),
       };
     };
 
+    // jsdom has no ResizeObserver: the layout's top is never measured there.
     const live = renderGame({ status: 'IN_PROGRESS' });
-    let liveChrome: ReturnType<typeof chrome>;
+    let liveTop = '';
     try {
-      // The board's height follows the viewport minus the chrome around it: toolbar, header and
-      // White's captures above; controls and Black's captures below (sizes checked in a browser).
-      liveChrome = chrome(live);
-      expect(liveChrome.finished).toBe(false);
-      expect(liveChrome.result).toBe('0px');
-      expect(liveChrome.total).toMatch(/^calc\( ?\d+px \+ 0px \+ \d+px ?\)$/);
+      const values = fallback(live);
+      expect(values).toEqual({ finished: false, measured: '', top: '230px' });
+      liveTop = values.top;
     } finally {
       live.destroy();
     }
@@ -3732,13 +3739,94 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
       resultReason: 'CHECKMATE',
     });
     try {
-      const finishedChrome = chrome(finished);
-      expect(finishedChrome.finished).toBe(true);
-      expect(finishedChrome.result).not.toBe('0px');
-      expect(finishedChrome.total).not.toBe(liveChrome.total);
+      expect(fallback(finished).finished).toBe(true);
+      expect(fallback(finished).measured).toBe('');
+      // jsdom leaves out values built from global tokens, so read the compiled rule.
+      expect(gameViewStyles()).toMatch(
+        /\.game-layout\.has-result\S* ?\{ ?--board-layout-top-fallback: ?calc\(230px \+ var\(--app-board-control-size\) \+ var\(--app-space-2\)\)/,
+      );
+      expect(liveTop).toBe('230px');
     } finally {
       finished.destroy();
     }
+  });
+
+  it('sizes the board against the measured header, also when Last words opens', () => {
+    const observers: { callback: () => void; targets: Element[]; connected: boolean }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        private readonly entry: { callback: () => void; targets: Element[]; connected: boolean };
+        constructor(callback: () => void) {
+          this.entry = { callback, targets: [], connected: true };
+          observers.push(this.entry);
+        }
+        observe(target: Element) {
+          this.entry.targets.push(target);
+        }
+        unobserve() {}
+        disconnect() {
+          this.entry.connected = false;
+        }
+      },
+    );
+    const fixture = renderGame({
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'RESIGNATION',
+      resignation: {
+        color: 'BLACK',
+        moveNumber: 2,
+        winChance: 0.1,
+        notLosing: false,
+        lastWords: 'Well played.',
+        opponentMessage: null,
+        opponentMessageMoveNumber: null,
+      },
+    });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const layout = element.querySelector<HTMLElement>('.game-layout')!;
+      let top = 278;
+      vi.spyOn(layout, 'getBoundingClientRect').mockImplementation(
+        () => ({ top, bottom: top + 600, height: 600 }) as DOMRect,
+      );
+      // The host grows or shrinks with anything above the layout (header, Last words, pause notices).
+      const active = observers.filter(
+        (observer) => observer.connected && observer.targets.includes(element),
+      );
+      expect(active).toHaveLength(1);
+      expect(active[0].targets).toEqual([element]);
+
+      active[0].callback();
+      fixture.detectChanges();
+      expect(layout.style.getPropertyValue('--game-layout-top')).toBe('278px');
+      expect(gameViewStyles()).toMatch(
+        /--board-chrome-above: ?calc\( ?var\(--game-layout-top, ?var\(--board-layout-top-fallback\)\)/,
+      );
+
+      element.querySelector<HTMLButtonElement>('button.last-words-toggle')!.click();
+      top = 300;
+      active[0].callback();
+      fixture.detectChanges();
+      expect(layout.style.getPropertyValue('--game-layout-top')).toBe('300px');
+    } finally {
+      fixture.destroy();
+      vi.unstubAllGlobals();
+    }
+    expect(
+      observers.filter((observer) => observer.targets.includes(element) && observer.connected),
+    ).toEqual([]);
+  });
+
+  it('keeps a window-height cap on the board in the stacked layout', () => {
+    // The stacked rule (below 1200px / 75em) caps the board by width and by the same height budget.
+    const stacked = gameViewStyles().match(
+      /@media \(max-width: ?1199\.98px\), ?\(max-width: ?74\.99em\) ?\{ ?\.game-layout\S* ?\{([^}]*)\}/,
+    )?.[1];
+    expect(stacked).toMatch(
+      /--board-size: ?clamp\( ?0px, ?min\( ?100vw - 48px - 3\.5rem, ?max\( ?340px, ?100dvh - var\(--board-chrome-v\) ?\) ?\), ?560px ?\)/,
+    );
   });
 
   it('shows the opening in the actions row instead of a line of its own', () => {

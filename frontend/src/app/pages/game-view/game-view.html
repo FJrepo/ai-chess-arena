@@ -87,7 +87,12 @@
     }
   </div>
 
-  <div class="game-layout" [class.has-result]="!!g.result">
+  <div
+    class="game-layout"
+    #gameLayout
+    [class.has-result]="!!g.result"
+    [style.--game-layout-top]="layoutTop() === null ? null : layoutTop() + 'px'"
+  >
     <div class="board-section" #boardSection>
       <div class="board-frame">
         <div class="capture-strip top">

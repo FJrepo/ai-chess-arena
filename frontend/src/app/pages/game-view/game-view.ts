@@ -255,6 +255,27 @@ export class GameView implements OnInit, OnDestroy {
   });
   @ViewChild(MoveListComponent) private moveList?: MoveListComponent;
   @ViewChild('boardSection') private boardSection?: ElementRef<HTMLElement>;
+  private layoutObserver?: ResizeObserver;
+  /**
+   * Page position (px from the document top) of the column layout, which sizes the board to the window
+   * height: everything above it (toolbar, header with its result line and open "Last words", pause notices,
+   * queued resume, actions row) is measured rather than assumed. Null until measured; CSS then assumes a
+   * typical header.
+   */
+  readonly layoutTop = signal<number | null>(null);
+
+  /** Re-measures the layout's top whenever the page above it changes size. */
+  @ViewChild('gameLayout') private set gameLayout(ref: ElementRef<HTMLElement> | undefined) {
+    this.layoutObserver?.disconnect();
+    this.layoutObserver = undefined;
+    if (!ref || typeof ResizeObserver === 'undefined') return;
+    const layout = ref.nativeElement;
+    this.layoutObserver = new ResizeObserver(() =>
+      this.layoutTop.set(Math.round(layout.getBoundingClientRect().top + window.scrollY)),
+    );
+    // The page (this component's host) grows or shrinks with anything above the layout.
+    this.layoutObserver.observe(layout.parentElement ?? layout);
+  }
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -588,6 +609,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.layoutObserver?.disconnect();
     this.ws.unsubscribeFromGame(this.gameId);
     this.wsSub?.unsubscribe();
     this.queueRefreshSub?.unsubscribe();
