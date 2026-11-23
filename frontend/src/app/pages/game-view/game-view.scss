@@ -101,8 +101,10 @@
   );
 
   display: grid;
+  // The Moves | Feed box keeps its minimum width (the compact move grid needs no more); extra width
+  // goes to the chat, where long messages benefit from it.
   grid-template-columns:
-    minmax(var(--record-col-min), 1fr)
+    var(--record-col-min)
     max-content
     minmax(var(--chat-col-min), 1fr);
   // DOM and focus order is board, Moves | Feed, chat (the stacked order); wide screens place
