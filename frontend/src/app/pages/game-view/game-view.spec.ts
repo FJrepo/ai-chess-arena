@@ -1068,11 +1068,11 @@ describe('GameView', () => {
     expect(component.truncationPauseLimit()).toBe(4096);
   });
 
-  it('reads the snapshot when a pause holds the game for a spend check', () => {
+  it('reads no extra snapshot for a pause reason that only looks like a spend check', () => {
     const readsAfterPause = (detail: string) => {
       TestBed.resetTestingModule();
       const getGame = vi.fn(() =>
-        of(gameFixture({ status: 'PAUSED', statusRevision: 2, uncertainRequest: true })),
+        of(gameFixture({ status: 'PAUSED', statusRevision: 2, uncertainRequest: false })),
       );
       const { component } = createComponent({ api: { getGame } });
       (component as any).gameId = 'g-1';
@@ -1084,60 +1084,83 @@ describe('GameView', () => {
         status: 'PAUSED',
         detail,
         statusRevision: 2,
+        uncertainRequest: false,
+        uncertainRequestSentAt: null,
       });
+      expect(component.game()?.uncertainRequest).toBe(false);
+      expect(component.adminResumeAvailable(component.game()!)).toBe(true);
       return getGame.mock.calls.length - before;
     };
 
     const ordinary = readsAfterPause('OpenRouter rate limit reached (HTTP 429)');
-    const spendCheck = readsAfterPause(
-      'A model request (m, White, move 3) has no recorded answer. Check spend, then resume.',
-    );
-    expect(spendCheck).toBe(ordinary + 1);
+    const lookalike = readsAfterPause('Paused by the operator. Check spend, then resume.');
+    expect(lookalike).toBe(ordinary);
   });
 
-  it('never offers the admin Resume between a spend-check pause and its snapshot', () => {
-    const snapshot = new Subject<Game>();
-    const { component } = createComponent({ api: { getGame: () => snapshot } });
+  it('shows the spend check only from the explicit flag of a status change', () => {
+    const { component } = createComponent({ api: { getGame: () => new Subject<Game>() } });
     (component as any).gameId = 'g-1';
     component.game.set(gameFixture({ status: 'IN_PROGRESS', statusRevision: 1 }));
 
+    // A spend check whose reason does not end with the usual sentence (e.g. a budget pause meanwhile).
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'PAUSED',
+      detail: 'Budget of $1.00 reached ($1.00 spent)',
+      statusRevision: 2,
+      uncertainRequest: true,
+      uncertainRequestSentAt: '2026-11-18T10:00:00.000001Z',
+    });
+    expect(component.game()?.uncertainRequest).toBe(true);
+    expect(component.game()?.uncertainRequestSentAt).toBe('2026-11-18T10:00:00.000001Z');
+    expect(component.adminResumeAvailable(component.game()!)).toBe(false);
+
+    // The acknowledged resume clears it, and so does any status change without an unresolved request.
+    component.handleWsMessage({
+      type: 'gameStatus',
+      gameId: 'g-1',
+      status: 'IN_PROGRESS',
+      statusRevision: 3,
+      uncertainRequest: false,
+      uncertainRequestSentAt: null,
+    });
+    expect(component.game()?.uncertainRequest).toBe(false);
+    expect(component.game()?.uncertainRequestSentAt).toBeNull();
     component.handleWsMessage({
       type: 'gameStatus',
       gameId: 'g-1',
       status: 'PAUSED',
       detail:
         'A model request (m, White, move 3) has no recorded answer. Check spend, then resume.',
-      statusRevision: 2,
-    });
-    // The snapshot with uncertainRequest has not arrived yet.
-    expect(component.game()?.status).toBe('PAUSED');
-    expect(component.adminResumeAvailable(component.game()!)).toBe(false);
-
-    snapshot.next(
-      gameFixture({
-        status: 'PAUSED',
-        statusRevision: 2,
-        uncertainRequest: true,
-        uncertainRequestSentAt: '2026-11-18T10:00:00.000001Z',
-      }),
-    );
-    expect(component.adminResumeAvailable(component.game()!)).toBe(false);
-
-    // An ordinary pause offers it at once.
-    component.handleWsMessage({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'IN_PROGRESS',
-      statusRevision: 3,
-    });
-    component.handleWsMessage({
-      type: 'gameStatus',
-      gameId: 'g-1',
-      status: 'PAUSED',
-      detail: 'Paused by user',
       statusRevision: 4,
     });
+    expect(component.game()?.uncertainRequest).toBe(false);
     expect(component.adminResumeAvailable(component.game()!)).toBe(true);
+  });
+
+  it('takes the spend check from each revision state and keeps it when a state omits it', () => {
+    const { component, gameLoad, messages } = createSpectator();
+    component.ngOnInit();
+    gameLoad.next(gameWith({ liveRevision: 1, status: 'PAUSED', statusDetail: 'Paused by user' }));
+    messages.next(
+      revision(
+        2,
+        gameState({
+          uncertainRequest: true,
+          uncertainRequestSentAt: '2026-11-18T10:00:00.000001Z',
+        }),
+      ),
+    );
+    expect(component.game()?.uncertainRequestSentAt).toBe('2026-11-18T10:00:00.000001Z');
+    messages.next(revision(3, gameState()));
+    expect(component.game()?.uncertainRequest).toBe(true);
+    messages.next(
+      revision(4, gameState({ uncertainRequest: false, uncertainRequestSentAt: null })),
+    );
+    expect(component.game()?.uncertainRequest).toBe(false);
+    expect(component.game()?.uncertainRequestSentAt).toBeNull();
+    component.ngOnDestroy();
   });
 
   it('names the rejected move in the live retry text', () => {

@@ -110,9 +110,9 @@ class GameWebSocketTest {
         Instant requestedAt = Instant.parse("2026-11-17T20:00:00Z");
 
         endpoint.broadcastStatusChange(game, "PAUSED", null, null, 4, BigDecimal.ZERO,
-                "Answer cut off", 7, requestedAt, new RunCapacity(3, 3));
+                "Answer cut off", 7, requestedAt, new RunCapacity(3, 3), null);
         endpoint.broadcastStatusChange(game, "IN_PROGRESS", null, null, 4, BigDecimal.ZERO,
-                null, 8, null, null);
+                null, 8, null, null, null);
 
         var queued = endpoint.objectMapper.readTree(sent.get(sent.size() - 2));
         var resumed = endpoint.objectMapper.readTree(sent.getLast());
@@ -121,6 +121,28 @@ class GameWebSocketTest {
         assertEquals(3, queued.at("/runCapacity/maxConcurrentGames").asInt());
         assertTrue(resumed.get("resumeRequestedAt").isNull());
         assertFalse(resumed.has("runCapacity"));
+    }
+
+    @Test
+    void statusChangesCarryTheSpendCheckOnlyFromTheUnresolvedRequestNotFromTheReason() throws Exception {
+        UUID game = gameRepository.addGame();
+        List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        endpoint.onMessage(recordingConnection("spectator", sent), subscribeMessage(game));
+        Instant sentAt = Instant.parse("2026-11-18T10:00:00.123456Z");
+
+        endpoint.broadcastStatusChange(game, "PAUSED", null, null, 4, BigDecimal.ZERO,
+                "A model request (m, White, move 3) has no recorded answer. Check spend, then resume.", 7, null, null,
+                sentAt);
+        // A reason that merely looks like a spend check, without an unresolved request.
+        endpoint.broadcastStatusChange(game, "PAUSED", null, null, 4, BigDecimal.ZERO,
+                "Paused by the operator. Check spend, then resume.", 8, null, null, null);
+
+        var spendCheck = endpoint.objectMapper.readTree(sent.get(sent.size() - 2));
+        var lookalike = endpoint.objectMapper.readTree(sent.getLast());
+        assertTrue(spendCheck.get("uncertainRequest").asBoolean());
+        assertEquals("2026-11-18T10:00:00.123456Z", spendCheck.get("uncertainRequestSentAt").asText());
+        assertFalse(lookalike.get("uncertainRequest").asBoolean());
+        assertTrue(lookalike.get("uncertainRequestSentAt").isNull());
     }
 
     @Test

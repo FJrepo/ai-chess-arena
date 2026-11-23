@@ -415,35 +415,48 @@ public class GameWebSocket {
     /**
      * A status change (start, pause, game over) with the game's {@code statusRevision} after it. Status changes are
      * announced after their commit and can therefore arrive out of order; clients ignore an update whose revision
-     * is lower than one they already have.
+     * is lower than one they already have. {@code uncertainRequestSentAt} is the game's unresolved model request
+     * (see {@link dev.aichessarena.dto.GameDto#uncertainRequestSentAt()}), null without one.
      */
     public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                       int totalMoves, BigDecimal totalCostUsd, String detail,
-                                      long statusRevision, Instant resumeRequestedAt, RunCapacity capacity) {
+                                      long statusRevision, Instant resumeRequestedAt, RunCapacity capacity,
+                                      Instant uncertainRequestSentAt) {
         broadcast(gameId, statusChangeMessage(gameId, status, result, resultReason, totalMoves, totalCostUsd,
-                detail, statusRevision, resumeRequestedAt, capacity).toString());
+                detail, statusRevision, resumeRequestedAt, capacity, uncertainRequestSentAt).toString());
     }
 
     public ObjectNode statusChangeMessage(UUID gameId, String status, String result, String resultReason,
                                           int totalMoves, BigDecimal totalCostUsd, String detail, long statusRevision,
-                                          Instant resumeRequestedAt, RunCapacity capacity) {
+                                          Instant resumeRequestedAt, RunCapacity capacity,
+                                          Instant uncertainRequestSentAt) {
         return statusChangeMessage(objectMapper, gameId, status, result, resultReason, totalMoves, totalCostUsd,
-                detail, statusRevision, resumeRequestedAt, capacity);
+                detail, statusRevision, resumeRequestedAt, capacity, uncertainRequestSentAt);
     }
 
     public static ObjectNode statusChangeMessage(ObjectMapper mapper, UUID gameId, String status, String result,
                                                  String resultReason, int totalMoves, BigDecimal totalCostUsd,
                                                  String detail, long statusRevision, Instant resumeRequestedAt,
-                                                 RunCapacity capacity) {
+                                                 RunCapacity capacity, Instant uncertainRequestSentAt) {
         ObjectNode message = statusMessage(mapper, gameId, status, result, resultReason, totalMoves, totalCostUsd,
                 null, null, null, detail, null, statusRevision);
         message.put("resumeRequestedAt", resumeRequestedAt == null ? null : resumeRequestedAt.toString());
+        putUncertainRequest(message, uncertainRequestSentAt);
         if (capacity != null) {
             message.putObject("runCapacity")
                     .put("runningGames", capacity.runningGames())
                     .put("maxConcurrentGames", capacity.maxConcurrentGames());
         }
         return message;
+    }
+
+    /**
+     * The explicit spend-check state, always present so clients never infer it from the pause reason:
+     * {@code uncertainRequest} and the {@code uncertainRequestSentAt} an acknowledgement must name (null without one).
+     */
+    public static ObjectNode putUncertainRequest(ObjectNode message, Instant uncertainRequestSentAt) {
+        return message.put("uncertainRequest", uncertainRequestSentAt != null)
+                .put("uncertainRequestSentAt", uncertainRequestSentAt == null ? null : uncertainRequestSentAt.toString());
     }
 
     public ObjectNode statusMessage(UUID gameId, String status, String result, String resultReason, int totalMoves,

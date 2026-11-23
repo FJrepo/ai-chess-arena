@@ -56,9 +56,9 @@ public class LiveGameUpdates {
 
     public ObjectNode statusChange(UUID gameId, String status, String result, String resultReason, int totalMoves,
                                    BigDecimal totalCostUsd, String detail, long statusRevision,
-                                   Instant resumeRequestedAt, RunCapacity capacity) {
+                                   Instant resumeRequestedAt, RunCapacity capacity, Instant uncertainRequestSentAt) {
         return GameWebSocket.statusChangeMessage(mapper, gameId, status, result, resultReason, totalMoves,
-                totalCostUsd, detail, statusRevision, resumeRequestedAt, capacity);
+                totalCostUsd, detail, statusRevision, resumeRequestedAt, capacity, uncertainRequestSentAt);
     }
 
     public ObjectNode evaluationChange(UUID gameId, UUID moveId, int moveNumber, String color,
@@ -92,6 +92,7 @@ public class LiveGameUpdates {
                 .put("turnDeadlineAt", asText(game.turnDeadlineAt))
                 .put("turnChatMode", game.turnChatMode == null ? null : game.turnChatMode.name())
                 .put("turnBanterLevel", game.turnBanterLevel == null ? null : game.turnBanterLevel.name());
+        GameWebSocket.putUncertainRequest(changes.state, game.requestSentAt);
     }
 
     void gamesRemoved() {

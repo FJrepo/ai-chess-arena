@@ -869,6 +869,62 @@ class DurableRunsIT {
     }
 
     @Test
+    void liveStatusUpdatesCarryTheSpendCheckOnlyWhileARequestIsUnresolved() throws Exception {
+        UUID tournamentId = seedTournament(GameStatus.PAUSED, GameStatus.IN_PROGRESS, GameStatus.IN_PROGRESS);
+        List<UUID> ids = gameIds(tournamentId);
+        UUID held = ids.get(0);
+        UUID lookalike = ids.get(1);
+        UUID forfeited = ids.get(2);
+        Instant sentAt = Instant.now().minusSeconds(30).truncatedTo(ChronoUnit.MICROS);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Game game = games.findById(held);
+            game.statusDetail = "The game loop stopped unexpectedly (IllegalStateException); resume to retry";
+            game.requestSentAt = sentAt;
+            games.findById(forfeited).requestSentAt = sentAt;
+        });
+        List<String> announced = java.util.Collections.synchronizedList(new ArrayList<>());
+        List<String> revisions = java.util.Collections.synchronizedList(new ArrayList<>());
+        QuarkusMock.installMockForType(new dev.aichessarena.websocket.GameWebSocket() {
+            @Override public void broadcastStatusChange(UUID id, String status, String result, String reason,
+                    int totalMoves, BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
+                    dev.aichessarena.dto.GameDto.RunCapacity capacity, Instant uncertainRequestSentAt) {
+                announced.add(ids.indexOf(id) + " " + status + " " + uncertainRequestSentAt);
+            }
+            @Override public void broadcastRevision(UUID id, long revision,
+                                                    List<com.fasterxml.jackson.databind.node.ObjectNode> changes) {
+                for (var change : changes) {
+                    if (!change.has("uncertainRequest")) continue;
+                    revisions.add(ids.indexOf(id) + " " + change.get("type").asText() + " "
+                            + change.get("uncertainRequest").asBoolean() + " "
+                            + change.get("uncertainRequestSentAt").asText(null));
+                }
+            }
+        }, dev.aichessarena.websocket.GameWebSocket.class);
+
+        // An ordinary resume is held in the spend-check pause, announced with the request it concerns.
+        assertTrue(lifecycle.markGameStarted(held, false, false, () -> true, null, null).uncertainRequest());
+        // A pause whose reason only looks like a spend check has none.
+        lifecycle.pauseWithReason(lookalike, "Paused by the operator. Check spend, then resume.");
+        given().get("/api/games/{id}", lookalike).then().statusCode(200)
+                .body("uncertainRequest", org.hamcrest.Matchers.equalTo(false))
+                .body("uncertainRequestSentAt", org.hamcrest.Matchers.nullValue());
+        // Only the exact acknowledgement or the forfeit transaction settles it (Rule A).
+        lifecycle.markGameStarted(held, false, false, () -> true, null, sentAt);
+        lifecycle.pauseWithReason(held, "Test turn finished");
+        lifecycle.forfeitTimeout(forfeited, "WHITE", 30);
+
+        String sent = sentAt.toString();
+        assertEquals(List.of("0 PAUSED " + sent, "1 PAUSED null", "0 IN_PROGRESS null", "0 PAUSED null",
+                "2 FORFEIT null"), announced);
+        assertEquals(List.of("0 gameStatus true " + sent, "0 gameState true " + sent,
+                "1 gameStatus false null", "1 gameState false null",
+                "0 gameStatus false null", "0 gameState false null",
+                "0 gameStatus false null", "0 gameState false null",
+                "2 gameStatus false null", "2 gameState false null"), revisions);
+        assertNull(read(forfeited).requestSentAt);
+    }
+
+    @Test
     void anAcknowledgementOnlyClearsTheRequestItNames() throws Exception {
         UUID tournamentId = seedTournament(GameStatus.PAUSED);
         UUID gameId = gameIds(tournamentId).getFirst();
