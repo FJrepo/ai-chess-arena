@@ -51,7 +51,10 @@ chess or shared page patterns need a name. Consume semantic roles rather than pa
 | `--app-board-swatch-size`, `--app-board-control-size` | Board chooser preview and compact desktop controls. |
 | `--app-segmented-height`, `--app-segmented-selected-bg`, `--app-segmented-selected-text` | Segmented controls (`mat-button-toggle-group`): shared height, and a primary fill with a check for the selected option where it switches a view, so selection never rests on a tint. |
 | `--app-game-record-min-width`, `--app-game-chat-min-width` | Minimum widths of the game view's Moves \| Feed and chat columns beside the board. |
-| `--app-game-record-stacked-max-height`, `--app-game-chat-stacked-max-height` | Height caps of those columns when the game view stacks below the board. |
+| `--app-game-record-stacked-max-height`, `--app-game-chat-stacked-max-height` | Height caps of those columns when the game view stacks them in one column. |
+| `--app-game-stacked-panel-height` | Shared height of Moves \| Feed and chat side by side under the board. |
+| `--app-side-card-header-height` | Header block of the game view's side cards (segmented control with its border), so their content starts level. |
+| `--app-move-link` | A chat message's move number that shows its position: chess green with an underline; ordinary text links stay blue. |
 | `--app-piece-white`, `--app-piece-black` | Neutral side markers and evaluation bar tones. They do not follow the board preference. |
 | `--app-brand-*` | Logo artwork only. Do not reuse these as interface status colours. |
 
