@@ -39,10 +39,10 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      # The Maven build image encodes the JDK in its tag suffix, which the rule above does not catch.
-      # Stay on the Java 25 LTS line used by CI and the runtime image.
+      # The Maven build image encodes the JDK in its tag suffix; Dependabot proposes the next JDK as a
+      # tag change and a versions-based ignore does not catch it. The build-only image is refreshed
+      # manually with each deliberate Java upgrade; the runtime image keeps its digest updates.
       - dependency-name: "maven"
-        versions: ["3.9-eclipse-temurin-26", "3.9-eclipse-temurin-27", "3.9-eclipse-temurin-28"]
     groups:
       base-images:
         patterns: ["*"]
