@@ -38,6 +38,7 @@
   --mat-focus-indicator-border-width: var(--app-rule-width);
   --app-segmented-selected-bg: var(--mat-sys-primary);
   --app-segmented-selected-text: var(--mat-sys-on-primary);
+  --app-move-link: var(--mat-sys-primary);
 }
 
 html {
@@ -92,10 +93,13 @@ html {
   --app-board-swatch-size: 14px;
   --app-board-control-size: 40px;
   --app-segmented-height: 36px;
+  /* Header block of the game view's side cards: a segmented control with its 1px border. */
+  --app-side-card-header-height: calc(var(--app-segmented-height) + 2px);
   --app-game-record-min-width: 21.5rem;
   --app-game-chat-min-width: 18rem;
   --app-game-record-stacked-max-height: min(32rem, 70dvh);
   --app-game-chat-stacked-max-height: min(24rem, 50dvh);
+  --app-game-stacked-panel-height: min(32rem, 70dvh);
   --app-banner-gap: 10px;
   --app-banner-padding: 10px 12px;
   --app-banner-radius: 12px;

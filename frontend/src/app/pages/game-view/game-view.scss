@@ -164,7 +164,8 @@
   --mat-pseudo-checkbox-minimal-selected-checkmark-color: var(--app-segmented-selected-text);
 }
 
-// The list fades out at the bottom edge so a cut-off entry reads as "scroll for more".
+// The list fades at its edges so a cut-off entry reads as "scroll for more"; the padding keeps
+// the first entry clear of the fade.
 .timeline-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -173,8 +174,14 @@
   align-content: start;
   gap: 2px;
   margin-inline: -8px;
-  padding: 0 4px 28px;
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  padding: var(--app-space-3) 4px 28px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--app-space-3),
+    #000 calc(100% - 28px),
+    transparent
+  );
 }
 
 // One quiet row style for every entry; tone shows only in the icon, and as a soft warning
@@ -486,16 +493,37 @@ app-advantage-bar {
   align-items: center;
 }
 
-// Narrower than the three-column range: board first, then Moves | Feed, then chat, each with a
-// capped height that scrolls inside. Three columns need the reserve above plus the 340px board
-// minimum and the board controls: about 1124px at a 16px default font and 1296px at 20px. The
-// em condition scales with that default font (75em is 1500px at 20px); the px condition keeps
-// 1200px as the floor, because the board minimum and controls do not shrink with smaller text.
+// Narrower than the three-column range: the board centred on top, then Moves | Feed beside the
+// chat at one shared height, each scrolling inside. Three columns need the reserve above plus the
+// 340px board minimum and the board controls: about 1124px at a 16px default font and 1296px at
+// 20px. The em condition scales with that default font (75em is 1500px at 20px); the px
+// condition keeps 1200px as the floor, because the board minimum and controls do not shrink
+// with smaller text.
 @media (max-width: 1199.98px), (max-width: 74.99em) {
   .game-layout {
     // Leave space for the page padding, evaluation bar and gap even on narrow phones.
     --board-size: clamp(0px, calc(100vw - 48px - 3.5rem), 560px);
 
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'board board'
+      'record chat';
+  }
+
+  .board-section {
+    justify-self: center;
+  }
+
+  .record-column,
+  .chat-column {
+    height: var(--app-game-stacked-panel-height);
+  }
+}
+
+// Too narrow for the two panels side by side (both minimum widths, gap and page padding: 696px
+// at a 16px default font): one column, board, then Moves | Feed, then chat, each capped.
+@media (max-width: 767.98px), (max-width: 47.99em) {
+  .game-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'board'
@@ -505,6 +533,7 @@ app-advantage-bar {
 
   .record-column,
   .chat-column {
+    height: auto;
     contain: none;
   }
 

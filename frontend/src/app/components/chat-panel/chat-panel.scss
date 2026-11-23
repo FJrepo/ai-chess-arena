@@ -1,19 +1,15 @@
 .chat-card {
   height: 100%;
 
+  // Same block height as the Moves | Feed toggle header, so both columns' content starts level.
   mat-card-header {
-    align-items: baseline;
+    padding-bottom: var(--app-space-2);
   }
 
   mat-card-title {
+    margin: 0;
     font-size: var(--mat-sys-title-medium-size);
     line-height: var(--mat-sys-title-medium-line-height);
-  }
-
-  mat-card-subtitle {
-    font: var(--mat-sys-body-small);
-    font-size: 0.8125rem;
-    color: var(--mat-sys-on-surface-variant);
   }
 
   mat-card-content {
@@ -24,12 +20,29 @@
   }
 }
 
+// The title with its notes ("Newest first · Chat optional · Playful") on one line.
+.chat-heading {
+  min-height: var(--app-side-card-header-height);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  align-content: center;
+  column-gap: var(--app-space-2);
+}
+
+.chat-meta {
+  font: var(--mat-sys-body-small);
+  font-size: 0.8125rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// Padding keeps the first and last card clear of the card edges.
 .chat-scroll {
   flex: 1 1 auto;
   min-height: var(--chat-panel-min-height, 300px);
   max-height: var(--chat-panel-max-height, 48vh);
   overflow-y: auto;
-  padding-right: 4px;
+  padding: var(--app-space-3) var(--app-space-1) var(--app-space-3) 0;
   border-radius: var(--app-space-2);
 
   // Focusable so keyboard users can scroll the transcript (WebKit gives a scroller no tab stop).
@@ -85,15 +98,18 @@
   color: var(--mat-sys-on-surface-variant);
 }
 
-// The move number of a message whose ply is recorded: a link-styled button to that position.
+// The move number of a message whose ply is recorded: a button to that position, in the chess
+// green with an underline. Without a recorded ply the number keeps the same place, size and
+// weight in the muted text colour, without the underline.
 .msg-move {
   padding: 0;
   border: 0;
   border-radius: var(--app-space-1);
   background: none;
   font-family: inherit;
+  font-weight: inherit;
   line-height: inherit;
-  color: var(--app-accent-info);
+  color: var(--app-move-link);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;

@@ -8,7 +8,9 @@ import {
   ElementRef,
   ViewChild,
   AfterViewChecked,
+  AfterViewInit,
   OnChanges,
+  OnDestroy,
   SimpleChanges,
 } from '@angular/core';
 import { Move } from '../../models/tournament.model';
@@ -33,7 +35,7 @@ interface MovePair {
   templateUrl: './move-list.html',
   styleUrl: './move-list.scss',
 })
-export class MoveListComponent implements AfterViewChecked, OnChanges {
+export class MoveListComponent implements AfterViewInit, AfterViewChecked, OnChanges, OnDestroy {
   @Input() set moves(value: Move[]) {
     this._moves.set(value);
   }
@@ -46,6 +48,10 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
   private shouldScroll = false;
   /** The move holding keyboard focus; null while focus is outside the list. */
   focusedIndex: number | null = null;
+  /** The list follows the shown move (across resizes) until the user scrolls it. */
+  private following = false;
+  private revealedTop: number | null = null;
+  private resizeObserver?: ResizeObserver;
 
   movePairs = computed<MovePair[]>(() => {
     const moves = this._moves();
@@ -71,25 +77,56 @@ export class MoveListComponent implements AfterViewChecked, OnChanges {
     this.shouldScroll = this.currentIndex >= 0;
   }
 
+  ngAfterViewInit() {
+    const list = this.scrollContainer?.nativeElement;
+    if (!list || typeof ResizeObserver === 'undefined') return;
+    // The column can settle after the first reveal (fonts, board size): keep the shown move in view.
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.following) this.reveal(list);
+    });
+    this.resizeObserver.observe(list);
+  }
+
+  ngOnDestroy() {
+    this.resizeObserver?.disconnect();
+  }
+
   ngAfterViewChecked() {
     if (!this.shouldScroll || !this.scrollContainer) return;
-    const list = this.scrollContainer.nativeElement;
+    if (this.reveal(this.scrollContainer.nativeElement)) this.shouldScroll = false;
+  }
+
+  /** A scroll the list did not make itself is the user's: stop following the shown move. */
+  onScroll() {
+    const list = this.scrollContainer?.nativeElement;
+    if (list && list.scrollTop !== this.revealedTop) this.following = false;
+  }
+
+  /**
+   * Scrolls the shown move into view, clear of the edges by the list's scroll padding. Returns false
+   * while the move is not rendered yet.
+   */
+  private reveal(list: HTMLElement): boolean {
     // A keyboard user is working in the list: a live ply must not scroll their focus out of sight.
     if (list.contains(list.ownerDocument.activeElement)) {
-      this.shouldScroll = false;
-      return;
+      this.following = false;
+      return true;
     }
     const selected = list.querySelector<HTMLElement>('.move.active');
-    if (!selected) return;
-    this.shouldScroll = false;
-
+    if (!selected) return false;
+    const style = getComputedStyle(list);
+    const padTop = parseFloat(style.scrollPaddingTop) || 0;
+    const padBottom = parseFloat(style.scrollPaddingBottom) || 0;
     const viewport = list.getBoundingClientRect();
     const move = selected.getBoundingClientRect();
-    if (move.top < viewport.top) {
-      list.scrollTop += move.top - viewport.top;
-    } else if (move.bottom > viewport.bottom) {
-      list.scrollTop += move.bottom - viewport.bottom;
+    if (move.top < viewport.top + padTop) {
+      list.scrollTop += move.top - viewport.top - padTop;
+    } else if (move.bottom > viewport.bottom - padBottom) {
+      list.scrollTop += move.bottom - viewport.bottom + padBottom;
     }
+    this.revealedTop = list.scrollTop;
+    this.following = true;
+    return true;
   }
 
   /**

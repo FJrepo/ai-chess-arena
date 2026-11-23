@@ -352,3 +352,95 @@ describe('MoveListComponent roving focus', () => {
     }
   });
 });
+
+describe('MoveListComponent edges and columns', () => {
+  function renderMoves(count: number) {
+    const moves = Array.from({ length: count }, (_, i) =>
+      move(Math.floor(i / 2) + 1, i % 2 ? 'BLACK' : 'WHITE', i % 2 ? 'e5' : 'e4'),
+    );
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', moves);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    return { fixture, element, list: element.querySelector<HTMLElement>('.move-list-scroll')! };
+  }
+
+  it('keeps the shown move clear of the list edge by the scroll padding', () => {
+    const { fixture, list } = renderMoves(4);
+    list.style.scrollPaddingTop = '12px';
+    list.style.scrollPaddingBottom = '12px';
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('move-list-scroll')
+          ? new DOMRect(0, 0, 100, 40)
+          : new DOMRect(0, 90, 100, 20);
+      });
+    try {
+      fixture.componentRef.setInput('currentIndex', 3);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(110 - 40 + 12);
+    } finally {
+      rects.mockRestore();
+    }
+  });
+
+  it('reveals the shown move again when the list is resized, until the user scrolls', () => {
+    let resized: (() => void) | undefined;
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        resized = callback;
+      }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    let listHeight = 60;
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('move-list-scroll')
+          ? new DOMRect(0, 0, 100, listHeight)
+          : new DOMRect(
+              0,
+              90 -
+                (this.ownerDocument.querySelector<HTMLElement>('.move-list-scroll')?.scrollTop ??
+                  0),
+              100,
+              20,
+            );
+      });
+    try {
+      const { fixture, list } = renderMoves(4);
+      fixture.componentRef.setInput('currentIndex', 3);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(50); // 110 - 60
+      // The column settles 20 px shorter after the first reveal: follow the shown move.
+      listHeight = 40;
+      resized!();
+      expect(list.scrollTop).toBe(70);
+      // Once the user scrolls the list themselves, a resize leaves their position alone.
+      list.scrollTop = 10;
+      list.dispatchEvent(new Event('scroll'));
+      listHeight = 30;
+      resized!();
+      expect(list.scrollTop).toBe(10);
+    } finally {
+      rects.mockRestore();
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  it('lays the moves out as one compact grid: number, White, Black', () => {
+    const { element, list } = renderMoves(4);
+    const style = getComputedStyle(list);
+    expect(style.display).toBe('grid');
+    // Three tracks (a minmax() track contains a space of its own).
+    expect(style.gridTemplateColumns.match(/minmax\([^)]*\)|\S+/g)).toHaveLength(3);
+    expect(style.justifyContent).toBe('start');
+    for (const row of Array.from(element.querySelectorAll<HTMLElement>('.move-row'))) {
+      expect(getComputedStyle(row).display).toBe('contents');
+    }
+  });
+});

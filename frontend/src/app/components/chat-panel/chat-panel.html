@@ -1,12 +1,14 @@
 <mat-card class="chat-card">
   <mat-card-header>
-    <mat-card-title [id]="titleId">Chat</mat-card-title>
-    <mat-card-subtitle
-      >Newest first
-      @if (chatModeLabel(); as label) {
-        <span class="chat-mode-label">· {{ label }}</span>
-      }
-    </mat-card-subtitle>
+    <div class="chat-heading">
+      <mat-card-title [id]="titleId">Chat</mat-card-title>
+      <span class="chat-meta"
+        >Newest first
+        @if (chatModeLabel(); as label) {
+          <span class="chat-mode-label">· {{ label }}</span>
+        }
+      </span>
+    </div>
   </mat-card-header>
   <mat-card-content>
     <div #scroll class="chat-scroll" tabindex="0" role="region" [attr.aria-labelledby]="titleId">

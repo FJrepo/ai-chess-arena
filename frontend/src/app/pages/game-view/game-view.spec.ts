@@ -3691,7 +3691,9 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
       const rows = () => getComputedStyle(layout).gridTemplateAreas.match(/"[^"]*"/g);
       expect(window.innerWidth).toBe(1024);
       expect(getComputedStyle(layout).display).toBe('grid');
-      expect(rows()).toEqual(['"board"', '"record"', '"chat"']);
+      // 1024 px is a stacked width with room for two columns: the board on top, then Moves | Feed
+      // beside the chat.
+      expect(rows()).toEqual(['"board board"', '"record chat"']);
     } finally {
       fixture.destroy();
     }

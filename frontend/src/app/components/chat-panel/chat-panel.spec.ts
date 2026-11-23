@@ -267,4 +267,19 @@ describe('ChatPanel', () => {
       expect(document.activeElement).toBe(links[0]);
     }
   });
+
+  it('keeps the title and its notes on one header line', () => {
+    TestBed.configureTestingModule({ imports: [ChatPanel] });
+    const fixture = TestBed.createComponent(ChatPanel);
+    fixture.componentRef.setInput('chatMode', 'OPTIONAL');
+    fixture.componentRef.setInput('banterLevel', 'PLAYFUL');
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const heading = element.querySelector<HTMLElement>('.chat-heading')!;
+    expect(heading.querySelector('mat-card-title')?.textContent?.trim()).toBe('Chat');
+    expect(heading.querySelector('.chat-meta')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Newest first · Chat optional · Playful',
+    );
+    expect(element.querySelector('mat-card-subtitle')).toBeNull();
+  });
 });

@@ -4,6 +4,7 @@
   tabindex="-1"
   (keydown)="onKeydown($event)"
   (focusout)="onFocusOut($event)"
+  (scroll)="onScroll()"
 >
   @for (pair of movePairs(); track pair.number) {
     <div class="move-row">
