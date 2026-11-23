@@ -12,6 +12,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - The README front page leads with the live game and the quick start, shows larger screenshot crops, and moves the logo and icon licensing notes to [docs/logo-and-icons.md](docs/logo-and-icons.md), so GitHub detects a single MIT licence.
 - The game view shows one **Moves | Feed** box left of the board and the chat in its own column on the right, instead of a full-width chat below; the feed lists game events without chat, so its **Include chat** switch is gone, and a chat message's move number now shows that position. The chosen view is remembered in the browser, and moves and the chat transcript can be reached and used from the keyboard. See [Game view layout](docs/how-it-works.md#game-view-layout).
 
+### Fixed
+
+- The backend image runs Temurin 25.0.5.1, which fixes CVE-2026-114938 ("Java4Shell") in the Java runtime. Pull or rebuild the backend image to apply it.
+
 ## [2.0.1] - 2026-11-19
 
 **Correct local times everywhere**: times show in your own time zone again, and paused games get a calmer marker.
