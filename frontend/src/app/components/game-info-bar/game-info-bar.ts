@@ -71,6 +71,7 @@ export class GameInfoBar {
       if (this.currentGame.id !== value.id) {
         this.effortChoice = null;
         this.prefillOutputLimit();
+        this.lastWordsOpen = false;
       }
     }
     this.currentGame = value;
@@ -94,6 +95,9 @@ export class GameInfoBar {
    * warning stays; its action is disabled and this text says what to do.
    */
   @Input() spendCheckBlocked: string | null = null;
+
+  /** Whether the "Last words" disclosure under the result line is open; closed for every new game. */
+  lastWordsOpen = false;
 
   /** Reader-facing status label for the chip. */
   readonly statusLabel = gameStatusLabel;
@@ -300,16 +304,71 @@ export class GameInfoBar {
   }
 
   /**
-   * E.g. "Black Bot resigned instead of playing move 23, at 46% winning chances (not losing)". The winning
-   * chance is left out while Stockfish's evaluation of the position is unknown.
+   * The detail after the bold result: for a resignation e.g. "at move 23, with 46% winning chances (not losing)"
+   * (the winning chance is left out while Stockfish's evaluation of the position is unknown), for an adjudication
+   * e.g. "decisive over the last 10 plies (+12.3)"; null for other results or without details.
    */
-  resignationText(resignation: GameResignation): string {
-    const who = `${this.sideName(resignation.color)} resigned instead of playing move ${resignation.moveNumber}`;
-    if (resignation.winChance == null) {
-      return who;
+  resultDetail(): string | null {
+    const resignation = this.resignation();
+    if (resignation) {
+      const move = `at move ${resignation.moveNumber}`;
+      if (resignation.winChance == null) {
+        return move;
+      }
+      const chance = `${Math.round(resignation.winChance * 100)}% winning chances`;
+      return `${move}, with ${chance}${resignation.notLosing ? ' (not losing)' : ''}`;
     }
-    const chance = `${Math.round(resignation.winChance * 100)}% winning chances`;
-    return `${who}, at ${chance}${resignation.notLosing ? ' (not losing)' : ''}`;
+    const evidence = this.game?.resultReason === 'ADJUDICATION' ? this.game.adjudication : null;
+    if (!evidence) {
+      return null;
+    }
+    const evaluation =
+      evidence.evaluationMate != null
+        ? `mate in ${evidence.evaluationMate}`
+        : evidence.evaluationCp != null
+          ? `+${(evidence.evaluationCp / 100).toFixed(1)}`
+          : null;
+    return `decisive over the last ${evidence.plies} plies${evaluation ? ` (${evaluation})` : ''}`;
+  }
+
+  /** Icon before the result line: a flag for a resignation, a gavel for an adjudication. */
+  resultIcon(): string {
+    switch (this.game?.resultReason) {
+      case 'RESIGNATION':
+        return 'flag';
+      case 'ADJUDICATION':
+        return 'gavel';
+      default:
+        return 'sports_score';
+    }
+  }
+
+  /**
+   * The resigning side's last words and the opponent's last message, shown on request under the result line
+   * (both also appear in the chat); null when the resignation came without either.
+   */
+  resignationMessages(): {
+    label: string;
+    lines: { label: string; text: string }[];
+  } | null {
+    const resignation = this.resignation();
+    if (!resignation) {
+      return null;
+    }
+    const lines: { label: string; text: string }[] = [];
+    if (resignation.lastWords) {
+      lines.push({ label: 'Last words', text: resignation.lastWords });
+    }
+    if (resignation.opponentMessage) {
+      lines.push({
+        label: this.opponentMessageLabel(resignation),
+        text: resignation.opponentMessage,
+      });
+    }
+    if (!lines.length) {
+      return null;
+    }
+    return { label: resignation.lastWords ? 'Last words' : 'Last message', lines };
   }
 
   /** E.g. "Last message from White Bot (move 22)". */
@@ -318,21 +377,6 @@ export class GameInfoBar {
     return resignation.opponentMessageMoveNumber != null
       ? `Last message from ${opponent} (move ${resignation.opponentMessageMoveNumber})`
       : `Last message from ${opponent}`;
-  }
-
-  adjudicationText(): string | null {
-    const evidence = this.game?.adjudication;
-    if (this.game?.resultReason !== 'ADJUDICATION' || !evidence) {
-      return null;
-    }
-    const color = evidence.color === 'WHITE' ? 'White' : 'Black';
-    const evaluation =
-      evidence.evaluationMate != null
-        ? `mate in ${evidence.evaluationMate}`
-        : evidence.evaluationCp != null
-          ? `+${(evidence.evaluationCp / 100).toFixed(1)}`
-          : null;
-    return `Adjudicated: decisive for ${color} over the last ${evidence.plies} plies${evaluation ? ` (${evaluation})` : ''}`;
   }
 
   getResultText(): string {

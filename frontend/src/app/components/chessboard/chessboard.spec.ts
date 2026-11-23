@@ -54,7 +54,7 @@ describe('ChessboardComponent last-move highlight', () => {
     expect(marked).toEqual([]);
   });
 
-  it('renders the last-move classes on the from and to squares', () => {
+  it('marks both last-move squares with one highlight class, the from square with a modifier', () => {
     const fixture = TestBed.createComponent(ChessboardComponent);
     fixture.componentRef.setInput(
       'fen',
@@ -64,15 +64,38 @@ describe('ChessboardComponent last-move highlight', () => {
     fixture.detectChanges();
     const element: HTMLElement = fixture.nativeElement;
 
+    const marked = element.querySelectorAll('.square.last-move');
+    expect(marked).toHaveLength(2);
     expect(element.querySelectorAll('.square.last-move-from')).toHaveLength(1);
-    expect(element.querySelectorAll('.square.last-move-to')).toHaveLength(1);
-    expect(element.querySelector('.square.last-move-to img.piece')?.getAttribute('src')).toBe(
-      'pieces/cburnett/wP.svg',
-    );
+    expect(element.querySelector('.square.last-move-from')?.classList).toContain('last-move');
+    expect(element.querySelectorAll('.last-move-to')).toHaveLength(0);
+    expect(
+      element
+        .querySelector('.square.last-move:not(.last-move-from) img.piece')
+        ?.getAttribute('src'),
+    ).toBe('pieces/cburnett/wP.svg');
 
     fixture.componentRef.setInput('lastMove', null);
     fixture.detectChanges();
-    expect(element.querySelectorAll('.last-move-from, .last-move-to')).toHaveLength(0);
+    expect(element.querySelectorAll('.last-move, .last-move-from')).toHaveLength(0);
+  });
+
+  it('paints the highlight from one wash token, the from square from its lighter tint', () => {
+    const styles = (
+      (ChessboardComponent as unknown as { ɵcmp: { styles: string[] } }).ɵcmp.styles ?? []
+    )
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    const declarations = (selector: string) =>
+      styles.match(new RegExp(`\\.square\\.${selector}\\[[^{]*\\{([^}]*)\\}`))?.[1] ?? '';
+
+    expect(declarations('last-move')).toMatch(
+      /background-image: ?linear-gradient\(var\(--app-board-last-move\), ?var\(--app-board-last-move\)\)/,
+    );
+    expect(declarations('last-move-from')).toMatch(
+      /background-image: ?linear-gradient\(var\(--app-board-last-move-from\), ?var\(--app-board-last-move-from\)\)/,
+    );
+    expect(styles).not.toContain('last-move-to');
   });
 });
 

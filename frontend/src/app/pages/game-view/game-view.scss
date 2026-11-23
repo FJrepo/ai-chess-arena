@@ -5,9 +5,22 @@
 .view-actions {
   display: flex;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: var(--app-space-2);
   flex-wrap: wrap;
   align-items: center;
+}
+
+// The opening takes the free space of the actions row and shortens with an ellipsis (full name in
+// its title) instead of adding a row above the board.
+.opening-label {
+  flex: 1 1 0;
+  min-width: min(12rem, 100%);
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface);
 }
 
 // A quiet status line, not a control: icon + text, no pill.
@@ -81,9 +94,20 @@
 }
 
 // Board size (incl. the rank-label column; the board is square) follows the viewport height so
-// board and both side columns fit one screen, and is capped by the width the side columns leave.
+// the capture bars, board and controls fit one screen, and is capped by the width the side columns
+// leave.
 .game-layout {
-  --board-chrome-v: 384px;
+  // Height around the board, at a 16px default font. Above it: the layout's measured top in the
+  // page (toolbar, page padding, header with the result line and any open "Last words" or pause
+  // notice, actions row), then White's capture bar and the frame gap. Until it is measured, a
+  // typical header is assumed, with a finished game's one-line result. Below it: the frame gaps,
+  // controls, Black's capture bar and a small margin.
+  --board-layout-top-fallback: 230px;
+  --board-chrome-above: calc(
+    var(--game-layout-top, var(--board-layout-top-fallback)) + 34px + var(--app-space-2)
+  );
+  --board-chrome-below: 98px;
+  --board-chrome-v: calc(var(--board-chrome-above) + var(--board-chrome-below));
   --board-max: 680px;
   // Moves | Feed column minimum: two full notation cells (see the move list's --move-cell-min).
   --record-col-min: var(--app-game-record-min-width);
@@ -111,8 +135,13 @@
   // the Moves | Feed box left of the board.
   grid-template-areas: 'record board chat';
   gap: var(--app-space-4);
-  margin-top: var(--app-space-3);
+  margin-top: var(--app-space-2);
   align-items: stretch;
+
+  // The result line: one control high plus the header gap.
+  &.has-result {
+    --board-layout-top-fallback: calc(230px + var(--app-board-control-size) + var(--app-space-2));
+  }
 }
 
 // The side columns take the row height (set by the board block) and scroll inside it.
@@ -355,9 +384,9 @@ app-advantage-bar {
   contain: inline-size;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  padding: 4px 6px 4px 12px;
+  gap: var(--app-space-2);
+  min-height: 34px;
+  padding: var(--app-space-half) 6px var(--app-space-half) 12px;
   border-radius: 12px;
   border: 1px solid var(--mat-sys-outline-variant);
   background: var(--mat-sys-surface-container-low);
@@ -381,16 +410,21 @@ app-advantage-bar {
 // Captured pieces sit on a light-square tray so both piece colours read as on the board,
 // in either theme.
 .capture-pieces.has-pieces {
-  padding: 1px 6px;
+  padding: 1px var(--app-space-1);
   border-radius: 8px;
   background: var(--app-board-light-square);
 }
 
 .captured-piece {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   user-select: none;
+}
+
+// Identical pieces overlap, so a long tray of captures stays on one line beside the label.
+.captured-piece.stacked {
+  margin-left: -12px;
 }
 
 .capture-empty {
@@ -503,8 +537,14 @@ app-advantage-bar {
 // with smaller text.
 @media (max-width: 1199.98px), (max-width: 74.99em) {
   .game-layout {
-    // Leave space for the page padding, evaluation bar and gap even on narrow phones.
-    --board-size: clamp(0px, calc(100vw - 48px - 3.5rem), 560px);
+    // Leave space for the page padding, evaluation bar and gap even on narrow phones. The same
+    // height budget as above keeps the controls and Black's captures in the window, down to the
+    // 340px minimum; the panels below the board scroll into view.
+    --board-size: clamp(
+      0px,
+      min(100vw - 48px - 3.5rem, max(340px, 100dvh - var(--board-chrome-v))),
+      560px
+    );
 
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:

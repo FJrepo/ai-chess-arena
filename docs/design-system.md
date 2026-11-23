@@ -47,6 +47,7 @@ chess or shared page patterns need a name. Consume semantic roles rather than pa
 | `--app-space-*` | Shared spacing scale for compact card content, fields and supporting metrics. |
 | `--app-banner-gap`, `--app-banner-padding`, `--app-banner-radius` | Shared connection banner geometry. |
 | `--app-board-light-square`, `--app-board-dark-square`, `--app-board-last-move` | Board squares, captured-piece trays, promotion backplates and last-move wash. |
+| `--app-board-last-move-from` | The last move's from square: a lighter tint of the same wash, derived from `--app-board-last-move`. |
 | `--app-board-ring-edge`, `--app-board-selection`, `--app-board-drop-target`, `--app-board-hover` | Board interaction cues that remain visible over both square tones and highlights. |
 | `--app-board-swatch-size`, `--app-board-control-size` | Board chooser preview and compact desktop controls. |
 | `--app-segmented-height`, `--app-segmented-selected-bg`, `--app-segmented-selected-text` | Segmented controls (`mat-button-toggle-group`): shared height, and a primary fill with a check for the selected option where it switches a view, so selection never rests on a tint. |
@@ -56,6 +57,7 @@ chess or shared page patterns need a name. Consume semantic roles rather than pa
 | `--app-side-card-header-height` | Header block of the game view's side cards (segmented control with its border), so their content starts level. |
 | `--app-move-link` | A chat message's move number that shows its position: chess green with an underline; ordinary text links stay blue. |
 | `--app-piece-white`, `--app-piece-black` | Neutral side markers and evaluation bar tones. They do not follow the board preference. |
+| `--app-eval-white` | White's share of the evaluation bar and its label background: the white piece tone in light mode, a softer cream in dark mode. |
 | `--app-brand-*` | Logo artwork only. Do not reuse these as interface status colours. |
 
 ## Typography

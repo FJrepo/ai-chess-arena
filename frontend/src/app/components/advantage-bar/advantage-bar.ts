@@ -24,6 +24,8 @@ export class AdvantageBar {
   mate = input<number | null>(null);
   /** The side checkmated in the shown position, if any. */
   checkmated = input<Side | null>(null);
+  /** The board shows Black at the bottom: White's share then fills the bar from the top. */
+  flipped = input(false);
 
   private evaluation = computed<PositionEvaluation>(() => ({
     cp: this.cp(),
@@ -59,4 +61,7 @@ export class AdvantageBar {
   );
 
   barHeight = computed(() => whiteBarShare(this.evaluation()));
+
+  /** White has more than half of the bar; the score label then sits at White's end, else at Black's. */
+  whiteLeads = computed(() => this.barHeight() > 50);
 }

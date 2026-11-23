@@ -1,8 +1,10 @@
 .advantage-container {
   height: 100%;
-  // Six monospace glyphs fit with room on both sides, independent of the current score.
-  font: 800 0.65rem var(--app-font-numeric);
-  inline-size: 7ch;
+  // Six monospace glyphs fit, independent of the current score; with the gap beside it the bar
+  // stays within the 3.5rem the game view reserves.
+  font: 800 0.6875rem var(--app-font-numeric);
+  font-variant-numeric: tabular-nums;
+  inline-size: 6.5ch;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -20,8 +22,13 @@
   background: var(--app-piece-black);
 }
 
+// White's share grows from White's end: the bottom, or the top on a flipped board.
+.eval-bar.flipped {
+  flex-direction: column;
+}
+
 .white-bar {
-  background: var(--app-piece-white);
+  background: var(--app-eval-white);
   transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   width: 100%;
 }
@@ -42,6 +49,7 @@
   z-index: 2;
 }
 
+// The score sits at the leading side's end of the bar, on that side's colour.
 .eval-text {
   position: absolute;
   left: 0;
@@ -50,19 +58,29 @@
   white-space: nowrap;
   z-index: 3;
   pointer-events: none;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
 
-  &.white-text {
-    bottom: 8px;
+  &.white-end {
+    bottom: var(--app-space-2);
     color: var(--app-piece-black);
-    background: var(--app-piece-white);
-    text-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
+    background: var(--app-eval-white);
   }
 
-  &.black-text {
-    top: 8px;
-    color: var(--app-piece-white);
+  &.black-end {
+    top: var(--app-space-2);
+    color: var(--app-eval-white);
     background: var(--app-piece-black);
+  }
+}
+
+.eval-bar.flipped .eval-text {
+  &.white-end {
+    top: var(--app-space-2);
+    bottom: auto;
+  }
+
+  &.black-end {
+    top: auto;
+    bottom: var(--app-space-2);
   }
 }
 
@@ -77,13 +95,13 @@
     visibility: hidden;
   }
 
-  .eval-text {
+  // Also on a flipped board: centred, whichever end the label would take.
+  .eval-text:is(.white-end, .black-end) {
     top: 50%;
     bottom: auto;
     transform: translateY(-50%);
     color: var(--mat-sys-on-surface-variant);
     background: transparent;
-    text-shadow: none;
   }
 }
 

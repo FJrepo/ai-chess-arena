@@ -319,39 +319,92 @@ describe('GameInfoBar resignation', () => {
     };
   }
 
-  it('shows the winning chance at resignation, last words and the last opponent message', () => {
+  function render(game: Game) {
     const fixture = TestBed.createComponent(GameInfoBar);
-    fixture.componentRef.setInput(
-      'game',
-      resignedGame({
-        color: 'BLACK',
-        moveNumber: 23,
-        winChance: 0.4612,
-        notLosing: true,
-        lastWords: 'Well played.',
-        opponentMessage: 'Your position is hopeless.',
-        opponentMessageMoveNumber: 23,
-      }),
-    );
+    fixture.componentRef.setInput('game', game);
     fixture.detectChanges();
-    const panel = (fixture.nativeElement as HTMLElement).querySelector('.resignation-panel');
+    return { fixture, element: fixture.nativeElement as HTMLElement };
+  }
 
-    expect(panel?.querySelector('.resignation-title')?.textContent?.trim()).toBe(
-      'Beta resigned instead of playing move 23, at 46% winning chances (not losing)',
+  const fullResignation = {
+    color: 'BLACK' as const,
+    moveNumber: 23,
+    winChance: 0.4612,
+    notLosing: true,
+    lastWords: 'Well played.',
+    opponentMessage: 'Your position is hopeless.',
+    opponentMessageMoveNumber: 23,
+  };
+
+  it('states the result once, in one bold line with the winning chance at resignation', () => {
+    const { element } = render(resignedGame(fullResignation));
+
+    const lines = element.querySelectorAll('.result-line');
+    expect(lines).toHaveLength(1);
+    const line = lines[0];
+    expect(line.querySelector('strong.result')?.textContent?.trim()).toBe(
+      'Beta resigned; Alpha wins',
     );
-    const lines = Array.from(panel?.querySelectorAll('.resignation-line') ?? []).map((line) =>
+    expect(line.querySelector('.result-detail')?.textContent?.trim()).toBe(
+      'at move 23, with 46% winning chances (not losing)',
+    );
+    // No second statement of the result: not beside the status chip, no banner title.
+    expect(element.querySelectorAll('.result')).toHaveLength(1);
+    expect(element.querySelector('.info')?.textContent).not.toContain('resigned');
+    expect(element.querySelector('.resignation-panel')).toBeNull();
+    const visible = element.cloneNode(true) as HTMLElement;
+    visible.querySelectorAll('[hidden]').forEach((node) => node.remove());
+    const visibleText = visible.textContent ?? '';
+    expect(visibleText.match(/resigned/g)).toHaveLength(1);
+    expect(visibleText).not.toContain('Well played.');
+  });
+
+  it('keeps the last words and the last opponent message behind a closed disclosure', () => {
+    const { fixture, element } = render(resignedGame(fullResignation));
+
+    const toggle = element.querySelector<HTMLButtonElement>(
+      '.result-line button.last-words-toggle',
+    )!;
+    const quotes = element.querySelector<HTMLElement>('#game-last-words')!;
+    expect(toggle.textContent?.trim()).toContain('Last words');
+    expect(toggle.getAttribute('aria-controls')).toBe('game-last-words');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(quotes.hidden).toBe(true);
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(quotes.hidden).toBe(false);
+    const lines = Array.from(quotes.querySelectorAll('.last-words-line')).map((line) =>
       line.textContent?.replace(/\s+/g, ' ').trim(),
     );
     expect(lines).toEqual([
       'Last words: “Well played.”',
       'Last message from Alpha (move 23): “Your position is hopeless.”',
     ]);
+
+    // Another game starts with the disclosure closed again.
+    fixture.componentRef.setInput('game', { ...resignedGame(fullResignation), id: 'g-2' });
+    fixture.detectChanges();
+    expect(element.querySelector('button.last-words-toggle')?.getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+  });
+
+  it('names the disclosure after what it holds', () => {
+    const { element } = render(
+      resignedGame({ ...fullResignation, lastWords: null, opponentMessageMoveNumber: null }),
+    );
+    expect(element.querySelector('button.last-words-toggle')?.textContent?.trim()).toContain(
+      'Last message',
+    );
+    expect(
+      element.querySelector('.last-words-line')?.textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe('Last message from Alpha: “Your position is hopeless.”');
   });
 
   it('leaves out what is unknown or missing', () => {
-    const fixture = TestBed.createComponent(GameInfoBar);
-    fixture.componentRef.setInput(
-      'game',
+    const { element } = render(
       resignedGame({
         color: 'BLACK',
         moveNumber: 12,
@@ -362,13 +415,10 @@ describe('GameInfoBar resignation', () => {
         opponentMessageMoveNumber: null,
       }),
     );
-    fixture.detectChanges();
-    const panel = (fixture.nativeElement as HTMLElement).querySelector('.resignation-panel');
 
-    expect(panel?.querySelector('.resignation-title')?.textContent?.trim()).toBe(
-      'Beta resigned instead of playing move 12',
-    );
-    expect(panel?.querySelectorAll('.resignation-line').length).toBe(0);
+    expect(element.querySelector('.result-detail')?.textContent?.trim()).toBe('at move 12');
+    expect(element.querySelector('button.last-words-toggle')).toBeNull();
+    expect(element.querySelector('#game-last-words')).toBeNull();
   });
 
   it('says nothing about winning chances below 35% beyond the number, and nothing for other results', () => {
@@ -382,12 +432,26 @@ describe('GameInfoBar resignation', () => {
       opponentMessage: null,
       opponentMessageMoveNumber: null,
     });
-    expect(bar.resignationText(bar.resignation()!)).toBe(
-      'Alpha resigned instead of playing move 30, at 8% winning chances',
-    );
+    expect(bar.resultDetail()).toBe('at move 30, with 8% winning chances');
 
     bar.game = { ...bar.game, resultReason: 'CHECKMATE' };
     expect(bar.resignation()).toBeNull();
+    expect(bar.resultDetail()).toBeNull();
+    expect(bar.resignationMessages()).toBeNull();
+  });
+
+  it('shows other results in the same single line, without a detail or disclosure', () => {
+    const { element } = render({
+      ...pausedGame(null),
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'CHECKMATE',
+    });
+    expect(element.querySelector('.result-line strong.result')?.textContent?.trim()).toBe(
+      'Alpha wins by checkmate',
+    );
+    expect(element.querySelector('.result-detail')).toBeNull();
+    expect(element.querySelector('button.last-words-toggle')).toBeNull();
   });
 });
 
@@ -448,7 +512,7 @@ describe('GameInfoBar move-quality summary', () => {
 });
 
 describe('GameInfoBar adjudication', () => {
-  it('renders the result and its decisive-window panel for either color', () => {
+  it('renders the result and its decisive window in one line for either color', () => {
     for (const color of ['WHITE', 'BLACK'] as const) {
       const fixture = TestBed.createComponent(GameInfoBar);
       fixture.componentRef.setInput('game', {
@@ -461,17 +525,19 @@ describe('GameInfoBar adjudication', () => {
       fixture.detectChanges();
       const element: HTMLElement = fixture.nativeElement;
       const side = color === 'WHITE' ? 'White' : 'Black';
-      expect(element.querySelector('.result')?.textContent).toContain(
+      expect(element.querySelectorAll('.result-line')).toHaveLength(1);
+      expect(element.querySelector('.result-line strong.result')?.textContent?.trim()).toBe(
         `${side} wins by adjudication`,
       );
-      expect(element.querySelector('.adjudication-panel')?.textContent).toContain(
-        `Adjudicated: decisive for ${side} over the last 10 plies (+12.3)`,
+      expect(element.querySelector('.result-line .result-detail')?.textContent?.trim()).toBe(
+        'decisive over the last 10 plies (+12.3)',
       );
+      expect(element.querySelector('.adjudication-panel')).toBeNull();
       fixture.destroy();
     }
   });
 
-  it('shows mate evidence and hides the panel for other results or absent details', () => {
+  it('shows mate evidence and leaves the detail out for other results or absent details', () => {
     const bar = new GameInfoBar();
     bar.game = {
       ...pausedGame(),
@@ -479,12 +545,12 @@ describe('GameInfoBar adjudication', () => {
       resultReason: 'ADJUDICATION',
       adjudication: { color: 'BLACK', plies: 10, evaluationCp: 1230, evaluationMate: 4 },
     };
-    expect(bar.adjudicationText()).toContain('(mate in 4)');
+    expect(bar.resultDetail()).toBe('decisive over the last 10 plies (mate in 4)');
     bar.game = { ...bar.game, adjudication: null };
-    expect(bar.adjudicationText()).toBeNull();
+    expect(bar.resultDetail()).toBeNull();
     expect(bar.getResultText()).toBe('Black wins by adjudication');
     bar.game = { ...bar.game, resultReason: 'CHECKMATE' };
-    expect(bar.adjudicationText()).toBeNull();
+    expect(bar.resultDetail()).toBeNull();
   });
 });
 

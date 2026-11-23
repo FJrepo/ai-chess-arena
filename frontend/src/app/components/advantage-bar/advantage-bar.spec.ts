@@ -1,15 +1,33 @@
 import { TestBed } from '@angular/core/testing';
 import { AdvantageBar } from './advantage-bar';
 
-function render(inputs: { cp?: number | null; mate?: number | null; checkmated?: string | null }) {
+function render(inputs: {
+  cp?: number | null;
+  mate?: number | null;
+  checkmated?: string | null;
+  flipped?: boolean;
+}) {
   const fixture = TestBed.createComponent(AdvantageBar);
   Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
   fixture.detectChanges();
   const element: HTMLElement = fixture.nativeElement;
   return {
     bar: element.querySelector('.eval-bar') as HTMLElement,
+    label: element.querySelector('.eval-text') as HTMLElement,
     text: element.querySelector('.eval-text')?.textContent?.trim(),
   };
+}
+
+/** The component's compiled styles, whitespace collapsed. */
+function componentStyles(): string {
+  return ((AdvantageBar as unknown as { ɵcmp: { styles: string[] } }).ɵcmp.styles ?? [])
+    .join('\n')
+    .replace(/\s+/g, ' ');
+}
+
+/** The declarations of the first compiled rule whose selector list matches. */
+function rule(selector: RegExp): string {
+  return componentStyles().match(new RegExp(`${selector.source}[^{]*\\{([^}]*)\\}`))?.[1] ?? '';
 }
 
 describe('AdvantageBar', () => {
@@ -71,6 +89,43 @@ describe('AdvantageBar', () => {
       expect(bar.getAttribute('title')).toBe(title);
     },
   );
+
+  it("puts the score at the leading side's end of the bar", () => {
+    const white = render({ cp: 900 });
+    expect(white.label.classList).toContain('white-end');
+    expect(white.label.classList).not.toContain('black-end');
+    expect(white.bar.classList).not.toContain('flipped');
+
+    const black = render({ cp: -250 });
+    expect(black.label.classList).toContain('black-end');
+    expect(black.label.classList).not.toContain('white-end');
+
+    // White's end is the bottom; on a flipped board (Black at the bottom) it is the top.
+    expect(rule(/\.eval-text\.white-end/)).toMatch(/bottom: ?var\(--app-space-2\)/);
+    expect(rule(/\.eval-text\.black-end/)).toMatch(/top: ?var\(--app-space-2\)/);
+    const flipped = render({ cp: 900, flipped: true });
+    expect(flipped.bar.classList).toContain('flipped');
+    expect(flipped.label.classList).toContain('white-end');
+    expect(rule(/\.eval-bar\.flipped\S* \.eval-text\.white-end/)).toMatch(
+      /top: ?var\(--app-space-2\);? ?bottom: ?auto/,
+    );
+    expect(rule(/\.eval-bar\.flipped\S* \.eval-text\.black-end/)).toMatch(
+      /top: ?auto;? ?bottom: ?var\(--app-space-2\)/,
+    );
+  });
+
+  it('labels the score at 11 px or more with tabular numbers', () => {
+    expect(rule(/\.advantage-container/)).toMatch(
+      /font: ?800 0\.6875rem var\(--app-font-numeric\)/,
+    );
+    expect(rule(/\.advantage-container/)).toMatch(/font-variant-numeric: ?tabular-nums/);
+  });
+
+  it("draws White's share and its label with the evaluation token, softer in dark mode", () => {
+    expect(rule(/\.white-bar/)).toMatch(/background: ?var\(--app-eval-white\)/);
+    expect(rule(/\.eval-text\.white-end/)).toMatch(/background: ?var\(--app-eval-white\)/);
+    expect(componentStyles()).not.toMatch(/background: ?var\(--app-piece-white\)/);
+  });
 
   it('names a regular score for screen readers without adding a title', () => {
     const score = render({ cp: 42, mate: null }).bar;

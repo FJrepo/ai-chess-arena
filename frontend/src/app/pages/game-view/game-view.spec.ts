@@ -3616,6 +3616,13 @@ describe('GameView cancellation', () => {
   });
 });
 
+/** GameView's compiled component styles, whitespace collapsed. */
+function gameViewStyles(): string {
+  return ((GameView as unknown as { ɵcmp: { styles: string[] } }).ɵcmp.styles ?? [])
+    .join('\n')
+    .replace(/\s+/g, ' ');
+}
+
 describe('GameView columns: Moves | Feed box, board, chat', () => {
   const VIEW_KEY = 'gameRecordView';
 
@@ -3819,6 +3826,166 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
       // 1024 px is a stacked width with room for two columns: the board on top, then Moves | Feed
       // beside the chat.
       expect(rows()).toEqual(['"board board"', '"record chat"']);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('assumes a typical header above the board until it is measured, with room for a result line', () => {
+    const fallback = (fixture: ReturnType<typeof renderGame>) => {
+      const layout = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+        '.game-layout',
+      )!;
+      return {
+        finished: layout.classList.contains('has-result'),
+        measured: layout.style.getPropertyValue('--game-layout-top'),
+        top: getComputedStyle(layout)
+          .getPropertyValue('--board-layout-top-fallback')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      };
+    };
+
+    // jsdom has no ResizeObserver: the layout's top is never measured there.
+    const live = renderGame({ status: 'IN_PROGRESS' });
+    let liveTop = '';
+    try {
+      const values = fallback(live);
+      expect(values).toEqual({ finished: false, measured: '', top: '230px' });
+      liveTop = values.top;
+    } finally {
+      live.destroy();
+    }
+    TestBed.resetTestingModule();
+
+    const finished = renderGame({
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'CHECKMATE',
+    });
+    try {
+      expect(fallback(finished).finished).toBe(true);
+      expect(fallback(finished).measured).toBe('');
+      // jsdom leaves out values built from global tokens, so read the compiled rule.
+      expect(gameViewStyles()).toMatch(
+        /\.game-layout\.has-result\S* ?\{ ?--board-layout-top-fallback: ?calc\(230px \+ var\(--app-board-control-size\) \+ var\(--app-space-2\)\)/,
+      );
+      expect(liveTop).toBe('230px');
+    } finally {
+      finished.destroy();
+    }
+  });
+
+  it('sizes the board against the measured header, also when Last words opens', () => {
+    const observers: { callback: () => void; targets: Element[]; connected: boolean }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        private readonly entry: { callback: () => void; targets: Element[]; connected: boolean };
+        constructor(callback: () => void) {
+          this.entry = { callback, targets: [], connected: true };
+          observers.push(this.entry);
+        }
+        observe(target: Element) {
+          this.entry.targets.push(target);
+        }
+        unobserve() {}
+        disconnect() {
+          this.entry.connected = false;
+        }
+      },
+    );
+    const fixture = renderGame({
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'RESIGNATION',
+      resignation: {
+        color: 'BLACK',
+        moveNumber: 2,
+        winChance: 0.1,
+        notLosing: false,
+        lastWords: 'Well played.',
+        opponentMessage: null,
+        opponentMessageMoveNumber: null,
+      },
+    });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const layout = element.querySelector<HTMLElement>('.game-layout')!;
+      let top = 278;
+      vi.spyOn(layout, 'getBoundingClientRect').mockImplementation(
+        () => ({ top, bottom: top + 600, height: 600 }) as DOMRect,
+      );
+      // The host grows or shrinks with anything above the layout (header, Last words, pause notices).
+      const active = observers.filter(
+        (observer) => observer.connected && observer.targets.includes(element),
+      );
+      expect(active).toHaveLength(1);
+      expect(active[0].targets).toEqual([element]);
+
+      active[0].callback();
+      fixture.detectChanges();
+      expect(layout.style.getPropertyValue('--game-layout-top')).toBe('278px');
+      expect(gameViewStyles()).toMatch(
+        /--board-chrome-above: ?calc\( ?var\(--game-layout-top, ?var\(--board-layout-top-fallback\)\)/,
+      );
+
+      element.querySelector<HTMLButtonElement>('button.last-words-toggle')!.click();
+      top = 300;
+      active[0].callback();
+      fixture.detectChanges();
+      expect(layout.style.getPropertyValue('--game-layout-top')).toBe('300px');
+    } finally {
+      fixture.destroy();
+      vi.unstubAllGlobals();
+    }
+    expect(
+      observers.filter((observer) => observer.targets.includes(element) && observer.connected),
+    ).toEqual([]);
+  });
+
+  it('keeps a window-height cap on the board in the stacked layout', () => {
+    // The stacked rule (below 1200px / 75em) caps the board by width and by the same height budget.
+    const stacked = gameViewStyles().match(
+      /@media \(max-width: ?1199\.98px\), ?\(max-width: ?74\.99em\) ?\{ ?\.game-layout\S* ?\{([^}]*)\}/,
+    )?.[1];
+    expect(stacked).toMatch(
+      /--board-size: ?clamp\( ?0px, ?min\( ?100vw - 48px - 3\.5rem, ?max\( ?340px, ?100dvh - var\(--board-chrome-v\) ?\) ?\), ?560px ?\)/,
+    );
+  });
+
+  it('shows the opening in the actions row instead of a line of its own', () => {
+    const fixture = renderGame({ openingEco: 'C60', openingName: 'Ruy Lopez' });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const opening = element.querySelector<HTMLElement>('.opening-label')!;
+      expect(opening.parentElement?.classList).toContain('view-actions');
+      expect(opening.textContent?.trim()).toBe('C60 · Ruy Lopez');
+      expect(opening.getAttribute('title')).toBe('C60 · Ruy Lopez');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('overlaps identical captured pieces so a capture bar stays on one line', () => {
+    // Black has lost a knight and two pawns.
+    const fen = 'rnbqkb1r/pppp2pp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 5';
+    const fixture = renderGame({ moves: [storedMove(4, 'BLACK', 'Ke7', fen)] });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const pieces = Array.from(
+        element.querySelectorAll<HTMLImageElement>('.capture-strip.top .captured-piece'),
+      );
+      expect(pieces.map((piece) => piece.getAttribute('alt'))).toEqual([
+        'black knight',
+        'black pawn',
+        'black pawn',
+      ]);
+      expect(pieces.map((piece) => piece.classList.contains('stacked'))).toEqual([
+        false,
+        false,
+        true,
+      ]);
     } finally {
       fixture.destroy();
     }

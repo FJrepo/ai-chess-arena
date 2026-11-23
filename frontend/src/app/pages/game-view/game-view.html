@@ -19,10 +19,6 @@
     />
   }
 
-  @if (g.openingName) {
-    <p class="opening-label">{{ g.openingEco ? g.openingEco + ' · ' : '' }}{{ g.openingName }}</p>
-  }
-
   <div class="view-actions">
     @if (g.benchmarkRunId) {
       <a mat-stroked-button [routerLink]="['/benchmarks', g.benchmarkRunId]">
@@ -57,6 +53,10 @@
       <mat-icon>format_list_bulleted</mat-icon>
       All Tournaments
     </button>
+    @if (g.openingName) {
+      @let opening = (g.openingEco ? g.openingEco + ' · ' : '') + g.openingName;
+      <p class="opening-label" [attr.title]="opening">{{ opening }}</p>
+    }
     <div
       class="eval-status-chip"
       role="status"
@@ -88,7 +88,12 @@
     }
   </div>
 
-  <div class="game-layout">
+  <div
+    class="game-layout"
+    #gameLayout
+    [class.has-result]="!!g.result"
+    [style.--game-layout-top]="layoutTop() === null ? null : layoutTop() + 'px'"
+  >
     <div class="board-section" #boardSection>
       <div class="board-frame">
         <div class="capture-strip top">
@@ -97,9 +102,10 @@
             class="capture-pieces"
             [class.has-pieces]="capturedMaterial().whiteCaptured.length > 0"
           >
-            @for (piece of capturedMaterial().whiteCaptured; track $index) {
+            @for (piece of capturedMaterial().whiteCaptured; track $index; let i = $index) {
               <img
                 class="captured-piece"
+                [class.stacked]="i > 0 && capturedMaterial().whiteCaptured[i - 1] === piece"
                 [src]="pieceImage('black', piece)"
                 [alt]="pieceName('black', piece)"
                 draggable="false"
@@ -119,6 +125,7 @@
               [cp]="currentEvaluation().cp"
               [mate]="currentEvaluation().mate"
               [checkmated]="currentEvaluation().checkmated"
+              [flipped]="flipped()"
             />
           } @else {
             <div
@@ -288,9 +295,10 @@
             class="capture-pieces"
             [class.has-pieces]="capturedMaterial().blackCaptured.length > 0"
           >
-            @for (piece of capturedMaterial().blackCaptured; track $index) {
+            @for (piece of capturedMaterial().blackCaptured; track $index; let i = $index) {
               <img
                 class="captured-piece"
+                [class.stacked]="i > 0 && capturedMaterial().blackCaptured[i - 1] === piece"
                 [src]="pieceImage('white', piece)"
                 [alt]="pieceName('white', piece)"
                 draggable="false"
