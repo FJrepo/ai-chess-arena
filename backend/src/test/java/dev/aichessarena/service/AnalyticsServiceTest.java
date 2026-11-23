@@ -468,6 +468,27 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    void aMoveWithAnEarlierAnswerForItsPlyIsNotFirstTryLegalDespiteARetryCountOfZero() {
+        Game game = finishedGame("model.alpha", "model.beta", Game.GameResult.DRAW, null, YESTERDAY);
+        Move resumed = move(game, "model.alpha", 1000L, "0.010000", 0);
+        Move clean = move(game, "model.alpha", 1000L, "0.010000", 0, 2);
+        Move other = move(game, "model.beta", 1000L, "0.010000", 0);
+        AnalyticsService service = service(List.of(game), List.of(resumed, clean, other), List.of());
+        // Cut off before a pause; the move after the resume was stored with retry count 0.
+        ((FakeMoveRepository) service.moveRepository).movesWithPriorAnswers = java.util.Set.of(resumed.id);
+
+        assertEquals(0.5, reliabilityRow(service.getReliability(30, null, 0), "model.alpha")
+                .firstTryLegalRate().doubleValue(), 0.0001);
+        assertEquals(0.5, row(service.getComparison(30, null, 0), "model.alpha").firstTryLegalRate().doubleValue(),
+                0.0001);
+        assertEquals(50.0, service.getReliabilityForModel("model.alpha", 30, null).firstTryLegalScore().doubleValue(),
+                0.01);
+        assertEquals(1.0, row(service.getComparison(30, null, 0), "model.beta").firstTryLegalRate().doubleValue());
+        // Retries keep counting the accepted move's own retry count.
+        assertEquals(0.0, row(service.getComparison(30, null, 0), "model.alpha").averageRetriesPerMove().doubleValue());
+    }
+
+    @Test
     void firstTryLegalRateCountsRetriedMovesAndInvalidMoveForfeits() {
         Game won = finishedGame("model.alpha", "model.beta", Game.GameResult.WHITE_WINS, null, YESTERDAY);
         Game forfeited = finishedGame(
@@ -1587,6 +1608,7 @@ class AnalyticsServiceTest {
     /** Returns every move; the window loader must keep only the moves of the selected games. */
     private static final class FakeMoveRepository extends MoveRepository {
         private final List<Move> moves;
+        private java.util.Set<UUID> movesWithPriorAnswers = java.util.Set.of();
 
         private FakeMoveRepository(List<Move> moves) {
             this.moves = moves;
@@ -1595,6 +1617,11 @@ class AnalyticsServiceTest {
         @Override
         public List<Move> findInWindow(Instant cutoff, UUID tournamentId) {
             return moves;
+        }
+
+        @Override
+        public java.util.Set<UUID> findMovesWithPriorAnswersInWindow(Instant cutoff, UUID tournamentId) {
+            return movesWithPriorAnswers;
         }
 
         @Override

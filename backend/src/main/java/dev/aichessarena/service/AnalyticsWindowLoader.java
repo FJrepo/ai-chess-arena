@@ -61,7 +61,8 @@ public class AnalyticsWindowLoader {
                 includeModelAnalytics ? chatMessageRepository.findPlyMessagesInWindow(cutoff, tournamentId) : List.of(),
                 includeModelAnalytics
                         ? moveAttemptRepository.findResignationTurnAttemptsInWindow(cutoff, tournamentId) : List.of(),
-                includeModelAnalytics ? moveAttemptRepository.findUsageInWindow(cutoff, tournamentId) : List.of()
+                includeModelAnalytics ? moveAttemptRepository.findUsageInWindow(cutoff, tournamentId) : List.of(),
+                includeModelAnalytics ? moveRepository.findMovesWithPriorAnswersInWindow(cutoff, tournamentId) : Set.of()
         );
     }
 
@@ -75,13 +76,13 @@ public class AnalyticsWindowLoader {
                 .filter(game -> AnalyticsGameOutcomeClassifier.isTerminal(game.status))
                 .toList();
         return scopeFor(scope.cutoff(), terminalGames, scope.moves(), scope.rejectedAttemptCosts(), scope.messages(),
-                scope.resignationAttempts(), scope.attemptUsage());
+                scope.resignationAttempts(), scope.attemptUsage(), scope.movesWithPriorAnswers());
     }
 
     /** Keeps only the moves, attempt costs, messages and resignation attempts that belong to {@code games}. */
     static AnalyticsScope scopeFor(Instant cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> attemptCosts,
                                    List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
-                                   List<AttemptUsage> attemptUsage) {
+                                   List<AttemptUsage> attemptUsage, Set<UUID> movesWithPriorAnswers) {
         Set<UUID> gameIds = games.stream().map(game -> game.id).collect(Collectors.toSet());
         List<Move> gameMoves = moves.stream()
                 .filter(move -> move.game != null && gameIds.contains(move.game.id))
@@ -98,11 +99,17 @@ public class AnalyticsWindowLoader {
         List<AttemptUsage> gameUsage = attemptUsage.stream()
                 .filter(usage -> gameIds.contains(usage.gameId()))
                 .toList();
-        return new AnalyticsScope(cutoff, games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts, gameUsage);
+        return new AnalyticsScope(cutoff, games, gameMoves, gameAttemptCosts, gameMessages, gameResignationAttempts, gameUsage,
+                movesWithPriorAnswers);
     }
 
+    /**
+     * {@code movesWithPriorAnswers}: ids of model moves that were not the model's first answer for their ply even
+     * though their retry count is zero (see {@link MoveRepository#findMovesWithPriorAnswersInWindow}); empty for the
+     * health scope.
+     */
     record AnalyticsScope(Instant cutoff, List<Game> games, List<Move> moves, List<RejectedAttemptCost> rejectedAttemptCosts,
                           List<PlyMessage> messages, List<ResignationTurnAttempt> resignationAttempts,
-                          List<AttemptUsage> attemptUsage) {
+                          List<AttemptUsage> attemptUsage, Set<UUID> movesWithPriorAnswers) {
     }
 }

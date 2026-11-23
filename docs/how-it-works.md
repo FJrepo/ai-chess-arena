@@ -594,7 +594,7 @@ Only finished games count as games played; byes and games that are waiting, runn
 
 A time window selects finished games by when they finished and unfinished ones by when they were created; moves and attempts follow their games.
 
-The reliability score (0–100) is based on finished games: 50% first-try legal moves (moves played without a retry, out of all moves plus turns lost to an invalid-move forfeit and resigned turns that needed retries), 30% games not forfeited and 20% few retries (100 minus 50 per average retry).
+The reliability score (0–100) is based on finished games: 50% first-try legal moves (out of all moves plus turns lost to an invalid-move forfeit and resigned turns that needed retries), 30% games not forfeited and 20% few retries (100 minus 50 per average retry). A move is first-try legal only when it was the model's first answer for its ply: an earlier cut-off, empty, unparseable, illegal or discarded answer for that ply rules it out, also across a pause and resume (which restarts the attempt count). Provider failures do not. Moves stored before attempts were recorded fall back to their retry count.
 
 Reliability and comparison use the earliest stored move for each ply, with the row ID breaking timestamp ties. Both views return a null average cost per move when a move price is missing or there are no priced plies. Reported spend still includes paid duplicate rows and rejected answers. When provider retries consume the move deadline, the game pauses and the timed-out attempt is recorded as a retryable provider failure.
 

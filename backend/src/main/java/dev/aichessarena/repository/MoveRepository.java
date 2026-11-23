@@ -38,17 +38,37 @@ public class MoveRepository implements PanacheRepositoryBase<Move, UUID> {
         return reasoningPlies(" where g.tournament.id = :runId", Parameters.with("runId", runId));
     }
 
-    /** The accepted move and an earlier answer can have the same attempt number after resuming a game. */
+    /**
+     * Model moves that were not the model's first answer for their ply: an earlier answer of the same model for that
+     * ply was recorded (cut off, empty, unparseable, illegal, discarded, ...; provider failures excluded). The
+     * accepted move's retry count alone misses them, because resuming a paused game restarts the attempt numbers.
+     */
+    private static final String PRIOR_ANSWER = """
+             and m.isBook = false and m.modelId is not null
+              and exists (select 1 from MoveAttempt a
+                  where a.game = m.game and a.color = m.color and a.moveNumber = m.moveNumber
+                    and a.modelId = m.modelId and a.outcome not in :providerFailures and a.createdAt < m.createdAt)
+            """;
+
+    private static final List<Outcome> PROVIDER_FAILURES = List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_FATAL);
+
+    /** See {@link #PRIOR_ANSWER}. */
     public Set<UUID> findBenchmarkMovesWithPriorAnswers(UUID runId) {
-        return new HashSet<>(getEntityManager().createQuery("""
-                select m.id from Move m
-                where m.game.tournament.id = :runId and m.isBook = false and m.modelId is not null
-                  and exists (select 1 from MoveAttempt a
-                      where a.game = m.game and a.color = m.color and a.moveNumber = m.moveNumber
-                        and a.modelId = m.modelId and a.outcome not in :providerFailures and a.createdAt < m.createdAt)
-                """, UUID.class).setParameter("runId", runId)
-                .setParameter("providerFailures", List.of(Outcome.PROVIDER_RETRYABLE, Outcome.PROVIDER_FATAL))
-                .getResultList());
+        return movesWithPriorAnswers("m.game.tournament.id = :runId", Parameters.with("runId", runId));
+    }
+
+    /** The moves of an analytics window's games (see {@link #findInWindow}) that had an earlier answer for their ply. */
+    public Set<UUID> findMovesWithPriorAnswersInWindow(Instant cutoff, UUID tournamentId) {
+        return movesWithPriorAnswers(GameRepository.windowPredicate("m.game")
+                        + GameRepository.tournamentPredicate("m.game", tournamentId),
+                GameRepository.windowParameters(cutoff, tournamentId));
+    }
+
+    private Set<UUID> movesWithPriorAnswers(String condition, Parameters parameters) {
+        var query = getEntityManager().createQuery("select m.id from Move m where " + condition + PRIOR_ANSWER,
+                UUID.class).setParameter("providerFailures", PROVIDER_FAILURES);
+        parameters.map().forEach(query::setParameter);
+        return new HashSet<>(query.getResultList());
     }
 
     private List<ReasoningPly> reasoningPlies(String condition, Parameters parameters) {
