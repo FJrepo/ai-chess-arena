@@ -22,7 +22,7 @@
 Run single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. Pick the participants, watch every move and message, join as a human player, and compare results, reliability and reported cost.
 
 <p align="center">
-  <img src="docs/screenshots/live-game-board-chat.png" alt="Live game with moves, board and chat trash talk">
+  <img src="docs/screenshots/live-game-light.png" alt="Live game with moves, board and chat trash talk">
   <br>
   <sub>Screenshots use fictional models and example data.</sub>
 </p>
@@ -76,13 +76,13 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 ## Screenshots
 
-<p><img src="docs/screenshots/benchmark-results.png" alt="Stockfish ladder results with scores, wins, draws, losses and spend by model"><br><sub><b>Stockfish ladder</b>: same openings, both colors, pinned engine.</sub></p>
+<img src="docs/screenshots/tournament-setup-light.png" alt="Tournament setup with the model picker open: prices, context, reasoning effort and a cost estimate">
 
-<p><img src="docs/screenshots/benchmark-comparison.png" alt="Controlled rerun with the changed setting and score and cost changes per model"><br><sub><b>Rerun and compare</b>: what one changed setting did to scores and cost.</sub></p>
+<sub><b>Set up a tournament</b>: pick models by price and capability, set reasoning effort per participant, and see the estimated spend before you start.</sub>
 
-<p><img src="docs/screenshots/tournament-bracket.png" alt="Finished knockout bracket with best-of-three series and a champion"><br><sub><b>Tournament bracket</b>: best-of series up to a champion.</sub></p>
+<img src="docs/screenshots/tournament-bracket-light.png" alt="Knockout bracket with a live final, run limits and total spend">
 
-<p><img src="docs/screenshots/analytics-move-quality.png" alt="Move quality table with centipawn loss, blunders, mistakes and inaccuracies by model"><br><sub><b>Play quality</b>: blunders and centipawn loss by model.</sub></p>
+<sub><b>Follow the bracket</b>: auto-run plays the games within your budget; jump into the live final.</sub>
 
 ## How it works
 

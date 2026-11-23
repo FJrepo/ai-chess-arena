@@ -147,6 +147,8 @@ Game DTOs and revisioned WebSocket game status messages expose `resumeRequestedA
 
 Open **Benchmarks** to test one to eight OpenRouter models against two Stockfish strength settings. The pilot uses eight authored standard-chess openings, including four lines that start play on move 14 or later. Each model plays both colors at each opening and level, for 16 pairs and 32 games per model. The two games in a pair start from the same position and retain the same opening history for repetition and the fifty-move rule. The SAN moves are stored with the run and appear in each game as book moves. The evaluator scores the last book position to give the first played move a baseline.
 
+![Stockfish ladder results with scores, wins, draws, losses and spend by model (example data)](screenshots/benchmark-results.png)
+
 Choose two distinct target strengths from 1320 through 3190, legal move hints, requested reasoning effort, chat mode, a positive USD budget and a concurrency limit. The targets are passed to Stockfish's `UCI_Elo` setting with `UCI_LimitStrength` enabled. The run records SHA-256 fingerprints for the opponent executable and each loaded NNUE network, plus a search limit of 50,000 nodes, one thread and 16 MiB of hash. The opponent checks those fingerprints in a fresh process per search and uses the full game history. A terminal model or Stockfish move is saved with its result in one transaction. If cancellation comes after that commit, the result still counts in the benchmark score. The evaluator uses its own engine. A fixed setup controls the conditions of play. Engine weakening and model responses can still vary from game to game.
 
 Creating the run queues all its games and enables [auto-run](#auto-run). If creation goes unconfirmed, the form shows **A benchmark creation may already be in progress**. Resubmit the same settings in the same tab to recover the original run if it was created. With session storage available, this also works after leaving the page or reloading.
@@ -160,6 +162,8 @@ Pairs enter the waiting order together and use whatever slots are available. **P
 ### Rerun and compare
 
 Open a benchmark result and choose **Rerun**. Choose **No change** to measure run-to-run variance, or change one setting: replace one model ID, switch legal move hints, change requested reasoning effort, change chat mode, or set a new budget. The preview shows the current and rerun values for changed settings. Expand **Unchanged settings** to see the rest. The start button sits beside the planned game count and budget cap. Chat and hints determine the prompt version, so changing either also changes the displayed version. The new run uses the source's exact stored opening lines and any recorded seed, colors, Stockfish levels, search limits and engine fingerprints. The current ladder uses fixed opening lines without a random seed. If the required engine, weights or prompt version are unavailable, creation stops before scheduling games.
+
+![Controlled rerun with the changed setting and score and cost changes per model (example data)](screenshots/benchmark-comparison.png)
 
 **Create and start rerun** queues fresh games under a new budget cap. The preview uses the source's current budget and concurrency cap. If a submission goes unconfirmed, reopen **Rerun** and choose **Recover rerun**. It resends the original request, including the UUID, change and previewed limits. This works after reloading the same tab when session storage is available. If recovery fails, including when the source's limits changed, the page shows the error and keeps the original request available to retry. **Start a separate rerun** discards the saved request and opens a new preview. Refresh the source first if its limits changed. Confirming the new preview uses a new UUID and can incur additional spend.
 
@@ -528,6 +532,8 @@ Flyway V18 adds `tournaments.adjudication_enabled` with default false, including
 ## Move quality
 
 Stockfish's evaluations mark inaccuracies `?!`, mistakes `?` and blunders `??` in the move list and game feed (the tooltip shows the mover's winning chances before and after, e.g. "Blunder: winning chances 74% → 22% (−6.2)"), and each player gets an average centipawn loss (ACPL) and error counts, live as evaluations arrive.
+
+![Move quality table with centipawn loss, blunders, mistakes and inaccuracies by model (example data)](screenshots/analytics-move-quality.png)
 
 Stockfish 19 evaluates every move at depth 12 (in the background, so a badge appears a moment after the move).
 
