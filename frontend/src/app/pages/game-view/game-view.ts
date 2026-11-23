@@ -117,6 +117,17 @@ function savedRecordView(): RecordView {
 /** Space between the sticky toolbar and the first rank when a chat link scrolls the board into view. */
 const BOARD_REVEAL_GAP = 12;
 
+/** Shown while the run's state is read; the spend-check action waits for it. */
+const CHECKING_RUN = 'Checking whether the run allows a resume…';
+
+/** Why a spend check cannot be confirmed while the game's run is paused, and what to do first. */
+function runPausedHint(run: 'tournament' | 'benchmark', reason: string | null | undefined): string {
+  return (
+    `The ${run} run is paused${reason ? ` (${reason})` : ''}. Raise its budget if it was reached and ` +
+    `resume the run, then confirm the spend check here.`
+  );
+}
+
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
 
@@ -184,6 +195,17 @@ export class GameView implements OnInit, OnDestroy {
   savingLimit = signal(false);
   /** Keep the pause controls hidden until current participant and tournament settings arrive. */
   private refreshingPauseSettings = signal(false);
+  /**
+   * Why "Spend checked, resume" cannot succeed right now, or null: the game's tournament or benchmark run is paused
+   * (the server refuses every game resume then, also an acknowledged one), or the run's state is still being read.
+   */
+  readonly spendCheckBlock = signal<string | null>(null);
+  private runStatusSub?: Subscription;
+  /**
+   * A status change from an older backend omitted the spend-check fields: whether a request is unresolved is unknown
+   * until the next game read, so a known hold is kept and the ordinary Resume stays hidden.
+   */
+  private readonly spendCheckUnknown = signal(false);
   private pauseSettingsSub?: Subscription;
   private settingsGeneration = 0;
   /**
@@ -576,6 +598,10 @@ export class GameView implements OnInit, OnDestroy {
     this.queueRefreshSub = timer(15000, 15000).subscribe(() => {
       if (this.snapshotFallback) this.loadGame(true);
       else if (this.game()?.resumeRequestedAt && !this.loadInFlight) this.loadGame(true);
+      // A run resumed elsewhere sends no game update: re-read until the spend check may be confirmed.
+      else if (this.game()?.uncertainRequest && this.spendCheckBlock() && !this.loadInFlight) {
+        this.loadGame(true);
+      }
     });
   }
 
@@ -587,6 +613,7 @@ export class GameView implements OnInit, OnDestroy {
     this.gameActions.unsubscribe();
     this.attemptsSub?.unsubscribe();
     this.pauseSettingsSub?.unsubscribe();
+    this.runStatusSub?.unsubscribe();
     clearTimeout(this.retryTimer);
     this.turnState.stopTicker();
   }
@@ -701,6 +728,8 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   private installSnapshot(game: Game): void {
+    // A game read is authoritative for the spend check.
+    this.spendCheckUnknown.set(false);
     const previous = this.game();
     if (!previous && game.practiceKind && game.blackControlType === 'HUMAN') this.flipped.set(true);
     const selected = this.moves()[this.currentMoveIndex()];
@@ -745,13 +774,20 @@ export class GameView implements OnInit, OnDestroy {
     const generation = ++this.settingsGeneration;
     this.pauseSettingsSub?.unsubscribe();
     this.refreshingPauseSettings.set(!!game.tournamentId);
+    this.refreshBenchmarkRunStatus(game, generation);
     if (!game.tournamentId) {
       this.turnState.setMoveTimeoutSeconds(DEFAULT_MOVE_TIMEOUT_SECONDS);
       return;
     }
+    this.spendCheckBlock.set(CHECKING_RUN);
     this.pauseSettingsSub = this.api.getTournament(game.tournamentId).subscribe({
       next: (tournament) => {
         if (generation !== this.settingsGeneration) return;
+        this.spendCheckBlock.set(
+          tournament.autoRunStatus === 'PAUSED'
+            ? runPausedHint('tournament', tournament.autoRunPauseReason)
+            : null,
+        );
         this.turnState.setMoveTimeoutSeconds(tournament.moveTimeoutSeconds ?? null);
         this.tournamentMaxOutputTokens.set(tournament.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
         this.tournamentChatMode.set(tournament.chatMode ?? 'OPTIONAL');
@@ -762,9 +798,33 @@ export class GameView implements OnInit, OnDestroy {
         this.refreshingPauseSettings.set(false);
       },
       error: (error) => {
+        // Unknown run state: let the server decide.
+        if (generation === this.settingsGeneration) this.spendCheckBlock.set(null);
         if (game.status === 'PAUSED') {
           this.showServerError(error, 'Failed to refresh the paused game settings.');
         }
+      },
+    });
+  }
+
+  /** Reads the benchmark run's state for a benchmark game paused for a spend check (see `spendCheckBlock`). */
+  private refreshBenchmarkRunStatus(game: Game, generation: number): void {
+    this.runStatusSub?.unsubscribe();
+    if (game.tournamentId) return;
+    if (!game.benchmarkRunId || game.status !== 'PAUSED' || !game.uncertainRequest) {
+      this.spendCheckBlock.set(null);
+      return;
+    }
+    this.spendCheckBlock.set(CHECKING_RUN);
+    this.runStatusSub = this.api.getBenchmark(game.benchmarkRunId).subscribe({
+      next: (run) => {
+        if (generation !== this.settingsGeneration) return;
+        this.spendCheckBlock.set(
+          run.run.status === 'PAUSED' ? runPausedHint('benchmark', run.run.pauseReason) : null,
+        );
+      },
+      error: () => {
+        if (generation === this.settingsGeneration) this.spendCheckBlock.set(null);
       },
     });
   }
@@ -1039,6 +1099,16 @@ export class GameView implements OnInit, OnDestroy {
           this.pauseSettingsSub?.unsubscribe();
           this.refreshingPauseSettings.set(true);
         }
+        // The run's state decides whether a spend check can be confirmed; the next game read refreshes it.
+        if (status === 'PAUSED' && !queueChangedWhilePaused) {
+          if (previous?.tournamentId || previous?.benchmarkRunId) {
+            this.spendCheckBlock.set(CHECKING_RUN);
+          }
+        }
+        // An older backend omits the spend-check fields: unknown, not "none" (see spendCheckUnknown).
+        const spendCheckKnown = msg.uncertainRequest !== undefined;
+        // A pause reads the game anyway (below, or as revision details), which resolves it.
+        this.spendCheckUnknown.set(!spendCheckKnown);
         this.game.update((g) =>
           g
             ? {
@@ -1055,8 +1125,10 @@ export class GameView implements OnInit, OnDestroy {
                 resumeRequestedAt: msg.resumeRequestedAt ?? null,
                 runCapacity: msg.runCapacity ?? null,
                 // The spend check comes only from the server's explicit flag, never from the pause reason.
-                uncertainRequest: msg.uncertainRequest ?? false,
-                uncertainRequestSentAt: msg.uncertainRequestSentAt ?? null,
+                uncertainRequest: spendCheckKnown ? msg.uncertainRequest : g.uncertainRequest,
+                uncertainRequestSentAt: spendCheckKnown
+                  ? (msg.uncertainRequestSentAt ?? null)
+                  : g.uncertainRequestSentAt,
                 statusRevision: msg.statusRevision ?? g.statusRevision,
                 startedAt:
                   status === 'IN_PROGRESS'
@@ -1436,7 +1508,7 @@ export class GameView implements OnInit, OnDestroy {
    * so a live update meanwhile cannot make this acknowledge a newer request.
    */
   resumeAfterSpendCheck(requestSentAt: string) {
-    if (!requestSentAt) return;
+    if (!requestSentAt || this.spendCheckBlock()) return;
     this.withCurrentGameKey(() => {
       if (this.savingLimit()) return;
       this.runGameAction(this.api.resumeAfterSpendCheck(this.gameId, requestSentAt), {
@@ -1452,7 +1524,12 @@ export class GameView implements OnInit, OnDestroy {
 
   /** The admin Resume: a paused game without a queued resume or an unconfirmed model request. */
   adminResumeAvailable(game: Game): boolean {
-    return game.status === 'PAUSED' && !game.resumeRequestedAt && !game.uncertainRequest;
+    return (
+      game.status === 'PAUSED' &&
+      !game.resumeRequestedAt &&
+      !game.uncertainRequest &&
+      !this.spendCheckUnknown()
+    );
   }
 
   cancelResumeRequest(displayed: Game): void {

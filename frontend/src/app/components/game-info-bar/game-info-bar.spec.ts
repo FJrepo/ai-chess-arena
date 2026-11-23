@@ -589,4 +589,34 @@ describe('GameInfoBar pause banner', () => {
     fixture.detectChanges();
     expect(element.querySelector('button.spend-checked')).toBeNull();
   });
+
+  it('keeps the spend warning but disables its action while the run cannot resume the game', () => {
+    const fixture = TestBed.createComponent(GameInfoBar);
+    const emitted: string[] = [];
+    fixture.componentInstance.spendCheckedResume.subscribe((sentAt) => emitted.push(sentAt));
+    fixture.componentInstance.game = {
+      ...pausedGame('Budget of $1.00 reached ($1.00 spent)'),
+      uncertainRequest: true,
+      uncertainRequestSentAt: '2026-11-18T10:00:00.123456Z',
+    };
+    fixture.componentRef.setInput(
+      'spendCheckBlocked',
+      'The tournament run is paused. Raise its budget if it was reached and resume the run.',
+    );
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('.pause-title')?.textContent?.trim()).toBe(
+      'Paused for a spend check',
+    );
+    const button = element.querySelector<HTMLButtonElement>('button.spend-checked');
+    expect(button?.disabled).toBe(true);
+    expect(element.querySelector('.spend-blocked')?.textContent).toContain('resume the run');
+    button!.click();
+    expect(emitted).toEqual([]);
+
+    fixture.componentRef.setInput('spendCheckBlocked', null);
+    fixture.detectChanges();
+    expect(button?.disabled).toBe(false);
+    expect(element.querySelector('.spend-blocked')).toBeNull();
+  });
 });
