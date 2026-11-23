@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     done; \
     exit 1'
 
-FROM eclipse-temurin:25-jre@sha256:a640968ae55027b322cedd5f8228b01a84baff0b9e9360e47601c6a111ba1699 AS stockfish-base
+FROM eclipse-temurin:25-jre@sha256:4ed132f6832e9804b123e89a849a7b4502756ae64a4ee08ebab939d9d5d0a9fa AS stockfish-base
 
 # Keep the selected asset, checksum and labels together for each target architecture.
 FROM stockfish-base AS stockfish-amd64

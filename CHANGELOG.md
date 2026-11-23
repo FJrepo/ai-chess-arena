@@ -14,6 +14,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- The backend image runs Temurin 25.0.5.1, which fixes CVE-2026-114938 ("Java4Shell") in the Java runtime. Pull or rebuild the backend image to apply it.
 - Tournament Analytics no longer counts a move as first-try legal when an earlier answer for the same ply was cut off, empty, unparseable or illegal before a pause and resume restarted the attempt count; reliability scores use the same rule as benchmark comparisons. See [Finished games and reliability score](docs/how-it-works.md#finished-games-and-reliability-score).
 - The game view shows the spend check (**Paused for a spend check**, **Spend checked, resume**) from an explicit flag instead of the wording of the pause reason, so a pause that only looks like one, or a spend check with another reason, is shown correctly. Live `gameStatus` and `gameState` WebSocket updates now carry `uncertainRequest` and `uncertainRequestSentAt`, like game reads. See [Restarts](docs/how-it-works.md#restarts).
 
