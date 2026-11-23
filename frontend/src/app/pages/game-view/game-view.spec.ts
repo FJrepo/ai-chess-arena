@@ -194,6 +194,10 @@ function createComponent(overrides?: { api?: Partial<any>; snackbar?: Partial<an
   };
 }
 
+// The Moves | Feed choice is remembered in browser storage; start every test from the default.
+beforeEach(() => localStorage.removeItem('gameRecordView'));
+afterEach(() => localStorage.removeItem('gameRecordView'));
+
 describe('GameView', () => {
   it('shows a move detail once for a committed live occurrence without another HTTP request', () => {
     const { component, gameLoad, messages, getGame, api, snackbar } = createSpectator();
@@ -370,7 +374,7 @@ describe('GameView', () => {
     component.moves.set([
       { ...storedMove(1, 'WHITE', 'e4', AFTER_E4), isBook: true, modelId: null },
     ]);
-    const event = component.timelineEvents().find((entry) => entry.type === 'move');
+    const event = component.feedEvents().find((entry) => entry.type === 'move');
     expect(event?.detail).toBe('Book move');
     expect(event?.quality).toBeNull();
     expect(event?.attemptSummary).toBeNull();
@@ -462,6 +466,7 @@ describe('GameView', () => {
         ],
       });
       const fixture = TestBed.createComponent(GameView);
+      fixture.componentInstance.selectRecordView('feed');
       fixture.detectChanges();
       await fixture.whenStable();
       const times = Array.from(
@@ -593,7 +598,7 @@ describe('GameView', () => {
     expect(component.lastMove()).toBeNull();
   });
 
-  it('keeps chat out of the feed by default and can opt it back in', () => {
+  it('builds the feed without chat messages, which have their own column', () => {
     const { component } = createComponent();
     component.game.set({
       id: 'g-1',
@@ -653,28 +658,14 @@ describe('GameView', () => {
       },
     ]);
 
-    const timelineEvents = component.timelineEvents();
     const defaultFeedEvents = component.feedEvents();
 
-    expect(timelineEvents.map((event) => event.type)).toEqual(['result', 'chat', 'move', 'start']);
     expect(defaultFeedEvents.map((event) => event.type)).toEqual(['result', 'move', 'start']);
     expect(defaultFeedEvents[1].detail).toBe('Alpha');
     expect(defaultFeedEvents[1].attemptSummary).toBe('1 retry');
     expect(defaultFeedEvents[0].attemptSummary).toBeNull();
     expect(defaultFeedEvents[2].attemptSummary).toBeNull();
     expect(defaultFeedEvents[2].label).toBe('Game Started');
-
-    component.includeChatInFeed.set(true);
-
-    const chatEnabledFeedEvents = component.feedEvents();
-
-    expect(chatEnabledFeedEvents.map((event) => event.type)).toEqual([
-      'result',
-      'chat',
-      'move',
-      'start',
-    ]);
-    expect(chatEnabledFeedEvents[1].detail).toContain('Alpha: Good luck.');
   });
 
   it('shows a snackbar when pausing the game fails', () => {
@@ -2571,10 +2562,10 @@ describe('GameView', () => {
     expect(component.moves()[1].evaluationCp).toBe(338);
     expect(component.moves()[1].quality?.judgement).toBe('BLUNDER');
     expect(component.game()?.qualitySummary?.black.blunders).toBe(1);
-    const feedMove = component.timelineEvents().find((event) => event.label === 'Black played e5');
+    const feedMove = component.feedEvents().find((event) => event.label === 'Black played e5');
     expect(feedMove?.quality?.badge.glyph).toBe('??');
     expect(feedMove?.quality?.tooltip).toBe('Blunder: winning chances 74% → 22% (−6.2)');
-    const whiteMove = component.timelineEvents().find((event) => event.label === 'White played e4');
+    const whiteMove = component.feedEvents().find((event) => event.label === 'White played e4');
     expect(whiteMove?.quality).toBeNull();
     component.ngOnDestroy();
   });
@@ -3497,5 +3488,414 @@ describe('GameView cancellation', () => {
     expect(component.game()?.status).toBe('CANCELLED');
     expect(component.game()?.result).toBeNull();
     component.ngOnDestroy();
+  });
+});
+
+describe('GameView columns: Moves | Feed box, board, chat', () => {
+  const VIEW_KEY = 'gameRecordView';
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function renderGame(overrides: Partial<Game> = {}) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: OpenRouterAccess, useValue: { withKey: (action: () => void) => action() } },
+        provideRouter([]),
+        {
+          provide: ApiService,
+          useValue: {
+            getGame: () =>
+              of(
+                gameWith({
+                  status: 'PAUSED',
+                  liveRevision: 0,
+                  attempts: [],
+                  moves: [
+                    storedMove(1, 'WHITE', 'e4', AFTER_E4),
+                    storedMove(1, 'BLACK', 'e5', AFTER_E5),
+                  ],
+                  chatMessages: [
+                    {
+                      id: 'c-1',
+                      moveNumber: 1,
+                      senderModel: 'model-a',
+                      senderColor: 'WHITE',
+                      message: 'Good luck, Beta.',
+                      createdAt: '2026-03-06T10:02:01Z',
+                    },
+                  ],
+                  ...overrides,
+                }),
+              ),
+            getSystemStatus: () => EMPTY,
+            getGameAttempts: () => of([]),
+          },
+        },
+        {
+          provide: WebSocketService,
+          useValue: {
+            connect: vi.fn(),
+            subscribeToGame: vi.fn(),
+            unsubscribeFromGame: vi.fn(),
+            getMessages: () => of({ type: 'subscribed', gameId: 'g-1', revision: 0 }),
+            reconnected: () => EMPTY,
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id: 'g-1' }) } },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(GameView);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function viewButtons(element: HTMLElement) {
+    const group = element.querySelector<HTMLElement>('.record-card [role="radiogroup"]')!;
+    const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('button[role="radio"]'));
+    return { group, buttons };
+  }
+
+  function checked(element: HTMLElement) {
+    return viewButtons(element)
+      .buttons.filter((button) => button.getAttribute('aria-checked') === 'true')
+      .map((button) => button.textContent?.trim());
+  }
+
+  function press(target: HTMLElement, key: 'ArrowRight' | 'ArrowLeft') {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'keyCode', { get: () => (key === 'ArrowRight' ? 39 : 37) });
+    target.dispatchEvent(event);
+  }
+
+  it('shows Moves by default and switches to Feed by click and by arrow keys', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const { group, buttons } = viewButtons(element);
+      expect(group.getAttribute('aria-label')).toBeTruthy();
+      expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Moves', 'Feed']);
+      expect(checked(element)).toEqual(['Moves']);
+      expect(element.querySelector('.record-card .move-list-scroll')).not.toBeNull();
+      expect(element.querySelector('.record-card .timeline-event')).toBeNull();
+
+      buttons[1].click();
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Feed']);
+      expect(element.querySelector('.record-card .move-list-scroll')).toBeNull();
+      expect(element.querySelectorAll('.record-card .timeline-event').length).toBeGreaterThan(0);
+
+      press(viewButtons(element).buttons[1], 'ArrowLeft');
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Moves']);
+      expect(document.activeElement).toBe(viewButtons(element).buttons[0]);
+      expect(element.querySelector('.record-card .move-list-scroll')).not.toBeNull();
+
+      press(viewButtons(element).buttons[0], 'ArrowRight');
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Feed']);
+      expect(element.querySelector('.record-card .timeline-event')).not.toBeNull();
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('remembers the chosen view for the next visit', () => {
+    const first = renderGame();
+    viewButtons(first.nativeElement).buttons[1].click();
+    first.detectChanges();
+    expect(localStorage.getItem(VIEW_KEY)).toBe('feed');
+    first.destroy();
+    TestBed.resetTestingModule();
+
+    const second = renderGame();
+    try {
+      expect(checked(second.nativeElement)).toEqual(['Feed']);
+      expect(second.nativeElement.querySelector('.record-card .timeline-event')).not.toBeNull();
+    } finally {
+      second.destroy();
+    }
+  });
+
+  it('ignores an unknown saved view and keeps working when storage throws', () => {
+    localStorage.setItem(VIEW_KEY, 'something-else');
+    const unknown = renderGame();
+    expect(checked(unknown.nativeElement)).toEqual(['Moves']);
+    unknown.destroy();
+    TestBed.resetTestingModule();
+
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      expect(checked(element)).toEqual(['Moves']);
+      viewButtons(element).buttons[1].click();
+      fixture.detectChanges();
+      expect(checked(element)).toEqual(['Feed']);
+      expect(element.querySelector('.record-card .timeline-event')).not.toBeNull();
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('keeps chat out of the feed and drops the include-chat toggle', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      viewButtons(element).buttons[1].click();
+      fixture.detectChanges();
+      const feed = element.querySelector<HTMLElement>('.record-card')!;
+      expect(feed.textContent).toContain('White played e4');
+      expect(feed.textContent).not.toContain('Good luck, Beta.');
+      expect(element.querySelector('mat-slide-toggle')).toBeNull();
+      expect(element.textContent).not.toContain('Include chat');
+      expect(fixture.componentInstance.feedEvents().map((event) => event.type)).not.toContain(
+        'chat',
+      );
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('renders board, Moves | Feed box and chat in reading order inside the column grid', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const layout = element.querySelector<HTMLElement>('.game-layout')!;
+      const columns = Array.from(layout.children) as HTMLElement[];
+      // DOM (and focus) order: board first, so the stacked layout reads and tabs top to bottom;
+      // grid areas put the Moves | Feed box left of the board on wide screens.
+      expect(columns).toHaveLength(3);
+      expect(columns[0].classList.contains('board-section')).toBe(true);
+      expect(columns[1].classList.contains('record-column')).toBe(true);
+      expect(columns[2].classList.contains('chat-column')).toBe(true);
+      expect(columns[0].querySelector('app-chessboard')).not.toBeNull();
+      expect(columns[1].querySelector('.record-card [role="radiogroup"]')).not.toBeNull();
+      expect(columns[1].querySelector('app-chat-panel')).toBeNull();
+
+      expect(element.querySelectorAll('app-chat-panel')).toHaveLength(1);
+      const chat = columns[2].querySelector<HTMLElement>('app-chat-panel')!;
+      expect(chat.textContent).toContain('Good luck, Beta.');
+      expect(chat.textContent).toContain('Newest first');
+
+      // jsdom evaluates the media queries against its fixed 1024 px window (the stacked range; a
+      // test cannot widen it): there the grid shows the columns in DOM order, one per row. The
+      // wide single-row arrangement is checked in a browser.
+      const rows = () => getComputedStyle(layout).gridTemplateAreas.match(/"[^"]*"/g);
+      expect(window.innerWidth).toBe(1024);
+      expect(getComputedStyle(layout).display).toBe('grid');
+      // 1024 px is a stacked width with room for two columns: the board on top, then Moves | Feed
+      // beside the chat.
+      expect(rows()).toEqual(['"board board"', '"record chat"']);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('marks the selected view with a check, not only a tint', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const selected = () =>
+        Array.from(
+          element.querySelectorAll<HTMLElement>('.record-card .mat-button-toggle-checked'),
+          (toggle) => ({
+            label: toggle.textContent?.trim(),
+            check: toggle.querySelector('.mat-pseudo-checkbox') !== null,
+          }),
+        );
+      expect(selected()).toEqual([{ label: 'Moves', check: true }]);
+      viewButtons(element).buttons[1].click();
+      fixture.detectChanges();
+      expect(selected()).toEqual([{ label: 'Feed', check: true }]);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('lets capture trays wrap within the board width instead of widening the centre column', () => {
+    const bareKings = '4k3/8/8/8/8/8/8/3K4 b - - 0 60';
+    const fixture = renderGame({
+      currentFen: bareKings,
+      moves: [storedMove(60, 'WHITE', 'Kd1', bareKings)],
+    });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const strips = Array.from(element.querySelectorAll<HTMLElement>('.capture-strip'));
+      expect(strips).toHaveLength(2);
+      expect(strips[0].querySelectorAll('img.captured-piece')).toHaveLength(15);
+      for (const strip of strips) {
+        expect(getComputedStyle(strip).contain).toBe('inline-size');
+      }
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('shows the position of a chat message from its move number', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const button = element.querySelector<HTMLButtonElement>('.chat-column button.msg-move')!;
+      expect(button.textContent?.trim()).toBe('move 1');
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(fixture.componentInstance.currentFen()).toBe(AFTER_E4);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('scrolls hidden board squares into view for a pointer chat link, but not from the keyboard', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    // A sticky toolbar 64 px tall covers the top of jsdom's 768 px window.
+    const toolbar = document.createElement('div');
+    toolbar.className = 'app-toolbar';
+    document.body.prepend(toolbar);
+    const toolbarRect = vi
+      .spyOn(toolbar, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(0, 0, 1024, 64));
+    const host = element.querySelector<HTMLElement>('app-chessboard')!;
+    const squares = host.querySelectorAll<HTMLElement>('.square');
+    expect(squares).toHaveLength(64);
+    // Only the squares count: the host also holds the file-label row below the last rank.
+    let ranksTop = 130;
+    vi.spyOn(host, 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, ranksTop, 500, 524),
+    );
+    vi.spyOn(squares[0], 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, ranksTop, 62, 62),
+    );
+    vi.spyOn(squares[63], 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(438, ranksTop + 438, 62, 62),
+    );
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(host, 'scrollIntoView', { value: scrollIntoView, configurable: true });
+    const link = () => element.querySelector<HTMLButtonElement>('.chat-column button.msg-move')!;
+    const pointer = () =>
+      link().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    try {
+      // Squares 130–630 below the toolbar: only the position changes.
+      pointer();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      // Squares end 30 px into the window, under the toolbar (the capture strip below shows).
+      ranksTop = -470;
+      link().click(); // keyboard activation (detail 0): focus and scroll stay in the chat
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({
+        block: 'start',
+        behavior: 'smooth',
+      });
+      // The first rank lands just below the toolbar.
+      expect(host.style.scrollMarginTop).toBe('76px');
+
+      // Board above the window: the 24 px file-label row below the last rank shows under the
+      // toolbar. Counting it, 270 of 524 px (over half) would look visible; the squares alone show
+      // 246 of 500 px, under half, so the board is revealed.
+      scrollIntoView.mockClear();
+      ranksTop = -190;
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // Far down the page the toolbar has scrolled away with its container, but it sticks again
+      // once the page scrolls up: the margin still leaves room for its full height.
+      scrollIntoView.mockClear();
+      host.style.scrollMarginTop = '';
+      ranksTop = -470;
+      toolbarRect.mockReturnValue(new DOMRect(0, -500, 1024, 64));
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+      expect(host.style.scrollMarginTop).toBe('76px');
+      toolbarRect.mockReturnValue(new DOMRect(0, 0, 1024, 64));
+
+      // Pinch zoom: the squares are inside the layout viewport but outside the magnified visual one.
+      scrollIntoView.mockClear();
+      ranksTop = 130;
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 400, height: 300 },
+        configurable: true,
+      });
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // Pinch zoom panned sideways onto the chat column: in range vertically, off to the left.
+      scrollIntoView.mockClear();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 100, height: 300, offsetLeft: 600, width: 400 },
+        configurable: true,
+      });
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // Over half of each side but only a third of the area: 60% of the width and 55% of the height
+      // (300 x 275 of 500 x 500 px) leave 33% of the squares visible, so the board is revealed.
+      scrollIntoView.mockClear();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 355, height: 400, offsetLeft: 200, width: 500 },
+        configurable: true,
+      });
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // The vertical pinch offset counts: same grid and viewport size, only the offset differs.
+      ranksTop = -100;
+      scrollIntoView.mockClear();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 0, height: 500 },
+        configurable: true,
+      });
+      pointer(); // squares 64–400 visible below the toolbar: 336 of 500 px
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 200, height: 500 },
+        configurable: true,
+      });
+      pointer(); // squares 200–400 visible: 200 of 500 px
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+      delete (window as { visualViewport?: unknown }).visualViewport;
+
+      scrollIntoView.mockClear();
+      ranksTop = -470;
+      const matchMedia = vi.fn(() => ({ matches: true }));
+      Object.defineProperty(window, 'matchMedia', { value: matchMedia, configurable: true });
+      pointer();
+      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+      expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'start', behavior: 'auto' });
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+      delete (window as { visualViewport?: unknown }).visualViewport;
+      toolbar.remove();
+      fixture.destroy();
+    }
+  });
+
+  it('still navigates the board when a move in the Moves view is clicked', () => {
+    const fixture = renderGame();
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const e4 = Array.from(element.querySelectorAll<HTMLElement>('.record-card .move')).find(
+        (move) => move.textContent?.includes('e4'),
+      )!;
+      e4.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.currentMoveIndex()).toBe(0);
+      expect(fixture.componentInstance.currentFen()).toBe(AFTER_E4);
+      expect(e4.classList).toContain('active');
+    } finally {
+      fixture.destroy();
+    }
   });
 });

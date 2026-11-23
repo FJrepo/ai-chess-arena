@@ -1,76 +1,78 @@
-<mat-card class="move-list-card" [class.compact]="compact">
-  <mat-card-header>
-    <mat-card-title>Moves</mat-card-title>
-  </mat-card-header>
-  <mat-card-content>
-    <div class="move-list-scroll num" #scrollContainer>
-      @for (pair of movePairs(); track pair.number) {
-        <div class="move-row">
-          <span class="move-number">{{ pair.number }}.</span>
-          @if (pair.white) {
-            <span
-              class="move white-move"
-              [class.active]="currentIndex === pair.whiteIdx"
-              [class.book-move]="pair.white.isBook"
-              [attr.title]="tooltip(pair.white)"
-              (click)="onMoveClick(pair.whiteIdx)"
-            >
-              <span class="san">{{ pair.white.san }}</span>
-              @if (pair.white.isBook) {
-                <span class="book-badge">book</span>
-              }
-              @if (badge(pair.white); as b) {
-                <span
-                  class="quality-badge"
-                  [class]="'quality-' + b.tone"
-                  [attr.aria-label]="b.label"
-                  >{{ b.glyph }}</span
-                >
-              }
-              @if (missedMate(pair.white); as hint) {
-                <span class="missed-mate-badge" [attr.title]="hint" [attr.aria-label]="hint"
-                  >M×</span
-                >
-              }
-              @if (pair.white.retryCount > 0) {
-                <span class="retry-badge" title="Retries">{{ pair.white.retryCount }}</span>
-              }
-            </span>
+<div
+  class="move-list-scroll num"
+  #scrollContainer
+  tabindex="-1"
+  (keydown)="onKeydown($event)"
+  (focusout)="onFocusOut($event)"
+  (scroll)="onScroll()"
+>
+  @for (pair of movePairs(); track pair.number) {
+    <div class="move-row">
+      <span class="move-number">{{ pair.number }}.</span>
+      @if (pair.white) {
+        <button
+          type="button"
+          class="move white-move"
+          [class.active]="currentIndex === pair.whiteIdx"
+          [class.book-move]="pair.white.isBook"
+          [attr.aria-current]="currentIndex === pair.whiteIdx ? 'step' : null"
+          [attr.tabindex]="tabIndexFor(pair.whiteIdx)"
+          [attr.data-ply]="pair.whiteIdx"
+          (focus)="focusedIndex = pair.whiteIdx"
+          [attr.aria-label]="moveLabel(pair.white)"
+          [attr.title]="tooltip(pair.white)"
+          (click)="onMoveClick(pair.whiteIdx)"
+        >
+          <span class="san">{{ pair.white.san }}</span>
+          @if (pair.white.isBook) {
+            <span class="book-badge">book</span>
           }
-          @if (pair.black) {
-            <span
-              class="move black-move"
-              [class.active]="currentIndex === pair.blackIdx"
-              [class.book-move]="pair.black.isBook"
-              [attr.title]="tooltip(pair.black)"
-              (click)="onMoveClick(pair.blackIdx)"
-            >
-              <span class="san">{{ pair.black.san }}</span>
-              @if (pair.black.isBook) {
-                <span class="book-badge">book</span>
-              }
-              @if (badge(pair.black); as b) {
-                <span
-                  class="quality-badge"
-                  [class]="'quality-' + b.tone"
-                  [attr.aria-label]="b.label"
-                  >{{ b.glyph }}</span
-                >
-              }
-              @if (missedMate(pair.black); as hint) {
-                <span class="missed-mate-badge" [attr.title]="hint" [attr.aria-label]="hint"
-                  >M×</span
-                >
-              }
-              @if (pair.black.retryCount > 0) {
-                <span class="retry-badge" title="Retries">{{ pair.black.retryCount }}</span>
-              }
-            </span>
+          @if (badge(pair.white); as b) {
+            <span class="quality-badge" [class]="'quality-' + b.tone" [attr.aria-label]="b.label">{{
+              b.glyph
+            }}</span>
           }
-        </div>
-      } @empty {
-        <div class="empty-state">No moves yet</div>
+          @if (missedMate(pair.white); as hint) {
+            <span class="missed-mate-badge" [attr.title]="hint" [attr.aria-label]="hint">M×</span>
+          }
+          @if (pair.white.retryCount > 0) {
+            <span class="retry-badge" title="Retries">{{ pair.white.retryCount }}</span>
+          }
+        </button>
+      }
+      @if (pair.black) {
+        <button
+          type="button"
+          class="move black-move"
+          [class.active]="currentIndex === pair.blackIdx"
+          [class.book-move]="pair.black.isBook"
+          [attr.aria-current]="currentIndex === pair.blackIdx ? 'step' : null"
+          [attr.tabindex]="tabIndexFor(pair.blackIdx)"
+          [attr.data-ply]="pair.blackIdx"
+          (focus)="focusedIndex = pair.blackIdx"
+          [attr.aria-label]="moveLabel(pair.black)"
+          [attr.title]="tooltip(pair.black)"
+          (click)="onMoveClick(pair.blackIdx)"
+        >
+          <span class="san">{{ pair.black.san }}</span>
+          @if (pair.black.isBook) {
+            <span class="book-badge">book</span>
+          }
+          @if (badge(pair.black); as b) {
+            <span class="quality-badge" [class]="'quality-' + b.tone" [attr.aria-label]="b.label">{{
+              b.glyph
+            }}</span>
+          }
+          @if (missedMate(pair.black); as hint) {
+            <span class="missed-mate-badge" [attr.title]="hint" [attr.aria-label]="hint">M×</span>
+          }
+          @if (pair.black.retryCount > 0) {
+            <span class="retry-badge" title="Retries">{{ pair.black.retryCount }}</span>
+          }
+        </button>
       }
     </div>
-  </mat-card-content>
-</mat-card>
+  } @empty {
+    <div class="empty-state">No moves yet</div>
+  }
+</div>

@@ -1,51 +1,53 @@
-// Sizes to its content; the host caps the height (100% of a sized host, or
+// The list only: the game view's Moves | Feed box supplies the card and the heading.
+// Sizes to its content; the host caps the height (a sized flex parent, or
 // --move-list-max-height) and the list scrolls inside.
-// --move-cell-min fits the longest SAN (7 characters, e.g. `exd8=Q+`) plus a retry badge and a
-// quality annotation, so a notation cell never shrinks below its content and runs into the next move.
+// One grid for all rows (rows are display: contents), so the columns line up and stay compact:
+// move number | White | Black, left-aligned. A notation column is at least --move-cell-min wide
+// (a typical SAN) and grows to the widest move in it, e.g. `exd8=Q+` with a retry badge and ??.
 :host {
-  --move-cell-min: 8rem;
+  --move-number-width: 4ch;
+  --move-cell-min: 9ch;
 
-  display: block;
-}
-
-.move-list-card {
-  max-height: 100%;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-
-  mat-card-title {
-    font-size: var(--mat-sys-title-medium-size);
-    line-height: var(--mat-sys-title-medium-line-height);
-  }
-
-  mat-card-content {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    padding-bottom: 12px;
-  }
 }
 
+// Padding and scroll padding keep the first, last and shown move clear of the card edges. No edge
+// fade: a mask would also fade move text and focus outlines below the required contrast.
 .move-list-scroll {
   flex: 0 1 auto;
   min-height: 0;
   max-height: var(--move-list-max-height, none);
   overflow-y: auto;
-  padding-right: 4px;
+  padding: var(--app-space-3) var(--app-space-1);
+  scroll-padding-block: var(--app-space-3);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
+  grid-template-columns:
+    var(--move-number-width)
+    minmax(var(--move-cell-min), max-content)
+    minmax(var(--move-cell-min), max-content);
+  justify-content: start;
+  column-gap: var(--app-space-1);
+  row-gap: var(--app-space-half);
   align-content: start;
+  align-items: center;
 }
 
-// One move pair per row, read top to bottom.
 .move-row {
-  display: grid;
-  grid-template-columns: 2rem minmax(var(--move-cell-min), 1fr) minmax(var(--move-cell-min), 1fr);
-  gap: 4px;
-  padding: 2px 4px;
-  align-items: center;
-  border-radius: 8px;
+  display: contents;
+}
+
+.move-number {
+  grid-column: 1;
+}
+
+.white-move {
+  grid-column: 2;
+}
+
+.black-move {
+  grid-column: 3;
 }
 
 .move-number {
@@ -56,9 +58,17 @@
   padding-right: 4px;
 }
 
+// Native buttons, so moves are reachable and selectable by keyboard (Enter or Space).
 .move {
   padding: 3px 8px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-variant-numeric: inherit;
+  line-height: inherit;
+  text-align: left;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 600;
@@ -72,6 +82,11 @@
   &.active {
     background-color: var(--mat-sys-secondary-container);
     color: var(--mat-sys-on-secondary-container);
+  }
+
+  &:focus-visible {
+    outline: var(--app-rule-width) solid var(--app-accent-info);
+    outline-offset: calc(-1 * var(--app-rule-width));
   }
 }
 
@@ -118,7 +133,7 @@
   color: var(--mat-sys-on-surface-variant);
 }
 
-.move-list-card.compact {
+:host(.compact) {
   height: 100%;
 
   .move-list-scroll {

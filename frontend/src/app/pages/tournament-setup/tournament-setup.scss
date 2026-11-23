@@ -303,7 +303,7 @@ mat-hint,
 
 .chat-mode-toggle {
   flex: none;
-  --mat-button-toggle-height: 36px;
+  --mat-button-toggle-height: var(--app-segmented-height);
 }
 
 .resignation-row {

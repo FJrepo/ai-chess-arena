@@ -206,3 +206,241 @@ describe('MoveListComponent quality annotations', () => {
     expect(cells[1].getAttribute('title')).toBe('Only legal move: not judged');
   });
 });
+
+describe('MoveListComponent keyboard access', () => {
+  it('renders each move as a native button named by its notation', () => {
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', [
+      move(1, 'WHITE', 'e4'),
+      move(1, 'BLACK', 'e5', {
+        judgement: 'MISTAKE',
+        centipawnLoss: 150,
+        winChanceBefore: 0.5,
+        winChanceAfter: 0.35,
+        excluded: null,
+      }),
+      { ...move(2, 'WHITE', 'Nf3'), isBook: true },
+    ]);
+    fixture.componentRef.setInput('currentIndex', 1);
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+
+    const buttons = Array.from(element.querySelectorAll<HTMLElement>('.move'));
+    expect(buttons.map((button) => button.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON']);
+    expect(buttons.map((button) => (button as HTMLButtonElement).type)).toEqual([
+      'button',
+      'button',
+      'button',
+    ]);
+    expect(buttons[0].getAttribute('aria-label')).toBe('1. e4');
+    expect(buttons[1].getAttribute('aria-label')).toBe('1... e5, mistake');
+    expect(buttons[2].getAttribute('aria-label')).toBe('2. Nf3, book move');
+    expect(buttons.map((button) => button.getAttribute('aria-current'))).toEqual([
+      null,
+      'step',
+      null,
+    ]);
+
+    buttons[2].click();
+    expect(selected).toHaveBeenCalledWith(2);
+  });
+});
+
+describe('MoveListComponent roving focus', () => {
+  function renderList(count: number, currentIndex: number) {
+    const sans = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6'];
+    const moves = Array.from({ length: count }, (_, i) =>
+      move(Math.floor(i / 2) + 1, i % 2 ? 'BLACK' : 'WHITE', sans[i % sans.length]),
+    );
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', moves);
+    fixture.componentRef.setInput('currentIndex', currentIndex);
+    const selected = vi.fn();
+    fixture.componentInstance.moveSelected.subscribe(selected);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const buttons = () => Array.from(element.querySelectorAll<HTMLButtonElement>('.move'));
+    const stops = () => buttons().map((button) => button.getAttribute('tabindex'));
+    return { fixture, element, buttons, stops, selected, moves };
+  }
+
+  function key(target: Element, name: string) {
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }),
+    );
+  }
+
+  it('has one tab stop, on the shown move (the first move before any is shown)', () => {
+    const { element, stops } = renderList(4, 2);
+    expect(stops()).toEqual(['-1', '-1', '0', '-1']);
+    // Firefox would add the scroll container as an extra stop; the moves already scroll it.
+    expect(element.querySelector('.move-list-scroll')?.getAttribute('tabindex')).toBe('-1');
+    TestBed.resetTestingModule();
+    expect(renderList(4, -1).stops()).toEqual(['0', '-1', '-1', '-1']);
+  });
+
+  it('moves focus by ply with Left/Right, by move with Up/Down and to the ends with Home/End', () => {
+    const { fixture, buttons, stops, selected } = renderList(6, 2);
+    const focused = () => (document.activeElement as HTMLElement).getAttribute('aria-label');
+    buttons()[2].focus();
+
+    key(buttons()[2], 'ArrowRight');
+    expect(focused()).toBe('2... Nc6');
+    key(document.activeElement!, 'ArrowUp');
+    expect(focused()).toBe('1... e5');
+    key(document.activeElement!, 'ArrowDown');
+    expect(focused()).toBe('2... Nc6');
+    key(document.activeElement!, 'ArrowLeft');
+    expect(focused()).toBe('2. Nf3');
+    key(document.activeElement!, 'End');
+    expect(focused()).toBe('3... a6');
+    key(document.activeElement!, 'ArrowRight');
+    expect(focused()).toBe('3... a6');
+    key(document.activeElement!, 'Home');
+    expect(focused()).toBe('1. e4');
+    fixture.detectChanges();
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
+    // Arrow keys only move focus; Enter or Space (native button activation) shows a position.
+    expect(selected).not.toHaveBeenCalled();
+  });
+
+  it('does not scroll a live ply into view while focus is inside the list', () => {
+    // The list shows 0–40 px; every move sits below it at 90–110 px, so revealing one scrolls.
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('move-list-scroll')
+          ? new DOMRect(0, 0, 100, 40)
+          : new DOMRect(0, 90, 100, 20);
+      });
+    try {
+      const { fixture, element, buttons, moves } = renderList(4, -1);
+      const list = element.querySelector<HTMLElement>('.move-list-scroll')!;
+      buttons()[0].focus();
+
+      fixture.componentRef.setInput('moves', [...moves, move(3, 'WHITE', 'Bb5')]);
+      fixture.componentRef.setInput('currentIndex', 4);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(0);
+      expect(document.activeElement).toBe(buttons()[0]);
+
+      // Focus elsewhere (following the game): the next shown ply is revealed again.
+      buttons()[0].blur();
+      fixture.componentRef.setInput('currentIndex', 3);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(70);
+    } finally {
+      rects.mockRestore();
+    }
+  });
+
+  it('leaves modified arrow keys (Alt+Left is browser Back) to the browser', () => {
+    const { buttons } = renderList(4, 1);
+    buttons()[1].focus();
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', {
+        key: 'ArrowLeft',
+        [modifier]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      buttons()[1].dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(buttons()[1]);
+    }
+  });
+});
+
+describe('MoveListComponent edges and columns', () => {
+  function renderMoves(count: number) {
+    const moves = Array.from({ length: count }, (_, i) =>
+      move(Math.floor(i / 2) + 1, i % 2 ? 'BLACK' : 'WHITE', i % 2 ? 'e5' : 'e4'),
+    );
+    const fixture = TestBed.createComponent(MoveListComponent);
+    fixture.componentRef.setInput('moves', moves);
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    return { fixture, element, list: element.querySelector<HTMLElement>('.move-list-scroll')! };
+  }
+
+  it('keeps the shown move clear of the list edge by the scroll padding', () => {
+    const { fixture, list } = renderMoves(4);
+    list.style.scrollPaddingTop = '12px';
+    list.style.scrollPaddingBottom = '12px';
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('move-list-scroll')
+          ? new DOMRect(0, 0, 100, 40)
+          : new DOMRect(0, 90, 100, 20);
+      });
+    try {
+      fixture.componentRef.setInput('currentIndex', 3);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(110 - 40 + 12);
+    } finally {
+      rects.mockRestore();
+    }
+  });
+
+  it('reveals the shown move again when the list is resized, until the user scrolls', () => {
+    let resized: (() => void) | undefined;
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(callback: () => void) {
+        resized = callback;
+      }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    let listHeight = 60;
+    const rects = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('move-list-scroll')
+          ? new DOMRect(0, 0, 100, listHeight)
+          : new DOMRect(
+              0,
+              90 -
+                (this.ownerDocument.querySelector<HTMLElement>('.move-list-scroll')?.scrollTop ??
+                  0),
+              100,
+              20,
+            );
+      });
+    try {
+      const { fixture, list } = renderMoves(4);
+      fixture.componentRef.setInput('currentIndex', 3);
+      fixture.detectChanges();
+      expect(list.scrollTop).toBe(50); // 110 - 60
+      // The column settles 20 px shorter after the first reveal: follow the shown move.
+      listHeight = 40;
+      resized!();
+      expect(list.scrollTop).toBe(70);
+      // Once the user scrolls the list themselves, a resize leaves their position alone.
+      list.scrollTop = 10;
+      list.dispatchEvent(new Event('scroll'));
+      listHeight = 30;
+      resized!();
+      expect(list.scrollTop).toBe(10);
+    } finally {
+      rects.mockRestore();
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  it('lays the moves out as one compact grid: number, White, Black', () => {
+    const { element, list } = renderMoves(4);
+    const style = getComputedStyle(list);
+    expect(style.display).toBe('grid');
+    // Three tracks (a minmax() track contains a space of its own).
+    expect(style.gridTemplateColumns.match(/minmax\([^)]*\)|\S+/g)).toHaveLength(3);
+    expect(style.justifyContent).toBe('start');
+    for (const row of Array.from(element.querySelectorAll<HTMLElement>('.move-row'))) {
+      expect(getComputedStyle(row).display).toBe('contents');
+    }
+  });
+});

@@ -3,7 +3,15 @@ import { OpenRouterAccess } from '../../services/openrouter-access';
 import { BoardThemeService } from '../../services/board-theme.service';
 import { MatMenuModule } from '@angular/material/menu';
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, OnDestroy, signal, computed, ViewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnInit,
+  OnDestroy,
+  signal,
+  computed,
+  ViewChild,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -14,7 +22,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { ApiService } from '../../services/api.service';
 import { downloadBlob } from '../../utils/download';
 import { WebSocketService } from '../../services/websocket.service';
@@ -35,7 +43,7 @@ import {
 } from '../../models/tournament.model';
 import { ChessboardComponent, BoardMoveAttempt } from '../../components/chessboard/chessboard';
 import { MoveListComponent } from '../../components/move-list/move-list';
-import { ChatPanel } from '../../components/chat-panel/chat-panel';
+import { ChatMoveSelection, ChatPanel } from '../../components/chat-panel/chat-panel';
 import { QueuedResume } from '../../components/queued-resume/queued-resume';
 import {
   GameInfoBar,
@@ -74,12 +82,12 @@ import {
 
 type TimelineEvent = {
   id: string;
-  type: 'start' | 'move' | 'attempts' | 'chat' | 'result';
+  type: 'start' | 'move' | 'attempts' | 'result';
   label: string;
   detail: string;
   /** Failed or cut-off answers for the ply, shown as their own line; null when there were none. */
   attemptSummary: string | null;
-  tone: 'neutral' | 'move' | 'chat' | 'warning' | 'success';
+  tone: 'neutral' | 'move' | 'warning' | 'success';
   /** ?! / ? / ?? annotation of a move judged an error, with its tooltip; null otherwise. */
   quality: { badge: QualityBadge; tooltip: string | null } | null;
   icon: string;
@@ -90,6 +98,24 @@ type TimelineEvent = {
 };
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/** What the box left of the board shows: the move list or the game feed. */
+export type RecordView = 'moves' | 'feed';
+
+/** Browser storage key for the chosen record view. */
+const RECORD_VIEW_KEY = 'gameRecordView';
+
+function savedRecordView(): RecordView {
+  try {
+    return localStorage.getItem(RECORD_VIEW_KEY) === 'feed' ? 'feed' : 'moves';
+  } catch {
+    // Restricted storage: start on the move list.
+    return 'moves';
+  }
+}
+
+/** Space between the sticky toolbar and the first rank when a chat link scrolls the board into view. */
+const BOARD_REVEAL_GAP = 12;
 
 /** Backend default for a tournament's output-token limit. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384;
@@ -112,7 +138,7 @@ const SPEND_CHECK_SENTENCE = 'Check spend, then resume.';
     MatInputModule,
     MatExpansionModule,
     MatSnackBarModule,
-    MatSlideToggleModule,
+    MatButtonToggleModule,
     DatePipe,
     RouterLink,
     ChessboardComponent,
@@ -228,6 +254,7 @@ export class GameView implements OnInit, OnDestroy {
     };
   });
   @ViewChild(MoveListComponent) private moveList?: MoveListComponent;
+  @ViewChild('boardSection') private boardSection?: ElementRef<HTMLElement>;
   currentMoveIndex = signal(-1);
   flipped = signal(false);
   overrideMove = '';
@@ -236,7 +263,8 @@ export class GameView implements OnInit, OnDestroy {
   retryInfo = signal<string | null>(null);
   stockfishAvailable = signal(true);
   stockfishReason = signal<string | null>(null);
-  includeChatInFeed = signal(false);
+  /** Moves or Feed in the box left of the board; remembered per browser. */
+  readonly recordView = signal<RecordView>(savedRecordView());
   humanMoveSubmitting = signal(false);
   readonly gameActionsAvailable = signal(true);
   pendingPromotion = signal<{ from: string; to: string } | null>(null);
@@ -394,10 +422,19 @@ export class GameView implements OnInit, OnDestroy {
 
   whiteMaterialEdge = computed(() => Math.max(0, this.capturedMaterial().materialDelta));
   blackMaterialEdge = computed(() => Math.max(0, -this.capturedMaterial().materialDelta));
-  timelineEvents = computed<TimelineEvent[]>(() => {
+  /** Move-list index of each recorded ply (the canonical row when duplicates exist), for chat links. */
+  chatMoveIndexByPly = computed(() => {
+    const byPly = new Map<string, number>();
+    this.moves().forEach((move, index) => {
+      const key = plyKey(move.moveNumber, move.color);
+      if (!byPly.has(key) || move.isCanonical === true) byPly.set(key, index);
+    });
+    return byPly;
+  });
+  /** Game feed, newest first: start, moves, unplayed plies and the result. Chat has its own column. */
+  feedEvents = computed<TimelineEvent[]>(() => {
     const events: TimelineEvent[] = [];
     const moves = this.moves();
-    const chats = this.chatMessages();
     const game = this.game();
     const attemptsByPly = notableAttemptsByPly(this.attempts());
 
@@ -470,23 +507,6 @@ export class GameView implements OnInit, OnDestroy {
       });
     });
 
-    chats.forEach((message) => {
-      const relatedMoveIndex = this.findTimelineMoveIndex(message.moveNumber, message.senderColor);
-      events.push({
-        id: `chat-${message.id || `${message.moveNumber}-${message.senderColor}-${message.createdAt}`}`,
-        type: 'chat',
-        quality: null,
-        label: `${message.senderColor === 'WHITE' ? 'White' : 'Black'} chat`,
-        detail: `${this.timelinePlayerName(message.senderColor, message.senderModel)}: ${message.message}`,
-        tone: 'chat',
-        icon: 'chat',
-        attemptSummary: null,
-        createdAtMs: Date.parse(message.createdAt),
-        createdAtLabel: message.createdAt,
-        moveIndex: relatedMoveIndex,
-      });
-    });
-
     if (game && isFinishedStatus(game.status)) {
       const resignedColor = resigningColor(game);
       const resultLabel = resignedColor
@@ -528,9 +548,6 @@ export class GameView implements OnInit, OnDestroy {
       .filter((event) => !Number.isNaN(event.createdAtMs))
       .sort((left, right) => right.createdAtMs - left.createdAtMs);
   });
-  feedEvents = computed(() =>
-    this.timelineEvents().filter((event) => this.includeChatInFeed() || event.type !== 'chat'),
-  );
 
   constructor(
     private route: ActivatedRoute,
@@ -1194,6 +1211,66 @@ export class GameView implements OnInit, OnDestroy {
     this.currentMoveIndex.set(index);
   }
 
+  /**
+   * A chat message's move link shows that position. From a pointer it also brings the board into
+   * view when its squares are hidden; from the keyboard, focus and scroll stay in the chat (the
+   * panel announces the position), so the next key press does not fight a page jump.
+   */
+  showChatMove(selection: ChatMoveSelection) {
+    this.goToMove(selection.index);
+    if (selection.pointer) this.revealBoard();
+  }
+
+  /**
+   * Scrolls the board's first rank just below the sticky toolbar when less than half of its squares' area
+   * are visible in the visual viewport (pinch zoom shows only part of the layout viewport).
+   */
+  private revealBoard() {
+    const host = this.boardSection?.nativeElement.querySelector<HTMLElement>('app-chessboard');
+    const squares = host?.querySelectorAll<HTMLElement>('.square');
+    const doc = host?.ownerDocument;
+    const view = doc?.defaultView;
+    if (!host || !squares?.length || !doc || !view) return;
+    // The squares grid only (first to last square), without the rank and file labels.
+    const first = squares[0].getBoundingClientRect();
+    const last = squares[squares.length - 1].getBoundingClientRect();
+    const grid = {
+      top: Math.min(first.top, last.top),
+      bottom: Math.max(first.bottom, last.bottom),
+      left: Math.min(first.left, last.left),
+      right: Math.max(first.right, last.right),
+    };
+    const toolbar = doc.querySelector('.app-toolbar')?.getBoundingClientRect();
+    const viewport = view.visualViewport;
+    const viewTop = viewport?.offsetTop ?? 0;
+    const viewLeft = viewport?.offsetLeft ?? 0;
+    // The toolbar covers the window top only while it sticks (far down the page it has scrolled away).
+    const visibleTop = Math.max(viewTop, toolbar?.bottom ?? 0);
+    const visibleBottom = viewTop + (viewport?.height ?? view.innerHeight);
+    const visibleRight = viewLeft + (viewport?.width ?? view.innerWidth);
+    const height = Math.max(
+      0,
+      Math.min(grid.bottom, visibleBottom) - Math.max(grid.top, visibleTop),
+    );
+    const width = Math.max(0, Math.min(grid.right, visibleRight) - Math.max(grid.left, viewLeft));
+    // Half of the squares' area, not half of each side: 60% x 55% shows only a third of the board.
+    const gridArea = (grid.bottom - grid.top) * (grid.right - grid.left);
+    if (width * height >= gridArea / 2) return;
+    // It sticks again at the target, so leave room for its full height.
+    host.style.scrollMarginTop = `${(toolbar?.height ?? 0) + BOARD_REVEAL_GAP}px`;
+    const reduceMotion = view.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    host.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
+
+  selectRecordView(view: RecordView) {
+    this.recordView.set(view);
+    try {
+      localStorage.setItem(RECORD_VIEW_KEY, view);
+    } catch {
+      // The choice still applies for this visit when storage is unavailable.
+    }
+  }
+
   goToTimelineEvent(event: TimelineEvent) {
     if (event.moveIndex != null) {
       this.goToMove(event.moveIndex);
@@ -1612,19 +1689,6 @@ export class GameView implements OnInit, OnDestroy {
         this.snackbar.open('Could not export game. Please try again.', 'OK', { duration: 5000 });
       },
     });
-  }
-
-  private findTimelineMoveIndex(
-    moveNumber: number,
-    color: 'WHITE' | 'BLACK' | string,
-  ): number | null {
-    const normalizedColor = color === 'WHITE' || color === 'BLACK' ? color : null;
-    const moves = this.moves();
-    const index = moves.findIndex(
-      (move) =>
-        move.moveNumber === moveNumber && (!normalizedColor || move.color === normalizedColor),
-    );
-    return index >= 0 ? index : null;
   }
 
   private timelinePlayerName(color: 'WHITE' | 'BLACK', fallbackModel: string | null): string {

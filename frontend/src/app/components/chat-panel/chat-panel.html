@@ -1,16 +1,19 @@
 <mat-card class="chat-card">
   <mat-card-header>
-    <mat-card-title>Chat</mat-card-title>
-    <mat-card-subtitle
-      >Newest first
-      @if (chatModeLabel(); as label) {
-        <span class="chat-mode-label">· {{ label }}</span>
-      }
-    </mat-card-subtitle>
+    <div class="chat-heading">
+      <mat-card-title [id]="titleId">Chat</mat-card-title>
+      <span class="chat-meta"
+        >Newest first
+        @if (chatModeLabel(); as label) {
+          <span class="chat-mode-label">· {{ label }}</span>
+        }
+      </span>
+    </div>
   </mat-card-header>
   <mat-card-content>
-    <div class="chat-scroll">
-      @for (msg of displayedMessages(); track $index) {
+    <div #scroll class="chat-scroll" tabindex="0" role="region" [attr.aria-labelledby]="titleId">
+      @for (row of rows(); track row.key) {
+        @let msg = row.msg;
         <div
           class="chat-message"
           [class.white-msg]="msg.senderColor === 'WHITE'"
@@ -24,7 +27,22 @@
             >
               {{ getPlayerName(msg) }}
             </span>
-            <span class="msg-time">move {{ msg.moveNumber }}</span>
+            @let index = moveIndex(msg);
+            @if (index !== undefined) {
+              <button
+                type="button"
+                class="msg-time msg-move"
+                [attr.tabindex]="row.key === linkTabStop() ? 0 : -1"
+                [attr.aria-label]="moveLabel(msg)"
+                (focus)="onLinkFocus(row.key)"
+                (keydown)="onLinkKeydown($event)"
+                (click)="selectMove(index, msg, $event)"
+              >
+                move {{ msg.moveNumber }}
+              </button>
+            } @else {
+              <span class="msg-time">move {{ msg.moveNumber }}</span>
+            }
           </div>
           <div class="msg-body">{{ msg.message }}</div>
         </div>
@@ -32,5 +50,6 @@
         <div class="empty-chat">{{ emptyText() }}</div>
       }
     </div>
+    <span class="cdk-visually-hidden" role="status" aria-live="polite">{{ announcement() }}</span>
   </mat-card-content>
 </mat-card>

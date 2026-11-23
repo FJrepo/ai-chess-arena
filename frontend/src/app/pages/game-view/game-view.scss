@@ -81,14 +81,19 @@
 }
 
 // Board size (incl. the rank-label column; the board is square) follows the viewport height so
-// board, moves and feed fit one screen, and is capped by the width the side columns leave.
+// board and both side columns fit one screen, and is capped by the width the side columns leave.
 .game-layout {
   --board-chrome-v: 384px;
   --board-max: 680px;
-  // Moves column minimum: two full notation cells (see the move list's --move-cell-min).
-  --moves-col-min: 21.5rem;
-  // Width the side columns, gaps, eval bar and page padding need next to the board.
-  --board-side-reserve: 838px;
+  // Moves | Feed column minimum: two full notation cells (see the move list's --move-cell-min).
+  --record-col-min: var(--app-game-record-min-width);
+  --chat-col-min: var(--app-game-chat-min-width);
+  // Width needed next to the board: both side columns at their minimum, the evaluation bar and its
+  // gap (3.5rem), two column gaps, and page padding plus a scrollbar (64px). The rem parts follow the
+  // browser's text size, so a larger default font shrinks the board rather than widening the page.
+  --board-side-reserve: calc(
+    var(--record-col-min) + var(--chat-col-min) + 3.5rem + 2 * var(--app-space-4) + 64px
+  );
   --board-size: clamp(
     340px,
     min(100dvh - var(--board-chrome-v), min(100vw, 1720px) - var(--board-side-reserve)),
@@ -96,56 +101,48 @@
   );
 
   display: grid;
-  grid-template-columns: max-content minmax(var(--moves-col-min), 0.7fr) minmax(0, 1.3fr);
-  grid-template-areas:
-    'board moves feed'
-    'chat chat chat';
-  gap: 16px;
-  margin-top: 12px;
+  // The Moves | Feed box keeps its minimum width (the compact move grid needs no more); extra width
+  // goes to the chat, where long messages benefit from it.
+  grid-template-columns:
+    var(--record-col-min)
+    max-content
+    minmax(var(--chat-col-min), 1fr);
+  // DOM and focus order is board, Moves | Feed, chat (the stacked order); wide screens place
+  // the Moves | Feed box left of the board.
+  grid-template-areas: 'record board chat';
+  gap: var(--app-space-4);
+  margin-top: var(--app-space-3);
   align-items: stretch;
 }
 
-// The feed and move list take the row height (set by the board) and scroll inside it.
-.feed-column,
-.moves-area {
-  grid-area: feed;
+// The side columns take the row height (set by the board block) and scroll inside it.
+.record-column,
+.chat-column {
   min-width: 0;
   contain: size;
 }
 
-.moves-area {
-  grid-area: moves;
-}
-
-.moves-area app-move-list {
-  display: block;
-  height: 100%;
+.record-column {
+  grid-area: record;
 }
 
 .chat-column {
   grid-area: chat;
-  min-width: 0;
 }
 
 .chat-column app-chat-panel {
   display: block;
   height: 100%;
   --chat-panel-min-height: 0px;
-  --chat-panel-max-height: 320px;
+  --chat-panel-max-height: none;
 }
 
-.timeline-card {
+// Moves | Feed: one card; the segmented control is its heading.
+.record-card {
   height: 100%;
-  border-radius: 16px;
 
   mat-card-header {
-    padding-bottom: 6px;
-  }
-
-  mat-card-title {
-    margin: 0;
-    font-size: var(--mat-sys-title-medium-size);
-    line-height: var(--mat-sys-title-medium-line-height);
+    padding-bottom: var(--app-space-2);
   }
 
   mat-card-content {
@@ -153,29 +150,24 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding-bottom: 8px;
+    padding-bottom: var(--app-space-2);
+  }
+
+  app-move-list {
+    flex: 0 1 auto;
   }
 }
 
-.timeline-header {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
+// The selected view gets the primary fill and Material's check, so it does not rely on a tint.
+.record-toggle {
+  --mat-button-toggle-height: var(--app-segmented-height);
+  --mat-button-toggle-selected-state-background-color: var(--app-segmented-selected-bg);
+  --mat-button-toggle-selected-state-text-color: var(--app-segmented-selected-text);
+  --mat-pseudo-checkbox-minimal-selected-checkmark-color: var(--app-segmented-selected-text);
 }
 
-.timeline-toggle {
-  justify-self: end;
-  font: var(--mat-sys-body-medium);
-  color: var(--mat-sys-on-surface-variant);
-
-  ::ng-deep .mdc-form-field {
-    gap: 10px;
-  }
-}
-
-// The list fades out at the bottom edge so a cut-off entry reads as "scroll for more".
+// The list fades at its edges so a cut-off entry reads as "scroll for more"; the padding keeps
+// the first entry clear of the fade.
 .timeline-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -184,8 +176,14 @@
   align-content: start;
   gap: 2px;
   margin-inline: -8px;
-  padding: 0 4px 28px;
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  padding: var(--app-space-3) 4px 28px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--app-space-3),
+    #000 calc(100% - 28px),
+    transparent
+  );
 }
 
 // One quiet row style for every entry; tone shows only in the icon, and as a soft warning
@@ -351,7 +349,10 @@ app-advantage-bar {
   text-transform: uppercase;
 }
 
+// Inline-size containment: the board sets the block's width, and a long tray of captured pieces
+// wraps inside it instead of widening the centre column.
 .capture-strip {
+  contain: inline-size;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -494,54 +495,55 @@ app-advantage-bar {
   align-items: center;
 }
 
-// Wide desktop: feed | board | moves over chat. The board spans both rows; the move list sizes
-// to its content up to its cap and the chat takes the rest of the board height.
-@media (min-width: 1500px) {
-  .game-layout {
-    --board-side-reserve: 754px;
-
-    grid-template-columns: minmax(320px, 1fr) max-content minmax(
-        max(320px, var(--moves-col-min)),
-        1fr
-      );
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas:
-      'feed board moves'
-      'feed board chat';
-  }
-
-  .moves-area {
-    contain: none;
-    --move-list-max-height: calc(var(--board-size) * 0.42);
-  }
-
-  .chat-column {
-    contain: size;
-    min-height: 200px;
-  }
-
-  .chat-column app-chat-panel {
-    --chat-panel-max-height: none;
-  }
-}
-
-// Narrower than the supported desktop range: one column, natural heights.
-@media (max-width: 1099px) {
+// Narrower than the three-column range: the board centred on top, then Moves | Feed beside the
+// chat at one shared height, each scrolling inside. Three columns need the reserve above plus the
+// 340px board minimum and the board controls: about 1124px at a 16px default font and 1296px at
+// 20px. The em condition scales with that default font (75em is 1500px at 20px); the px
+// condition keeps 1200px as the floor, because the board minimum and controls do not shrink
+// with smaller text.
+@media (max-width: 1199.98px), (max-width: 74.99em) {
   .game-layout {
     // Leave space for the page padding, evaluation bar and gap even on narrow phones.
     --board-size: clamp(0px, calc(100vw - 48px - 3.5rem), 560px);
 
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'board board'
+      'record chat';
   }
 
-  .feed-column {
-    contain: none;
-    max-height: 520px;
+  .board-section {
+    justify-self: center;
   }
 
-  .moves-area {
+  .record-column,
+  .chat-column {
+    height: var(--app-game-stacked-panel-height);
+  }
+}
+
+// Too narrow for the two panels side by side (both minimum widths, gap and page padding: 696px
+// at a 16px default font): one column, board, then Moves | Feed, then chat, each capped.
+@media (max-width: 767.98px), (max-width: 47.99em) {
+  .game-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'board'
+      'record'
+      'chat';
+  }
+
+  .record-column,
+  .chat-column {
+    height: auto;
     contain: none;
-    --move-list-max-height: min(28rem, 60dvh);
+  }
+
+  .record-card {
+    max-height: var(--app-game-record-stacked-max-height);
+  }
+
+  .chat-column app-chat-panel {
+    --chat-panel-max-height: var(--app-game-chat-stacked-max-height);
   }
 }
