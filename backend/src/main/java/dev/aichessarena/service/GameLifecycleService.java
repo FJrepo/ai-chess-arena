@@ -677,6 +677,8 @@ public class GameLifecycleService {
         String resultReason = game.resultReason != null ? game.resultReason.name() : null;
         String detail = game.statusDetail;
         Instant resumeRequestedAt = game.resumeRequestedAt;
+        // The persisted unresolved request marker: clients show the spend check from it, never from the reason text.
+        Instant uncertainRequestSentAt = game.requestSentAt;
         RunCapacity capacity = resumeRequestedAt == null ? null : gameRepository.queuedResumeCapacity(game);
         long revision = game.statusRevision;
         int moves = totalMoves(gameId);
@@ -685,7 +687,7 @@ public class GameLifecycleService {
         game.clearTurn();
         if (liveUpdates != null) {
             liveUpdates.changed(game, liveUpdates.statusChange(gameId, status, result, resultReason, moves,
-                    cost, detail, revision, resumeRequestedAt, capacity));
+                    cost, detail, revision, resumeRequestedAt, capacity, uncertainRequestSentAt));
         }
         afterCommit(() -> {
             if (terminal && gameEngineService != null) {
@@ -694,8 +696,8 @@ public class GameLifecycleService {
             if (first != null) {
                 first.run();
             }
-            gameWebSocket.broadcastStatusChange(
-                    gameId, status, result, resultReason, moves, cost, detail, revision, resumeRequestedAt, capacity);
+            gameWebSocket.broadcastStatusChange(gameId, status, result, resultReason, moves, cost, detail, revision,
+                    resumeRequestedAt, capacity, uncertainRequestSentAt);
             if (then != null) {
                 then.run();
             }

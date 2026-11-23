@@ -267,7 +267,7 @@ class TournamentAutoRunIT {
         List<String> announcements = new ArrayList<>();
         QuarkusMock.installMockForType(new GameWebSocket() {
             @Override public void broadcastStatusChange(UUID changed, String status, String result, String reason,
-                    int moves, BigDecimal cost, String detail, long revision, Instant requested, RunCapacity capacity) {
+                    int moves, BigDecimal cost, String detail, long revision, Instant requested, RunCapacity capacity, Instant uncertainRequestSentAt) {
                 assertEquals(game, changed);
                 assertEquals(requested, snapshot(game).resumeRequestedAt());
                 assertEquals("PAUSED", status);
@@ -665,7 +665,7 @@ class TournamentAutoRunIT {
         CountDownLatch releaseHumanTurn = new CountDownLatch(1);
         QuarkusMock.installMockForType(new GameWebSocket() {
             @Override public void broadcastStatusChange(UUID game, String status, String result, String reason,
-                    int moves, BigDecimal cost, String detail, long revision, Instant requested, RunCapacity capacity) {
+                    int moves, BigDecimal cost, String detail, long revision, Instant requested, RunCapacity capacity, Instant uncertainRequestSentAt) {
                 if (game.equals(humanGame) && "Concurrency limit reduced to 1".equals(detail) && requested == null) {
                     pauseCommitted.countDown();
                     await(releasePauseCallback);
@@ -1075,7 +1075,7 @@ class TournamentAutoRunIT {
 
             @Override public void broadcastStatusChange(UUID changedId, String status, String announcedResult,
                     String announcedReason, int totalMoves, BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 // Separate transactions must see completed state and progression before any budget pause.
                 GameDto stored = snapshot(gameId);
                 assertEquals("COMPLETED", stored.status());

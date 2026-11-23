@@ -66,7 +66,7 @@ class LiveUpdateOrderIT {
             public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
                                               int totalMoves, BigDecimal totalCostUsd, String detail,
                                               long statusRevision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 if ("PAUSED".equals(status)) {
                     try {
                         resumeDelivered.await(10, TimeUnit.SECONDS);
@@ -141,7 +141,7 @@ class LiveUpdateOrderIT {
             public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
                                               int totalMoves, BigDecimal totalCostUsd, String detail,
                                               long statusRevision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 delivered.add(id.equals(committed) ? "committed " + status : "rolled back " + status);
             }
         }, GameWebSocket.class);

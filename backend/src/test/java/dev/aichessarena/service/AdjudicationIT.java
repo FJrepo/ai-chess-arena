@@ -391,7 +391,7 @@ class AdjudicationIT {
         QuarkusMock.installMockForType(new GameWebSocket() {
             @Override public void broadcastStatusChange(UUID id, String status, String result, String reason,
                                                         int totalMoves, BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 if (!"COMPLETED".equals(status)) return;
                 // A different transaction must already see exactly the state announced after commit.
                 String stored = QuarkusTransaction.requiringNew().call(() -> {

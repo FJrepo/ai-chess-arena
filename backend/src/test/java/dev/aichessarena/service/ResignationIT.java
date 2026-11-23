@@ -306,7 +306,7 @@ class ResignationIT {
             public void broadcastStatusChange(UUID id, String status, String result, String resultReason,
                                               int totalMoves, java.math.BigDecimal totalCostUsd, String detail,
                                               long statusRevision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 seenAtBroadcast.add(status + " announced, stored "
                         + QuarkusTransaction.requiringNew().call(() -> gameRepository.findById(id).status));
             }

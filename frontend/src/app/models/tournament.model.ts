@@ -441,6 +441,12 @@ export interface GameStatusWsMessage {
   tournamentBanterLevel?: BanterLevel | null;
   /** The game's status revision after a status change (start, pause, game over); absent on turn updates. */
   statusRevision?: number;
+  /**
+   * Sent with every status change: whether the game has an unconfirmed model request (see `Game.uncertainRequest`).
+   * The spend check is shown from this flag only, never from the pause reason.
+   */
+  uncertainRequest?: boolean;
+  uncertainRequestSentAt?: string | null;
 }
 
 export interface RetryWsMessage {
@@ -487,6 +493,9 @@ export type GameChange =
       turnDeadlineAt: string | null;
       turnChatMode: ChatMode | null;
       turnBanterLevel: BanterLevel | null;
+      /** The game's unconfirmed model request after this revision (see `Game.uncertainRequest`). */
+      uncertainRequest?: boolean;
+      uncertainRequestSentAt?: string | null;
     }
   | { type: 'gameDetailsChanged'; gameId: string }
   | { type: 'committedMove'; gameId: string; move: Move; pgn: string }

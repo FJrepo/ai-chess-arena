@@ -604,7 +604,7 @@ public class AnalyticsService {
             ModelMoveAccumulator accumulator = forModel.apply(normalizeModelId(move.modelId));
             accumulator.movesSampled++;
             accumulator.retriesTotal += Math.max(move.retryCount, 0);
-            if (move.retryCount <= 0) accumulator.firstTryMoves++;
+            if (isFirstTryLegal(move, scope.movesWithPriorAnswers())) accumulator.firstTryMoves++;
             if (move.costUsd != null) accumulator.pricedPlies++;
             if (move.responseTimeMs != null) {
                 accumulator.responseTimeTotal += move.responseTimeMs;
@@ -629,6 +629,15 @@ public class AnalyticsService {
             accumulator.totalCostUsd = accumulator.totalCostUsd.add(cost);
             accumulator.hasReportedCost = true;
         });
+    }
+
+    /**
+     * A move is first-try legal when it was the model's first answer for its ply: no retry in its turn and no earlier
+     * answer for the ply recorded before it, also across a pause and resume (which restarts the attempt numbers).
+     * Moves from before attempts were recorded fall back to their retry count.
+     */
+    static boolean isFirstTryLegal(Move move, Set<UUID> movesWithPriorAnswers) {
+        return move.retryCount <= 0 && !movesWithPriorAnswers.contains(move.id);
     }
 
     /** Counts a finished, non-bye game; unfinished games are not games played yet and are ignored. */

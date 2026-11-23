@@ -155,11 +155,14 @@
     </div>
     @if (pauseDetail) {
       @if (game.uncertainRequest) {
+        @if (spendCheckBlocked) {
+          <p class="pause-hint spend-blocked" role="status">{{ spendCheckBlocked }}</p>
+        }
         <button
           mat-flat-button
           type="button"
           class="spend-checked"
-          [disabled]="saving"
+          [disabled]="saving || !!spendCheckBlocked"
           (click)="spendCheckedResume.emit(game.uncertainRequestSentAt!)"
         >
           Spend checked, resume

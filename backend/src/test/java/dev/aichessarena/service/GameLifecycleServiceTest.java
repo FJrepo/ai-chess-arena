@@ -360,7 +360,7 @@ class GameLifecycleServiceTest {
             public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                               int totalMoves, BigDecimal totalCostUsd, String detail,
                                               long statusRevision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 throw new IllegalStateException("connection closed");
             }
         };
@@ -550,7 +550,7 @@ class GameLifecycleServiceTest {
         public void broadcastStatusChange(UUID gameId, String status, String result, String resultReason,
                                           int totalMoves, BigDecimal totalCostUsd, String detail,
                                           long statusRevision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
             lastStatus = status;
             lastResult = result;
             lastResultReason = resultReason;

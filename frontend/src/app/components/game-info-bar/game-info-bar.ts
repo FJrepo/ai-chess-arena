@@ -89,6 +89,11 @@ export class GameInfoBar {
    * `uncertainRequestSentAt`, read when clicked, and the parent resumes the game acknowledging exactly it.
    */
   @Output() spendCheckedResume = new EventEmitter<string>();
+  /**
+   * Why the spend check cannot be confirmed yet (for example, the paused run must be resumed first), or null. The
+   * warning stays; its action is disabled and this text says what to do.
+   */
+  @Input() spendCheckBlocked: string | null = null;
 
   /** Reader-facing status label for the chip. */
   readonly statusLabel = gameStatusLabel;

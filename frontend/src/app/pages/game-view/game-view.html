@@ -6,6 +6,7 @@
     [truncationModelMaximum]="truncationModelMaximum()"
     [truncationEffort]="truncationEffort()"
     [saving]="savingLimit() || !gameActionsAvailable()"
+    [spendCheckBlocked]="spendCheckBlock()"
     (raiseLimitAndResume)="saveTruncationFixAndResume($event)"
     (spendCheckedResume)="resumeAfterSpendCheck($event)"
   />

@@ -436,7 +436,7 @@ class TournamentCancellationIT {
             @Override
             public void broadcastStatusChange(UUID id, String status, String result, String reason, int totalMoves,
                                               BigDecimal cost, String detail, long revision, Instant resumeRequestedAt,
-                                              RunCapacity capacity) {
+                                              RunCapacity capacity, Instant uncertainRequestSentAt) {
                 assertNull(result);
                 assertNull(reason);
                 assertEquals(TournamentStatus.CANCELLED, QuarkusTransaction.requiringNew().call(
