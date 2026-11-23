@@ -11,6 +11,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - The README front page leads with the live game and the quick start, shows larger screenshot crops, and moves the logo and icon licensing notes to [docs/logo-and-icons.md](docs/logo-and-icons.md), so GitHub detects a single MIT licence.
 - The game view shows one **Moves | Feed** box left of the board and the chat in its own column on the right, instead of a full-width chat below; the feed lists game events without chat, so its **Include chat** switch is gone, and a chat message's move number now shows that position. The chosen view is remembered in the browser, and moves and the chat transcript can be reached and used from the keyboard. See [Game view layout](docs/how-it-works.md#game-view-layout).
+- In the three-column game view the board is sized to the window height, so the captured pieces and the board controls stay in view without scrolling at 1280×800, 1440×900 and 1920×1080 (a finished game at 1280×720 keeps the 340 px board minimum and scrolls a little). The header no longer wraps at 1280 px: the result moves out of the status row and the opening joins the row with **Back to Tournament**; identical captured pieces overlap so a capture bar stays on one line.
+- A finished game states its result once, in one bold line with how it ended (for a resignation the move and winning chance, for an adjudication the decisive window). The resigning side's last words and the opponent's last message, which the chat already shows, sit behind a **Last words** button. See [Resignation: game view](docs/how-it-works.md#game-view).
+- The evaluation bar uses a soft cream instead of near-white for White's share in dark mode, shows the score in 11 px tabular figures at the leading side's end, and follows the board when it is flipped.
+- The last move is marked with one translucent yellow on both squares (the from square slightly lighter) on every board colour, instead of an olive and a pale yellow.
 
 ## [2.0.1] - 2026-11-19
 

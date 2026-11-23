@@ -5,9 +5,22 @@
 .view-actions {
   display: flex;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: var(--app-space-2);
   flex-wrap: wrap;
   align-items: center;
+}
+
+// The opening takes the free space of the actions row and shortens with an ellipsis (full name in
+// its title) instead of adding a row above the board.
+.opening-label {
+  flex: 1 1 0;
+  min-width: min(12rem, 100%);
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--mat-sys-body-medium);
+  color: var(--mat-sys-on-surface);
 }
 
 // A quiet status line, not a control: icon + text, no pill.
@@ -81,9 +94,19 @@
 }
 
 // Board size (incl. the rank-label column; the board is square) follows the viewport height so
-// board and both side columns fit one screen, and is capped by the width the side columns leave.
+// the capture bars, board and controls fit one screen, and is capped by the width the side columns
+// leave.
 .game-layout {
-  --board-chrome-v: 384px;
+  // Height around the board in the three-column range, measured at a 16px default font. Above it:
+  // the sticky toolbar, page padding, match header, actions row, layout gap and White's capture bar;
+  // below it: the frame gaps, controls, Black's capture bar and a small margin. A finished game
+  // adds its one-line result (one control high plus the header gap).
+  --board-chrome-above: 272px;
+  --board-chrome-below: 98px;
+  --board-chrome-result: 0px;
+  --board-chrome-v: calc(
+    var(--board-chrome-above) + var(--board-chrome-result) + var(--board-chrome-below)
+  );
   --board-max: 680px;
   // Moves | Feed column minimum: two full notation cells (see the move list's --move-cell-min).
   --record-col-min: var(--app-game-record-min-width);
@@ -111,8 +134,12 @@
   // the Moves | Feed box left of the board.
   grid-template-areas: 'record board chat';
   gap: var(--app-space-4);
-  margin-top: var(--app-space-3);
+  margin-top: var(--app-space-2);
   align-items: stretch;
+
+  &.has-result {
+    --board-chrome-result: calc(var(--app-board-control-size) + var(--app-space-2));
+  }
 }
 
 // The side columns take the row height (set by the board block) and scroll inside it.
@@ -356,8 +383,8 @@ app-advantage-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
-  padding: 4px 6px 4px 12px;
+  min-height: 34px;
+  padding: var(--app-space-half) 6px var(--app-space-half) 12px;
   border-radius: 12px;
   border: 1px solid var(--mat-sys-outline-variant);
   background: var(--mat-sys-surface-container-low);
@@ -391,6 +418,11 @@ app-advantage-bar {
   height: 26px;
   object-fit: contain;
   user-select: none;
+}
+
+// Identical pieces overlap, so a long tray of captures stays on one line beside the label.
+.captured-piece.stacked {
+  margin-left: -12px;
 }
 
 .capture-empty {

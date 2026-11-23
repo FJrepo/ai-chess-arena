@@ -3699,6 +3699,85 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
     }
   });
 
+  it('reserves the result line above the board only in finished games', () => {
+    const chrome = (fixture: ReturnType<typeof renderGame>) => {
+      const layout = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+        '.game-layout',
+      )!;
+      const style = getComputedStyle(layout);
+      return {
+        finished: layout.classList.contains('has-result'),
+        result: style.getPropertyValue('--board-chrome-result').trim(),
+        total: style.getPropertyValue('--board-chrome-v').replace(/\s+/g, ' ').trim(),
+      };
+    };
+
+    const live = renderGame({ status: 'IN_PROGRESS' });
+    let liveChrome: ReturnType<typeof chrome>;
+    try {
+      // The board's height follows the viewport minus the chrome around it: toolbar, header and
+      // White's captures above; controls and Black's captures below (sizes checked in a browser).
+      liveChrome = chrome(live);
+      expect(liveChrome.finished).toBe(false);
+      expect(liveChrome.result).toBe('0px');
+      expect(liveChrome.total).toMatch(/^calc\( ?\d+px \+ 0px \+ \d+px ?\)$/);
+    } finally {
+      live.destroy();
+    }
+    TestBed.resetTestingModule();
+
+    const finished = renderGame({
+      status: 'COMPLETED',
+      result: 'WHITE_WINS',
+      resultReason: 'CHECKMATE',
+    });
+    try {
+      const finishedChrome = chrome(finished);
+      expect(finishedChrome.finished).toBe(true);
+      expect(finishedChrome.result).not.toBe('0px');
+      expect(finishedChrome.total).not.toBe(liveChrome.total);
+    } finally {
+      finished.destroy();
+    }
+  });
+
+  it('shows the opening in the actions row instead of a line of its own', () => {
+    const fixture = renderGame({ openingEco: 'C60', openingName: 'Ruy Lopez' });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const opening = element.querySelector<HTMLElement>('.opening-label')!;
+      expect(opening.parentElement?.classList).toContain('view-actions');
+      expect(opening.textContent?.trim()).toBe('C60 · Ruy Lopez');
+      expect(opening.getAttribute('title')).toBe('C60 · Ruy Lopez');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('overlaps identical captured pieces so a capture bar stays on one line', () => {
+    // Black has lost a knight and two pawns.
+    const fen = 'rnbqkb1r/pppp2pp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 5';
+    const fixture = renderGame({ moves: [storedMove(4, 'BLACK', 'Ke7', fen)] });
+    const element: HTMLElement = fixture.nativeElement;
+    try {
+      const pieces = Array.from(
+        element.querySelectorAll<HTMLImageElement>('.capture-strip.top .captured-piece'),
+      );
+      expect(pieces.map((piece) => piece.getAttribute('alt'))).toEqual([
+        'black knight',
+        'black pawn',
+        'black pawn',
+      ]);
+      expect(pieces.map((piece) => piece.classList.contains('stacked'))).toEqual([
+        false,
+        false,
+        true,
+      ]);
+    } finally {
+      fixture.destroy();
+    }
+  });
+
   it('marks the selected view with a check, not only a tint', () => {
     const fixture = renderGame();
     const element: HTMLElement = fixture.nativeElement;

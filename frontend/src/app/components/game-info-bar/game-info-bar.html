@@ -90,39 +90,47 @@
       @if (game.whiteModelId || game.blackModelId) {
         <span>Legal move hints {{ game.legalMoveHints === false ? 'off' : 'on' }}</span>
       }
-      @if (game.result) {
-        <span class="result">{{ getResultText() }}</span>
-      }
       <span class="cost num" title="Model cost for this game">
         <mat-icon class="cost-icon" aria-hidden="true">payments</mat-icon>
         {{ game.totalCostUsd | currency: 'USD' }}
       </span>
     </div>
   </div>
-  @if (adjudicationText(); as text) {
-    <div class="resignation-panel adjudication-panel" role="status">
-      <mat-icon class="resignation-icon" aria-hidden="true">gavel</mat-icon>
-      <span class="resignation-title">{{ text }}</span>
-    </div>
-  }
-  @if (resignation(); as r) {
-    <div class="resignation-panel" role="status">
-      <mat-icon class="resignation-icon" aria-hidden="true">flag</mat-icon>
-      <div class="resignation-copy">
-        <span class="resignation-title">{{ resignationText(r) }}</span>
-        @if (r.lastWords) {
-          <span class="resignation-line"
-            ><span class="resignation-label">Last words:</span> “{{ r.lastWords }}”</span
+  @if (game.result) {
+    <div class="result-panel">
+      <div class="result-line">
+        <mat-icon class="result-icon" aria-hidden="true">{{ resultIcon() }}</mat-icon>
+        <p class="result-copy" role="status">
+          <strong class="result">{{ getResultText() }}</strong>
+          @if (resultDetail(); as detail) {
+            <span class="result-detail">{{ detail }}</span>
+          }
+        </p>
+        @if (resignationMessages(); as messages) {
+          <button
+            mat-button
+            type="button"
+            class="last-words-toggle"
+            aria-controls="game-last-words"
+            [attr.aria-expanded]="lastWordsOpen"
+            (click)="lastWordsOpen = !lastWordsOpen"
           >
-        }
-        @if (r.opponentMessage) {
-          <span class="resignation-line"
-            ><span class="resignation-label">{{ opponentMessageLabel(r) }}:</span> “{{
-              r.opponentMessage
-            }}”</span
-          >
+            {{ messages.label }}
+            <mat-icon iconPositionEnd aria-hidden="true">{{
+              lastWordsOpen ? 'expand_less' : 'expand_more'
+            }}</mat-icon>
+          </button>
         }
       </div>
+      @if (resignationMessages(); as messages) {
+        <div id="game-last-words" class="last-words" [hidden]="!lastWordsOpen">
+          @for (line of messages.lines; track line.label) {
+            <p class="last-words-line">
+              <span class="last-words-label">{{ line.label }}:</span> “{{ line.text }}”
+            </p>
+          }
+        </div>
+      }
     </div>
   }
   @let pauseDetail = game.status === 'PAUSED' ? game.statusDetail : null;

@@ -3,6 +3,7 @@
     class="eval-bar"
     [class.unknown]="!known()"
     [class.checkmate]="checkmated() !== null"
+    [class.flipped]="flipped()"
     role="img"
     [attr.title]="description()"
     [attr.aria-label]="accessibleLabel()"
@@ -10,11 +11,7 @@
     <div class="white-bar" [style.height.%]="barHeight()"></div>
     <div class="black-bar" [style.height.%]="100 - barHeight()"></div>
     <div class="center-line"></div>
-    <div
-      class="eval-text"
-      [class.white-text]="barHeight() > 50"
-      [class.black-text]="barHeight() <= 50"
-    >
+    <div class="eval-text" [class.white-end]="whiteLeads()" [class.black-end]="!whiteLeads()">
       {{ displayScore() }}
     </div>
   </div>

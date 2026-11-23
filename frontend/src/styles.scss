@@ -138,6 +138,8 @@ html {
   // Piece-side markers and evaluation remain neutral regardless of board preference.
   --app-piece-white: #eeeeee;
   --app-piece-black: #222222;
+  // White's share of the evaluation bar; softer in dark mode, so it does not glare beside the board.
+  --app-eval-white: var(--app-piece-white);
   --app-board-ring-edge: #23262d;
   --app-board-selection: #7ed1ff;
   --app-board-drop-target: #ffd166;
@@ -230,6 +232,7 @@ body.dark-theme {
   --app-warning-text: #{map.get(mat.$orange-palette, 80)};
   --app-warning-border: color-mix(in srgb, var(--app-warning-text) 60%, transparent);
   --app-warning-fill: color-mix(in srgb, var(--app-warning-text) 10%, transparent);
+  --app-eval-white: #d9d4c7;
   --app-brand-knight: #f1f5f9;
   --app-brand-detail: #0f172a;
   --app-brand-node: #60a5fa;
@@ -501,21 +504,23 @@ thead th,
 }
 
 // These are the only values changed by the board preference; swatches use the same source.
+// The last-move wash is one warm yellow on every board, strong enough to stay yellow (not olive)
+// over the dark squares.
 $board-themes: (
   'green': (
     #ebeed3,
     #6f9152,
-    rgb(240 220 80 / 0.55),
+    rgb(250 210 40 / 0.7),
   ),
   'blue-grey': (
     #dfe6ec,
     #7d95a8,
-    rgb(96 165 250 / 0.45),
+    rgb(250 210 40 / 0.7),
   ),
   'wood': (
     #f0d9b5,
     #b58863,
-    rgb(246 214 72 / 0.5),
+    rgb(250 210 40 / 0.7),
   ),
 );
 
@@ -523,6 +528,8 @@ $board-themes: (
   --app-board-light-square: #{list.nth($colours, 1)};
   --app-board-dark-square: #{list.nth($colours, 2)};
   --app-board-last-move: #{list.nth($colours, 3)};
+  // The from square: the same hue, lighter.
+  --app-board-last-move-from: color-mix(in srgb, var(--app-board-last-move) 70%, white);
 }
 
 :root {
