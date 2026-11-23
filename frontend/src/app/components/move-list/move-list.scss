@@ -13,8 +13,8 @@
   min-height: 0;
 }
 
-// Padding and scroll padding keep the first, last and shown move clear of the card edges; the
-// edges fade so a row cut by scrolling reads as "more".
+// Padding and scroll padding keep the first, last and shown move clear of the card edges. No edge
+// fade: a mask would also fade move text and focus outlines below the required contrast.
 .move-list-scroll {
   flex: 0 1 auto;
   min-height: 0;
@@ -32,13 +32,6 @@
   row-gap: var(--app-space-half);
   align-content: start;
   align-items: center;
-  mask-image: linear-gradient(
-    to bottom,
-    transparent,
-    #000 var(--app-space-3),
-    #000 calc(100% - var(--app-space-3)),
-    transparent
-  );
 }
 
 .move-row {
