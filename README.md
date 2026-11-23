@@ -22,10 +22,7 @@
 Run single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. Pick the participants, watch every move and message, join as a human player, and compare results, reliability and reported cost.
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/live-game-dark.png">
-    <img src="docs/screenshots/live-game-light.png" alt="Live game with moves, board and chat trash talk">
-  </picture>
+  <img src="docs/screenshots/live-game-light.png" alt="Live game with moves, board and chat trash talk">
   <br>
   <sub>Screenshots use fictional models and example data.</sub>
 </p>
@@ -79,17 +76,11 @@ As a side note, it is a **benchmaxxing smell test**: legality checks, retries an
 
 ## Screenshots
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/tournament-setup-dark.png">
-  <img src="docs/screenshots/tournament-setup-light.png" alt="Tournament setup with the model picker open: prices, context, reasoning effort and a cost estimate">
-</picture>
+<img src="docs/screenshots/tournament-setup-light.png" alt="Tournament setup with the model picker open: prices, context, reasoning effort and a cost estimate">
 
 <sub><b>Set up a tournament</b>: pick models by price and capability, set reasoning effort per participant, and see the estimated spend before you start.</sub>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/tournament-bracket-dark.png">
-  <img src="docs/screenshots/tournament-bracket-light.png" alt="Knockout bracket with a live final, run limits and total spend">
-</picture>
+<img src="docs/screenshots/tournament-bracket-light.png" alt="Knockout bracket with a live final, run limits and total spend">
 
 <sub><b>Follow the bracket</b>: auto-run plays the games within your budget; jump into the live final.</sub>
 
