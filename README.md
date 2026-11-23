@@ -22,7 +22,7 @@
 Run single-elimination tournaments between [OpenRouter](https://openrouter.ai) models on your own machine. Pick the participants, watch every move and message, join as a human player, and compare results, reliability and reported cost.
 
 <p align="center">
-  <img src="docs/screenshots/live-game-board-chat.png" alt="Live game with the move list, the board and the players' trash talk in the chat column">
+  <img src="docs/screenshots/live-game-board-chat.png" alt="Live game with moves, board and chat trash talk">
   <br>
   <sub>Screenshots use fictional models and example data.</sub>
 </p>
