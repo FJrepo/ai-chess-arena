@@ -3837,6 +3837,32 @@ describe('GameView columns: Moves | Feed box, board, chat', () => {
       });
       pointer();
       expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // Over half of each side but only a third of the area: 60% of the width and 55% of the height
+      // (300 x 275 of 500 x 500 px) leave 33% of the squares visible, so the board is revealed.
+      scrollIntoView.mockClear();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 355, height: 400, offsetLeft: 200, width: 500 },
+        configurable: true,
+      });
+      pointer();
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      // The vertical pinch offset counts: same grid and viewport size, only the offset differs.
+      ranksTop = -100;
+      scrollIntoView.mockClear();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 0, height: 500 },
+        configurable: true,
+      });
+      pointer(); // squares 64–400 visible below the toolbar: 336 of 500 px
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      Object.defineProperty(window, 'visualViewport', {
+        value: { offsetTop: 200, height: 500 },
+        configurable: true,
+      });
+      pointer(); // squares 200–400 visible: 200 of 500 px
+      expect(scrollIntoView).toHaveBeenCalledOnce();
       delete (window as { visualViewport?: unknown }).visualViewport;
 
       scrollIntoView.mockClear();

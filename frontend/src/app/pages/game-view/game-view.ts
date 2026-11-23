@@ -1222,7 +1222,7 @@ export class GameView implements OnInit, OnDestroy {
   }
 
   /**
-   * Scrolls the board's first rank just below the sticky toolbar when less than half of its squares
+   * Scrolls the board's first rank just below the sticky toolbar when less than half of its squares' area
    * are visible in the visual viewport (pinch zoom shows only part of the layout viewport).
    */
   private revealBoard() {
@@ -1248,9 +1248,14 @@ export class GameView implements OnInit, OnDestroy {
     const visibleTop = Math.max(viewTop, toolbar?.bottom ?? 0);
     const visibleBottom = viewTop + (viewport?.height ?? view.innerHeight);
     const visibleRight = viewLeft + (viewport?.width ?? view.innerWidth);
-    const height = Math.min(grid.bottom, visibleBottom) - Math.max(grid.top, visibleTop);
-    const width = Math.min(grid.right, visibleRight) - Math.max(grid.left, viewLeft);
-    if (height >= (grid.bottom - grid.top) / 2 && width >= (grid.right - grid.left) / 2) return;
+    const height = Math.max(
+      0,
+      Math.min(grid.bottom, visibleBottom) - Math.max(grid.top, visibleTop),
+    );
+    const width = Math.max(0, Math.min(grid.right, visibleRight) - Math.max(grid.left, viewLeft));
+    // Half of the squares' area, not half of each side: 60% x 55% shows only a third of the board.
+    const gridArea = (grid.bottom - grid.top) * (grid.right - grid.left);
+    if (width * height >= gridArea / 2) return;
     // It sticks again at the target, so leave room for its full height.
     host.style.scrollMarginTop = `${(toolbar?.height ?? 0) + BOARD_REVEAL_GAP}px`;
     const reduceMotion = view.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
