@@ -7,6 +7,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-23
+
+**The game, front and centre**: the board sits between the moves and the trash talk, fits your screen, and finished games say how they ended in one line.
+
+- ♟️ **New game view**: moves or the event feed on the left, the board in the middle, the chat in its own column on the right.
+- 📐 **Board fits the window**: captured pieces and controls stay in view at common desktop sizes, also with the stacked layout.
+- 🏁 **One result line**: a finished game states its result once; last words sit behind a button.
+- 🎯 **Honest first-try numbers**: a cut-off answer before a pause no longer counts as first-try legal in Analytics.
+- 🛡️ **Java runtime fix**: the backend image ships Temurin 25.0.5.1 against CVE-2026-114938 ("Java4Shell").
+
+> 💾 [Back up your database](docs/deployment.md#backups-and-rollback) before upgrading. No migration in this release; pull the v2.1.0 images and recreate backend and frontend.
+
+### Upgrade notes
+
+- No migration or backfill: upgrading from 2.0.1 keeps the database at V34. Pull the v2.1.0 images and recreate the backend and frontend together; the backend image carries the Java runtime fix below. Live `gameStatus` and `gameState` WebSocket updates gain two fields (see Fixed); existing fields are unchanged.
+
 ### Changed
 
 - The README front page leads with the live game and the quick start, shows larger screenshot crops, and moves the logo and icon licensing notes to [docs/logo-and-icons.md](docs/logo-and-icons.md), so GitHub detects a single MIT licence.
@@ -18,7 +34,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- The backend image runs Temurin 25.0.5.1, which fixes CVE-2026-114938 ("Java4Shell") in the Java runtime. Pull or rebuild the backend image to apply it.
+- The backend image runs Temurin 25.0.5.1, which fixes CVE-2026-114938 ("Java4Shell") in the Java runtime. Pull the new backend image (or rebuild it) and recreate the backend to apply it.
 - Tournament Analytics no longer counts a move as first-try legal when an earlier answer for the same ply was cut off, empty, unparseable or illegal before a pause and resume restarted the attempt count; reliability scores use the same rule as benchmark comparisons. See [Finished games and reliability score](docs/how-it-works.md#finished-games-and-reliability-score).
 - The game view shows the spend check (**Paused for a spend check**, **Spend checked, resume**) from an explicit flag instead of the wording of the pause reason, so a pause that only looks like one, or a spend check with another reason, is shown correctly. Live `gameStatus` and `gameState` WebSocket updates now carry `uncertainRequest` and `uncertainRequestSentAt`, like game reads. While the run is paused (for example at its budget), the action stays disabled and the banner says to resume the run first. See [Restarts](docs/how-it-works.md#restarts).
 

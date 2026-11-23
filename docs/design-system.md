@@ -145,8 +145,8 @@ and applies `data-board` to `html`. The app applies the saved setting at startup
 unknown saved values fall back to Green. Storage errors leave the selection usable for the
 current session. Board preference and app light/dark mode are independent.
 
-Each board theme changes only `--app-board-light-square`, `--app-board-dark-square` and
-`--app-board-last-move`. Boards, mini boards and captured-piece trays must consume these roles
+Each board theme changes only `--app-board-light-square` and `--app-board-dark-square`; all themes
+share the last-move wash (`--app-board-last-move`) and its lighter origin tint. Boards, mini boards and captured-piece trays must consume these roles
 rather than define their own colours. Swatches share the same token definitions. The evaluation
 bar and piece-side markers stay neutral.
 
